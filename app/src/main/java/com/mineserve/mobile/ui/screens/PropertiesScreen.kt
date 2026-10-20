@@ -176,9 +176,50 @@ private fun ViewDistanceBoosterCard(
 ) {
     val currentView = (props["view-distance"]?.toIntOrNull() ?: 12).coerceIn(4, 32)
     val currentSim = (props["simulation-distance"]?.toIntOrNull() ?: 8).coerceIn(4, 16)
+    val isCracked = props["online-mode"]?.trim()?.equals("false", ignoreCase = true) == true
+    val isSecureOff = props["enforce-secure-profile"]?.trim()?.equals("false", ignoreCase = true) == true
     val blocks = currentView * 16
 
-    McCard(title = "🔭 Bộ Tăng Tầm Nhìn Máy Chủ (View Distance 4 – 32 Chunk)") {
+    McCard(title = "🔭 Sửa Lỗi Kết Nối & Bộ Tăng Tầm Nhìn (4 – 32 Chunk)") {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "🔐 Chế độ tài khoản (Sửa lỗi 'Phiên chơi không hợp lệ'):",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    if (isCracked && isSecureOff) "✅ Đã cho phép mọi tài khoản (Cracked / TLauncher / FCL & Bản quyền)"
+                    else "⚠️ Đang bật Bản quyền (online-mode=true) — Máy Cracked sẽ bị báo lỗi 'Phiên chơi không hợp lệ'",
+                    color = if (isCracked && isSecureOff) Mint else Coral,
+                    fontSize = 10.sp,
+                    lineHeight = 14.sp
+                )
+            }
+            SegPill(
+                text = if (isCracked && isSecureOff) "🔓 Đang bật Cracked" else "🛠️ Bật Cracked ngay",
+                selected = isCracked && isSecureOff,
+                onClick = {
+                    val enableCracked = !(isCracked && isSecureOff)
+                    onUpdateProps(
+                        props.toMutableMap().apply {
+                            put("online-mode", (!enableCracked).toString())
+                            put("enforce-secure-profile", (!enableCracked).toString())
+                            if (enableCracked) {
+                                put("allow-flight", "true")
+                                put("spawn-protection", "0")
+                            }
+                        }
+                    )
+                }
+            )
+        }
+        Spacer(Modifier.height(10.dp))
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -375,7 +416,13 @@ fun JavaPropertiesScreen(vm: McViewModel, onBack: () -> Unit, showBackBar: Boole
                 showSimulationDistance = true,
                 onUpdateProps = { props = it },
                 onApplyImmediately = { viewDist, simDist ->
-                    vm.applyQuickServerConfig(viewDistance = viewDist, simulationDistance = simDist)
+                    val updated = props.toMutableMap().apply {
+                        put("view-distance", viewDist.toString())
+                        if (simDist != null) put("simulation-distance", simDist.toString())
+                    }
+                    props = updated
+                    vm.saveServerProperties(updated)
+                    if (serverState.isRunning) showRestartDialog = true
                 }
             )
 

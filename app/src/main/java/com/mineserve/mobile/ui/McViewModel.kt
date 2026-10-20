@@ -2418,6 +2418,27 @@ class McViewModel(
                 // 阶段推进已是"只增不减"的无状态规则，无需清理任何防抖残留；
                 // 新一次启动的阶段由 updateServerState 里显式重置为 PreparingEnvironment。
                 _lastRunLog.value = ""
+                // Tự động tạo server.properties mặc định với online-mode=false & enforce-secure-profile=false
+                // nếu máy chủ mới tinh chưa có file cấu hình, tránh lỗi "Phiên chơi không hợp lệ" ở lần chạy đầu!
+                withContext(Dispatchers.IO) {
+                    if (!active.core.isBedrock && !propertiesManager.propertiesFileExists(active.dirName)) {
+                        val initMap = linkedMapOf(
+                            "server-port" to ServerPort.defaultFor(active.core).toString(),
+                            "motd" to "MineHost Server",
+                            "gamemode" to "survival",
+                            "difficulty" to "normal",
+                            "max-players" to "20",
+                            "online-mode" to "false",
+                            "enforce-secure-profile" to "false",
+                            "allow-flight" to "true",
+                            "enable-command-block" to "true",
+                            "spawn-protection" to "0",
+                            "view-distance" to "12",
+                            "simulation-distance" to "8"
+                        )
+                        propertiesManager.writeProperties(initMap, active.dirName)
+                    }
+                }
                 // 启动前重读配置文件里的端口：用户可能刚在文件管理器里改过 server-port
                 // （或 pnx.yml 的 settings.port），而 [McConfig.localPort] 还停在旧值。
                 // 不重读的话，PNX / Allay 的启动链路会拿旧值**覆写**配置文件里的新端口，
@@ -4152,16 +4173,31 @@ class McViewModel(
     }
 
     fun generateDefaultServerProperties() {
-        applyQuickServerConfig(viewDistance = 12, simulationDistance = 8)
+        applyQuickServerConfig(
+            viewDistance = 12,
+            simulationDistance = 8,
+            onlineMode = false,
+            enforceSecureProfile = false,
+            allowFlight = true,
+            enableCommandBlock = true,
+            spawnProtection = 0
+        )
     }
 
     fun applyQuickServerConfig(
         viewDistance: Int? = null,
         simulationDistance: Int? = null,
         onlineMode: Boolean? = null,
+        enforceSecureProfile: Boolean? = null,
+        pvp: Boolean? = null,
+        allowFlight: Boolean? = null,
+        enableCommandBlock: Boolean? = null,
+        whiteList: Boolean? = null,
+        spawnProtection: Int? = null,
         gamemode: String? = null,
         difficulty: String? = null,
-        maxPlayers: Int? = null
+        maxPlayers: Int? = null,
+        autoRestartIfRunning: Boolean = false
     ) {
         if (!isBootstrapped.value) {
             _errorFlow.tryEmit(str(R.string.s192))
@@ -4195,7 +4231,10 @@ class McViewModel(
                         map["max-players"] = "20"
                     }
                     if (map["online-mode"].isNullOrBlank()) {
-                        map["online-mode"] = "true"
+                        map["online-mode"] = "false"
+                    }
+                    if (!pnx && map["enforce-secure-profile"].isNullOrBlank()) {
+                        map["enforce-secure-profile"] = "false"
                     }
                     if (map["view-distance"].isNullOrBlank()) {
                         map["view-distance"] = "12"
@@ -4208,7 +4247,20 @@ class McViewModel(
                     if (!pnx) {
                         simulationDistance?.let { map["simulation-distance"] = it.coerceIn(4, 16).toString() }
                     }
-                    onlineMode?.let { map["online-mode"] = it.toString() }
+                    onlineMode?.let {
+                        map["online-mode"] = it.toString()
+                        if (!it && !pnx) {
+                            map["enforce-secure-profile"] = "false"
+                        }
+                    }
+                    if (!pnx) {
+                        enforceSecureProfile?.let { map["enforce-secure-profile"] = it.toString() }
+                        allowFlight?.let { map["allow-flight"] = it.toString() }
+                        enableCommandBlock?.let { map["enable-command-block"] = it.toString() }
+                        spawnProtection?.let { map["spawn-protection"] = it.coerceAtLeast(0).toString() }
+                    }
+                    pvp?.let { map["pvp"] = it.toString() }
+                    whiteList?.let { map["white-list"] = it.toString() }
                     gamemode?.let { map["gamemode"] = it }
                     difficulty?.let { map["difficulty"] = it }
                     maxPlayers?.let { map["max-players"] = it.coerceAtLeast(1).toString() }
@@ -4228,11 +4280,16 @@ class McViewModel(
                 _serverPropertiesExist.value = true
                 val vd = updated["view-distance"] ?: "12"
                 val sd = updated["simulation-distance"] ?: "8"
-                val crackedText = if (updated["online-mode"]?.equals("false", true) == true) "Cho phép Cracked" else "Bản quyền"
+                val crackedText = if (updated["online-mode"]?.equals("false", true) == true) "Cho phép Cracked (Đã tắt kiểm tra bản quyền)" else "Chỉ Bản quyền"
                 if (repo.termuxRuntime.isMcRunning()) {
-                    _messageFlow.tryEmit("✅ Đã lưu Tầm nhìn = $vd Chunk (Mô phỏng = $sd Chunk, $crackedText). Hãy bấm Khởi động lại máy chủ để áp dụng hoàn toàn!")
+                    if (autoRestartIfRunning) {
+                        _messageFlow.tryEmit("🔄 Đã lưu ($crackedText, Tầm nhìn = $vd Chunk) & đang tự động khởi động lại máy chủ để áp dụng ngay!")
+                        restartServer()
+                    } else {
+                        _messageFlow.tryEmit("✅ Đã lưu ($crackedText, Tầm nhìn = $vd Chunk). Hãy bấm Khởi động lại máy chủ để áp dụng hoàn toàn!")
+                    }
                 } else {
-                    _messageFlow.tryEmit("✅ Đã áp dụng Tầm nhìn = $vd Chunk (Mô phỏng = $sd Chunk, $crackedText)!")
+                    _messageFlow.tryEmit("✅ Đã áp dụng ($crackedText, Tầm nhìn = $vd Chunk, Mô phỏng = $sd Chunk)!")
                 }
             } catch (e: Exception) {
                 _errorFlow.tryEmit("Không thể lưu cấu hình nhanh: ${e.message}")

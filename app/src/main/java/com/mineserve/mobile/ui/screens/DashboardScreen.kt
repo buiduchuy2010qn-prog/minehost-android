@@ -1251,8 +1251,9 @@ private fun DashboardAddressCard(vm: McViewModel) {
             onCopy = { vm.copyPublicUrl(context, stunState.publicUrl) }
         )
 
-        // ── Thanh Chỉnh Nhanh 1 Chạm: Tài khoản Cracked/Offline & Tầm nhìn Chunk ──
+        // ── Thanh Chỉnh Nhanh 1 Chạm: Sửa lỗi "Phiên chơi không hợp lệ" & Tầm nhìn Chunk ──
         if (!activeCoreName.isNullOrBlank()) {
+            val isSecureOff = serverProperties["enforce-secure-profile"]?.trim()?.equals("false", ignoreCase = true) == true
             Spacer(Modifier.height(10.dp))
             Column(
                 modifier = Modifier
@@ -1268,32 +1269,57 @@ private fun DashboardAddressCard(vm: McViewModel) {
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            "⚡ Chỉnh nhanh máy chủ (1 chạm):",
+                            "🔐 Sửa lỗi 'Phiên chơi không hợp lệ' (Tài khoản Cracked):",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            if (isCrackedAllowed) "🔓 Đang cho phép tài khoản Cracked / Offline vào chơi"
-                            else "🔒 Đang bật Bản quyền (Chặn tài khoản Cracked)",
-                            color = if (isCrackedAllowed) Mint else Coral,
+                            if (isCrackedAllowed && isSecureOff) {
+                                "✅ Đang cho phép mọi tài khoản (Cracked / TLauncher / FCL & Bản quyền)"
+                            } else {
+                                "⚠️ Đang bật Bản quyền — Máy Cracked vào sẽ báo 'Phiên chơi không hợp lệ'!"
+                            },
+                            color = if (isCrackedAllowed && isSecureOff) Mint else Coral,
                             fontSize = 10.sp,
-                            fontWeight = FontWeight.SemiBold
+                            fontWeight = FontWeight.SemiBold,
+                            lineHeight = 13.sp
                         )
                     }
-                    OutlinedButton(
-                        onClick = { vm.applyQuickServerConfig(onlineMode = isCrackedAllowed) },
+                    Spacer(Modifier.width(6.dp))
+                    Button(
+                        onClick = {
+                            val turnOnCracked = !(isCrackedAllowed && isSecureOff)
+                            vm.applyQuickServerConfig(
+                                onlineMode = !turnOnCracked,
+                                enforceSecureProfile = !turnOnCracked,
+                                allowFlight = if (turnOnCracked) true else null,
+                                spawnProtection = if (turnOnCracked) 0 else null,
+                                autoRestartIfRunning = true
+                            )
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isCrackedAllowed && isSecureOff) FieldGray else Mint
+                        ),
                         shape = RoundedCornerShape(8.dp),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-                        modifier = Modifier.height(30.dp)
+                        modifier = Modifier.height(32.dp)
                     ) {
                         Text(
-                            if (isCrackedAllowed) "Đổi sang Bản quyền" else "🔓 Bật Cracked ngay",
-                            color = Indigo,
+                            if (isCrackedAllowed && isSecureOff) "🔒 Bật Bản quyền" else "🛠️ Sửa lỗi & Bật Cracked",
+                            color = if (isCrackedAllowed && isSecureOff) Indigo else Color.White,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
                 }
+
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "💡 Chi tiết: Vào tab 'Quản lý' -> 'Mục Riêng: Quản Lý Cài Đặt & Lệnh Máy Chủ' để xem giải thích & bật nhanh Giữ đồ khi chết, Chống nổ nhà, 1 người ngủ qua đêm, Cấp OP...",
+                    color = Muted,
+                    fontSize = 9.sp,
+                    lineHeight = 13.sp
+                )
 
                 Spacer(Modifier.height(8.dp))
                 Text(

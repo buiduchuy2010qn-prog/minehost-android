@@ -72,6 +72,8 @@ import com.mineserve.mobile.ui.McViewModel
 import com.mineserve.mobile.ui.SegPill
 import com.mineserve.mobile.ui.StatusPill
 import com.mineserve.mobile.ui.theme.Coral
+import com.mineserve.mobile.ui.theme.CoralSoft
+import com.mineserve.mobile.ui.theme.FieldBg
 import com.mineserve.mobile.ui.theme.Indigo
 import com.mineserve.mobile.ui.theme.IndigoSoft
 import com.mineserve.mobile.ui.theme.Line
@@ -79,7 +81,9 @@ import com.mineserve.mobile.ui.theme.McIcon
 import com.mineserve.mobile.ui.theme.McShape
 import com.mineserve.mobile.ui.theme.McSpacing
 import com.mineserve.mobile.ui.theme.Mint
+import com.mineserve.mobile.ui.theme.MintSoft
 import com.mineserve.mobile.ui.theme.Muted
+import com.mineserve.mobile.ui.theme.TrackBg
 import kotlinx.coroutines.flow.collectLatest
 import kotlin.math.roundToInt
 
@@ -380,9 +384,9 @@ fun ServerManagementScreen(
                                         vm.applyQuickServerConfig(
                                             viewDistance = viewDistDraft,
                                             simulationDistance = if (active.core.isBedrock == true) null else simDistDraft,
-                                            onlineMode = !crackedDraft
+                                            onlineMode = !crackedDraft,
+                                            autoRestartIfRunning = true
                                         )
-                                        vm.restartServer()
                                     },
                                     shape = RoundedCornerShape(10.dp)
                                 ) {
@@ -392,6 +396,14 @@ fun ServerManagementScreen(
                         }
                     }
                 }
+
+                // ── 2B. Mục Riêng: Quản Lý Cài Đặt & Lệnh Máy Chủ (Kèm Giải Thích Dễ Hiểu) ──
+                ServerCommandAndSettingsGuideCard(
+                    vm = vm,
+                    props = props,
+                    isRunning = state.isRunning,
+                    onlinePlayers = onlinePlayers
+                )
             }
 
             // ── 3. Danh mục quản lý chuyên sâu ──────────────────────────────
@@ -575,6 +587,608 @@ private fun ManagementEntry(title: String, description: String, icon: androidx.c
             Column(Modifier.weight(1f)) {
                 Text(title, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                 Text(description, color = Muted, fontSize = 11.sp, lineHeight = 16.sp)
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ServerCommandAndSettingsGuideCard(
+    vm: McViewModel,
+    props: Map<String, String>,
+    isRunning: Boolean,
+    onlinePlayers: List<String>
+) {
+    var selectedSection by remember { mutableIntStateOf(0) }
+    var targetPlayer by remember(onlinePlayers) {
+        mutableStateOf(onlinePlayers.firstOrNull().orEmpty())
+    }
+
+    val isCrackedAllowed = props["online-mode"]?.trim()?.equals("false", ignoreCase = true) == true
+    val isSecureProfileOff = props["enforce-secure-profile"]?.trim()?.equals("false", ignoreCase = true) == true
+    val spawnProt = props["spawn-protection"]?.trim()?.toIntOrNull() ?: 16
+    val allowFlight = props["allow-flight"]?.trim()?.equals("true", ignoreCase = true) == true
+    val commandBlock = props["enable-command-block"]?.trim()?.equals("true", ignoreCase = true) == true
+    val pvpEnabled = props["pvp"]?.trim()?.equals("false", ignoreCase = true) != true
+    val whitelistEnabled = props["white-list"]?.trim()?.equals("true", ignoreCase = true) == true
+    val currentGamemode = props["gamemode"]?.trim()?.ifBlank { "survival" } ?: "survival"
+    val currentDifficulty = props["difficulty"]?.trim()?.ifBlank { "normal" } ?: "normal"
+
+    McCard(title = "📘 Mục Riêng: Quản Lý Cài Đặt & Lệnh Máy Chủ (Kèm Giải Thích)") {
+        Text(
+            "Tất cả các cài đặt sửa lỗi đăng nhập, luật thế giới (/gamerule) và lệnh quản trị đều được phân loại tại đây kèm giải thích tiếng Việt chi tiết để bạn bật/tắt chỉ với 1 chạm:",
+            color = Muted,
+            fontSize = 11.sp,
+            lineHeight = 15.sp
+        )
+        Spacer(Modifier.height(10.dp))
+
+        // ── 3 Tab chuyển mục rõ ràng ──
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            SegPill(
+                text = "🔐 1. Đăng nhập & Sửa lỗi",
+                selected = selectedSection == 0,
+                onClick = { selectedSection = 0 }
+            )
+            SegPill(
+                text = "🪄 2. Luật Thế Giới (/gamerule)",
+                selected = selectedSection == 1,
+                onClick = { selectedSection = 1 }
+            )
+            SegPill(
+                text = "👑 3. Lệnh OP & Người Chơi",
+                selected = selectedSection == 2,
+                onClick = { selectedSection = 2 }
+            )
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        when (selectedSection) {
+            0 -> {
+                // ── TAB 0: SỬA LỖI ĐĂNG NHẬP & CÀI ĐẶT SERVER.PROPERTIES ──
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    // 1. Sửa lỗi "Không thể đăng nhập: Phiên chơi không hợp lệ"
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (isCrackedAllowed && isSecureProfileOff) MintSoft else CoralSoft)
+                            .padding(12.dp)
+                    ) {
+                        Text(
+                            if (isCrackedAllowed && isSecureProfileOff) {
+                                "✅ Đã bật Chế độ Cracked / Offline — Mọi tài khoản đều vào được!"
+                            } else {
+                                "⚠️ Sửa lỗi: 'Không thể đăng nhập: Phiên chơi không hợp lệ'"
+                            },
+                            color = if (isCrackedAllowed && isSecureProfileOff) Mint else Coral,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "• Thông số gốc: online-mode=false & enforce-secure-profile=false\n" +
+                                "• Giải thích dễ hiểu: Khi mở máy chủ Minecraft (đặc biệt bản 1.19 – 1.21.11), mặc định game bắt buộc tài khoản phải mua bản quyền Microsoft. Nếu bạn hoặc bạn bè dùng TLauncher, FCL, PojavLauncher, Zalith hay tài khoản Offline sẽ bị báo lỗi 'Phiên chơi không hợp lệ'.\n" +
+                                "• Cách sửa: Bấm nút bên dưới để tắt kiểm tra bản quyền và tự động khởi động lại máy chủ để áp dụng ngay lập tức!",
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontSize = 11.sp,
+                            lineHeight = 16.sp
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(
+                                onClick = {
+                                    vm.applyQuickServerConfig(
+                                        onlineMode = false,
+                                        enforceSecureProfile = false,
+                                        allowFlight = true,
+                                        spawnProtection = 0,
+                                        autoRestartIfRunning = true
+                                    )
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Mint),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(
+                                    if (isRunning) "🛠️ Sửa lỗi & Tự khởi động lại ngay"
+                                    else "🛠️ Bật Cracked (Sửa lỗi ngay)",
+                                    color = Color.White,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    vm.applyQuickServerConfig(
+                                        onlineMode = true,
+                                        enforceSecureProfile = true,
+                                        autoRestartIfRunning = true
+                                    )
+                                },
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Text("🔒 Chỉ Bản quyền", color = Indigo, fontSize = 11.sp)
+                            }
+                        }
+                    }
+
+                    // 2. Mở khóa vùng Hồi sinh (spawn-protection)
+                    ExplainedSettingBox(
+                        title = "🛡️ Khóa bảo vệ khu vực Hồi sinh (spawn-protection)",
+                        currentStatus = if (spawnProt <= 0) "Đang MỞ KHÓA (0 ô — Ai cũng đập/xây được)" else "Đang KHÓA $spawnProt ô quanh điểm xuất hiện",
+                        statusColor = if (spawnProt <= 0) Mint else Coral,
+                        explanation = "Mặc định Minecraft khóa 16 ô vuông quanh điểm xuất hiện đầu tiên khiến bạn bè mới vào (chưa được cấp OP) không thể chặt cây hay đặt khối. Hãy chọn 'Mở khóa (0 ô)' để bạn bè đập/xây được ngay!",
+                        primaryLabel = "🔓 Mở khóa (0 ô)",
+                        primarySelected = spawnProt <= 0,
+                        onPrimary = { vm.applyQuickServerConfig(spawnProtection = 0, autoRestartIfRunning = false) },
+                        secondaryLabel = "🛡️ Khóa 16 ô",
+                        secondarySelected = spawnProt > 0,
+                        onSecondary = { vm.applyQuickServerConfig(spawnProtection = 16, autoRestartIfRunning = false) }
+                    )
+
+                    // 3. Cho phép Bay & Chống Kick nhầm (allow-flight)
+                    ExplainedSettingBox(
+                        title = "🕊️ Cho phép Bay & Chống Kick nhầm (allow-flight)",
+                        currentStatus = if (allowFlight) "Đang BẬT (Không bị kick khi bay/lag)" else "Đang TẮT (Dễ bị kick khi bay/lag)",
+                        statusColor = if (allowFlight) Mint else Coral,
+                        explanation = "Khi mạng 4G lag, cưỡi thú, dùng cánh Elytra hoặc cài Mod bay, máy chủ mặc định dễ đuổi nhầm người chơi với lỗi 'Flying is not enabled on this server'. Bật mục này sẽ khắc phục hoàn toàn!",
+                        primaryLabel = "✅ Cho phép Bay (true)",
+                        primarySelected = allowFlight,
+                        onPrimary = { vm.applyQuickServerConfig(allowFlight = true) },
+                        secondaryLabel = "❌ Tắt (false)",
+                        secondarySelected = !allowFlight,
+                        onSecondary = { vm.applyQuickServerConfig(allowFlight = false) }
+                    )
+
+                    // 4. Khối lệnh Command Block (enable-command-block)
+                    ExplainedSettingBox(
+                        title = "🧱 Khối Lệnh (enable-command-block)",
+                        currentStatus = if (commandBlock) "Đang BẬT (Dùng được Command Block)" else "Đang TẮT",
+                        statusColor = if (commandBlock) Mint else Muted,
+                        explanation = "Bắt buộc phải BẬT nếu bạn tải Map phiêu lưu, Map Parkour, Map giải đố hoặc Map có sẵn hệ thống nút bấm dịch chuyển / cửa hàng bằng lệnh.",
+                        primaryLabel = "✅ Bật Khối Lệnh",
+                        primarySelected = commandBlock,
+                        onPrimary = { vm.applyQuickServerConfig(enableCommandBlock = true) },
+                        secondaryLabel = "❌ Tắt Khối Lệnh",
+                        secondarySelected = !commandBlock,
+                        onSecondary = { vm.applyQuickServerConfig(enableCommandBlock = false) }
+                    )
+
+                    // 5. Đánh nhau giữa người chơi (pvp)
+                    ExplainedSettingBox(
+                        title = "⚔️ Đánh nhau giữa người chơi (pvp)",
+                        currentStatus = if (pvpEnabled) "Đang BẬT (Đánh nhau mất máu)" else "Đang TẮT (Hòa bình, không đánh trúng nhau)",
+                        statusColor = if (pvpEnabled) Indigo else Mint,
+                        explanation = "Quy định người chơi có thể dùng kiếm/cung gây sát thương lên nhau hay không. Tắt đi nếu bạn muốn cùng bạn bè đi đánh quái mà không sợ chém nhầm nhau.",
+                        primaryLabel = "⚔️ Bật Đánh Nhau",
+                        primarySelected = pvpEnabled,
+                        onPrimary = { vm.applyQuickServerConfig(pvp = true) },
+                        secondaryLabel = "🕊️ Tắt Đánh Nhau",
+                        secondarySelected = !pvpEnabled,
+                        onSecondary = { vm.applyQuickServerConfig(pvp = false) }
+                    )
+
+                    // 6. Danh sách trắng (white-list)
+                    ExplainedSettingBox(
+                        title = "📋 Danh sách trắng bảo vệ phòng (white-list)",
+                        currentStatus = if (whitelistEnabled) "Đang BẬT (Chỉ người trong danh sách mới vào được)" else "Đang TẮT (Ai có địa chỉ cũng vào được)",
+                        statusColor = if (whitelistEnabled) Mint else Indigo,
+                        explanation = "Khi BẬT, chỉ những tên nhân vật được bạn thêm bằng lệnh '/whitelist add <tên>' (hoặc có OP) mới vào được máy chủ. Rất hữu ích khi công khai địa chỉ nhưng muốn chặn người lạ.",
+                        primaryLabel = "🛡️ Bật Whitelist",
+                        primarySelected = whitelistEnabled,
+                        onPrimary = {
+                            vm.applyQuickServerConfig(whiteList = true)
+                            if (isRunning) vm.sendCommand("whitelist on")
+                        },
+                        secondaryLabel = "🌍 Tắt (Mở tự do)",
+                        secondarySelected = !whitelistEnabled,
+                        onSecondary = {
+                            vm.applyQuickServerConfig(whiteList = false)
+                            if (isRunning) vm.sendCommand("whitelist off")
+                        }
+                    )
+
+                    // 7. Chế độ chơi mặc định & Độ khó
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(FieldBg)
+                            .padding(10.dp)
+                    ) {
+                        Text("🎮 Chế độ chơi mặc định (gamemode) & Độ khó (difficulty):", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            "Áp dụng cho người chơi mới vào thế giới. Nếu chọn 'Bình yên (Peaceful)', quái vật thù địch sẽ không sinh ra và máu tự hồi đầy.",
+                            color = Muted,
+                            fontSize = 10.sp,
+                            lineHeight = 14.sp
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            listOf(
+                                "survival" to "⚔️ Sinh tồn",
+                                "creative" to "🧱 Sáng tạo",
+                                "adventure" to "🗺️ Phiêu lưu",
+                                "spectator" to "👁️ Khán giả"
+                            ).forEach { (gm, label) ->
+                                SegPill(
+                                    text = label,
+                                    selected = currentGamemode.equals(gm, ignoreCase = true),
+                                    onClick = {
+                                        vm.applyQuickServerConfig(gamemode = gm)
+                                        if (isRunning) vm.sendCommand("defaultgamemode $gm")
+                                    }
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            listOf(
+                                "peaceful" to "🕊️ Bình yên (Không quái)",
+                                "easy" to "🌱 Dễ",
+                                "normal" to "⚖️ Bình thường",
+                                "hard" to "🔥 Khó"
+                            ).forEach { (diff, label) ->
+                                SegPill(
+                                    text = label,
+                                    selected = currentDifficulty.equals(diff, ignoreCase = true),
+                                    onClick = {
+                                        vm.applyQuickServerConfig(difficulty = diff)
+                                        if (isRunning) vm.sendCommand("difficulty $diff")
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    if (isRunning) {
+                        Button(
+                            onClick = { vm.restartServer() },
+                            colors = ButtonDefaults.buttonColors(containerColor = Indigo),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Outlined.Refresh, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.size(6.dp))
+                            Text("🔄 Khởi động lại máy chủ để áp dụng mọi thay đổi server.properties", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+
+            1 -> {
+                // ── TAB 1: LUẬT THẾ GIỚI (/GAMERULE) — CHẠY NGAY TRONG GAME ──
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (!isRunning) {
+                        HintNote("💡 Lưu ý: Máy chủ hiện đang dừng. Hãy khởi động máy chủ trước khi bấm các nút Luật Thế Giới (/gamerule) bên dưới để lệnh chạy trực tiếp vào game!")
+                    } else {
+                        HintNote("⚡ Máy chủ đang chạy! Bạn bấm bất kỳ nút nào bên dưới là lệnh /gamerule sẽ có hiệu lực NGAY LẬP TỨC trong game mà không cần khởi động lại máy chủ.")
+                    }
+
+                    GameruleExplainBox(
+                        title = "🎒 Giữ đồ khi chết (keepInventory)",
+                        commandSyntax = "/gamerule keepInventory true | false",
+                        explanation = "Khi BẬT (true): Người chơi bị chết sẽ giữ nguyên 100% vật phẩm trên người và cấp độ kinh nghiệm. Khi TẮT (false): Chết sẽ rơi toàn bộ đồ ra đất.",
+                        enableLabel = "✅ Bật Giữ Đồ",
+                        disableLabel = "❌ Tắt (Rơi đồ)",
+                        isRunning = isRunning,
+                        onEnable = { vm.sendCommand("gamerule keepInventory true") },
+                        onDisable = { vm.sendCommand("gamerule keepInventory false") }
+                    )
+
+                    GameruleExplainBox(
+                        title = "💥 Chống Creeper nổ vỡ nhà (mobGriefing)",
+                        commandSyntax = "/gamerule mobGriefing false | true",
+                        explanation = "Khi chọn Chống Phá Khối (false): Creeper nổ chỉ gây sát thương chứ KHÔNG làm vỡ tường nhà của bạn, Enderman không bê đất, Ghast không bắn thủng khối.",
+                        enableLabel = "🛡️ Chống Quái Phá Nhà (false)",
+                        disableLabel = "⚠️ Mặc định (true)",
+                        isRunning = isRunning,
+                        onEnable = { vm.sendCommand("gamerule mobGriefing false") },
+                        onDisable = { vm.sendCommand("gamerule mobGriefing true") }
+                    )
+
+                    GameruleExplainBox(
+                        title = "💤 Chỉ cần 1 người ngủ là qua đêm (playersSleepingPercentage)",
+                        commandSyntax = "/gamerule playersSleepingPercentage 0 | 100",
+                        explanation = "Khi chơi nhiều người, mặc định tất cả mọi người phải cùng nằm lên giường mới qua đêm. Bấm '1 Người Ngủ (0%)' để chỉ cần 1 người nằm xuống là trời sáng ngay!",
+                        enableLabel = "🌅 1 Người Ngủ Là Sáng (0%)",
+                        disableLabel = "🛌 Cả Phòng Cùng Ngủ (100%)",
+                        isRunning = isRunning,
+                        onEnable = { vm.sendCommand("gamerule playersSleepingPercentage 0") },
+                        onDisable = { vm.sendCommand("gamerule playersSleepingPercentage 100") }
+                    )
+
+                    GameruleExplainBox(
+                        title = "🔥 Chống lửa cháy lan (doFireTick)",
+                        commandSyntax = "/gamerule doFireTick false | true",
+                        explanation = "Khi TẮT (false): Lửa từ dung nham hoặc sét đánh sẽ không cháy lan làm thiêu rụi nhà gỗ hay rừng cây của bạn.",
+                        enableLabel = "🚒 Tắt Lửa Cháy Lan (false)",
+                        disableLabel = "🔥 Bật Cháy Lan (true)",
+                        isRunning = isRunning,
+                        onEnable = { vm.sendCommand("gamerule doFireTick false") },
+                        onDisable = { vm.sendCommand("gamerule doFireTick true") }
+                    )
+
+                    GameruleExplainBox(
+                        title = "⚡ Hồi sinh ngay lập tức (doImmediateRespawn)",
+                        commandSyntax = "/gamerule doImmediateRespawn true | false",
+                        explanation = "Khi BẬT (true): Người chơi bị chết sẽ lập tức hồi sinh tại giường/điểm xuất hiện mà không hiện màn hình đỏ bắt bấm nút Hồi sinh.",
+                        enableLabel = "⚡ Bật Hồi Sinh Ngay (true)",
+                        disableLabel = "Mặc định (false)",
+                        isRunning = isRunning,
+                        onEnable = { vm.sendCommand("gamerule doImmediateRespawn true") },
+                        onDisable = { vm.sendCommand("gamerule doImmediateRespawn false") }
+                    )
+
+                    GameruleExplainBox(
+                        title = "👻 Tắt quái dơi Phantom ban đêm (doInsomnia)",
+                        commandSyntax = "/gamerule doInsomnia false | true",
+                        explanation = "Khi TẮT (false): Quái vật Phantom trên bầu trời ban đêm sẽ không bao giờ xuất hiện dù người chơi thức nhiều ngày không ngủ.",
+                        enableLabel = "🛡️ Tắt Quái Phantom (false)",
+                        disableLabel = "👻 Bật Phantom (true)",
+                        isRunning = isRunning,
+                        onEnable = { vm.sendCommand("gamerule doInsomnia false") },
+                        onDisable = { vm.sendCommand("gamerule doInsomnia true") }
+                    )
+
+                    GameruleExplainBox(
+                        title = "☀️ Khóa thời gian luôn Ban Ngày (doDaylightCycle)",
+                        commandSyntax = "/time set day + /gamerule doDaylightCycle false",
+                        explanation = "Chỉnh mặt trời đứng yên ở ban ngày vĩnh viễn (không bao giờ tối) hoặc mở lại chu kỳ ngày đêm tự nhiên.",
+                        enableLabel = "☀️ Luôn Ban Ngày Vĩnh Viễn",
+                        disableLabel = "🔄 Ngày Đêm Bình Thường",
+                        isRunning = isRunning,
+                        onEnable = {
+                            vm.sendCommand("time set day")
+                            vm.sendCommand("gamerule doDaylightCycle false")
+                        },
+                        onDisable = { vm.sendCommand("gamerule doDaylightCycle true") }
+                    )
+
+                    GameruleExplainBox(
+                        title = "🌤️ Khóa thời tiết luôn Tạnh Mưa (doWeatherCycle)",
+                        commandSyntax = "/weather clear + /gamerule doWeatherCycle false",
+                        explanation = "Giữ bầu trời luôn nắng đẹp vĩnh viễn, không bao giờ mưa bão hay sấm sét gây ồn và tụt FPS.",
+                        enableLabel = "☀️ Luôn Nắng Đẹp Vĩnh Viễn",
+                        disableLabel = "🌧️ Thời Tiết Tự Nhiên",
+                        isRunning = isRunning,
+                        onEnable = {
+                            vm.sendCommand("weather clear")
+                            vm.sendCommand("gamerule doWeatherCycle false")
+                        },
+                        onDisable = { vm.sendCommand("gamerule doWeatherCycle true") }
+                    )
+                }
+            }
+
+            else -> {
+                // ── TAB 2: LỆNH QUẢN TRỊ NGƯỜI CHƠI (OP / CHẾ ĐỘ CHƠI / DỊCH CHUYỂN) ──
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(FieldBg)
+                            .padding(10.dp)
+                    ) {
+                        Text("👤 Bước 1: Chọn hoặc nhập tên nhân vật trong game:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(4.dp))
+                        if (onlinePlayers.isNotEmpty()) {
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                onlinePlayers.forEach { p ->
+                                    SegPill(
+                                        text = "🟢 $p",
+                                        selected = targetPlayer == p,
+                                        onClick = { targetPlayer = p }
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.height(6.dp))
+                        }
+                        OutlinedTextField(
+                            value = targetPlayer,
+                            onValueChange = { targetPlayer = it },
+                            label = { Text("Tên nhân vật (VD: Steve hoặc @a cho tất cả)", fontSize = 11.sp) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
+                    val effectiveTarget = targetPlayer.trim().ifBlank { "@a" }
+
+                    GameruleExplainBox(
+                        title = "👑 Cấp hoặc Thu hồi quyền Admin (OP)",
+                        commandSyntax = "/op $effectiveTarget  |  /deop $effectiveTarget",
+                        explanation = "Cấp quyền Quản trị viên tối cao (Operator) cho nhân vật '$effectiveTarget' để người đó có thể tự gõ mọi lệnh (/gamemode, /tp, /give, /time...) ngay trong ô chat của game.",
+                        enableLabel = "👑 Cấp OP cho $effectiveTarget",
+                        disableLabel = "🚫 Thu hồi OP",
+                        isRunning = isRunning,
+                        onEnable = {
+                            if (targetPlayer.isNotBlank()) vm.sendCommand("op ${targetPlayer.trim()}")
+                        },
+                        onDisable = {
+                            if (targetPlayer.isNotBlank()) vm.sendCommand("deop ${targetPlayer.trim()}")
+                        }
+                    )
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(FieldBg)
+                            .padding(10.dp)
+                    ) {
+                        Text("🎨 Đổi chế độ chơi cho '$effectiveTarget' (/gamemode):", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            "• Sáng tạo (Creative): Bất tử, bay tự do và lấy vô hạn mọi vật phẩm.\n" +
+                                "• Sinh tồn (Survival): Có thanh máu, thanh thức ăn và tự khai thác tài nguyên.\n" +
+                                "• Khán giả (Spectator): Bay xuyên tường để quan sát bản đồ.",
+                            color = Muted,
+                            fontSize = 10.sp,
+                            lineHeight = 14.sp
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            listOf(
+                                "creative" to "🧱 Sáng tạo",
+                                "survival" to "⚔️ Sinh tồn",
+                                "adventure" to "🗺️ Phiêu lưu",
+                                "spectator" to "👁️ Khán giả"
+                            ).forEach { (gm, label) ->
+                                OutlinedButton(
+                                    onClick = { vm.sendCommand("gamemode $gm $effectiveTarget") },
+                                    enabled = isRunning,
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text(label, color = Indigo, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
+                        }
+                    }
+
+                    GameruleExplainBox(
+                        title = "🔦 Nhìn trong bóng tối & Tăng kinh nghiệm (/effect, /xp)",
+                        commandSyntax = "/effect give $effectiveTarget night_vision infinite 1 true",
+                        explanation = "Tặng hiệu ứng nhìn sáng trưng trong hang tối/ban đêm mà không cần cắm đuốc, hoặc tặng ngay 30 cấp độ kinh nghiệm để phù phép đồ.",
+                        enableLabel = "🔦 Bật Nhìn Đêm Vĩnh Viễn",
+                        disableLabel = "✨ Tặng +30 Cấp XP",
+                        isRunning = isRunning,
+                        onEnable = { vm.sendCommand("effect give $effectiveTarget night_vision infinite 1 true") },
+                        onDisable = { vm.sendCommand("xp add $effectiveTarget 30 levels") }
+                    )
+
+                    GameruleExplainBox(
+                        title = "📋 Thêm vào Danh sách trắng hoặc Đuổi khỏi phòng (/whitelist, /kick)",
+                        commandSyntax = "/whitelist add $effectiveTarget  |  /kick $effectiveTarget",
+                        explanation = "Cho phép nhân vật này vào phòng khi bật Whitelist, hoặc mời người chơi ra khỏi máy chủ.",
+                        enableLabel = "✅ Thêm vào Whitelist",
+                        disableLabel = "👢 Kick khỏi phòng",
+                        isRunning = isRunning,
+                        onEnable = {
+                            if (targetPlayer.isNotBlank()) vm.sendCommand("whitelist add ${targetPlayer.trim()}")
+                        },
+                        onDisable = {
+                            if (targetPlayer.isNotBlank()) vm.sendCommand("kick ${targetPlayer.trim()}")
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExplainedSettingBox(
+    title: String,
+    currentStatus: String,
+    statusColor: Color,
+    explanation: String,
+    primaryLabel: String,
+    primarySelected: Boolean,
+    onPrimary: () -> Unit,
+    secondaryLabel: String,
+    secondarySelected: Boolean,
+    onSecondary: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(FieldBg)
+            .padding(10.dp)
+    ) {
+        Text(title, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(2.dp))
+        Text(currentStatus, color = statusColor, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(4.dp))
+        Text(explanation, color = Muted, fontSize = 10.sp, lineHeight = 14.sp)
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+                onClick = onPrimary,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (primarySelected) Indigo else TrackBg,
+                    contentColor = if (primarySelected) Color.White else Indigo
+                ),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(primaryLabel, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
+            Button(
+                onClick = onSecondary,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (secondarySelected) Indigo else TrackBg,
+                    contentColor = if (secondarySelected) Color.White else Indigo
+                ),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(secondaryLabel, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
+private fun GameruleExplainBox(
+    title: String,
+    commandSyntax: String,
+    explanation: String,
+    enableLabel: String,
+    disableLabel: String,
+    isRunning: Boolean,
+    onEnable: () -> Unit,
+    onDisable: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(FieldBg)
+            .padding(10.dp)
+    ) {
+        Text(title, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Text("Lệnh gốc: $commandSyntax", color = Indigo, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(4.dp))
+        Text(explanation, color = Muted, fontSize = 10.sp, lineHeight = 14.sp)
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+                onClick = onEnable,
+                enabled = isRunning,
+                colors = ButtonDefaults.buttonColors(containerColor = Mint),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(enableLabel, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
+            OutlinedButton(
+                onClick = onDisable,
+                enabled = isRunning,
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(disableLabel, color = Indigo, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
             }
         }
     }
