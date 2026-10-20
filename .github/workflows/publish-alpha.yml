@@ -95,12 +95,14 @@ jobs:
           jq -e --arg tag "$RELEASE_TAG" --arg source "$SOURCE_SHA" --argjson id "$DRAFT_RELEASE_ID" \
             '.id == $id and .tag_name == $tag and .target_commitish == $source and .draft == true and .prerelease == true and (.assets | length) == 0' draft.json
           test "$(gh api "repos/$GH_REPO/git/ref/tags/$RELEASE_TAG" --jq '.object.sha')" = "$SOURCE_SHA"
-          jq -n --rawfile body release-notes.md '{body: $body}' | \
-            gh api --method PATCH "repos/$GH_REPO/releases/$DRAFT_RELEASE_ID" --input - >/dev/null
-          gh release upload "$RELEASE_TAG" \
+          for asset in \
             publish/MineHost-0.1.0-alpha.2-arm64.apk publish/SHA256SUMS.txt \
             publish/SOURCE-COMMIT.txt publish/READ-ME-FIRST.txt \
-            publish/SIGNATURE.txt publish/APK-INFO.txt publish/VERIFICATION.json MIGRATION.md LICENSE NOTICE
+            publish/SIGNATURE.txt publish/APK-INFO.txt publish/VERIFICATION.json MIGRATION.md LICENSE NOTICE; do
+            gh api --method POST \
+              "https://uploads.github.com/repos/$GH_REPO/releases/$DRAFT_RELEASE_ID/assets?name=$(basename "$asset")" \
+              -H "Content-Type: application/octet-stream" --input "$asset" --jq '.name'
+          done
           gh api "repos/$GH_REPO/releases/$DRAFT_RELEASE_ID" > uploaded.json
           jq -e --arg tag "$RELEASE_TAG" --arg source "$SOURCE_SHA" \
             '.tag_name == $tag and .target_commitish == $source and .draft == true and .prerelease == true and (.assets | length) == 10 and all(.assets[]; .state == "uploaded" and .size > 0)' uploaded.json
