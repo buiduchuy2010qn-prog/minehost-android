@@ -14,13 +14,13 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
-      SOURCE_SHA: b33ee1f62dc634c72f9455be4edc518cd00df457
-      BUILD_RUN: '39396972103'
+      SOURCE_SHA: c7efcb33e08ce5a59268e9e4a725622762b5e3d7
+      BUILD_RUN: '39399060717'
       RELEASE_TAG: v0.1.0-alpha.2
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: b33ee1f62dc634c72f9455be4edc518cd00df457
+          ref: c7efcb33e08ce5a59268e9e4a725622762b5e3d7
           persist-credentials: false
       - name: Download verified release build on runner
         run: |
