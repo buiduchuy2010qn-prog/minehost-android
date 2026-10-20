@@ -53,7 +53,7 @@ object WorldArchive {
     }
 
     /**
-     * Trích xuất tự động các tệp Mod (mods/*.jar) và cấu hình (config/**, defaultconfigs/**)
+     * Trích xuất tự động các tệp Mod (.jar trong thư mục mods) và cấu hình (config, defaultconfigs)
      * đi kèm bên trong tệp ZIP của Map có Mod vào thư mục máy chủ.
      */
     fun extractBundledAddons(zip: File, serverDir: File): BundledAddons {

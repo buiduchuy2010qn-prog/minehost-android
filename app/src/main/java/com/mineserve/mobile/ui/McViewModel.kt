@@ -4659,7 +4659,7 @@ class McViewModel(
                 _worldModStatus.value = msg
                 _messageFlow.tryEmit(msg)
                 refreshWorldModCount()
-                loadInstalledMods()
+                refreshMods()
             } catch (e: Exception) {
                 val err = "❌ Không cài được Mod: " + (e.message ?: "Lỗi không xác định")
                 _worldModStatus.value = err
@@ -4739,7 +4739,7 @@ class McViewModel(
                 )
                 _messageFlow.tryEmit("Đã nhập world: " + imported + addonNote + ". Bấm 'Kích hoạt & Dùng thế giới này' để chơi.")
                 refreshWorldModCount()
-                if (addons.modsInstalled > 0) loadInstalledMods()
+                if (addons.modsInstalled > 0) refreshMods()
                 if (config.value.activeCoreName == selected) loadWorlds()
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
