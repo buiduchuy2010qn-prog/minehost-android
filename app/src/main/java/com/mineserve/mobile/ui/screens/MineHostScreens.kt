@@ -73,7 +73,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
     val clipboard = LocalClipboardManager.current
     val active = config.installedCores.firstOrNull { it.name == config.activeCoreName }
     var confirm by remember { mutableStateOf<String?>(null) }
-    var heap by remember(config.maxHeapMb) { mutableFloatStateOf(config.maxHeapMb.toFloat()) }
+    var heap by remember(config.maxHeapMb) { mutableFloatStateOf(config.maxHeapMb.toFloat().coerceIn(1024f, 4096f)) }
     val busy = downloading || installing || addonBusy.isNotEmpty() || javaOperation != null
     val status = when {
         stopping -> "Đang lưu và dừng…"
@@ -119,7 +119,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Metric("TPS", if (state.isRunning && state.tps > 0) "%.1f".format(state.tps) else "—", Modifier.weight(1f))
-            Metric("Người chơi", if (state.isRunning) state.onlinePlayers.toString() else "—", Modifier.weight(1f))
+            Metric("Người chơi", if (state.isRunning && state.startupPhase == StartupPhase.Ready) state.onlinePlayers.toString() else "—", Modifier.weight(1f))
             Metric("RAM / MB", if (state.isRunning && state.usedMemoryMb > 0) state.usedMemoryMb.toString() else "—", Modifier.weight(1f))
         }
         Text("“—” là chưa có số đo, không phải 0. TPS có thể không được core này hỗ trợ.", style = MaterialTheme.typography.bodySmall)
@@ -128,7 +128,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
             HostAction("2. Cài Java tương thích", "Paper 1.20–1.21.11: Java 21 • 26.1+: Java 25. Core khác: xem yêu cầu của core.", Icons.Outlined.Memory) { navigate(SubPage.EnvManager) }
         } else {
             HostCard("Mời bạn bè • cùng Wi-Fi") {
-                val address = lanIp.takeIf { it.isNotBlank() && it != "0.0.0.0" }?.let { "$it:$port" }
+                val address = lanIp.takeIf { it.matches(Regex("""\d{1,3}(\.\d{1,3}){3}""")) && it != "0.0.0.0" && !it.startsWith("127.") }?.let { "$it:$port" }
                 Text(address ?: "Chưa có địa chỉ LAN", style = MaterialTheme.typography.titleLarge)
                 Text("Java: Multiplayer → Add Server. Địa chỉ này không phải địa chỉ Internet công cộng.", style = MaterialTheme.typography.bodySmall)
                 OutlinedButton(onClick = { address?.let { clipboard.setText(AnnotatedString(it)) } }, enabled = address != null) { Text("Sao chép địa chỉ") }
