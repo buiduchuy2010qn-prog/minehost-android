@@ -374,12 +374,9 @@ class McServerController(
                 repo.markStep(step, StepStatus.Active, idx * (100 / steps.size))
                 val code = when (step) {
                     InstallStep.Jdk -> 0
-                    InstallStep.Wget -> termux.execOnce(
-                        "apt-get", "-o", "DPkg::Lock::Timeout=60", "install", "--allow-unauthenticated", "-y",
-                        "wget", "fontconfig", "ttf-dejavu"
-                    )
-                    InstallStep.Rclone -> if (termux.prepareAptPackages("rclone")) termux.execOnce("apt-get", "-o", "DPkg::Lock::Timeout=60", "install", "--allow-unauthenticated", "-y", "rclone") else 1
-                    InstallStep.Proot -> if (termux.prepareAptPackages("proot")) termux.execOnce("apt-get", "-o", "DPkg::Lock::Timeout=60", "install", "--allow-unauthenticated", "-y", "proot") else 1
+                    InstallStep.Wget -> if (termux.prepareAptPackages("wget", "fontconfig", "ttf-dejavu")) termux.installAptPackages("wget", "fontconfig", "ttf-dejavu") else 1
+                    InstallStep.Rclone -> if (termux.prepareAptPackages("rclone")) termux.installAptPackages("rclone") else 1
+                    InstallStep.Proot -> if (termux.prepareAptPackages("proot")) termux.installAptPackages("proot") else 1
                 }
                 if (code == 0) {
                     termux.repairInstalledCommands()

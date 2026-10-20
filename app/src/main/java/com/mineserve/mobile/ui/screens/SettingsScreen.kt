@@ -63,9 +63,13 @@ fun SettingsScreen(vm: McViewModel, onNavigate: (SubPage) -> Unit = {}) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
     ) {
         HeaderBlock(eyebrow = stringResource(R.string.eyebrow_settings), title = stringResource(R.string.s186))
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+        ) {
 
         // JVM 内存上限
         McCard(title = stringResource(R.string.s1003)) {
@@ -156,7 +160,7 @@ fun SettingsScreen(vm: McViewModel, onNavigate: (SubPage) -> Unit = {}) {
             Text(stringResource(R.string.s1012), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(6.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                AptMirror.values().filter { it != AptMirror.Official }.forEach { mirror ->
+                AptMirror.values().forEach { mirror ->
                     SegPill(
                         text = mirror.displayName,
                         selected = config.aptMirror == mirror,
@@ -324,9 +328,8 @@ fun SettingsScreen(vm: McViewModel, onNavigate: (SubPage) -> Unit = {}) {
             }
         }
 
-        // QQ 交流群入口
-        QqGroupCard()
         Spacer(Modifier.height(16.dp))
+        }
     }
 }
 

@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.ui.res.stringResource
@@ -171,6 +172,7 @@ fun McApp() {
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
+                .statusBarsPadding()
                 .padding(padding)
         ) {
             val page = Triple(showLogs, subPage, tab)
@@ -231,7 +233,7 @@ fun McApp() {
                             onFtp = { subPage = SubPage.Ftp },
                             onAutomation = { subPage = SubPage.Automation }
                         )
-                        SubPage.Cores -> DownloadScreen(vm, onShowDownloadHelp = { subPage = SubPage.DownloadHelp })
+                        SubPage.Cores -> DownloadScreen(vm, onShowDownloadHelp = { subPage = SubPage.DownloadHelp }, onBack = { subPage = null })
                         SubPage.ServerList -> ServerManagementScreen(vm,
                             onPlugins = { subPage = SubPage.Plugins },
                             onProperties = { subPage = SubPage.Properties },

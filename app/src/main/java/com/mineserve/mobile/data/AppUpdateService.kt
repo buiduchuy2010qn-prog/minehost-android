@@ -118,16 +118,16 @@ object AppUpdateService {
      * （GitHub API 比 Release 资产更容易直连成功）。
      */
     private fun apiUrls() = listOf(
-        "https://cdn.gh-proxy.com/$API",
-        API
+        API,
+        "https://cdn.gh-proxy.com/$API"
     )
 
     private fun downloadUrls(url: String) = listOf(
+        url,
         "https://ghfast.top/$url",
         "https://gh-proxy.com/$url",
         "https://cdn.gh-proxy.com/$url",
-        "https://ghproxy.net/$url",
-        url
+        "https://ghproxy.net/$url"
     )
 
     /**

@@ -72,6 +72,14 @@ class MineHostSafetyTest {
         AddonSafety.install(target, false) { source.copyTo(it, overwrite = true) }
         assertArrayEquals(source.readBytes(), target.readBytes())
     }
+    @Test fun defaultMirrorsPreferGlobalTermuxCdnAndDirectGitHub() {
+        val cfg = com.mineserve.mobile.data.McConfig()
+        assertEquals(com.mineserve.mobile.data.AptMirror.Official, cfg.aptMirror)
+        assertEquals("https://packages-cf.termux.dev/apt/termux-main", cfg.aptMirror.url)
+        val firstDownloadMirror = com.mineserve.mobile.data.DownloadMirror.entries.first { it != com.mineserve.mobile.data.DownloadMirror.Auto }
+        assertEquals(com.mineserve.mobile.data.DownloadMirror.GitHub, firstDownloadMirror)
+        assertEquals("Không rõ", com.mineserve.mobile.data.ServerCore.Unknown.displayName)
+    }
     @Test fun runningServerBlocksInstallBeforeDownload() = runBlocking {
         var called = false
         val result = runCatching {

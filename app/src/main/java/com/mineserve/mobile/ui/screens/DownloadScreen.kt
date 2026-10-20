@@ -62,6 +62,7 @@ import androidx.compose.ui.unit.sp
 import com.mineserve.mobile.data.ServerCore
 import com.mineserve.mobile.data.InstalledCore
 import com.mineserve.mobile.data.JavaVersion
+import com.mineserve.mobile.ui.BackBar
 import com.mineserve.mobile.ui.HeaderBlock
 import com.mineserve.mobile.ui.McCard
 import com.mineserve.mobile.ui.McViewModel
@@ -83,7 +84,7 @@ private data class DownloadImport(val kind: String, val uri: Uri)
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}) {
+fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack: (() -> Unit)? = null) {
     val context = LocalContext.current
     val config by vm.config.collectAsState()
     val serverState by vm.serverState.collectAsState()
@@ -158,9 +159,17 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .verticalScroll(rememberScrollState())
         ) {
-            HeaderBlock(eyebrow = stringResource(R.string.eyebrow_download), title = stringResource(R.string.s450))
+            if (onBack != null) {
+                BackBar(title = stringResource(R.string.s450), onBack = onBack)
+            } else {
+                HeaderBlock(eyebrow = stringResource(R.string.eyebrow_download), title = stringResource(R.string.s450))
+            }
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
+            ) {
 
             // 当前下载状态（已安装核心列表，默认折叠）。折叠状态用 rememberSaveable 保存，
             // 避免在组合体内同步读 SharedPreferences 造成首帧主线程读盘。
@@ -286,7 +295,7 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}) {
                 compact = true,
                 trailing = {
                     Text(
-                        "支持导入服务器",
+                        "Hỗ trợ nhập server",
                         color = Muted,
                         fontSize = 9.sp,
                         modifier = Modifier
@@ -351,7 +360,7 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}) {
                     onClick = { showImportDialog = true },
                     modifier = Modifier.fillMaxWidth(),
                     shape = McShape.ControlCompact
-                ) { Text("导入服务器", color = Indigo, fontSize = 12.sp) }
+                ) { Text("Nhập server có sẵn (ZIP / JAR / Thư mục)", color = Indigo, fontSize = 12.sp) }
             }
 
             McCard(title = if (usesCoreVersion) stringResource(R.string.dl_select_version) else stringResource(R.string.s471), compact = true) {
@@ -391,11 +400,11 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}) {
                     }
                     if (availableVersions.size > shownVersions.size) {
                         TextButton(onClick = { showAllVersions = true }) {
-                            Text("显示全部 ${availableVersions.size} 个版本", color = Indigo, fontSize = 12.sp)
+                            Text("Hiện tất cả ${availableVersions.size} phiên bản", color = Indigo, fontSize = 12.sp)
                         }
                     } else if (showAllVersions && availableVersions.size > 8) {
                         TextButton(onClick = { showAllVersions = false }) {
-                            Text("仅显示常用版本", color = Indigo, fontSize = 12.sp)
+                            Text("Thu gọn danh sách phiên bản", color = Indigo, fontSize = 12.sp)
                         }
                     }
                 }
@@ -530,20 +539,22 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}) {
                     )
                 }
                     Spacer(Modifier.height(10.dp))
-                    // 自定义名称输入
+                    // Tự động gợi ý tên server nếu để trống
+                    val defaultCoreName = "${config.selectedCore.displayName}-${config.mcVersion}"
+                    val effectiveCoreName = customCoreName.trim().ifBlank { defaultCoreName }
                     Text(stringResource(R.string.s483), color = Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(4.dp))
                     OutlinedTextField(
                         value = customCoreName,
                         onValueChange = { customCoreName = it },
-                        placeholder = { Text(stringResource(R.string.s484), fontSize = 12.sp) },
+                        placeholder = { Text("Mặc định: $defaultCoreName", fontSize = 12.sp) },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
                     Spacer(Modifier.height(12.dp))
                     Button(
-                        onClick = { vm.downloadCore(customCoreName) },
-                        enabled = !isDownloadingCore && customCoreName.isNotBlank(),
+                        onClick = { vm.downloadCore(effectiveCoreName) },
+                        enabled = !isDownloadingCore && effectiveCoreName.isNotBlank(),
                         colors = ButtonDefaults.buttonColors(containerColor = Indigo),
                         shape = McShape.Control,
                         modifier = Modifier.fillMaxWidth()
@@ -563,12 +574,16 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}) {
                         )
                     }
 
-                    // 下载日志预览
-                    if (isDownloadingCore || consoleLines.isNotEmpty()) {
+                    // Chỉ hiển thị nhật ký liên quan đến tải core
+                    val downloadLines = remember(consoleLines, isDownloadingCore) {
+                        val filtered = consoleLines.filter { it.contains("[download]") || it.contains("[installer]") }
+                        if (filtered.isNotEmpty()) filtered else if (isDownloadingCore) consoleLines else emptyList()
+                    }
+                    if (isDownloadingCore || downloadLines.isNotEmpty()) {
                         Spacer(Modifier.height(12.dp))
                         Text(stringResource(R.string.s487), color = Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                         Spacer(Modifier.height(4.dp))
-                        consoleLines.takeLast(8).forEach { line ->
+                        downloadLines.takeLast(8).forEach { line ->
                             Text(
                                 line,
                                 color = Muted.copy(alpha = 0.7f),
@@ -605,25 +620,25 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}) {
             if (showImportDialog) {
                 AlertDialog(
                     onDismissRequest = { if (!importingServer) { showImportDialog = false; pendingImport = null } },
-                    title = { Text("导入服务器") },
+                    title = { Text("Nhập server có sẵn") },
                     text = {
                         Column {
-                            Text("选择导入方式：文件夹和压缩包用于已有完整服务端；JAR 用于单个服务端核心；整合包仅支持 Modrinth .mrpack，会自动下载服务端模组并应用 overrides。", color = Muted, fontSize = 12.sp)
+                            Text("Chọn nguồn nhập: Thư mục (sao chép toàn bộ thư mục server), Tệp nén (ZIP/TAR), Tệp JAR core, hoặc gói Modpack (.mrpack / ZIP có overrides).", color = Muted, fontSize = 12.sp)
                             Spacer(Modifier.height(8.dp))
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                OutlinedButton(onClick = { folderImportLauncher.launch(null) }, enabled = !importingServer, shape = McShape.ControlCompact) { Text("文件夹", fontSize = 11.sp) }
-                                OutlinedButton(onClick = { archiveImportLauncher.launch(arrayOf("application/zip", "application/gzip", "application/x-tar", "application/octet-stream")) }, enabled = !importingServer, shape = McShape.ControlCompact) { Text("压缩包", fontSize = 11.sp) }
-                                OutlinedButton(onClick = { jarImportLauncher.launch(arrayOf("application/java-archive", "application/octet-stream")) }, enabled = !importingServer, shape = McShape.ControlCompact) { Text("JAR", fontSize = 11.sp) }
-                                OutlinedButton(onClick = { modpackImportLauncher.launch(arrayOf("application/octet-stream", "application/zip")) }, enabled = !importingServer, shape = McShape.ControlCompact) { Text("整合包", fontSize = 11.sp) }
+                                OutlinedButton(onClick = { folderImportLauncher.launch(null) }, enabled = !importingServer, shape = McShape.ControlCompact) { Text("Thư mục", fontSize = 11.sp) }
+                                OutlinedButton(onClick = { archiveImportLauncher.launch(arrayOf("application/zip", "application/gzip", "application/x-tar", "application/octet-stream")) }, enabled = !importingServer, shape = McShape.ControlCompact) { Text("Tệp nén", fontSize = 11.sp) }
+                                OutlinedButton(onClick = { jarImportLauncher.launch(arrayOf("application/java-archive", "application/octet-stream")) }, enabled = !importingServer, shape = McShape.ControlCompact) { Text("Tệp JAR", fontSize = 11.sp) }
+                                OutlinedButton(onClick = { modpackImportLauncher.launch(arrayOf("application/octet-stream", "application/zip")) }, enabled = !importingServer, shape = McShape.ControlCompact) { Text("Modpack", fontSize = 11.sp) }
                             }
                             if (pendingImport != null) {
                                 Spacer(Modifier.height(8.dp))
-                                OutlinedTextField(value = importName, onValueChange = { importName = it }, label = { Text("服务器名称") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                                OutlinedTextField(value = importName, onValueChange = { importName = it }, label = { Text("Tên server mới") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                             }
                             if (importingServer) {
                                 Spacer(Modifier.height(10.dp))
                                 LinearProgressIndicator(progress = { importProgress ?: 0f }, modifier = Modifier.fillMaxWidth())
-                                Text("正在导入 ${((importProgress ?: 0f) * 100).toInt()}%", color = Muted, fontSize = 11.sp)
+                                Text("Đang nhập ${((importProgress ?: 0f) * 100).toInt()}%", color = Muted, fontSize = 11.sp)
                             }
                         }
                     },
@@ -639,12 +654,13 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}) {
                                     else -> vm.importServerFromArchive(selected.uri, importName.trim())
                                 }
                             }
-                        ) { Text("开始导入", color = Indigo) }
+                        ) { Text("Bắt đầu nhập", color = Indigo) }
                     },
-                    dismissButton = { TextButton(enabled = !importingServer, onClick = { showImportDialog = false; pendingImport = null }) { Text("取消", color = Muted) } }
+                    dismissButton = { TextButton(enabled = !importingServer, onClick = { showImportDialog = false; pendingImport = null }) { Text("Hủy", color = Muted) } }
                 )
             }
             Spacer(Modifier.height(16.dp))
+            }
         }
     }
 }

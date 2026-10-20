@@ -891,7 +891,7 @@ esac
         // 使用清华 HTTPS 镜像：避免 http 明文被劫持/重定向到 https 后卡 SSL；
         // apt.conf 已配置 https::Verify-Peer false + CA 证书路径（termuxEnv SSL_CERT_FILE）
         File(rootDir, "etc/apt/sources.list").writeText(
-            "deb https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main stable main\n"
+            "deb https://packages-cf.termux.dev/apt/termux-main stable main\n"
         )
 
         // 创建 apt.conf 覆盖所有编译路径（apt/dpkg 默认指向 /data/data/com.termux/files/usr/）
@@ -935,6 +935,9 @@ esac
             appendLine("APT::Sandbox::User \"root\";")
             appendLine("APT::Sandbox::Seccomp \"false\";")
             // 网络超时：防止 https 方法驱动卡在 SSL 握手时无限等待
+            appendLine("Acquire::http::User-Agent \"Termux-PKG/2.0 (minehost-android)\";")
+            appendLine("Acquire::https::User-Agent \"Termux-PKG/2.0 (minehost-android)\";")
+            appendLine("Acquire::Retries \"2\";")
             appendLine("Acquire::http::Timeout \"30\";")
             appendLine("Acquire::https::Timeout \"30\";")
             // 禁止 http -> https 重定向跟随（packages.termux.dev 会 301 到 https）

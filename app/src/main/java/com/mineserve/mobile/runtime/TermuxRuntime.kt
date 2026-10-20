@@ -803,11 +803,11 @@ class TermuxRuntime(context: Context) {
         // 只保留实测可用的反代（旧 mirror.ghproxy.com / github.moeyy.xyz 已失效，移除）；
         // 最后一项空串即 GitHub 直连兜底。
         val mirrors = listOf(
+            "",
             "https://ghfast.top/",
             "https://gh-proxy.com/",
             "https://cdn.gh-proxy.com/",
-            "https://ghproxy.net/",
-            ""
+            "https://ghproxy.net/"
         ).map { it + url }
         // 期望摘要：上游用的是**滚动 tag**（`pm5-latest`），写死哈希会在上游发新版时直接失效、
         // 把正常更新误判成篡改。所以从 GitHub API 现取该 asset 的官方 digest——
@@ -1209,7 +1209,7 @@ class TermuxRuntime(context: Context) {
         }
         // 安装前再次校验 apt 可执行（防 dpkg 操作后权限被改）
         ensureAptWorking()
-        val code = execOnce("apt-get", "-o", "DPkg::Lock::Timeout=60", "install", "--allow-unauthenticated", "-y", version.packageName)
+        val code = installAptPackages(version.packageName)
         if (code == 0) fixJavaSymlinks(version)
         val installed = code == 0 && isJavaInstalled(version)
         emitLog(if (installed) "[java] ${version.displayName} 安装完成" else "[java] ${version.displayName} 安装失败")
@@ -1486,8 +1486,9 @@ class TermuxRuntime(context: Context) {
         }
         val archive = baseImageArchiveName(distro)
         return listOf(
-            "https://mirrors.tuna.tsinghua.edu.cn/ubuntu-cdimage/ubuntu-base/releases/$release/release/$archive",
-            "https://mirrors.ustc.edu.cn/ubuntu-cdimage/ubuntu-base/releases/$release/release/$archive"
+            "https://cdimage.ubuntu.com/ubuntu-base/releases/$release/release/$archive",
+            "https://mirrors.ustc.edu.cn/ubuntu-cdimage/ubuntu-base/releases/$release/release/$archive",
+            "https://mirrors.tuna.tsinghua.edu.cn/ubuntu-cdimage/ubuntu-base/releases/$release/release/$archive"
         )
     }
 
@@ -2603,15 +2604,59 @@ class TermuxRuntime(context: Context) {
         installer.preferredMirror = mirror
     }
 
-    /** Applies the selected domestic APT mirror immediately for later Java/dependency installs. */
+    /** Applies the selected APT mirror immediately for later Java/dependency installs. */
     fun setAptMirror(mirror: AptMirror) {
         if (!installer.isReady()) return
-        val effective = if (mirror == AptMirror.Official) AptMirror.Tuna else mirror
         File(installer.rootDir, "etc/apt/sources.list").apply {
             parentFile?.mkdirs()
-            writeText("deb ${effective.url} stable main\n")
+            writeText("deb ${mirror.url} stable main\n")
         }
-        emitLog("[apt] 已切换至 ${effective.displayName}")
+        runCatching {
+            File(installer.rootDir, "var/lib/apt/lists").listFiles()?.forEach { f ->
+                if (f.isFile) f.delete()
+            }
+        }
+        emitLog("[apt] Đã chuyển nguồn APT sang ${mirror.displayName}")
+    }
+
+    /** Runs apt-get install and automatically falls back across official global mirrors on 403/network errors. */
+    fun installAptPackages(vararg packages: String): Int {
+        val initial = execOnce(
+            "apt-get", "-o", "DPkg::Lock::Timeout=60", "install",
+            "--allow-unauthenticated", "-y", *packages
+        )
+        if (initial == 0) return 0
+        val fallbackMirrors = listOf(
+            AptMirror.Official,
+            AptMirror.TermuxGlobal,
+            AptMirror.Aliyun,
+            AptMirror.Ustc
+        )
+        val sourcesFile = File(installer.rootDir, "etc/apt/sources.list")
+        val currentText = runCatching { sourcesFile.readText() }.getOrDefault("")
+        for (candidate in fallbackMirrors) {
+            if (currentText.contains(candidate.url)) continue
+            emitLog("[apt] Nguồn hiện tại lỗi (mã $initial), đang chuyển sang ${candidate.displayName}...")
+            runCatching {
+                sourcesFile.parentFile?.mkdirs()
+                sourcesFile.writeText("deb ${candidate.url} stable main\n")
+                File(installer.rootDir, "var/lib/apt/lists").listFiles()?.forEach { f ->
+                    if (f.isFile) f.delete()
+                }
+            }
+            val upd = execOnce(
+                "apt-get", "-o", "DPkg::Lock::Timeout=60", "update",
+                "--allow-insecure-repositories", "-y"
+            )
+            if (upd == 0) {
+                val retry = execOnce(
+                    "apt-get", "-o", "DPkg::Lock::Timeout=60", "install",
+                    "--allow-unauthenticated", "-y", *packages
+                )
+                if (retry == 0) return 0
+            }
+        }
+        return initial
     }
 
     /**
@@ -2836,10 +2881,19 @@ class TermuxRuntime(context: Context) {
                     aptConf.appendText("\nAPT::Get::Assume-Yes \"true\";\n")
                     fixed++
                 }
+                if (!content.contains("Acquire::http::User-Agent")) {
+                    aptConf.appendText("\nAcquire::http::User-Agent \"Termux-PKG/2.0 (minehost-android)\";\nAcquire::https::User-Agent \"Termux-PKG/2.0 (minehost-android)\";\n")
+                    fixed++
+                }
             }
             val sources = File(prefix, "etc/apt/sources.list")
-            if (!sources.exists() || sources.length() == 0L) {
-                sources.writeText("deb https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main stable main\n")
+            if (!sources.exists() || sources.length() == 0L || sources.readText().contains("mirrors.tuna.tsinghua.edu.cn")) {
+                sources.writeText("deb https://packages-cf.termux.dev/apt/termux-main stable main\n")
+                runCatching {
+                    File(prefix, "var/lib/apt/lists").listFiles()?.forEach { f ->
+                        if (f.isFile && f.name.contains("tuna.tsinghua")) f.delete()
+                    }
+                }
                 fixed++
             }
             val status = File(prefix, "var/lib/dpkg/status")
@@ -3012,7 +3066,7 @@ class TermuxRuntime(context: Context) {
         // （退出码 126），JDK 永远装不完，bootstrap 陷入死循环。
         fixRootfsPermissions()
         if (!prepareAptPackages("wget", "curl")) return false
-        executor.execOnce("apt-get", "-o", "DPkg::Lock::Timeout=60", "install", "--allow-unauthenticated", "-y", "wget", "curl")
+        installAptPackages("wget", "curl")
         executor.execOnce("apt-get", "-o", "DPkg::Lock::Timeout=60", "clean")
 
         // 修复 openjdk 符号链接：dpkg-wrapper 的 configure 是 no-op，

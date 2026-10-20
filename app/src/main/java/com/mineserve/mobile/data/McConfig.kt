@@ -25,7 +25,7 @@ enum class ServerCore(val displayName: String) {
     PowerNukkitX("PowerNukkitX"),
     PocketMine("PocketMine-MP"),
     Allay("Allay"),
-    Unknown("未知");
+    Unknown("Không rõ");
 
     /** 是否为基岩版（UDP 网络、Bedrock 客户端连接） */
     val isBedrock: Boolean get() = this == PowerNukkitX || this == PocketMine || this == Allay
@@ -108,12 +108,12 @@ data class TunnelState(
  */
 @Serializable
 enum class DownloadMirror(val displayName: String, val baseUrl: String) {
-    Auto("自动（镜像优先）", ""),
+    Auto("Tự động (khuyên dùng)", ""),
+    GitHub("GitHub trực tiếp", "https://github.com/termux/termux-packages/releases/download"),
     Ghfast("ghfast.top", "https://ghfast.top/https://github.com/termux/termux-packages/releases/download"),
     GhProxy("gh-proxy.com", "https://gh-proxy.com/https://github.com/termux/termux-packages/releases/download"),
     CdnGhProxy("cdn.gh-proxy.com", "https://cdn.gh-proxy.com/https://github.com/termux/termux-packages/releases/download"),
-    GhproxyNet("ghproxy.net", "https://ghproxy.net/https://github.com/termux/termux-packages/releases/download"),
-    GitHub("GitHub 直连", "https://github.com/termux/termux-packages/releases/download")
+    GhproxyNet("ghproxy.net", "https://ghproxy.net/https://github.com/termux/termux-packages/releases/download")
 }
 
 /**
@@ -122,14 +122,12 @@ enum class DownloadMirror(val displayName: String, val baseUrl: String) {
  */
 @Serializable
 enum class AptMirror(val displayName: String, val url: String) {
-    Tuna("清华镜像 (TUNA)", "https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main"),
-    // 阿里云的 Termux 仓库路径**没有** `/apt/` 段：旧的 /termux/apt/termux-main 返回 404，
-    // 正确地址是 /termux/termux-main（已实测 dists/stable/Release 为 200）。
-    Aliyun("阿里云镜像", "https://mirrors.aliyun.com/termux/termux-main"),
-    Ustc("中科大镜像 (USTC)", "https://mirrors.ustc.edu.cn/termux/apt/termux-main"),
-    Nju("南京大学镜像", "https://mirror.nju.edu.cn/termux/apt/termux-main"),
-    // Kept only for old DataStore values; new installs never select an overseas APT source.
-    Official("清华镜像 (旧配置)", "https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main")
+    Official("Termux CDN (Quốc tế)", "https://packages-cf.termux.dev/apt/termux-main"),
+    TermuxGlobal("Termux Mirror (Hetzner)", "https://packages.termux.dev/apt/termux-main"),
+    Aliyun("Aliyun Mirror", "https://mirrors.aliyun.com/termux/termux-main"),
+    Ustc("USTC Mirror", "https://mirrors.ustc.edu.cn/termux/apt/termux-main"),
+    Nju("NJU Mirror", "https://mirror.nju.edu.cn/termux/apt/termux-main"),
+    Tuna("Tsinghua (TUNA)", "https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main")
 }
 
 /**
@@ -138,10 +136,10 @@ enum class AptMirror(val displayName: String, val url: String) {
  */
 @Serializable
 enum class InstallStep(val label: String) {
-    Jdk("JDK 17 运行环境"),
-    Wget("Wget 下载工具"),
-    Rclone("Rclone 远程挂载"),
-    Proot("PRoot 兼容层")
+    Jdk("Môi trường JDK 17"),
+    Wget("Công cụ tải Wget"),
+    Rclone("Công cụ sao lưu Rclone"),
+    Proot("Container PRoot")
 }
 
 @Serializable
@@ -221,8 +219,9 @@ enum class ProotDistro(
      * 走海外源在移动网络下基本不可用。安装脚本会逐个尝试。
      */
     val aptMirrors: List<String> get() = listOf(
-        "http://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports",
-        "http://mirrors.ustc.edu.cn/ubuntu-ports"
+        "http://ports.ubuntu.com/ubuntu-ports",
+        "http://mirrors.ustc.edu.cn/ubuntu-ports",
+        "http://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports"
     );
 
     /**
@@ -462,8 +461,8 @@ enum class PhpVersion(
 
 @Serializable
 enum class AutoBackupType(val displayName: String) {
-    World("世界备份"),
-    Server("完整服务器")
+    World("Chỉ thế giới"),
+    Server("Toàn bộ server")
 }
 
 /**
@@ -677,7 +676,7 @@ data class McConfig(
     /** Termux 环境/依赖下载源，默认镜像优先 */
     val downloadMirror: DownloadMirror = DownloadMirror.Auto,
     /** Termux apt 软件源（JDK/wget/frp 依赖包），默认清华镜像 */
-    val aptMirror: AptMirror = AptMirror.Tuna,
+    val aptMirror: AptMirror = AptMirror.Official,
     /** 已安装到本地的服务端核心列表（多核心支持） */
     val installedCores: List<InstalledCore> = emptyList(),
     /** 当前选用启动的核心名称（对应 InstalledCore.name），null 表示未选择 */

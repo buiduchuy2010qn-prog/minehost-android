@@ -184,24 +184,7 @@ fun FileManagerScreen(vm: McViewModel, onOpenMtGuide: () -> Unit = {}) {
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // 教程（在线播放，不打包进安装包）
-                        Button(
-                            onClick = {
-                                try {
-                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(TUTORIAL_VIDEO_URL)))
-                                } catch (e: Exception) {
-                                    // 无浏览器/网络异常时静默
-                                }
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = Indigo),
-                            shape = McShape.ControlCompact,
-                            // 三个按钮平分一行，默认的左右内边距会把 12sp 的中文挤掉，
-                            // 收窄内边距保证「导出服务器」这类较长文案不被裁切。
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 8.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text(stringResource(R.string.s492), fontSize = 12.sp, maxLines = 1)
-                        }
+
                         Button(
                             onClick = onOpenMtGuide,
                             colors = ButtonDefaults.buttonColors(containerColor = Indigo),

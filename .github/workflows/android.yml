@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths: ['app/**', 'gradle/**', '*.gradle.kts', 'gradle.properties', '.github/workflows/android.yml']
 permissions:
-  contents: read
+  contents: write
 concurrency:
   group: minehost-android-main
   cancel-in-progress: false
@@ -69,6 +69,39 @@ jobs:
           name: MineHost-ARM64-release
           path: app/build/outputs/apk/release/
           retention-days: 14
+      - name: Publish verified APK to GitHub Releases
+        if: success() && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          APK=$(find app/build/outputs/apk/release -name '*.apk' -print -quit)
+          cp "$APK" app/build/outputs/apk/release/MineHost-0.1.0-alpha.3-arm64.apk
+          cp "$APK" app/build/outputs/apk/release/MineHost-arm64-v8a-release.apk
+          sha256sum app/build/outputs/apk/release/MineHost-0.1.0-alpha.3-arm64.apk > app/build/outputs/apk/release/SHA256SUMS.txt
+          NOTES="Bản cập nhật **MineHost 0.1.0-alpha.3 (ARM64)**:
+          - **Khắc phục lỗi 403 Forbidden khi cài môi trường & Java:** Chuyển nguồn APT mặc định từ Tsinghua TUNA sang Termux Cloudflare CDN quốc tế (`packages-cf.termux.dev`) kèm cơ chế tự động chuyển đổi dự phòng sang Hetzner/Aliyun/USTC và tự động sửa `sources.list` cũ trên máy.
+          - **Ưu tiên tải trực tiếp GitHub & Ubuntu Ports quốc tế:** Tải nhanh hơn tại Việt Nam cho gói Bootstrap, Pojav JRE và PRoot Ubuntu.
+          - **Sửa lỗi giao diện & Việt hóa:** Khắc phục lỗi tràn thanh trạng thái (status bar), tự động điền tên server mặc định khi tải core, ẩn nút video Bilibili gây tràn chữ ở trang Tệp, và Việt hóa toàn diện các màn hình Tải core, Môi trường & Công cụ, Quản lý tệp, Tổng quan và Cài đặt.
+          - Có thể **cài đặt đè trực tiếp** lên bản `0.1.0-alpha.2` mà không mất dữ liệu."
+          if gh release view v0.1.0-alpha.3 --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release upload v0.1.0-alpha.3 \
+              app/build/outputs/apk/release/MineHost-0.1.0-alpha.3-arm64.apk \
+              app/build/outputs/apk/release/MineHost-arm64-v8a-release.apk \
+              app/build/outputs/apk/release/SHA256SUMS.txt \
+              app/build/outputs/apk/release/SOURCE-COMMIT.txt \
+              --clobber --repo "${{ github.repository }}"
+          else
+            gh release create v0.1.0-alpha.3 \
+              app/build/outputs/apk/release/MineHost-0.1.0-alpha.3-arm64.apk \
+              app/build/outputs/apk/release/MineHost-arm64-v8a-release.apk \
+              app/build/outputs/apk/release/SHA256SUMS.txt \
+              app/build/outputs/apk/release/SOURCE-COMMIT.txt \
+              --title "MineHost 0.1.0-alpha.3 - Android ARM64" \
+              --notes "$NOTES" \
+              --latest \
+              --repo "${{ github.repository }}"
+          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:

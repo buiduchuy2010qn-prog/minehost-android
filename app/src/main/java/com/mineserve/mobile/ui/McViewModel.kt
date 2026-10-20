@@ -2244,12 +2244,8 @@ class McViewModel(
     fun setKeepStatusOverlay(v: Boolean) = updateConfig { it.copy(keepStatusOverlay = v) }
     fun setAptMirror(mirror: com.mineserve.mobile.data.AptMirror) =
         viewModelScope.launch {
-            val effective = if (mirror == com.mineserve.mobile.data.AptMirror.Official) {
-                com.mineserve.mobile.data.AptMirror.Tuna
-            } else mirror
-            // 原子读改写 + 落盘，不用 config.value 陈旧快照整份写回（会覆盖并发的其他修改）
-            repo.updateAndSaveConfig { it.copy(aptMirror = effective) }
-            withContext(Dispatchers.IO) { repo.termuxRuntime.setAptMirror(effective) }
+            repo.updateAndSaveConfig { it.copy(aptMirror = mirror) }
+            withContext(Dispatchers.IO) { repo.termuxRuntime.setAptMirror(mirror) }
         }
     fun setDownloadMirror(mirror: com.mineserve.mobile.data.DownloadMirror) {
         updateConfig { it.copy(downloadMirror = mirror) }
