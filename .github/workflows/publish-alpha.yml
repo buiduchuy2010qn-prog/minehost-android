@@ -17,6 +17,7 @@ jobs:
       SOURCE_SHA: c7efcb33e08ce5a59268e9e4a725622762b5e3d7
       BUILD_RUN: '39399060717'
       RELEASE_TAG: v0.1.0-alpha.2
+      DRAFT_RELEASE_ID: '418228286'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -88,14 +89,18 @@ jobs:
           Dựa trên Minexa, GPL-3.0-or-later. Mã nguồn tương ứng ở tag và Source code bên dưới.
           """.replace("TESTS_PLACEHOLDER", str(totals["tests"])), encoding="utf-8")
           PY
-      - name: Publish without overwriting an existing release
+      - name: Upload only to the verified empty draft
         run: |
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            echo "Release already exists; refusing to overwrite."
-            exit 1
-          fi
-          gh release create "$RELEASE_TAG" --target "$SOURCE_SHA" --prerelease \
-            --title "MineHost 0.1.0-alpha.2 - Android ARM64" --notes-file release-notes.md \
+          gh api "repos/$GH_REPO/releases/$DRAFT_RELEASE_ID" > draft.json
+          jq -e --arg tag "$RELEASE_TAG" --arg source "$SOURCE_SHA" --argjson id "$DRAFT_RELEASE_ID" \
+            '.id == $id and .tag_name == $tag and .target_commitish == $source and .draft == true and .prerelease == true and (.assets | length) == 0' draft.json
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/$RELEASE_TAG" --jq '.object.sha')" = "$SOURCE_SHA"
+          jq -n --rawfile body release-notes.md '{body: $body}' | \
+            gh api --method PATCH "repos/$GH_REPO/releases/$DRAFT_RELEASE_ID" --input - >/dev/null
+          gh release upload "$RELEASE_TAG" \
             publish/MineHost-0.1.0-alpha.2-arm64.apk publish/SHA256SUMS.txt \
             publish/SOURCE-COMMIT.txt publish/READ-ME-FIRST.txt \
             publish/SIGNATURE.txt publish/APK-INFO.txt publish/VERIFICATION.json MIGRATION.md LICENSE NOTICE
+          gh api "repos/$GH_REPO/releases/$DRAFT_RELEASE_ID" > uploaded.json
+          jq -e --arg tag "$RELEASE_TAG" --arg source "$SOURCE_SHA" \
+            '.tag_name == $tag and .target_commitish == $source and .draft == true and .prerelease == true and (.assets | length) == 10 and all(.assets[]; .state == "uploaded" and .size > 0)' uploaded.json
