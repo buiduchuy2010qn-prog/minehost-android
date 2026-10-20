@@ -10,18 +10,16 @@ object TerminalLogTranslator {
                 return "$vietnamese\n  Gốc: $line"
             }
         }
-        var updated = line
         for ((pattern, replacement) in regexMappings) {
-            if (pattern.containsMatchIn(updated)) {
-                updated = updated.replace(pattern, replacement)
+            if (pattern.containsMatchIn(line)) {
+                return line.replace(pattern, replacement)
             }
         }
         for ((en, vi) in inlineMappings) {
-            if (updated.contains(en, ignoreCase = true)) {
-                updated = updated.replace(Regex(Regex.escape(en), RegexOption.IGNORE_CASE), vi)
+            if (line.contains(en, ignoreCase = true)) {
+                return line.replace(en, vi, ignoreCase = true)
             }
         }
-        if (updated != line) return updated
         return when {
             ERROR_TAG_RE.containsMatchIn(line) ->
                 "Lỗi: $line\n  Gốc: $line"
