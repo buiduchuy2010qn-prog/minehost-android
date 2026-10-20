@@ -38,6 +38,14 @@ class PluginManager(
     private val context: Context
 ) {
 
+    private fun detectedLoader(dirName: String): String? = when (ServerCoreDetector.detect(termux.serverDirFor(dirName)).core) {
+        com.mineserve.mobile.data.ServerCore.Fabric -> "fabric"
+        com.mineserve.mobile.data.ServerCore.Forge -> "forge"
+        com.mineserve.mobile.data.ServerCore.NeoForge -> "neoforge"
+        com.mineserve.mobile.data.ServerCore.Quilt -> "quilt"
+        else -> null
+    }
+
     companion object {
         private const val TAG = "PluginManager"
         private const val JAR_EXT = ".jar"
@@ -227,26 +235,16 @@ class PluginManager(
         dirName: String,
         onProgress: (Long, Long, Long) -> Unit = { _, _, _ -> }
     ): File = withContext(Dispatchers.IO) {
-        val pluginsDir = pluginsDirOf(dirName).apply { mkdirs() }
-        val target = File(pluginsDir, ensureJarExtension(sanitizeFileName(targetFileName, "plugin.jar")))
-
-        // 备份旧文件（若存在），下载失败时回滚
-        val backup: File? = if (target.exists()) File(pluginsDir, "${target.name}.bak") else null
-        if (backup != null) target.renameTo(backup)
-        // 清缓存（旧文件解析结果失效）
-        metaCache.remove(target.absolutePath)
-
-        try {
-            downloadTo(url, target, onProgress)
-            if (!target.exists() || target.length() < 1024) {
-                throw RuntimeException(context.getString(R.string.s128, target.length()))
+        val dir = pluginsDirOf(dirName).apply { mkdirs() }
+        val target = File(dir, ensureJarExtension(sanitizeFileName(targetFileName, "addon.jar")))
+        val result = AddonSafety.install(target, mod = false, loader = detectedLoader(dirName), isRunning = termux::isMcRunning) { staged ->
+            downloadTo(url, staged) { downloaded, total, speed ->
+                require(downloaded <= AddonSafety.MAX_BYTES && total <= AddonSafety.MAX_BYTES) { "JAR vượt giới hạn 256 MB." }
+                onProgress(downloaded, total, speed)
             }
-            backup?.takeIf { it.exists() }?.delete()
-            target
-        } catch (e: Exception) {
-            if (backup?.exists() == true) backup.renameTo(target)
-            throw e
         }
+        metaCache.remove(target.absolutePath)
+        result
     }
 
     /**
@@ -255,23 +253,16 @@ class PluginManager(
      */
     suspend fun installFromUri(uri: Uri, dirName: String, fallbackName: String = "plugin.jar"): String =
         withContext(Dispatchers.IO) {
-            val pluginsDir = pluginsDirOf(dirName).apply { mkdirs() }
-            val safeName = ensureJarExtension(sanitizeFileName(queryFileName(uri), fallbackName))
-            val target = File(pluginsDir, safeName)
-
+        val dir = pluginsDirOf(dirName).apply { mkdirs() }
+        val target = File(dir, ensureJarExtension(sanitizeFileName(queryFileName(uri), fallbackName)))
+        AddonSafety.install(target, mod = false, loader = detectedLoader(dirName), isRunning = termux::isMcRunning) { staged ->
             val input = context.contentResolver.openInputStream(uri)
-                ?: throw RuntimeException(context.getString(R.string.s129, uri.toString()))
-            input.use { ins ->
-                FileOutputStream(target).use { fos ->
-                    ins.copyTo(fos, bufferSize = 64 * 1024)
-                }
-            }
-            if (target.length() < 1024) {
-                target.delete()
-                throw RuntimeException(context.getString(R.string.s130))
-            }
-            target.name
+                ?: throw IllegalStateException("Không đọc được tệp đã chọn.")
+            input.use { AddonSafety.copyBounded(it, staged) }
         }
+        metaCache.remove(target.absolutePath)
+        target.name
+    }
 
     /**
      * 删除指定插件文件
@@ -753,41 +744,30 @@ class PluginManager(
         onProgress: (Long, Long, Long) -> Unit = { _, _, _ -> }
     ): File = withContext(Dispatchers.IO) {
         val dir = modsDirOf(dirName).apply { mkdirs() }
-        val target = File(dir, ensureJarExtension(sanitizeFileName(targetFileName, "mod.jar")))
-        val backup: File? = if (target.exists()) File(dir, "${target.name}.bak") else null
-        if (backup != null) target.renameTo(backup)
-        try {
-            downloadTo(url, target, onProgress)
-            if (!target.exists() || target.length() < 1024) {
-                throw RuntimeException(context.getString(R.string.s128, target.length()))
+        val target = File(dir, ensureJarExtension(sanitizeFileName(targetFileName, "addon.jar")))
+        val result = AddonSafety.install(target, mod = true, loader = detectedLoader(dirName), isRunning = termux::isMcRunning) { staged ->
+            downloadTo(url, staged) { downloaded, total, speed ->
+                require(downloaded <= AddonSafety.MAX_BYTES && total <= AddonSafety.MAX_BYTES) { "JAR vượt giới hạn 256 MB." }
+                onProgress(downloaded, total, speed)
             }
-            backup?.takeIf { it.exists() }?.delete()
-            target
-        } catch (e: Exception) {
-            if (backup?.exists() == true) backup.renameTo(target)
-            throw e
         }
+        metaCache.remove(target.absolutePath)
+        result
     }
 
     /** 从本地 Uri 上传模组到 mods/ 目录 */
     suspend fun installModFromUri(uri: Uri, dirName: String, fallbackName: String = "mod.jar"): String =
         withContext(Dispatchers.IO) {
-            val dir = modsDirOf(dirName).apply { mkdirs() }
-            val safeName = ensureJarExtension(sanitizeFileName(queryFileName(uri), fallbackName))
-            val target = File(dir, safeName)
+        val dir = modsDirOf(dirName).apply { mkdirs() }
+        val target = File(dir, ensureJarExtension(sanitizeFileName(queryFileName(uri), fallbackName)))
+        AddonSafety.install(target, mod = true, loader = detectedLoader(dirName), isRunning = termux::isMcRunning) { staged ->
             val input = context.contentResolver.openInputStream(uri)
-                ?: throw RuntimeException(context.getString(R.string.s129, uri.toString()))
-            input.use { ins ->
-                FileOutputStream(target).use { fos ->
-                    ins.copyTo(fos, bufferSize = 64 * 1024)
-                }
-            }
-            if (target.length() < 1024) {
-                target.delete()
-                throw RuntimeException(context.getString(R.string.s130))
-            }
-            target.name
+                ?: throw IllegalStateException("Không đọc được tệp đã chọn.")
+            input.use { AddonSafety.copyBounded(it, staged) }
         }
+        metaCache.remove(target.absolutePath)
+        target.name
+    }
 
     // ── 精选模组（GitHub 动态解析最新版） ─────────────────────────
 
@@ -825,14 +805,23 @@ class PluginManager(
         val author: String = "",
         val downloads: Long = 0,
         val icon_url: String = "",
-        val categories: List<String> = emptyList()
+        val categories: List<String> = emptyList(),
+        val server_side: String = ""
     )
 
     @Serializable
     private data class ModrinthSearchResponse(val hits: List<ModrinthHit> = emptyList())
 
     @Serializable
-    private data class ModrinthVersion(val version_type: String = "", val files: List<ModrinthFile> = emptyList())
+    private data class ModrinthVersion(
+        val version_type: String = "",
+        val files: List<ModrinthFile> = emptyList(),
+        val dependencies: List<ModrinthDependency> = emptyList()
+    )
+    @Serializable
+    private data class ModrinthDependency(
+        val project_id: String? = null, val version_id: String? = null, val dependency_type: String = ""
+    )
 
     @Serializable
     private data class ModrinthFile(val url: String = "", val primary: Boolean = false)
@@ -961,32 +950,23 @@ class PluginManager(
 
     /** 解析 Modrinth 模组在指定 MC 版本+加载器下的最新 release 下载直链 */
     fun resolveModrinthDownload(slug: String, mcVersion: String, loader: String): String? {
-        return try {
-            val gameVersions = java.net.URLEncoder.encode("[\"$mcVersion\"]", "UTF-8")
-            val loaders = java.net.URLEncoder.encode("[\"$loader\"]", "UTF-8")
-            // 降级策略：精确(mcVersion+loader) → 仅 mcVersion → 仅 loader → 项目最新 release
-            // 解决部分插件仅标注 paper 未标注 bukkit 等导致精确查询为空的问题
-            val queries = listOf(
-                "?game_versions=$gameVersions&loaders=$loaders",
-                "?game_versions=$gameVersions",
-                "?loaders=$loaders",
-                ""
-            )
-            for (query in queries) {
-                val body = fetchModrinthText("https://api.modrinth.com/v2/project/$slug/version$query")
-                val versions = runCatching {
-                    modrinthJson.decodeFromString<List<ModrinthVersion>>(body)
-                }.getOrNull()
-                val v = versions?.firstOrNull { it.version_type == "release" }
-                    ?: versions?.firstOrNull()
-                    ?: continue
-                val url = v.files.firstOrNull { it.primary }?.url ?: v.files.firstOrNull()?.url
-                if (url != null) return url
-            }
-            null
-        } catch (e: Exception) {
-            null
+        require(slug.matches(Regex("[A-Za-z0-9_-]+"))) { "ID Modrinth không hợp lệ." }
+        val gameVersions = java.net.URLEncoder.encode("[\"$mcVersion\"]", "UTF-8")
+        val loaderList = when (loader) {
+            "paper" -> "[\"paper\",\"spigot\",\"bukkit\"]"
+            "bukkit" -> "[\"spigot\",\"bukkit\"]"
+            else -> "[\"$loader\"]"
         }
+        val loaders = java.net.URLEncoder.encode(loaderList, "UTF-8")
+        val body = fetchModrinthText("https://api.modrinth.com/v2/project/$slug/version?game_versions=$gameVersions&loaders=$loaders")
+        val versions = modrinthJson.decodeFromString<List<ModrinthVersion>>(body)
+        val version = versions.firstOrNull { it.version_type == "release" } ?: versions.firstOrNull() ?: return null
+        val required = version.dependencies.filter { it.dependency_type == "required" }
+        check(required.isEmpty()) {
+            "Cần dependency: " + required.joinToString { it.project_id ?: it.version_id ?: "xem trang dự án" } +
+                ". Bản thử nghiệm chưa tự giải quyết dependency. Hãy tải bộ JAR tương thích từ trang Modrinth và nhập thủ công."
+        }
+        return version.files.firstOrNull { it.primary }?.url ?: version.files.firstOrNull()?.url
     }
 
     /** 读取 URL 文本（Modrinth 要求 User-Agent） */

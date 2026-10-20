@@ -1,6 +1,6 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name" formatted="false">Minexa</string>
+    <string name="app_name" formatted="false">MineHost</string>
     <string name="notif_channel_id" formatted="false">mc_server_runtime</string>
     <string name="notif_channel_name" formatted="false">Minexa Service Runtime</string>
     <string name="notif_channel_desc" formatted="false">Displays Minecraft server running status. Disabling this notification will cause the service to be killed by the system</string>

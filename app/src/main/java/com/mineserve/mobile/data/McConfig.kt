@@ -546,7 +546,7 @@ data class McConfig(
      * 不要直接读本字段 —— 否则配置文件被外部改动时界面会停在旧值。
      */
     val localPort: Int = 25565,
-    val customDomain: String = "myworld.mcserver.top",
+    val customDomain: String = "",
     val tunnelType: TunnelType = TunnelType.Frp,
     /**
      * frp: 完整 frpc.toml 配置文本。
@@ -605,7 +605,7 @@ data class McConfig(
     val stunShowConnectionLog: Boolean = true,
     /** STUN: 自定义 STUN 服务器（host 或 host:port）；留空使用内置列表 */
     val stunServers: String = "",
-    val maxHeapMb: Int = 1024,            // -Xmx JVM 堆上限，按设备 RAM 给推荐值
+    val maxHeapMb: Int = 2048,            // -Xmx JVM 堆上限，按设备 RAM 给推荐值
     val autoRestartOnCrash: Boolean = false, // 默认关闭省电，避免误触发
     /**
      * 跳过「启动中」的阶段进度展示。
@@ -618,7 +618,7 @@ data class McConfig(
      * 只是概览页不再把它摆在最显眼的位置。
      */
     val skipStartupProgress: Boolean = false,
-    val selectedJavaVersion: JavaVersion = JavaVersion.Java17,
+    val selectedJavaVersion: JavaVersion = JavaVersion.Java21,
     /**
      * 当前选用的 Java **来源**（见 [JavaVendor]）。
      *

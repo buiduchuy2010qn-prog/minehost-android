@@ -709,38 +709,10 @@ class McViewModel(
 
     /** 检查更新：manual=true 来自设置页（显示检查进度 + 失败提示）；auto=true 启动检查（失败静默 + 有新版发通知） */
     fun checkForUpdate(manual: Boolean = false) {
-        if (_updateState.value is UpdateUiState.Checking) return
-        _updateState.value = UpdateUiState.Checking
-        if (manual) _updateDialogVisible.value = true // 手动检查：立即显示检查中对话框
-        viewModelScope.launch {
-            try {
-                val release = AppUpdateService.latest(BuildConfig.VERSION_NAME)
-                if (release == null) {
-                    _updateState.value = UpdateUiState.Idle
-                    _lastUpdateCheckResult.value =
-                        "${app.getString(R.string.update_already_latest)} · ${nowTime()}"
-                    if (manual) {
-                        _updateDialogVisible.value = false
-                        _messageFlow.tryEmit(app.getString(R.string.update_already_latest))
-                    }
-                } else {
-                    _updateState.value = UpdateUiState.Available(release)
-                    _lastUpdateCheckResult.value =
-                        "${app.getString(R.string.update_available, release.tag)} · ${nowTime()}"
-                    if (manual || skippedReleaseTag != release.tag) {
-                        _updateDialogVisible.value = true
-                        if (!manual) showUpdateNotification(app, release)
-                    }
-                }
-            } catch (e: Exception) {
-                    _updateState.value = UpdateUiState.Failed(e.message ?: str(R.string.msg_update_check_failed))
-                    _lastUpdateCheckResult.value =
-                        "${app.getString(R.string.update_check_failed)} · ${nowTime()}"
-                    if (manual) {
-                        _updateDialogVisible.value = true
-                    }
-            }
-        }
+        if (!manual) return
+        _lastUpdateCheckResult.value = "Bản thử nghiệm: xem build trên GitHub (cần đăng nhập repo riêng tư)."
+        app.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/duchilocket-oss/minehost-android/actions"))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
     private fun nowTime(): String =
@@ -2353,7 +2325,45 @@ class McViewModel(
     private val _forceStopInFlight = MutableStateFlow(false)
     val forceStopInFlight: StateFlow<Boolean> = _forceStopInFlight.asStateFlow()
 
+    private val _eulaRequest = MutableStateFlow<String?>(null)
+    val eulaRequest: StateFlow<String?> = _eulaRequest.asStateFlow()
+    private var startRequestPending = false
+
+    fun dismissEula() { _eulaRequest.value = null }
+
+    fun acceptEulaAndStart(requestedDir: String) {
+        if (_eulaRequest.value != requestedDir || activeDirName() != requestedDir || serverState.value.isRunning) return
+        _eulaRequest.value = null
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    com.mineserve.mobile.server.EulaConsent.accept(repo.termuxRuntime.serverDirFor(requestedDir))
+                }
+                if (activeDirName() == requestedDir) startServer()
+            } catch (e: Exception) {
+                _errorFlow.tryEmit(e.message ?: "Không lưu được xác nhận EULA.")
+            }
+        }
+    }
+
+    fun restartServer() {
+        if (_stopInFlight.value || !serverState.value.isRunning) return
+        val expectedDir = activeDirName()
+        _stopInFlight.value = true
+        viewModelScope.launch {
+            var stopped = false
+            try {
+                stopped = controller.stopGracefully()
+                if (!stopped) _errorFlow.tryEmit("Server chưa dừng. Không khởi động phiên mới để tránh mất dữ liệu.")
+            } catch (e: Exception) {
+                _errorFlow.tryEmit(e.message ?: "Không thể dừng server.")
+            } finally { _stopInFlight.value = false }
+            if (stopped && activeDirName() == expectedDir) startServer()
+        }
+    }
+
     fun startServer() {
+        if (startRequestPending || serverState.value.isRunning || _stopInFlight.value) return
         if (!isBootstrapped.value) {
             _errorFlow.tryEmit(str(R.string.s192))
             return
@@ -2363,8 +2373,18 @@ class McViewModel(
             _errorFlow.tryEmit(it)
             return
         }
+        startRequestPending = true
         viewModelScope.launch {
             try {
+                val active = config.value.installedCores.firstOrNull { it.name == config.value.activeCoreName }
+                    ?: throw IllegalStateException("Chưa chọn server. Vào Kho cài đặt để tải core.")
+                val accepted = active.core.isBedrock || withContext(Dispatchers.IO) {
+                    com.mineserve.mobile.server.EulaConsent.isAccepted(repo.termuxRuntime.serverDirFor(active.dirName))
+                }
+                if (!accepted) {
+                    _eulaRequest.value = active.dirName
+                    return@launch
+                }
                 lastJavaCompatibilityWarning = null
                 // 阶段推进已是"只增不减"的无状态规则，无需清理任何防抖残留；
                 // 新一次启动的阶段由 updateServerState 里显式重置为 PreparingEnvironment。
@@ -2404,7 +2424,7 @@ class McViewModel(
                 repo.termuxRuntime.emitLog("[startMc] 启动失败: ${e.message}")
                 showStartupFailureReport(e)
                 _errorFlow.tryEmit(str(R.string.s197, e.message))
-            }
+            } finally { startRequestPending = false }
         }
     }
 
@@ -2768,6 +2788,13 @@ class McViewModel(
 
     /** 从本地 Uri 上传模组 */
     fun installModFromUri(uri: Uri) {
+        if (!requireServerStopped("cài plugin/mod")) return
+        val targetCore = config.value.installedCores.firstOrNull { it.name == config.value.activeCoreName }?.core
+        if (targetCore == null || !targetCore.supportsMods || targetCore.isBedrock) {
+            _errorFlow.tryEmit("Chọn core Java phù hợp trước khi cài loại add-on này.")
+            return
+        }
+
         if (!isBootstrapped.value) {
             _errorFlow.tryEmit(str(R.string.s192))
             return
@@ -2786,6 +2813,13 @@ class McViewModel(
 
     /** 从精选库下载安装模组（GitHub 动态解析最新版本） */
     fun installCuratedMod(mod: PluginManager.CuratedMod) {
+        if (!requireServerStopped("cài plugin/mod")) return
+        val targetCore = config.value.installedCores.firstOrNull { it.name == config.value.activeCoreName }?.core
+        if (targetCore == null || !targetCore.supportsMods || targetCore.isBedrock) {
+            _errorFlow.tryEmit("Chọn core Java phù hợp trước khi cài loại add-on này.")
+            return
+        }
+
         if (!isBootstrapped.value) {
             _errorFlow.tryEmit(str(R.string.s192))
             return
@@ -2833,8 +2867,12 @@ class McViewModel(
 
     /** 当前核心对应的 Modrinth 加载器名 */
     private fun modrinthLoader(core: com.mineserve.mobile.data.ServerCore): String =
-        if (core == com.mineserve.mobile.data.ServerCore.Fabric || core == com.mineserve.mobile.data.ServerCore.Quilt) "fabric"
-        else "forge"
+        when (core) {
+            ServerCore.Fabric -> "fabric"
+            ServerCore.Quilt -> "quilt"
+            ServerCore.NeoForge -> "neoforge"
+            else -> "forge"
+        }
 
     /** 当前激活核心的 MC 版本（用于版本匹配判断） */
     private fun currentServerVersion(): String {
@@ -2939,6 +2977,22 @@ class McViewModel(
 
     /** 一键安装 Modrinth 模组（解析指定版本 release 直链并下载到 mods/） */
     fun installModrinthMod(hit: PluginManager.ModrinthHit, mcVersion: String) {
+        if (!requireServerStopped("cài plugin/mod")) return
+        val targetCore = config.value.installedCores.firstOrNull { it.name == config.value.activeCoreName }?.core
+        if (targetCore == null || !targetCore.supportsMods || targetCore.isBedrock) {
+            _errorFlow.tryEmit("Chọn core Java phù hợp trước khi cài loại add-on này.")
+            return
+        }
+
+        if (hit.server_side == "unsupported" || hit.slug.contains("optifine", ignoreCase = true)) {
+            _errorFlow.tryEmit("Đây là add-on chỉ dành cho máy người chơi, không cài trên server.")
+            return
+        }
+        if (mcVersion != currentServerVersion()) {
+            _errorFlow.tryEmit("Hãy chọn phiên bản Minecraft trùng với server đang quản lý.")
+            return
+        }
+
         if (!isBootstrapped.value) {
             _errorFlow.tryEmit(str(R.string.s192))
             return
@@ -2947,7 +3001,7 @@ class McViewModel(
             _errorFlow.tryEmit(str(R.string.s212))
             return
         }
-        val loader = modrinthLoader(config.value.selectedCore)
+        val loader = modrinthLoader(targetCore)
         viewModelScope.launch {
             try {
                 val url = withContext(Dispatchers.IO) {
@@ -3061,6 +3115,22 @@ class McViewModel(
 
     /** 安装 Modrinth 插件到 plugins/ 目录 */
     fun installModrinthPlugin(hit: PluginManager.ModrinthHit, mcVersion: String) {
+        if (!requireServerStopped("cài plugin/mod")) return
+        val targetCore = config.value.installedCores.firstOrNull { it.name == config.value.activeCoreName }?.core
+        if (targetCore == null || !targetCore.supportsPlugins || targetCore.isBedrock) {
+            _errorFlow.tryEmit("Chọn core Java phù hợp trước khi cài loại add-on này.")
+            return
+        }
+
+        if (hit.server_side == "unsupported" || hit.slug.contains("optifine", ignoreCase = true)) {
+            _errorFlow.tryEmit("Đây là add-on chỉ dành cho máy người chơi, không cài trên server.")
+            return
+        }
+        if (mcVersion != currentServerVersion()) {
+            _errorFlow.tryEmit("Hãy chọn phiên bản Minecraft trùng với server đang quản lý.")
+            return
+        }
+
         if (!isBootstrapped.value) {
             _errorFlow.tryEmit(str(R.string.s192))
             return
@@ -3069,7 +3139,7 @@ class McViewModel(
             _errorFlow.tryEmit(str(R.string.s212))
             return
         }
-        val loader = "bukkit"
+        val loader = if (targetCore == ServerCore.CraftBukkit || targetCore == ServerCore.Spigot) "bukkit" else "paper"
         viewModelScope.launch {
             try {
                 val url = withContext(Dispatchers.IO) {
@@ -3099,6 +3169,13 @@ class McViewModel(
 
     /** 从精选库下载安装插件 */
     fun installCuratedPlugin(curated: PluginManager.CuratedPlugin) {
+        if (!requireServerStopped("cài plugin/mod")) return
+        val targetCore = config.value.installedCores.firstOrNull { it.name == config.value.activeCoreName }?.core
+        if (targetCore == null || !targetCore.supportsPlugins || targetCore.isBedrock) {
+            _errorFlow.tryEmit("Chọn core Java phù hợp trước khi cài loại add-on này.")
+            return
+        }
+
         if (!isBootstrapped.value) {
             _errorFlow.tryEmit(str(R.string.s192))
             return
@@ -3150,6 +3227,13 @@ class McViewModel(
 
     /** 从本地 Uri 上传插件 */
     fun installPluginFromUri(uri: Uri) {
+        if (!requireServerStopped("cài plugin/mod")) return
+        val targetCore = config.value.installedCores.firstOrNull { it.name == config.value.activeCoreName }?.core
+        if (targetCore == null || !targetCore.supportsPlugins || targetCore.isBedrock) {
+            _errorFlow.tryEmit("Chọn core Java phù hợp trước khi cài loại add-on này.")
+            return
+        }
+
         if (!isBootstrapped.value) {
             _errorFlow.tryEmit(str(R.string.s192))
             return
@@ -3274,6 +3358,13 @@ class McViewModel(
 
     /** 从自定义 URL 下载插件 */
     fun installPluginFromUrl(url: String, customFileName: String) {
+        if (!requireServerStopped("cài plugin/mod")) return
+        val targetCore = config.value.installedCores.firstOrNull { it.name == config.value.activeCoreName }?.core
+        if (targetCore == null || !targetCore.supportsPlugins || targetCore.isBedrock) {
+            _errorFlow.tryEmit("Chọn core Java phù hợp trước khi cài loại add-on này.")
+            return
+        }
+
         if (!isBootstrapped.value) {
             _errorFlow.tryEmit(str(R.string.s192))
             return
@@ -4353,7 +4444,7 @@ class McViewModel(
      */
     private fun requireServerStopped(action: String): Boolean {
         if (!repo.serverState.value.isRunning) return true
-        _errorFlow.tryEmit("请先停止服务端，再$action")
+        _errorFlow.tryEmit("Hãy dừng server trước khi thay đổi dữ liệu: $action")
         return false
     }
 

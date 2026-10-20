@@ -16,7 +16,7 @@ composeCompiler {
 base {
     // APK 输出文件名。注意：这与 AppUpdateService.APK_NAME（远端 Release 上实际存在的
     // 资产名）是两回事——后者指向已发布的下载地址，改名会让自动更新取不到包，故保持不变。
-    archivesName.set("Minexa")
+    archivesName.set("MineHost")
 }
 
 android {
@@ -24,11 +24,11 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.mineserve.mobile"
+        applicationId = "vn.minehost.android"
         minSdk = 26
         targetSdk = 28
-        versionCode = 56
-        versionName = "1.3.0"
+        versionCode = 1
+        versionName = "0.1.0-alpha.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
@@ -84,7 +84,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("debug")
+            // Release signing must be configured before production distribution.
         }
     }
     compileOptions {

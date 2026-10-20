@@ -1,0 +1,2 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources><string name="app_name">MineHost</string><string name="tab_dashboard">Tổng quan</string><string name="tab_download">Kho cài đặt</string><string name="tab_server_management">Server</string><string name="tab_players">Người chơi</string><string name="tab_files">Tệp</string><string name="tab_terminal">Console</string><string name="tab_settings">Quản lý</string></resources>

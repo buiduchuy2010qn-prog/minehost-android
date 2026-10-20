@@ -21,6 +21,7 @@ import com.mineserve.mobile.data.StartupPhase
 import com.mineserve.mobile.data.isProotGuestRuntime
 import com.mineserve.mobile.data.provides
 import com.mineserve.mobile.runtime.TermuxRuntime
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -511,7 +512,7 @@ class McServerController(
             termux.emitLog("[install] ${normalizedConfig.selectedCore.displayName} 安装完成")
         }
         val eula = File(serverDir, "eula.txt")
-        if (!eula.exists()) eula.writeText("eula=true\n")
+        if (!eula.exists()) eula.writeText("eula=false\n")
         File(serverDir, "plugins").mkdirs()
         // PocketMine 的核心是 .phar（PHP 运行），Allay 保持 server.jar（Java 运行）
         val serverFileName = if (normalizedConfig.selectedCore == ServerCore.PocketMine) {
@@ -1659,9 +1660,12 @@ class McServerController(
      * @param startGeneration 本次启动的代际号（非用户发起时为 0，表示不做取消检查）
      */
     private suspend fun launchMc(config: McConfig, dirName: String, jarPath: String?, startGeneration: Long = 0L) {
+        AddonSafety.lifecycleGate.withLock {
         val serverDir = termux.serverDirFor(dirName)
         val activeCore = config.installedCores.find { it.name == config.activeCoreName }
         val coreType = activeCore?.core ?: config.selectedCore
+        check(!termux.isMcRunning()) { "Đã có server đang chạy." }
+        if (!coreType.isBedrock) EulaConsent.requireAccepted(serverDir)
 
         // ── 完全自定义启动命令模式 ──
         if (config.advancedCustomCommandEnabled && config.advancedCustomCommand.isNotBlank()) {
@@ -1932,6 +1936,8 @@ class McServerController(
             onExit = createExitHandler(config, dirName, jarPath)
         )
         repo.updateServerState { markRunningIfAlive(it) }
+    
+        }
     }
 
     /**

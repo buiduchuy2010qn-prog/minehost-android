@@ -867,7 +867,7 @@ esac
         // 创建 MC 工作目录与 eula 同意
         val serverDir = File(rootDir, "home/server").apply { mkdirs() }
         val eula = File(serverDir, "eula.txt")
-        if (!eula.exists()) eula.writeText("eula=true\n")
+        if (!eula.exists()) eula.writeText("eula=false\n")
         // 创建 plugins 目录
         File(serverDir, "plugins").mkdirs()
 
