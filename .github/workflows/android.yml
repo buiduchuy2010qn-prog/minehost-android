@@ -1,0 +1,68 @@
+name: MineHost Android checks and APK
+on:
+  workflow_dispatch:
+    inputs:
+      adapt_upstream:
+        description: Apply the one-time MineHost adaptation (first build only)
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+    paths: ['app/**', 'gradle/**', '*.gradle.kts', 'gradle.properties', '.github/workflows/android.yml']
+permissions:
+  contents: read
+concurrency:
+  group: minehost-android-main
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: One-time upstream adaptation
+        if: inputs.adapt_upstream == true
+        run: |
+          python3 .github/minehost-customize.py
+          git config user.name "MineHost build"
+          git config user.email "actions@users.noreply.github.com"
+          git add app
+          git commit -m "Adapt Minexa runtime to MineHost UI, consent and safe add-on installs"
+          git push origin HEAD:main
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Install Android build components
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "cmake;3.22.1" "ndk;27.0.12077973"
+      - name: Generate temporary test signing key
+        run: |
+          mkdir -p "$HOME/.android"
+          keytool -genkeypair -keystore "$HOME/.android/debug.keystore" -storepass android -keypass android -alias androiddebugkey -dname "CN=MineHost CI test only" -keyalg RSA -keysize 2048 -validity 30
+      - name: Tests, lint and ARM64 debug APK
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --no-daemon --max-workers=2 -Dorg.gradle.jvmargs="-Xmx4g -Dfile.encoding=UTF-8"
+      - name: Record APK source and checksum
+        run: |
+          git rev-parse HEAD > app/build/outputs/apk/debug/SOURCE-COMMIT.txt
+          sha256sum app/build/outputs/apk/debug/*.apk > app/build/outputs/apk/debug/SHA256SUMS.txt
+          printf '%s\n' "Experimental debug build. Temporary signing key; later builds may require uninstall/reinstall. Export worlds/backups before uninstalling. Not tested on a real Android device. GPL-3.0-or-later; see repository for source and notices." > app/build/outputs/apk/debug/READ-ME-FIRST.txt
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: MineHost-ARM64-debug-test
+          path: app/build/outputs/apk/debug/
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-and-lint-reports
+          path: |
+            app/build/reports/
+            app/build/test-results/
+          retention-days: 7

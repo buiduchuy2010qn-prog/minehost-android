@@ -11,6 +11,16 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.ui.res.stringResource
 import com.mineserve.mobile.R
 import androidx.compose.ui.unit.dp
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalUriHandler
+import com.mineserve.mobile.ui.screens.MineHostOverview
+import com.mineserve.mobile.ui.screens.MineHostLibrary
+import com.mineserve.mobile.ui.screens.MineHostManage
+import com.mineserve.mobile.ui.screens.MineHostCrossplay
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -68,7 +78,7 @@ import com.mineserve.mobile.ui.theme.IndigoSoft
 import com.mineserve.mobile.ui.theme.Muted
 
 /** 子页面类型（从设置页进入的二级页面） */
-enum class SubPage { Properties, Network, Backup, WorldManage, DownloadHelp, MtGuide, KeepAlive, OpLevelGuide, Diagnostics, Plugins, ServerIcon, CrashReports, WidgetSettings, Mcp, EnvManager, Ftp, FrpProfileEditor, More, Automation }
+enum class SubPage { Properties, Network, Backup, WorldManage, DownloadHelp, MtGuide, KeepAlive, OpLevelGuide, Diagnostics, Plugins, ServerIcon, CrashReports, WidgetSettings, Mcp, EnvManager, Ftp, FrpProfileEditor, More, Automation, Cores, ServerList, PlayerList, AppSettings, Crossplay }
 
 /**
  * 应用根布局：底部 6 Tab；概览页可跳转日志页；设置页可跳转子页面
@@ -97,22 +107,11 @@ fun McApp() {
         onPauseOrDispose { vm.setUiVisible(false) }
     }
 
-    // 启动自动检查更新（后台执行，发现新版发通知）
-    LaunchedEffect(Unit) {
-        // Let the first screen settle before starting a best-effort network request.
-        delay(1_000)
-        // 无网络时跳过：不做注定失败的 12 秒连接尝试（手动检查不受此约束）。
-        if (NetworkState.isOnline(McApplication.get())) {
-            vm.checkForUpdate(manual = false)
-        }
-    }
-    // 更新通知点击 → 打开更新对话框
-    LaunchedEffect(McApplication.get().openUpdateRequest.value) {
-        if (McApplication.get().openUpdateRequest.value) {
-            vm.showUpdateDialog()
-            McApplication.get().consumeOpenUpdateRequest()
-        }
-    }
+    val snackbars = remember { SnackbarHostState() }
+    val eulaRequest by vm.eulaRequest.collectAsState()
+    val uri = LocalUriHandler.current
+    LaunchedEffect(vm) { vm.errorFlow.collect { snackbars.showSnackbar(it) } }
+    LaunchedEffect(vm) { vm.messageFlow.collect { snackbars.showSnackbar(it) } }
 
     // 系统返回键：逐级返回上一页面，禁止直接退出应用。
     // 优先级：日志页 → 子页面 → 其他 Tab → 概览（Dashboard）；已在概览时消费返回键不退出。
@@ -135,17 +134,25 @@ fun McApp() {
         // 全屏展示：内容延伸到状态栏，顶部状态栏区域由各页面首个组件（HeaderBlock/返回栏）
         // 以白色背景覆盖，不再显示系统状态栏灰色条
         contentWindowInsets = WindowInsets(0.dp),
+        snackbarHost = { SnackbarHost(snackbars) },
         bottomBar = {
             NavigationBar(
                 modifier = Modifier.navigationBarsPadding(),
                 containerColor = MaterialTheme.colorScheme.surface
             ) {
-                McTab.values().forEach { t ->
+                val destinations = listOf(
+                    McTab.Dashboard to "Tổng quan",
+                    McTab.Terminal to "Console",
+                    McTab.Download to "Kho cài đặt",
+                    McTab.Files to "Tệp",
+                    McTab.Settings to "Quản lý"
+                )
+                destinations.forEach { (t, label) ->
                     NavigationBarItem(
                         selected = tab == t && subPage == null,
                         onClick = { tab = t; showLogs = false; subPage = null },
-                        icon = { Icon(t.icon, contentDescription = stringResource(t.labelRes)) },
-                        label = { Text(stringResource(t.labelRes), fontSize = 10.sp) },
+                        icon = { Icon(t.icon, contentDescription = label) },
+                        label = { Text(label, fontSize = 10.sp) },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = Indigo,
                             selectedTextColor = Indigo,
@@ -155,13 +162,7 @@ fun McApp() {
                         )
                     )
                 }
-                NavigationBarItem(
-                    selected = subPage in setOf(SubPage.More, SubPage.Network, SubPage.FrpProfileEditor, SubPage.Backup, SubPage.Diagnostics, SubPage.KeepAlive, SubPage.DownloadHelp, SubPage.MtGuide, SubPage.OpLevelGuide, SubPage.WidgetSettings, SubPage.Mcp, SubPage.EnvManager, SubPage.Ftp, SubPage.Automation),
-                    onClick = { subPage = SubPage.More; showLogs = false },
-                    icon = { Icon(Icons.Outlined.MoreVert, contentDescription = stringResource(R.string.mcapp_more)) },
-                    label = { Text(stringResource(R.string.mcapp_more), fontSize = 10.sp) },
-                    colors = NavigationBarItemDefaults.colors(selectedIconColor = Indigo, selectedTextColor = Indigo, indicatorColor = IndigoSoft, unselectedIconColor = Muted, unselectedTextColor = Muted)
-                )
+
             }
         }
     ) { padding ->
@@ -228,23 +229,25 @@ fun McApp() {
                             onFtp = { subPage = SubPage.Ftp },
                             onAutomation = { subPage = SubPage.Automation }
                         )
+                        SubPage.Cores -> DownloadScreen(vm, onShowDownloadHelp = { subPage = SubPage.DownloadHelp })
+                        SubPage.ServerList -> ServerManagementScreen(vm,
+                            onPlugins = { subPage = SubPage.Plugins },
+                            onProperties = { subPage = SubPage.Properties },
+                            onIcon = { subPage = SubPage.ServerIcon },
+                            onWorlds = { subPage = SubPage.WorldManage })
+                        SubPage.PlayerList -> PlayersScreen(vm,
+                            onNavigateProperties = { subPage = SubPage.Properties },
+                            onNavigateOpGuide = { subPage = SubPage.OpLevelGuide })
+                        SubPage.AppSettings -> SettingsScreen(vm, onNavigate = { subPage = it })
+                        SubPage.Crossplay -> MineHostCrossplay(onBack = { subPage = null })
                         null -> {}
                     }
                 }
                 else -> when (page.third) {
-                    McTab.Dashboard -> DashboardScreen(
-                        vm = vm,
-                        onShowDownloadHelp = { subPage = SubPage.DownloadHelp },
-                        onShowDiagnostics = { subPage = SubPage.Diagnostics },
-                        onEnvManager = { tab ->
-                            envManagerTab = tab
-                            subPage = SubPage.EnvManager
-                        }
-                    )
-                    McTab.Download -> DownloadScreen(
-                        vm = vm,
-                        onShowDownloadHelp = { subPage = SubPage.DownloadHelp }
-                    )
+                    McTab.Dashboard -> MineHostOverview(vm,
+                        navigate = { subPage = it },
+                        onConsole = { tab = McTab.Terminal })
+                    McTab.Download -> MineHostLibrary(navigate = { subPage = it })
                     McTab.ServerManagement -> ServerManagementScreen(
                         vm = vm,
                         onPlugins = { subPage = SubPage.Plugins },
@@ -259,16 +262,28 @@ fun McApp() {
                     )
                     McTab.Files -> FileManagerScreen(vm = vm, onOpenMtGuide = { subPage = SubPage.MtGuide })
                     McTab.Terminal -> TerminalScreen(vm = vm)
-                    McTab.Settings -> SettingsScreen(
-                        vm = vm,
-                        onNavigate = { subPage = it }
-                    )
+                    McTab.Settings -> MineHostManage(navigate = { subPage = it })
                 }
             }
         }
 
         // 软件更新对话框（全局，覆盖所有页面）
-        UpdateDialog(vm = vm)
+        eulaRequest?.let { requestedDir ->
+            AlertDialog(
+                onDismissRequest = vm::dismissEula,
+                title = { Text("Minecraft EULA") },
+                text = {
+                    androidx.compose.foundation.layout.Column {
+                        Text("Bạn cần đọc và đồng ý Minecraft EULA để chạy server này. MineHost không tự đồng ý thay bạn.")
+                        TextButton(onClick = { uri.openUri("https://www.minecraft.net/eula") }) { Text("Đọc EULA chính thức") }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { vm.acceptEulaAndStart(requestedDir) }) { Text("Tôi đồng ý và bật server") }
+                },
+                dismissButton = { TextButton(onClick = vm::dismissEula) { Text("Chưa đồng ý") } }
+            )
+        }
         val crashContent = currentCrashContent
         val crashAnalysis = currentCrashAnalysis
         if (crashContent != null && crashAnalysis != null) {
