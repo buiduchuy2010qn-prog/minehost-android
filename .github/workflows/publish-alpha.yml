@@ -5,7 +5,7 @@ permissions:
   actions: read
   contents: write
 concurrency:
-  group: publish-minehost-alpha-1
+  group: publish-minehost-alpha-2
   cancel-in-progress: false
 jobs:
   publish:
@@ -14,61 +14,88 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
-      SOURCE_SHA: 0cefe7fde3cfa58de3373370aa52ca03dc71896f
-      BUILD_RUN: '39385028289'
-      RELEASE_TAG: v0.1.0-alpha.1
+      SOURCE_SHA: b33ee1f62dc634c72f9455be4edc518cd00df457
+      BUILD_RUN: '39396972103'
+      RELEASE_TAG: v0.1.0-alpha.2
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 0cefe7fde3cfa58de3373370aa52ca03dc71896f
+          ref: b33ee1f62dc634c72f9455be4edc518cd00df457
           persist-credentials: false
-      - name: Download verified build on GitHub runner
-        shell: bash
+      - name: Download verified release build on runner
         run: |
           test "$(gh api "repos/$GH_REPO/actions/runs/$BUILD_RUN" --jq '.conclusion')" = "success"
           test "$(gh api "repos/$GH_REPO/actions/runs/$BUILD_RUN" --jq '.head_sha')" = "$SOURCE_SHA"
-          gh run download "$BUILD_RUN" --name MineHost-ARM64-debug-test --dir publish
-      - name: Verify artifact and prepare direct APK
-        shell: bash
+          gh run download "$BUILD_RUN" --name MineHost-ARM64-release --dir publish
+          gh run download "$BUILD_RUN" --name test-and-lint-reports --dir reports
+      - name: Verify source and checksum, prepare APK and notes
         run: |
           python3 - <<'PY'
-          import hashlib
-          import os
+          import hashlib, os, json, xml.etree.ElementTree as ET
           from pathlib import Path
           root = Path("publish")
           assert (root / "SOURCE-COMMIT.txt").read_text().strip() == os.environ["SOURCE_SHA"]
           apks = list(root.glob("*.apk"))
-          assert len(apks) == 1, "Expected exactly one ARM64 APK"
+          assert len(apks) == 1
           apk = apks[0]
-          lines = (root / "SHA256SUMS.txt").read_text().splitlines()
-          expected = [line.split()[0] for line in lines if Path(line.split(maxsplit=1)[1]).name == apk.name]
-          assert len(expected) == 1, "APK checksum missing"
-          actual = hashlib.sha256(apk.read_bytes()).hexdigest()
-          assert actual == expected[0], "APK checksum mismatch"
-          renamed = root / "MineHost-0.1.0-alpha.1-arm64-debug.apk"
+          expected = [line.split()[0] for line in (root / "SHA256SUMS.txt").read_text().splitlines()
+              if Path(line.split(maxsplit=1)[1]).name == apk.name]
+          digest = hashlib.sha256(apk.read_bytes()).hexdigest()
+          assert expected == [digest]
+          renamed = root / "MineHost-0.1.0-alpha.2-arm64.apk"
           apk.rename(renamed)
-          (root / "SHA256SUMS.txt").write_text(actual + "  " + renamed.name + "\n")
+          (root / "SHA256SUMS.txt").write_text(digest + "  " + renamed.name + "\n")
+          totals = {"tests": 0, "failures": 0, "errors": 0, "skipped": 0, "suites": 0}
+          new_suites = []
+          for report in Path("reports").rglob("TEST-*.xml"):
+              suite = ET.parse(report).getroot()
+              if suite.tag != "testsuite":
+                  continue
+              totals["suites"] += 1
+              for field in ("tests", "failures", "errors", "skipped"):
+                  totals[field] += int(suite.get(field, 0))
+              if any(name in suite.get("name", "") for name in ("DeviceProfileTest", "WorldArchiveTest", "MineHostSafetyTest")):
+                  new_suites.append({"name": suite.get("name"), "tests": int(suite.get("tests", 0))})
+          assert totals["tests"] > 0 and totals["failures"] == totals["errors"] == 0, totals
+          assert len(new_suites) == 3, new_suites
+          lint = {}
+          new_errors = []
+          for report in Path("reports").rglob("lint-results-release.xml"):
+              for issue in ET.parse(report).getroot().findall("issue"):
+                  severity = issue.get("severity")
+                  lint[severity] = lint.get(severity, 0) + 1
+                  if severity in ("Error", "Fatal") and any(
+                      any(name in loc.get("file", "") for name in
+                          ("DeviceProfile.kt", "DeviceMemory.kt", "WorldArchive.kt", "WorldImportScreen.kt", "MineHostScreens.kt", "WorldsScreen.kt"))
+                      for loc in issue.findall("location")):
+                      new_errors.append({"id": issue.get("id"), "message": issue.get("message")})
+          assert not new_errors, new_errors
+          verification = dict(totals, source=os.environ["SOURCE_SHA"], build_run=os.environ["BUILD_RUN"], sha256=digest,
+              new_suites=new_suites, lint=lint, new_file_lint_errors=new_errors, device_tested=False)
+          (root / "VERIFICATION.json").write_text(json.dumps(verification, ensure_ascii=False, indent=2), encoding="utf-8")
+          print("VERIFICATION=" + json.dumps(verification, ensure_ascii=False))
+          Path("release-notes.md").write_text("""APK Android 8+ ARM64, bản thử nghiệm tối ưu. Tải tệp APK ở Assets; repo riêng tư cần đăng nhập GitHub có quyền truy cập.
+
+          - RAM tự động theo bộ nhớ hệ thống và RAM trống khi bật; vẫn có chỉnh tay.
+          - Cấu hình nhẹ theo máy: view-distance, simulation-distance, số người chơi; lưu cấu hình cũ trước khi áp dụng.
+          - Nhập thế giới có sẵn ngay Tổng quan/Quản lý: ZIP, tiến trình, tránh ghi đè, chọn world sau khi nhập.
+          - Bớt tác vụ lúc server tắt; giao diện cuộn lazy; APK release không debuggable và có R8/resource shrinking.
+
+          UPDATES: Từ alpha.2 dùng khóa ký cố định, giữ cùng applicationId để hỗ trợ cập nhật đè các bản sau. Alpha.1 dùng khóa tạm cũ đã mất nên KHÔNG cài đè lần chuyển này. Đọc MIGRATION.md: dừng server, xuất và kiểm tra world/toàn server ngoài dữ liệu app trước khi gỡ alpha.1.
+
+          TESTS_PLACEHOLDER kiểm thử đạt trên GitHub Actions. CI kiểm tra chữ ký và manifest không debuggable. Lint upstream còn lỗi; chưa kiểm thử trên điện thoại, chưa đo FPS/TPS, không cam kết hết lag. Chưa Việt hóa toàn bộ; Geyser/Floodgate và dependency mod vẫn cài thủ công.
+
+          Dựa trên Minexa, GPL-3.0-or-later. Mã nguồn tương ứng ở tag và Source code bên dưới.
+          """.replace("TESTS_PLACEHOLDER", str(totals["tests"])), encoding="utf-8")
           PY
-      - name: Create private prerelease without replacing existing assets
-        shell: bash
+      - name: Publish without overwriting an existing release
         run: |
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            echo "Release already exists. Refusing to overwrite."
+            echo "Release already exists; refusing to overwrite."
             exit 1
           fi
-          gh release create "$RELEASE_TAG" \
-            --target "$SOURCE_SHA" \
-            --prerelease \
-            --title "MineHost 0.1.0-alpha.1 — Android ARM64" \
-            --notes "APK thử nghiệm để cài trực tiếp trên Android 8+ ARM64. Tải tệp .apk ở Assets. Repo riêng tư: cần đăng nhập GitHub có quyền truy cập.
-
-          Giao diện 5 mục, quản lý Minecraft server, plugin/mod, người chơi, world và backup. Dựa trên Minexa, GPL-3.0-or-later; mã nguồn tương ứng ở tag này và Source code bên dưới.
-
-          Build GitHub Actions 39385028289: 625 kiểm thử đạt. Chưa kiểm thử trên điện thoại thật; còn lỗi lint và chưa Việt hóa toàn bộ. Geyser/Floodgate hiện cài thủ công.
-
-          QUAN TRỌNG: APK debug dùng khóa ký tạm. Chỉ dùng world thử nghiệm. Xuất backup ra ngoài dữ liệu app trước khi gỡ hoặc đổi sang bản build khác. Không bảo đảm chạy nền 24/7." \
-            publish/MineHost-0.1.0-alpha.1-arm64-debug.apk \
-            publish/SHA256SUMS.txt \
-            publish/SOURCE-COMMIT.txt \
-            publish/READ-ME-FIRST.txt \
-            LICENSE NOTICE
+          gh release create "$RELEASE_TAG" --target "$SOURCE_SHA" --prerelease \
+            --title "MineHost 0.1.0-alpha.2 - Android ARM64" --notes-file release-notes.md \
+            publish/MineHost-0.1.0-alpha.2-arm64.apk publish/SHA256SUMS.txt \
+            publish/SOURCE-COMMIT.txt publish/READ-ME-FIRST.txt \
+            publish/SIGNATURE.txt publish/APK-INFO.txt publish/VERIFICATION.json MIGRATION.md LICENSE NOTICE
