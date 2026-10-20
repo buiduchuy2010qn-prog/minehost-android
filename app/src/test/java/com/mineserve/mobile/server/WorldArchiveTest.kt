@@ -72,4 +72,17 @@ class WorldArchiveTest {
         }
         assertFalse(File(root, "new").exists())
     }
+    @Test fun corruptCrcRollsBackInsteadOfImportingDamagedWorld() {
+        val z = zip("world/level.dat" to "data")
+        val bytes = z.readBytes()
+        val central = (0..bytes.size - 4).first {
+            bytes[it] == 0x50.toByte() && bytes[it + 1] == 0x4b.toByte() &&
+                bytes[it + 2] == 0x01.toByte() && bytes[it + 3] == 0x02.toByte()
+        }
+        bytes[central + 16] = (bytes[central + 16].toInt() xor 1).toByte()
+        z.writeBytes(bytes)
+        val root = temp.newFolder()
+        assertFalse(Worlds.importWorldZip(z, root, "new"))
+        assertFalse(File(root, "new").exists())
+    }
 }

@@ -320,6 +320,8 @@ object Worlds {
                             target.mkdirs()
                         } else {
                             target.parentFile?.mkdirs()
+                            val crc = java.util.zip.CRC32()
+                            var entryBytes = 0L
                             archive.getInputStream(entry).use { input ->
                                 FileOutputStream(target).use { out ->
                                     while (true) {
@@ -327,6 +329,8 @@ object Worlds {
                                         val read = input.read(buffer)
                                         if (read < 0) break
                                         expanded += read
+                                        entryBytes += read
+                                        crc.update(buffer, 0, read)
                                         check(expanded <= maxExpandedBytes) { "World exceeds extraction limit" }
                                         if (expanded % (16L * 1024 * 1024) < read)
                                             check(worldsRoot.usableSpace > 64L * 1024 * 1024) { "Storage almost full" }
@@ -334,6 +338,8 @@ object Worlds {
                                     }
                                 }
                             }
+                            check(entry.size < 0 || entryBytes == entry.size) { "Truncated ZIP entry" }
+                            check(entry.crc < 0 || crc.value == entry.crc) { "Corrupt ZIP entry (CRC mismatch)" }
                         }
                     }
                 }

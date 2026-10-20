@@ -4492,19 +4492,34 @@ class McViewModel(
     val activeWorldName: StateFlow<String> = _activeWorldName.asStateFlow()
 
     /** 加载世界列表（含各世界占用大小）。大小统计较慢，放在 IO 线程。 */
+    private var worldsLoadGeneration = 0
+    private var worldsLoadedDir: String? = null
+
     fun loadWorlds() {
         if (!isBootstrapped.value) return
         val dirName = activeDirName() ?: return
+        val generation = ++worldsLoadGeneration
+        if (worldsLoadedDir != dirName) {
+            _worlds.value = emptyList()
+            _activeWorldName.value = ""
+            worldsLoadedDir = dirName
+        }
+        _worldsLoading.value = true
         viewModelScope.launch {
-            _worldsLoading.value = true
             try {
-                val list = withContext(Dispatchers.IO) { worldManager.listWorlds(dirName) }
-                _worlds.value = list
-                _activeWorldName.value = withContext(Dispatchers.IO) { worldManager.readLevelName(dirName) }
+                val (list, name) = withContext(Dispatchers.IO) {
+                    worldManager.listWorlds(dirName) to worldManager.readLevelName(dirName)
+                }
+                if (generation == worldsLoadGeneration && activeDirName() == dirName) {
+                    _worlds.value = list
+                    _activeWorldName.value = name
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
-                _errorFlow.tryEmit("读取世界列表失败：${e.message}")
+                if (generation == worldsLoadGeneration) _errorFlow.tryEmit("Không đọc được danh sách world: " + e.message)
             } finally {
-                _worldsLoading.value = false
+                if (generation == worldsLoadGeneration) _worldsLoading.value = false
             }
         }
     }
