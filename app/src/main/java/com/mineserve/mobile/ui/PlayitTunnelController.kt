@@ -33,6 +33,11 @@ import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
+enum class PlayConnectionMode {
+    SameNetwork,
+    Everywhere
+}
+
 enum class PlayitStage {
     Idle,
     WaitingForClaim,
@@ -79,6 +84,30 @@ class PlayitTunnelController(
         )
     )
     val state: StateFlow<PlayitUiState> = _state.asStateFlow()
+
+    private val _playConnectionMode = MutableStateFlow(
+        if (prefs.getString(KEY_PLAY_MODE, PlayConnectionMode.Everywhere.name) == PlayConnectionMode.SameNetwork.name) {
+            PlayConnectionMode.SameNetwork
+        } else {
+            PlayConnectionMode.Everywhere
+        }
+    )
+    val playConnectionMode: StateFlow<PlayConnectionMode> = _playConnectionMode.asStateFlow()
+
+    private val _maskAddressInUi = MutableStateFlow(
+        prefs.getBoolean(KEY_MASK_ADDRESS, false)
+    )
+    val maskAddressInUi: StateFlow<Boolean> = _maskAddressInUi.asStateFlow()
+
+    fun setPlayConnectionMode(mode: PlayConnectionMode) {
+        _playConnectionMode.value = mode
+        prefs.edit().putString(KEY_PLAY_MODE, mode.name).apply()
+    }
+
+    fun setMaskAddressInUi(masked: Boolean) {
+        _maskAddressInUi.value = masked
+        prefs.edit().putBoolean(KEY_MASK_ADDRESS, masked).apply()
+    }
 
     private var tunnelJob: Job? = null
     @Volatile
@@ -929,6 +958,21 @@ class PlayitTunnelController(
         private const val PREFS_NAME = "minehost_playit_prefs"
         private const val KEY_SECRET = "agent_secret_key"
         private const val KEY_LAST_ADDRESS = "last_public_address"
+        private const val KEY_PLAY_MODE = "play_connection_mode"
+        private const val KEY_MASK_ADDRESS = "mask_address_in_ui"
+
+        fun maskEndpointForDisplay(address: String, masked: Boolean): String {
+            if (!masked || address.isBlank()) return address
+            val colonIdx = address.lastIndexOf(':')
+            return if (colonIdx > 0) {
+                val host = address.substring(0, colonIdx)
+                val port = address.substring(colonIdx + 1)
+                val visiblePrefix = host.take(4)
+                "$visiblePrefix••••••••:${port.take(2)}•••"
+            } else {
+                address.take(4) + "••••••••"
+            }
+        }
 
         /**
          * Tự động phát hiện địa chỉ IP mạng LAN ảo (ZeroTier One, Tailscale, Radmin/WireGuard VPN)

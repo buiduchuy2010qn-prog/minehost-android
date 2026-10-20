@@ -112,16 +112,22 @@ import com.mineserve.mobile.data.RuntimeKind
 import com.mineserve.mobile.data.ServerCore
 import com.mineserve.mobile.data.ServerState
 import com.mineserve.mobile.data.isProotGuestRuntime
+import android.content.Intent
+import android.net.Uri
 import com.mineserve.mobile.ui.DebouncedTextField
 import com.mineserve.mobile.ui.HeaderBlock
 import com.mineserve.mobile.ui.HeroBlock
 import com.mineserve.mobile.ui.McCard
 import com.mineserve.mobile.ui.McViewModel
+import com.mineserve.mobile.ui.PlayConnectionMode
+import com.mineserve.mobile.ui.PlayitStage
+import com.mineserve.mobile.ui.PlayitTunnelController
 import com.mineserve.mobile.ui.ProgressTrack
 import com.mineserve.mobile.ui.QqGroupDialog
 import com.mineserve.mobile.ui.StepRow
 import com.mineserve.mobile.ui.theme.Coral
 import com.mineserve.mobile.ui.theme.CoralSoft
+import com.mineserve.mobile.ui.theme.FieldBg
 import com.mineserve.mobile.ui.theme.FieldGray
 import com.mineserve.mobile.ui.theme.Indigo
 import com.mineserve.mobile.ui.theme.IndigoSoft
@@ -129,7 +135,9 @@ import com.mineserve.mobile.ui.theme.McIcon
 import com.mineserve.mobile.ui.theme.McShape
 import com.mineserve.mobile.ui.theme.McSpacing
 import com.mineserve.mobile.ui.theme.Mint
+import com.mineserve.mobile.ui.theme.MintSoft
 import com.mineserve.mobile.ui.theme.Muted
+import com.mineserve.mobile.ui.theme.TrackBg
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -189,19 +197,6 @@ fun DashboardScreen(
                     title = stringResource(R.string.s340),
                     trailing = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            // QQ 群入口：企鹅图标，点开弹窗显示群号 / 复制 / 加群
-                            IconButton(
-                                onClick = { showQqDialog = true },
-                                modifier = Modifier.size(McIcon.TouchCompact)
-                            ) {
-                                Icon(
-                                    painter = painterResource(R.drawable.ic_qq_penguin),
-                                    contentDescription = stringResource(R.string.s1051),
-                                    tint = Indigo,
-                                    modifier = Modifier.size(McIcon.Display)
-                                )
-                            }
-                            Spacer(Modifier.width(6.dp))
                             // 视觉突出的「依赖与环境管理」入口（靛蓝填充 + 图标，高对比）
                             Button(
                                 onClick = { onEnvManager(0) },
@@ -602,6 +597,80 @@ private fun DashboardCoreSelectionCard(
             Text(stringResource(R.string.s385), color = Muted, fontSize = 10.sp)
         }
 
+        // ── Bộ chọn nhanh 2 Chế Độ Chơi ngay trước khi bấm Khởi động ──
+        val playMode by vm.playConnectionMode.collectAsState()
+        Spacer(Modifier.height(10.dp))
+        Text(
+            "🎮 Chế độ kết nối khi chạy máy chủ:",
+            color = Muted,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+        Spacer(Modifier.height(6.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            val isSame = playMode == PlayConnectionMode.SameNetwork
+            val isEverywhere = playMode == PlayConnectionMode.Everywhere
+
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(if (isSame) MintSoft else FieldBg)
+                    .border(
+                        BorderStroke(if (isSame) 1.5.dp else 1.dp, if (isSame) Mint else TrackBg),
+                        RoundedCornerShape(10.dp)
+                    )
+                    .clickable { vm.setPlayConnectionMode(PlayConnectionMode.SameNetwork) }
+                    .padding(vertical = 8.dp, horizontal = 8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        "🏠 Cùng Mạng",
+                        color = if (isSame) Mint else MaterialTheme.colorScheme.onSurface,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        "Chung Wi-Fi / Hotspot 4G",
+                        color = Muted,
+                        fontSize = 9.sp
+                    )
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(if (isEverywhere) IndigoSoft else FieldBg)
+                    .border(
+                        BorderStroke(if (isEverywhere) 1.5.dp else 1.dp, if (isEverywhere) Indigo else TrackBg),
+                        RoundedCornerShape(10.dp)
+                    )
+                    .clickable { vm.setPlayConnectionMode(PlayConnectionMode.Everywhere) }
+                    .padding(vertical = 8.dp, horizontal = 8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        "🌍 Kết Nối Mọi Nơi",
+                        color = if (isEverywhere) Indigo else MaterialTheme.colorScheme.onSurface,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        "Qua 4G / Khác Wi-Fi (Ẩn IP)",
+                        color = Muted,
+                        fontSize = 9.sp
+                    )
+                }
+            }
+        }
+
         // ── 底部启停长条：未运行 = 一整条「启动」；运行中 = 水滴分裂成「强制停止 | 停止」──
         Spacer(Modifier.height(10.dp))
         StartStopBar(
@@ -609,7 +678,7 @@ private fun DashboardCoreSelectionCard(
             startEnabled = isBootstrapped,
             stopInFlight = stopInFlight,
             forceStopInFlight = forceStopInFlight,
-            onStart = { vm.startServer() },
+            onStart = { vm.startServerWithMode(playMode) },
             onStop = { vm.stopServer() },
             onForceStop = { showForceStopConfirm = true }
         )
@@ -635,15 +704,12 @@ private fun DashboardDependenciesCard(
     val depsInstalled = dependencySteps.isNotEmpty() && dependencySteps.all {
         it.status == com.mineserve.mobile.data.StepStatus.Done
     }
-    // frpc 引擎也纳入首启检测。
-    //
-    // 它不在 InstallStep 里（不经 Termux apt，而是联网下载独立引擎），但同样是
-    // frp 系隧道能启动的前提。首启时不提示，用户配好隧道点启动才会撞上
-    // 「引擎未安装」，那时他已经离开了这个页面。
     val engine by vm.frpcEngine.collectAsState()
     val download by vm.frpcDownload.collectAsState()
     LaunchedEffect(Unit) { vm.refreshFrpcEngine() }
-    if (!depsInstalled || !engine.installed) {
+    // Khi đã cài xong 100% gói môi trường cơ bản (depsInstalled == true), tự ẩn thẻ này đi
+    // để trang Tổng quan gọn gàng (Playit.gg đã tích hợp sẵn nên không bắt buộc tải frpc).
+    if (!depsInstalled) {
         McCard(
             title = stringResource(R.string.s357),
             compact = true,
@@ -884,56 +950,385 @@ private fun DashboardHeroBlock(
     )
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun DashboardAddressCard(vm: McViewModel) {
-    // 端口取真源（服务端配置文件里的 server-port），与「服务器配置」页和诊断同源。
     val localPort by vm.serverPort.collectAsState()
     val lanIp by vm.lanIp.collectAsState()
     val frpState by vm.frpState.collectAsState()
     val stunState by vm.stunState.collectAsState()
+    val playitState by vm.playitState.collectAsState()
+    val playMode by vm.playConnectionMode.collectAsState()
+    val maskAddress by vm.maskAddressInUi.collectAsState()
+    val serverProperties by vm.serverProperties.collectAsState()
+    val activeCoreName by vm.config.map { it.activeCoreName }.distinctUntilChanged().collectAsState(initial = null)
     val context = androidx.compose.ui.platform.LocalContext.current
-    LaunchedEffect(Unit) { vm.refreshLanIp() }
-    McCard(title = stringResource(R.string.s386), compact = true) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(stringResource(R.string.s387), color = Muted, fontSize = 10.sp)
+
+    LaunchedEffect(Unit) {
+        vm.refreshLanIp()
+        vm.loadServerProperties()
+    }
+
+    val currentViewDist = serverProperties["view-distance"]?.trim()?.toIntOrNull() ?: 12
+    val isCrackedAllowed = serverProperties["online-mode"]?.trim()?.equals("false", ignoreCase = true) == true
+
+    McCard(
+        title = "🎮 Chế Độ Chơi & Địa Chỉ Kết Nối",
+        compact = true,
+        trailing = {
+            TextButton(
+                onClick = { vm.setMaskAddressInUi(!maskAddress) },
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                modifier = Modifier.height(28.dp)
+            ) {
                 Text(
-                    "${lanIp}:${localPort}",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    if (maskAddress) "👁️ Hiện IP" else "🙈 Che IP",
+                    color = Indigo,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold
                 )
             }
-            // 命中区统一到 40dp、图标 18dp：原先默认 48dp 的命中区会把这一行撑高，
-            // 与卡片里 13sp 的正文不协调。
-            IconButton(onClick = { vm.refreshLanIp() }, modifier = Modifier.size(McIcon.Touch)) {
-                Icon(Icons.Outlined.Refresh, stringResource(R.string.s333), tint = Indigo, modifier = Modifier.size(McIcon.Action))
-            }
-            IconButton(
-                onClick = {
-                    val cm = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                    cm.setPrimaryClip(android.content.ClipData.newPlainText("", "${lanIp}:${localPort}"))
-                },
-                modifier = Modifier.size(McIcon.Touch)
+        }
+    ) {
+        // ── 2 Nút chuyển Chế Độ Chơi trực quan ──
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            val isSame = playMode == PlayConnectionMode.SameNetwork
+            val isEverywhere = playMode == PlayConnectionMode.Everywhere
+
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(if (isSame) MintSoft else FieldBg)
+                    .border(
+                        BorderStroke(if (isSame) 1.5.dp else 1.dp, if (isSame) Mint else TrackBg),
+                        RoundedCornerShape(10.dp)
+                    )
+                    .clickable { vm.setPlayConnectionMode(PlayConnectionMode.SameNetwork) }
+                    .padding(10.dp)
             ) {
-                Icon(Icons.Outlined.ContentCopy, stringResource(R.string.s388), tint = Indigo, modifier = Modifier.size(McIcon.Action))
+                Text(
+                    "🏠 Chơi Cùng Mạng",
+                    color = if (isSame) Mint else MaterialTheme.colorScheme.onSurface,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    "Chung Wi-Fi hoặc Phát 4G Hotspot",
+                    color = Muted,
+                    fontSize = 10.sp,
+                    lineHeight = 13.sp
+                )
+            }
+
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(if (isEverywhere) IndigoSoft else FieldBg)
+                    .border(
+                        BorderStroke(if (isEverywhere) 1.5.dp else 1.dp, if (isEverywhere) Indigo else TrackBg),
+                        RoundedCornerShape(10.dp)
+                    )
+                    .clickable { vm.setPlayConnectionMode(PlayConnectionMode.Everywhere) }
+                    .padding(10.dp)
+            ) {
+                Text(
+                    "🌍 Kết Nối Mọi Nơi",
+                    color = if (isEverywhere) Indigo else MaterialTheme.colorScheme.onSurface,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    "Qua 4G / Khác Wi-Fi (Ẩn 100% IP nhà)",
+                    color = Muted,
+                    fontSize = 10.sp,
+                    lineHeight = 13.sp
+                )
             }
         }
-        // 两条通道各自的公网地址。
-        //
-        // 只显示聚合值是不够的：FRP 与 STUN 现在可以同时在跑，聚合值只能表达其中一条，
-        // 另一条的地址就永远看不到。所以这里按通道各来一行，谁在跑显示谁。
+
+        Spacer(Modifier.height(10.dp))
+
+        if (playMode == PlayConnectionMode.SameNetwork) {
+            // ── Nội dung Chế Độ 1: Chơi Cùng Mạng ──
+            val lanEndpoint = "${lanIp}:${localPort}"
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MintSoft.copy(alpha = 0.7f))
+                    .padding(10.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "🏠 Địa chỉ cho bạn bè cùng Wi-Fi / bắt 4G Hotspot:",
+                            color = Muted,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            PlayitTunnelController.maskEndpointForDisplay(lanEndpoint, maskAddress),
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Mint,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    IconButton(onClick = { vm.refreshLanIp() }, modifier = Modifier.size(McIcon.Touch)) {
+                        Icon(Icons.Outlined.Refresh, stringResource(R.string.s333), tint = Indigo, modifier = Modifier.size(McIcon.Action))
+                    }
+                    IconButton(
+                        onClick = { vm.copyPublicUrl(context, lanEndpoint) },
+                        modifier = Modifier.size(McIcon.Touch)
+                    ) {
+                        Icon(Icons.Outlined.ContentCopy, stringResource(R.string.s388), tint = Mint, modifier = Modifier.size(McIcon.Action))
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "💡 Mẹo: Nếu chơi trên chính máy này hãy nhập 127.0.0.1:$localPort. Nếu đi ra ngoài không có Wi-Fi, 1 máy bật Phát Hotspot 4G cho các máy kia bắt rồi nhập địa chỉ trên!",
+                    color = Muted,
+                    fontSize = 10.sp,
+                    lineHeight = 14.sp
+                )
+            }
+        } else {
+            // ── Nội dung Chế Độ 2: Bật Kết Nối Mọi Nơi (Playit.gg Cloud) ──
+            val isPlayitRunning = playitState.stage == PlayitStage.Running
+            val isPlayitBusy = playitState.stage == PlayitStage.WaitingForClaim ||
+                playitState.stage == PlayitStage.VerifyingSecret ||
+                playitState.stage == PlayitStage.CreatingTunnel ||
+                playitState.stage == PlayitStage.ConnectingControl
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(if (isPlayitRunning) MintSoft else IndigoSoft)
+                    .padding(10.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        "🛡️ Playit Cloud: ${playitState.statusText}",
+                        color = if (isPlayitRunning) Mint else Indigo,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    if (isPlayitRunning || isPlayitBusy) {
+                        TextButton(
+                            onClick = { vm.stopPlayitTunnel() },
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            modifier = Modifier.height(28.dp)
+                        ) {
+                            Text("⏹️ Dừng", color = Coral, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    } else {
+                        Button(
+                            onClick = { vm.startPlayitTunnel() },
+                            colors = ButtonDefaults.buttonColors(containerColor = Indigo),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                            modifier = Modifier.height(30.dp)
+                        ) {
+                            Text("🚀 Bật Kết Nối Mọi Nơi", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                if (playitState.stage == PlayitStage.WaitingForClaim && playitState.claimUrl.isNotBlank()) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "🔗 Lần đầu sử dụng: Bấm nút bên dưới -> Bấm 'Continue / Add Agent' trên trình duyệt để kích hoạt địa chỉ miễn phí!",
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontSize = 10.sp,
+                        lineHeight = 14.sp
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Button(
+                        onClick = {
+                            runCatching {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(playitState.claimUrl)))
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Indigo),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("🌐 Mở trang kích hoạt Playit.gg (1 chạm)", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                if (playitState.publicAddress.isNotBlank()) {
+                    Spacer(Modifier.height(6.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                if (isPlayitRunning) "🌍 Địa chỉ Mọi Nơi (Ẩn 100% IP mạng nhà):"
+                                else "📌 Địa chỉ gần nhất (Bấm Bật kết nối để mở):",
+                                color = Muted,
+                                fontSize = 10.sp
+                            )
+                            Text(
+                                PlayitTunnelController.maskEndpointForDisplay(playitState.publicAddress, maskAddress),
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isPlayitRunning) Mint else Indigo,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        IconButton(
+                            onClick = { vm.copyPublicUrl(context, playitState.publicAddress) },
+                            modifier = Modifier.size(McIcon.Touch)
+                        ) {
+                            Icon(
+                                Icons.Outlined.ContentCopy,
+                                stringResource(R.string.s388),
+                                tint = if (isPlayitRunning) Mint else Indigo,
+                                modifier = Modifier.size(McIcon.Action)
+                            )
+                        }
+                    }
+                } else if (!isPlayitBusy) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Khi bật chế độ này, hệ thống sẽ cấp địa chỉ trung gian đám mây (*.gl.joinmc.link) để bạn bè dùng 4G / Wi-Fi khác nhà vào chơi mà KHÔNG lộ IP mạng nhà bạn.",
+                        color = Muted,
+                        fontSize = 10.sp,
+                        lineHeight = 14.sp
+                    )
+                }
+            }
+
+            // Vẫn hiển thị thêm dòng IP LAN nhỏ bên dưới để chủ phòng tiện nhìn
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("🏠 Địa chỉ nội bộ (Cùng Wi-Fi):", color = Muted, fontSize = 10.sp)
+                    Text(
+                        PlayitTunnelController.maskEndpointForDisplay("${lanIp}:${localPort}", maskAddress),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                IconButton(
+                    onClick = { vm.copyPublicUrl(context, "${lanIp}:${localPort}") },
+                    modifier = Modifier.size(McIcon.TouchCompact)
+                ) {
+                    Icon(Icons.Outlined.ContentCopy, stringResource(R.string.s388), tint = Indigo, modifier = Modifier.size(McIcon.Inline))
+                }
+            }
+        }
+
+        // Hiển thị thêm FRP / STUN nếu đang chạy
         DashboardTunnelAddressRow(
             label = stringResource(R.string.net_dash_frp_address),
-            url = frpState.publicUrl.takeIf { frpState.status == TunnelStatus.Running }.orEmpty(),
-            onCopy = { vm.copyPublicUrl(context, it) }
+            url = PlayitTunnelController.maskEndpointForDisplay(
+                frpState.publicUrl.takeIf { frpState.status == TunnelStatus.Running }.orEmpty(),
+                maskAddress
+            ),
+            onCopy = { vm.copyPublicUrl(context, frpState.publicUrl) }
         )
         DashboardTunnelAddressRow(
             label = stringResource(R.string.net_dash_stun_address),
-            url = stunState.publicUrl.takeIf { stunState.status == TunnelStatus.Running }.orEmpty(),
-            onCopy = { vm.copyPublicUrl(context, it) }
+            url = PlayitTunnelController.maskEndpointForDisplay(
+                stunState.publicUrl.takeIf { stunState.status == TunnelStatus.Running }.orEmpty(),
+                maskAddress
+            ),
+            onCopy = { vm.copyPublicUrl(context, stunState.publicUrl) }
         )
+
+        // ── Thanh Chỉnh Nhanh 1 Chạm: Tài khoản Cracked/Offline & Tầm nhìn Chunk ──
+        if (!activeCoreName.isNullOrBlank()) {
+            Spacer(Modifier.height(10.dp))
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(FieldBg)
+                    .padding(10.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "⚡ Chỉnh nhanh máy chủ (1 chạm):",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            if (isCrackedAllowed) "🔓 Đang cho phép tài khoản Cracked / Offline vào chơi"
+                            else "🔒 Đang bật Bản quyền (Chặn tài khoản Cracked)",
+                            color = if (isCrackedAllowed) Mint else Coral,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = { vm.applyQuickServerConfig(onlineMode = isCrackedAllowed) },
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                        modifier = Modifier.height(30.dp)
+                    ) {
+                        Text(
+                            if (isCrackedAllowed) "Đổi sang Bản quyền" else "🔓 Bật Cracked ngay",
+                            color = Indigo,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "🔭 Tầm nhìn máy chủ: $currentViewDist Chunk (Chọn nhanh):",
+                    color = Muted,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    listOf(8 to 6, 12 to 8, 16 to 10, 24 to 12, 32 to 16).forEach { (vd, sd) ->
+                        val selected = currentViewDist == vd
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (selected) Indigo else FieldGray)
+                                .clickable { vm.applyQuickServerConfig(viewDistance = vd, simulationDistance = sd) }
+                                .padding(vertical = 6.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "${vd}c",
+                                color = if (selected) Color.White else Indigo,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

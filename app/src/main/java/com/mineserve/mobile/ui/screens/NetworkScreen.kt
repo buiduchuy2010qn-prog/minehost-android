@@ -88,6 +88,9 @@ import com.mineserve.mobile.ui.HeaderBlock
 import com.mineserve.mobile.ui.HintNote
 import com.mineserve.mobile.ui.McCard
 import com.mineserve.mobile.ui.McViewModel
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
+import com.mineserve.mobile.ui.PlayConnectionMode
 import com.mineserve.mobile.ui.PlayitStage
 import com.mineserve.mobile.ui.PlayitTunnelController
 import com.mineserve.mobile.ui.PlayitUiState
@@ -123,10 +126,13 @@ fun NetworkScreen(
     val stunState by vm.stunState.collectAsState()
     val stunDiag by vm.stunDiagnostics.collectAsState()
     val playitState by vm.playitState.collectAsState()
+    val playMode by vm.playConnectionMode.collectAsState()
+    val maskAddress by vm.maskAddressInUi.collectAsState()
     val consoleLines by vm.consoleLines.collectAsState()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     var virtualLanEndpoints by remember { mutableStateOf(PlayitTunnelController.detectVirtualLanEndpoints()) }
+    var showAdvancedTunnels by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         vm.refreshLanIp()
@@ -159,71 +165,251 @@ fun NetworkScreen(
                 statusBarPadding = !showBackBar
             )
 
-            // ── 1. Playit.gg tích hợp sẵn: Chơi mọi nơi qua 4G / Khác Wi-Fi ──
-            PlayitEverywhereCard(
-                vm = vm,
-                playitState = playitState,
-                serverRunning = serverState.isRunning,
-                serverPort = serverPort,
-                context = context
+            // ── 0. Bộ chọn 2 Chế Độ Chơi & Khiên Bảo Mật Chống Lộ IP Mạng Nhà ──
+            NetworkModeAndPrivacyCard(
+                playMode = playMode,
+                maskAddress = maskAddress,
+                onSelectMode = { vm.setPlayConnectionMode(it) },
+                onToggleMask = { vm.setMaskAddressInUi(!maskAddress) }
             )
 
-            // ── 2. Địa chỉ kết nối cục bộ & Điểm phát sóng 4G Hotspot ────────
-            LocalAddressCard(
-                vm = vm,
-                serverPort = serverPort,
-                lanIp = lanIp,
-                serverRunning = serverState.isRunning,
-                context = context
-            )
+            if (playMode == PlayConnectionMode.SameNetwork) {
+                // ── CHẾ ĐỘ 1: CHƠI CÙNG MẠNG (Wi-Fi / Phát 4G Hotspot) ────────
+                LocalAddressCard(
+                    vm = vm,
+                    serverPort = serverPort,
+                    lanIp = lanIp,
+                    serverRunning = serverState.isRunning,
+                    maskAddress = maskAddress,
+                    context = context
+                )
+            } else {
+                // ── CHẾ ĐỘ 2: BẬT KẾT NỐI MỌI NƠI (Qua 4G / Khác Wi-Fi) ────────
+                PlayitEverywhereCard(
+                    vm = vm,
+                    playitState = playitState,
+                    serverRunning = serverState.isRunning,
+                    serverPort = serverPort,
+                    maskAddress = maskAddress,
+                    context = context
+                )
 
-            // ── 3. Mạng LAN Ảo P2P (ZeroTier One / Tailscale cho Map Mod nặng) ──
-            VirtualLanCard(
-                serverPort = serverPort,
-                endpoints = virtualLanEndpoints,
-                onRefresh = {
-                    vm.refreshLanIp()
-                    virtualLanEndpoints = PlayitTunnelController.detectVirtualLanEndpoints()
-                },
-                onCopy = { url -> vm.copyPublicUrl(context, url) },
-                context = context
-            )
+                VirtualLanCard(
+                    serverPort = serverPort,
+                    endpoints = virtualLanEndpoints,
+                    maskAddress = maskAddress,
+                    onRefresh = {
+                        vm.refreshLanIp()
+                        virtualLanEndpoints = PlayitTunnelController.detectVirtualLanEndpoints()
+                    },
+                    onCopy = { url -> vm.copyPublicUrl(context, url) },
+                    context = context
+                )
 
-            // ── 4. FRP ────────────────────────────────────────────────────────
-            FrpCard(
-                vm = vm,
-                config = config,
-                frpState = frpState,
-                serverRunning = serverState.isRunning,
-                serverPort = serverPort,
-                onStart = { vm.startFrp() },
-                onStop = { vm.stopFrp() },
-                onOpenEditor = onOpenFrpEditor,
-                onCopy = { url -> vm.copyPublicUrl(context, url) }
-            )
+                // Địa chỉ cục bộ rút gọn để chủ phòng vẫn copy nhanh được 127.0.0.1
+                LocalAddressCard(
+                    vm = vm,
+                    serverPort = serverPort,
+                    lanIp = lanIp,
+                    serverRunning = serverState.isRunning,
+                    maskAddress = maskAddress,
+                    context = context
+                )
 
-            // ── 5. STUN 直连 ──────────────────────────────────────────────────
-            StunCard(
-                vm = vm,
-                config = config,
-                diagnostics = stunDiag,
-                stunState = stunState,
-                serverRunning = serverState.isRunning,
-                onStart = { vm.startStun() },
-                onStop = { vm.stopStun() },
-                onCopy = { url -> vm.copyPublicUrl(context, url) }
-            )
+                // Nhật ký đường hầm
+                TunnelLogPreview(consoleLines, frpState, stunState, playitState)
 
-            // ── 6. Nhật ký đường hầm ──────────────────────────────────────────
-            TunnelLogPreview(consoleLines, frpState, stunState, playitState)
+                // Thu gọn các đường hầm kỹ thuật phức tạp (FRP / STUN) vào mục nâng cao để giao diện gọn đẹp
+                McCard(title = "⚙️ Đường hầm nâng cao (Tự cấu hình FRP / STUN P2P)") {
+                    Text(
+                        "Dành cho người dùng nâng cao có máy chủ FRP riêng hoặc muốn dùng kết nối P2P STUN truyền thống. Nếu dùng Playit.gg ở trên thì KHÔNG cần bật mục này.",
+                        color = Muted,
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = { showAdvancedTunnels = !showAdvancedTunnels },
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            if (showAdvancedTunnels) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                            contentDescription = null,
+                            tint = Indigo,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.size(6.dp))
+                        Text(
+                            if (showAdvancedTunnels) "Thu gọn cấu hình FRP & STUN nâng cao"
+                            else "Mở cấu hình FRP & STUN nâng cao",
+                            color = Indigo,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
 
-            // ── 7. Các nền tảng mở cổng & mạng ảo miễn phí ────────────────────
-            FreeFrpPlatformsCard(context)
+                if (showAdvancedTunnels) {
+                    FrpCard(
+                        vm = vm,
+                        config = config,
+                        frpState = frpState,
+                        serverRunning = serverState.isRunning,
+                        serverPort = serverPort,
+                        onStart = { vm.startFrp() },
+                        onStop = { vm.stopFrp() },
+                        onOpenEditor = onOpenFrpEditor,
+                        onCopy = { url -> vm.copyPublicUrl(context, url) }
+                    )
 
-            // ── 8. Hướng dẫn chi tiết ─────────────────────────────────────────
-            NetworkGuide()
+                    StunCard(
+                        vm = vm,
+                        config = config,
+                        diagnostics = stunDiag,
+                        stunState = stunState,
+                        serverRunning = serverState.isRunning,
+                        onStart = { vm.startStun() },
+                        onStop = { vm.stopStun() },
+                        onCopy = { url -> vm.copyPublicUrl(context, url) }
+                    )
+
+                    FreeFrpPlatformsCard(context)
+                    NetworkGuide()
+                }
+            }
 
             Spacer(Modifier.height(16.dp))
+        }
+    }
+}
+
+@Composable
+private fun NetworkModeAndPrivacyCard(
+    playMode: PlayConnectionMode,
+    maskAddress: Boolean,
+    onSelectMode: (PlayConnectionMode) -> Unit,
+    onToggleMask: () -> Unit
+) {
+    McCard(title = "🎮 Chọn Chế Độ Chơi (Cùng Mạng vs. Kết Nối Mọi Nơi)") {
+        Text(
+            "Chọn đúng nhu cầu của bạn để hệ thống tự động tối ưu giao diện và kết nối:",
+            color = Muted,
+            fontSize = 11.sp
+        )
+        Spacer(Modifier.height(10.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            val isSame = playMode == PlayConnectionMode.SameNetwork
+            val isEverywhere = playMode == PlayConnectionMode.Everywhere
+
+            // Nút 1: Chơi Cùng Mạng
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (isSame) MintSoft else FieldBg)
+                    .border(
+                        BorderStroke(if (isSame) 2.dp else 1.dp, if (isSame) Mint else TrackBg),
+                        RoundedCornerShape(12.dp)
+                    )
+                    .clickable { onSelectMode(PlayConnectionMode.SameNetwork) }
+                    .padding(12.dp)
+            ) {
+                Text(
+                    "🏠 Chơi Cùng Mạng",
+                    color = if (isSame) Mint else MaterialTheme.colorScheme.onSurface,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Chung Wi-Fi hoặc 1 máy bật Phát 4G Hotspot cho máy kia bắt. Siêu mượt, ping 1ms.",
+                    color = Muted,
+                    fontSize = 10.sp,
+                    lineHeight = 14.sp
+                )
+            }
+
+            // Nút 2: Bật Kết Nối Mọi Nơi
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (isEverywhere) IndigoSoft else FieldBg)
+                    .border(
+                        BorderStroke(if (isEverywhere) 2.dp else 1.dp, if (isEverywhere) Indigo else TrackBg),
+                        RoundedCornerShape(12.dp)
+                    )
+                    .clickable { onSelectMode(PlayConnectionMode.Everywhere) }
+                    .padding(12.dp)
+            ) {
+                Text(
+                    "🌍 Kết Nối Mọi Nơi",
+                    color = if (isEverywhere) Indigo else MaterialTheme.colorScheme.onSurface,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Bạn bè ở xa dùng 4G/5G hoặc Wi-Fi khác nhà đều vào được từ bất kỳ đâu.",
+                    color = Muted,
+                    fontSize = 10.sp,
+                    lineHeight = 14.sp
+                )
+            }
+        }
+
+        Spacer(Modifier.height(10.dp))
+
+        // Hộp giải thích Bảo mật IP & nút Che địa chỉ khi quay video / chụp ảnh
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .background(MintSoft.copy(alpha = 0.65f))
+                .padding(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    "🛡️ Bảo vệ 100% — KHÔNG lộ IP mạng nhà / 4G!",
+                    color = Mint,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f)
+                )
+                OutlinedButton(
+                    onClick = onToggleMask,
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                    modifier = Modifier.height(28.dp)
+                ) {
+                    Text(
+                        if (maskAddress) "👁️ Hiện địa chỉ" else "🙈 Che địa chỉ",
+                        color = Indigo,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                if (playMode == PlayConnectionMode.Everywhere) {
+                    "Khi dùng Playit.gg Cloud, địa chỉ gửi cho bạn bè (*.gl.joinmc.link) là IP máy chủ đám mây quốc tế của Playit, hoàn toàn KHÔNG phải IP Wi-Fi nhà bạn hay sim 4G của bạn. Người lạ không thể tra vị trí hay DDoS mạng nhà bạn!"
+                } else {
+                    "Chế độ Cùng Mạng chỉ dùng địa chỉ nội bộ (192.168.x.x) bên trong cục Wi-Fi hoặc Hotspot của bạn, người ngoài Internet hoàn toàn không thể truy cập được."
+                },
+                color = MaterialTheme.colorScheme.onSurface,
+                fontSize = 10.sp,
+                lineHeight = 14.sp
+            )
         }
     }
 }
@@ -239,6 +425,7 @@ private fun PlayitEverywhereCard(
     playitState: PlayitUiState,
     serverRunning: Boolean,
     serverPort: Int,
+    maskAddress: Boolean,
     context: Context
 ) {
     var showSecretEditor by remember { mutableStateOf(false) }
@@ -348,7 +535,7 @@ private fun PlayitEverywhereCard(
         if (playitState.publicAddress.isNotBlank()) {
             Spacer(Modifier.height(12.dp))
             Text(
-                if (isRunning) "✅ Địa chỉ công khai (Gửi cho bạn bè dùng 4G / Wi-Fi bất kỳ):"
+                if (isRunning) "✅ Địa chỉ công khai (Ẩn 100% IP nhà — Gửi cho bạn bè dùng 4G / Wi-Fi bất kỳ):"
                 else "📌 Địa chỉ Playit.gg gần nhất của bạn (Hãy bấm Bật kết nối để hoạt động):",
                 color = if (isRunning) Mint else Muted,
                 fontSize = 11.sp,
@@ -356,8 +543,8 @@ private fun PlayitEverywhereCard(
             )
             Spacer(Modifier.height(6.dp))
             AddressCopyRow(
-                label = "Địa chỉ Internet (4G / Mọi Wi-Fi)",
-                value = playitState.publicAddress,
+                label = "Địa chỉ Internet Đám Mây (Không lộ IP nhà)",
+                value = PlayitTunnelController.maskEndpointForDisplay(playitState.publicAddress, maskAddress),
                 onCopy = { vm.copyPublicUrl(context, playitState.publicAddress) },
                 icon = Icons.Outlined.Public,
                 accent = if (isRunning) Mint else Indigo,
@@ -367,8 +554,8 @@ private fun PlayitEverywhereCard(
             if (playitState.secondaryAddress.isNotBlank() && playitState.secondaryAddress != playitState.publicAddress) {
                 Spacer(Modifier.height(6.dp))
                 AddressCopyRow(
-                    label = "Địa chỉ dự phòng (IP:Port)",
-                    value = playitState.secondaryAddress,
+                    label = "Địa chỉ dự phòng (IP:Port của Playit Cloud)",
+                    value = PlayitTunnelController.maskEndpointForDisplay(playitState.secondaryAddress, maskAddress),
                     onCopy = { vm.copyPublicUrl(context, playitState.secondaryAddress) },
                     icon = Icons.Outlined.Lan,
                     accent = Indigo,
@@ -386,8 +573,21 @@ private fun PlayitEverywhereCard(
         }
 
         Spacer(Modifier.height(12.dp))
+        if (!serverRunning && !isRunning && !isBusy) {
+            Button(
+                onClick = { vm.startServerWithMode(PlayConnectionMode.Everywhere) },
+                colors = ButtonDefaults.buttonColors(containerColor = Mint),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Outlined.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.size(6.dp))
+                Text("🚀 Bật Cả Máy Chủ + Kết Nối Mọi Nơi (1 Chạm)", color = Color.White, fontWeight = FontWeight.Bold)
+            }
+            Spacer(Modifier.height(8.dp))
+        }
         TunnelActionRow(
-            startText = if (playitState.hasSavedSecret) "🚀 Bật kết nối Mọi Nơi" else "🚀 Kích hoạt & Bật kết nối",
+            startText = if (playitState.hasSavedSecret) "🌐 Chỉ bật đường hầm" else "🌐 Kích hoạt Playit",
             stopText = "⏹️ Dừng Playit.gg",
             startEnabled = !isRunning && !isBusy,
             stopEnabled = isRunning || isBusy,
@@ -487,6 +687,7 @@ private fun PlayitEverywhereCard(
 private fun VirtualLanCard(
     serverPort: Int,
     endpoints: List<VirtualLanEndpoint>,
+    maskAddress: Boolean,
     onRefresh: () -> Unit,
     onCopy: (String) -> Unit,
     context: Context
@@ -495,7 +696,7 @@ private fun VirtualLanCard(
 
     McCard(title = "⚡ Mạng LAN Ảo P2P (ZeroTier / Tailscale — Ping cực thấp cho Map Mod)") {
         Text(
-            "Nếu bạn host Map có nhiều Mod nặng và muốn đường truyền trực tiếp giữa các máy tại Việt Nam (ping 15–30ms, dùng được cả 4G lẫn Wi-Fi), hãy bật ZeroTier One hoặc Tailscale.",
+            "Nếu bạn host Map có nhiều Mod nặng và muốn đường truyền trực tiếp giữa các máy tại Việt Nam (ping 15–30ms, dùng được cả 4G lẫn Wi-Fi, bảo mật mã hóa đầu-cuối không lộ IP nhà), hãy bật ZeroTier One hoặc Tailscale.",
             color = Muted,
             fontSize = 11.sp,
             lineHeight = 16.sp
@@ -514,7 +715,7 @@ private fun VirtualLanCard(
                 val fullAddr = "${ep.ip}:$serverPort"
                 AddressCopyRow(
                     label = "${ep.providerLabel} (${ep.interfaceName})",
-                    value = fullAddr,
+                    value = PlayitTunnelController.maskEndpointForDisplay(fullAddr, maskAddress),
                     onCopy = { onCopy(fullAddr) },
                     icon = Icons.Outlined.Lan,
                     accent = Mint,
@@ -701,33 +902,39 @@ private fun LocalAddressCard(
     serverPort: Int,
     lanIp: String,
     serverRunning: Boolean,
+    maskAddress: Boolean,
     context: Context
 ) {
-    McCard(title = stringResource(R.string.s586)) {
-        StatusPill(
-            if (serverRunning) stringResource(R.string.s587) else stringResource(R.string.s280),
-            if (serverRunning) Mint else Muted
-        )
+    McCard(title = "🏠 Địa chỉ Chơi Cùng Mạng (Wi-Fi / Phát 4G Hotspot)") {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            StatusPill(
+                if (serverRunning) stringResource(R.string.s587) else stringResource(R.string.s280),
+                if (serverRunning) Mint else Muted
+            )
+            if (!serverRunning) {
+                Button(
+                    onClick = { vm.startServerWithMode(PlayConnectionMode.SameNetwork) },
+                    colors = ButtonDefaults.buttonColors(containerColor = Mint),
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                    modifier = Modifier.height(32.dp)
+                ) {
+                    Text("▶️ Bật máy chủ Cùng Mạng", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
         Spacer(Modifier.height(12.dp))
 
-        Text(stringResource(R.string.s588), color = Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.height(6.dp))
-        AddressCopyRow(
-            label = stringResource(R.string.s588),
-            value = "127.0.0.1:$serverPort",
-            onCopy = { copyToClipboard(context, "MC Server", "127.0.0.1:$serverPort") }
-        )
-        Spacer(Modifier.height(6.dp))
-        Text(stringResource(R.string.s589), color = Muted, fontSize = 10.sp)
-
-        Spacer(Modifier.height(12.dp))
-
-        Text(stringResource(R.string.s590), color = Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+        Text("1️⃣ Dành cho bạn bè bắt chung Wi-Fi hoặc bắt 4G Hotspot của bạn:", color = Mint, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(6.dp))
         val lanAddress = if (lanIp == "--") "--:$serverPort" else "$lanIp:$serverPort"
         AddressCopyRow(
             label = stringResource(R.string.s592),
-            value = lanAddress,
+            value = PlayitTunnelController.maskEndpointForDisplay(lanAddress, maskAddress),
             onCopy = { vm.copyServerAddress(context) },
             icon = Icons.Outlined.Lan,
             accent = Mint,
@@ -749,8 +956,21 @@ private fun LocalAddressCard(
                 )
             }
         }
+
+        Spacer(Modifier.height(12.dp))
+
+        Text("2️⃣ Dành cho chính điện thoại đang mở server này:", color = Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(6.dp))
-        HintNote("📶 Mẹo chơi qua 4G khi ngồi gần nhau: Bạn có thể bật 'Điểm truy cập cá nhân' (Phát Wi-Fi từ 4G) trên máy này cho bạn bè kết nối vào, sau đó bấm nút 🔄 làm mới ở trên để lấy địa chỉ LAN nội bộ không tốn băng thông trung gian.")
+        AddressCopyRow(
+            label = stringResource(R.string.s588),
+            value = "127.0.0.1:$serverPort",
+            onCopy = { copyToClipboard(context, "MC Server", "127.0.0.1:$serverPort") }
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(stringResource(R.string.s589), color = Muted, fontSize = 10.sp)
+
+        Spacer(Modifier.height(8.dp))
+        HintNote("📶 Cách chơi bằng 4G không cần Wi-Fi khi ngồi gần nhau:\n• Bước 1: Mở 'Điểm truy cập cá nhân' (Phát Wi-Fi từ 4G) trên điện thoại cho các máy khác kết nối vào.\n• Bước 2: Bấm nút 🔄 Làm mới ở trên để lấy địa chỉ LAN nội bộ (192.168.x.x) gửi cho bạn bè — tốc độ cực nhanh, không tốn dung lượng trung gian và tuyệt đối không lộ IP ra ngoài!")
     }
 }
 
@@ -987,7 +1207,7 @@ private fun StunCard(
     McCard(title = stringResource(R.string.stun_card_title)) {
         TunnelStatusHeader(stunState.status, null)
         Spacer(Modifier.height(10.dp))
-        HintNote(stringResource(R.string.net_stun_ip_warning))
+        WarnNote("⚠️ Lưu ý bảo mật IP: Khác với Playit.gg (ẩn IP nhà 100% qua đám mây), tính năng STUN đục lỗ NAT trực tiếp nên địa chỉ tạo ra sẽ chứa IP WAN thật của mạng nhà bạn. Chỉ nên gửi địa chỉ STUN cho bạn bè thân thiết, hoặc dùng Playit.gg ở trên để ẩn IP tuyệt đối!")
 
         TunnelPreconditionNotes(stunState, serverRunning)
 

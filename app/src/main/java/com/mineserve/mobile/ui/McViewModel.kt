@@ -2445,6 +2445,9 @@ class McViewModel(
                 // 不能再把保活服务拉起来——否则会出现「没在跑却常驻前台服务」。
                 if (repo.serverState.value.isRunning) {
                     startKeepAliveService()
+                    if (playConnectionMode.value == PlayConnectionMode.Everywhere) {
+                        startPlayitTunnel()
+                    }
                 }
             } catch (e: Exception) {
                 repo.updateServerState {
@@ -4092,7 +4095,7 @@ class McViewModel(
         }
     }
 
-    // ── Playit.gg Chơi mọi nơi (4G / Khác Wi-Fi) & Chỉnh nhanh Tầm nhìn (4-32 Chunk) ──
+    // ── Playit.gg Chơi mọi nơi (4G / Khác Wi-Fi) & 2 Chế Độ Chơi & Chỉnh nhanh Tầm nhìn (4-32 Chunk) ──
 
     private val playitController: PlayitTunnelController by lazy {
         PlayitTunnelController(app, viewModelScope) { line ->
@@ -4100,6 +4103,37 @@ class McViewModel(
         }
     }
     val playitState: StateFlow<PlayitUiState> get() = playitController.state
+    val playConnectionMode: StateFlow<PlayConnectionMode> get() = playitController.playConnectionMode
+    val maskAddressInUi: StateFlow<Boolean> get() = playitController.maskAddressInUi
+
+    fun setPlayConnectionMode(mode: PlayConnectionMode) {
+        playitController.setPlayConnectionMode(mode)
+        if (mode == PlayConnectionMode.Everywhere) {
+            if (repo.serverState.value.isRunning && playitState.value.stage == PlayitStage.Idle) {
+                startPlayitTunnel()
+                _messageFlow.tryEmit("🌍 Đã bật chế độ Kết Nối Mọi Nơi & tự động mở đường hầm Playit Cloud (Ẩn 100% IP nhà)!")
+            } else {
+                _messageFlow.tryEmit("🌍 Đã chọn chế độ Kết Nối Mọi Nơi (Qua 4G / Khác Wi-Fi — Ẩn 100% IP mạng nhà)!")
+            }
+        } else {
+            if (playitState.value.stage != PlayitStage.Idle) {
+                stopPlayitTunnel()
+            }
+            _messageFlow.tryEmit("🏠 Đã chọn chế độ Chơi Cùng Mạng (Chung Wi-Fi / Phát 4G Hotspot)!")
+        }
+    }
+
+    fun setMaskAddressInUi(masked: Boolean) {
+        playitController.setMaskAddressInUi(masked)
+    }
+
+    fun startServerWithMode(mode: PlayConnectionMode) {
+        playitController.setPlayConnectionMode(mode)
+        if (mode == PlayConnectionMode.Everywhere) {
+            startPlayitTunnel()
+        }
+        startServer()
+    }
 
     fun startPlayitTunnel() {
         playitController.start { serverPort.value }

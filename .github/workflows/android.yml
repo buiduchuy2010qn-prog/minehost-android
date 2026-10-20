@@ -76,30 +76,32 @@ jobs:
         run: |
           set -euo pipefail
           APK=$(find app/build/outputs/apk/release -name '*.apk' -print -quit)
-          cp -f "$APK" app/build/outputs/apk/release/MineHost-1.2-arm64.apk
+          cp -f "$APK" app/build/outputs/apk/release/MineHost-1.3-arm64.apk
           if [ "$APK" != "app/build/outputs/apk/release/MineHost-arm64-v8a-release.apk" ]; then
             cp -f "$APK" app/build/outputs/apk/release/MineHost-arm64-v8a-release.apk
           fi
-          sha256sum app/build/outputs/apk/release/MineHost-1.2-arm64.apk > app/build/outputs/apk/release/SHA256SUMS.txt
-          NOTES='Bản chính thức **MineHost 1.2 (ARM64)**:
-          - **Chơi mọi nơi qua 4G / Khác Wi-Fi (Tích hợp sẵn Playit.gg & Mạng LAN ảo ZeroTier/Tailscale):** Mở địa chỉ công khai miễn phí (*.gl.joinmc.link / ip:port) ngay trong ứng dụng chỉ với 1 chạm, không cần xác minh CCCD Trung Quốc và bạn bè không cần cài thêm app phụ. Hỗ trợ tự động nhận diện IP mạng ảo ZeroTier / Tailscale cho Map Mod nặng.
-          - **Nâng Tầm Nhìn Máy Chủ lên tới 32 Chunk (View Distance & Simulation Distance Booster):** Bổ sung bộ chỉnh nhanh Tầm nhìn hiển thị (4 – 32 Chunk) và Khoảng cách mô phỏng (4 – 16 Chunk) ngay tại Quản lý máy chủ, Cấu hình và Bảng điều khiển giúp nhìn xa tới 512 ô mà không gây giật lag điện thoại.
-          - **Bảng Điều Khiển & Quản Lý Pro:** Nâng cấp Bảng điều khiển với thanh trạng thái trực tiếp, bộ lọc/tìm kiếm nhật ký, 5 nhóm lệnh nhanh phân loại rõ ràng và các hộp thoại tương tác (Nâng tầm nhìn nhanh, Phát thông báo chữ lớn giữa màn hình Title/Say, Cấp OP / Đổi chế độ chơi / Kick nhanh).
-          - **Đánh số phiên bản chính thức 1.2:** Chuyển sang lộ trình phiên bản chính thức 1.2, 1.3, 1.4... và hỗ trợ **cài đè trực tiếp** lên các bản trước không mất dữ liệu.'
-          if gh release view v1.2 --repo "${{ github.repository }}" >/dev/null 2>&1; then
-            gh release upload v1.2 \
-              app/build/outputs/apk/release/MineHost-1.2-arm64.apk \
+          sha256sum app/build/outputs/apk/release/MineHost-1.3-arm64.apk > app/build/outputs/apk/release/SHA256SUMS.txt
+          NOTES='Bản chính thức **MineHost 1.3 (ARM64)**:
+          - **Bộ chọn 2 Chế Độ Chơi cực dễ dùng ngay tại Trang chủ & Mạng:**
+            1. **🏠 Chơi Cùng Mạng (Wi-Fi / Phát 4G Hotspot):** Dành cho bạn bè bắt chung Wi-Fi hoặc phát điểm truy cập cá nhân 4G.
+            2. **🌍 Bật Kết Nối Mọi Nơi (Qua 4G / Khác Wi-Fi):** Khi bật máy chủ sẽ tự động mở đường hầm Playit.gg Cloud để bạn bè ở bất kỳ đâu đều vào được.
+          - **Bảo vệ 100% — Không lộ IP mạng nhà & Chế độ Che Địa Chỉ (Streamer Mode):** Playit.gg Cloud tạo địa chỉ trung gian đám mây (*.gl.joinmc.link), hoàn toàn không lộ IP Wi-Fi nhà hay IP 4G của bạn và chống DDoS vào mạng gia đình. Tích hợp nút **🙈 Che IP / 👁️ Hiện IP** trên màn hình để chụp ảnh/quay video không sợ lộ phòng.
+          - **Giao diện tinh gọn & Chỉnh nhanh 1 chạm tại Trang chủ:** Loại bỏ nút QQ thừa, tự ẩn thẻ cài đặt khi đã đủ gói cơ bản, thu gọn FRP/STUN nâng cao và thêm thanh bật nhanh Cracked (Offline) + Tầm nhìn (8–32 Chunk) ngay tại Tổng quan.
+          - Hỗ trợ **cài đè trực tiếp** lên bản 1.2 không mất dữ liệu.'
+          if gh release view v1.3 --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release upload v1.3 \
+              app/build/outputs/apk/release/MineHost-1.3-arm64.apk \
               app/build/outputs/apk/release/MineHost-arm64-v8a-release.apk \
               app/build/outputs/apk/release/SHA256SUMS.txt \
               app/build/outputs/apk/release/SOURCE-COMMIT.txt \
               --clobber --repo "${{ github.repository }}"
           else
-            gh release create v1.2 \
-              app/build/outputs/apk/release/MineHost-1.2-arm64.apk \
+            gh release create v1.3 \
+              app/build/outputs/apk/release/MineHost-1.3-arm64.apk \
               app/build/outputs/apk/release/MineHost-arm64-v8a-release.apk \
               app/build/outputs/apk/release/SHA256SUMS.txt \
               app/build/outputs/apk/release/SOURCE-COMMIT.txt \
-              --title "MineHost 1.2 - Chơi Mọi Nơi 4G/Wi-Fi (Playit.gg), Nâng Tầm Nhìn 32 Chunk & Bảng Điều Khiển Pro" \
+              --title "MineHost 1.3 - 2 Chế Độ Chơi (Cùng Mạng & Mọi Nơi), Bảo Vệ Chống Lộ IP Nhà & Giao Diện Tối Giản" \
               --notes "$NOTES" \
               --latest \
               --repo "${{ github.repository }}"
