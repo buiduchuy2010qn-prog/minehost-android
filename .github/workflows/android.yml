@@ -76,31 +76,30 @@ jobs:
         run: |
           set -euo pipefail
           APK=$(find app/build/outputs/apk/release -name '*.apk' -print -quit)
-          cp -f "$APK" app/build/outputs/apk/release/MineHost-0.1.0-alpha.4-arm64.apk
+          cp -f "$APK" app/build/outputs/apk/release/MineHost-1.2-arm64.apk
           if [ "$APK" != "app/build/outputs/apk/release/MineHost-arm64-v8a-release.apk" ]; then
             cp -f "$APK" app/build/outputs/apk/release/MineHost-arm64-v8a-release.apk
           fi
-          sha256sum app/build/outputs/apk/release/MineHost-0.1.0-alpha.4-arm64.apk > app/build/outputs/apk/release/SHA256SUMS.txt
-          NOTES='Bản cập nhật **MineHost 0.1.0-alpha.4 (ARM64)**:
-          - **Sửa triệt để lỗi nhập Map (tbd: Cello error 8 từ Google Drive):** Bổ sung danh sách chọn nhanh tệp ZIP trực tiếp từ thư mục Download / Bộ nhớ máy ngay trên màn hình Nhập thế giới, tự động chuyển hướng sang tệp cục bộ trong Download nếu trình chọn tệp trỏ nhầm vào Google Drive, và tự động chuẩn hóa cấu trúc ZIP lồng nhiều thư mục.
-          - **Việt hóa 100% toàn bộ ứng dụng (1.631 chuỗi giao diện & Bảng điều khiển Console):** Toàn bộ các màn hình, thông báo, nhật ký Console và nút lệnh nhanh đều đã sang tiếng Việt hoàn chỉnh.
-          - **Hỗ trợ nhập Map có sẵn Mod (.zip kèm mods/config & cài Mod .jar/mods.zip rời):** Tự động giải nén mods/*.jar và config/ khi nhập Map ZIP, đồng thời bổ sung công cụ chọn nhiều tệp .jar hoặc mods.zip ngay trên trang Nhập thế giới.
-          - **Tích hợp Hướng dẫn cài đặt & Cách khắc phục lỗi trực tiếp:** Thêm thẻ hướng dẫn từng bước tại trang Môi trường, Tải Core, Nhập Map và tự động hiển thị gợi ý "-> Cách sửa:..." bằng tiếng Việt ngay trên Console khi server gặp lỗi (EULA, trùng cổng, thiếu Java, lỗi Mod, tràn RAM...).
-          - **Cài đè trực tiếp:** Cùng chữ ký số và Application ID (vn.minehost.android), cài đè trực tiếp lên bản alpha.2 / alpha.3 không mất dữ liệu.'
-          if gh release view v0.1.0-alpha.4 --repo "${{ github.repository }}" >/dev/null 2>&1; then
-            gh release upload v0.1.0-alpha.4 \
-              app/build/outputs/apk/release/MineHost-0.1.0-alpha.4-arm64.apk \
+          sha256sum app/build/outputs/apk/release/MineHost-1.2-arm64.apk > app/build/outputs/apk/release/SHA256SUMS.txt
+          NOTES='Bản chính thức **MineHost 1.2 (ARM64)**:
+          - **Chơi mọi nơi qua 4G / Khác Wi-Fi (Tích hợp sẵn Playit.gg & Mạng LAN ảo ZeroTier/Tailscale):** Mở địa chỉ công khai miễn phí (*.gl.joinmc.link / ip:port) ngay trong ứng dụng chỉ với 1 chạm, không cần xác minh CCCD Trung Quốc và bạn bè không cần cài thêm app phụ. Hỗ trợ tự động nhận diện IP mạng ảo ZeroTier / Tailscale cho Map Mod nặng.
+          - **Nâng Tầm Nhìn Máy Chủ lên tới 32 Chunk (View Distance & Simulation Distance Booster):** Bổ sung bộ chỉnh nhanh Tầm nhìn hiển thị (4 – 32 Chunk) và Khoảng cách mô phỏng (4 – 16 Chunk) ngay tại Quản lý máy chủ, Cấu hình và Bảng điều khiển giúp nhìn xa tới 512 ô mà không gây giật lag điện thoại.
+          - **Bảng Điều Khiển & Quản Lý Pro:** Nâng cấp Bảng điều khiển với thanh trạng thái trực tiếp, bộ lọc/tìm kiếm nhật ký, 5 nhóm lệnh nhanh phân loại rõ ràng và các hộp thoại tương tác (Nâng tầm nhìn nhanh, Phát thông báo chữ lớn giữa màn hình Title/Say, Cấp OP / Đổi chế độ chơi / Kick nhanh).
+          - **Đánh số phiên bản chính thức 1.2:** Chuyển sang lộ trình phiên bản chính thức 1.2, 1.3, 1.4... và hỗ trợ **cài đè trực tiếp** lên các bản trước không mất dữ liệu.'
+          if gh release view v1.2 --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release upload v1.2 \
+              app/build/outputs/apk/release/MineHost-1.2-arm64.apk \
               app/build/outputs/apk/release/MineHost-arm64-v8a-release.apk \
               app/build/outputs/apk/release/SHA256SUMS.txt \
               app/build/outputs/apk/release/SOURCE-COMMIT.txt \
               --clobber --repo "${{ github.repository }}"
           else
-            gh release create v0.1.0-alpha.4 \
-              app/build/outputs/apk/release/MineHost-0.1.0-alpha.4-arm64.apk \
+            gh release create v1.2 \
+              app/build/outputs/apk/release/MineHost-1.2-arm64.apk \
               app/build/outputs/apk/release/MineHost-arm64-v8a-release.apk \
               app/build/outputs/apk/release/SHA256SUMS.txt \
               app/build/outputs/apk/release/SOURCE-COMMIT.txt \
-              --title "MineHost 0.1.0-alpha.4 - Full Tiếng Việt, Hỗ trợ Map Mod & Sửa lỗi Cello 8" \
+              --title "MineHost 1.2 - Chơi Mọi Nơi 4G/Wi-Fi (Playit.gg), Nâng Tầm Nhìn 32 Chunk & Bảng Điều Khiển Pro" \
               --notes "$NOTES" \
               --latest \
               --repo "${{ github.repository }}"

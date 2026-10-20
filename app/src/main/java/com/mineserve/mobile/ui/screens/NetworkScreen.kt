@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.DataUsage
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
@@ -36,6 +37,7 @@ import androidx.compose.material.icons.outlined.Lan
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.OpenInFull
 import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material3.AlertDialog
@@ -47,6 +49,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Scaffold
@@ -85,8 +88,12 @@ import com.mineserve.mobile.ui.HeaderBlock
 import com.mineserve.mobile.ui.HintNote
 import com.mineserve.mobile.ui.McCard
 import com.mineserve.mobile.ui.McViewModel
+import com.mineserve.mobile.ui.PlayitStage
+import com.mineserve.mobile.ui.PlayitTunnelController
+import com.mineserve.mobile.ui.PlayitUiState
 import com.mineserve.mobile.ui.StatLine
 import com.mineserve.mobile.ui.StatusPill
+import com.mineserve.mobile.ui.VirtualLanEndpoint
 import com.mineserve.mobile.ui.WarnNote
 import com.mineserve.mobile.ui.theme.Coral
 import com.mineserve.mobile.ui.theme.FieldBg
@@ -100,24 +107,6 @@ import com.mineserve.mobile.ui.theme.Muted
 import com.mineserve.mobile.ui.theme.TrackBg
 import kotlinx.coroutines.flow.collectLatest
 
-/**
- * 网络页。
- *
- * ## 组织方式
- *
- * 页面只有**两条独立的通道**，各自一张卡片、各自一套启停按钮：
- *
- * 1. 本地连接地址 —— 本机与局域网怎么连（不涉及公网）；
- * 2. FRP 卡 —— frp 家族（自建 frp / SakuraFrp / ME Frp）共用一条通道，
- *    靠「多份配置」切换具体用哪一份；
- * 3. STUN 卡 —— 自成一通道，可与 FRP 同时运行。
- *
- * 原先那张「连接与穿透状态」卡已删除：它把所有后端的状态糊成一份，
- * 既表达不了「两条同时在跑」，其中的速度/流量统计也只有已下线 bore 后端会上报。
- * 现在每张卡订阅自己的状态流，显示的都是该通道的真实运行结果。
- *
- * @param onOpenFrpEditor 打开 FRP 配置编辑页；参数是配置 id，null 表示新建。
- */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun NetworkScreen(
@@ -127,22 +116,23 @@ fun NetworkScreen(
     onOpenFrpEditor: (String?) -> Unit = {}
 ) {
     val config by vm.config.collectAsState()
-    // 端口真源：服务端配置文件里的 server-port（未生成时退回 localPort）。
     val serverPort by vm.serverPort.collectAsState()
     val lanIp by vm.lanIp.collectAsState()
     val serverState by vm.serverState.collectAsState()
     val frpState by vm.frpState.collectAsState()
     val stunState by vm.stunState.collectAsState()
     val stunDiag by vm.stunDiagnostics.collectAsState()
+    val playitState by vm.playitState.collectAsState()
     val consoleLines by vm.consoleLines.collectAsState()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
+    var virtualLanEndpoints by remember { mutableStateOf(PlayitTunnelController.detectVirtualLanEndpoints()) }
 
-    LaunchedEffect(Unit) { vm.refreshLanIp() }
-    // 端口真源也在这里补读一次：用户可能在别处（文件管理器、服务端配置页）改过端口，
-    // 只靠「服务端配置页」那一次读取的话，本页地址栏会一直显示旧端口。
+    LaunchedEffect(Unit) {
+        vm.refreshLanIp()
+        virtualLanEndpoints = PlayitTunnelController.detectVirtualLanEndpoints()
+    }
     LaunchedEffect(Unit) { vm.loadServerProperties() }
-    // 收集操作结果和错误消息，通过 Snackbar 显示（修复"点击无反应"Bug的关键）
     LaunchedEffect(Unit) {
         vm.messageFlow.collectLatest { snackbarHostState.showSnackbar(it) }
     }
@@ -152,7 +142,6 @@ fun NetworkScreen(
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
-        // 嵌套在外层 McApp Scaffold 内：insets 已由外层消费，这里不再重复应用，避免顶部空白/白色遮挡
         contentWindowInsets = WindowInsets(0.dp)
     ) { paddingValues ->
         Column(
@@ -161,7 +150,6 @@ fun NetworkScreen(
                 .padding(paddingValues)
                 .verticalScroll(rememberScrollState())
         ) {
-            // 子页面时显示返回栏；作为底部 tab 时由 HeaderBlock 处理状态栏
             if (showBackBar) {
                 BackBar(title = stringResource(R.string.s541), onBack = onBack)
             }
@@ -171,7 +159,16 @@ fun NetworkScreen(
                 statusBarPadding = !showBackBar
             )
 
-            // ── 1. 本地连接地址 ────────────────────────────────
+            // ── 1. Playit.gg tích hợp sẵn: Chơi mọi nơi qua 4G / Khác Wi-Fi ──
+            PlayitEverywhereCard(
+                vm = vm,
+                playitState = playitState,
+                serverRunning = serverState.isRunning,
+                serverPort = serverPort,
+                context = context
+            )
+
+            // ── 2. Địa chỉ kết nối cục bộ & Điểm phát sóng 4G Hotspot ────────
             LocalAddressCard(
                 vm = vm,
                 serverPort = serverPort,
@@ -180,7 +177,19 @@ fun NetworkScreen(
                 context = context
             )
 
-            // ── 2. FRP ────────────────────────────────────────
+            // ── 3. Mạng LAN Ảo P2P (ZeroTier One / Tailscale cho Map Mod nặng) ──
+            VirtualLanCard(
+                serverPort = serverPort,
+                endpoints = virtualLanEndpoints,
+                onRefresh = {
+                    vm.refreshLanIp()
+                    virtualLanEndpoints = PlayitTunnelController.detectVirtualLanEndpoints()
+                },
+                onCopy = { url -> vm.copyPublicUrl(context, url) },
+                context = context
+            )
+
+            // ── 4. FRP ────────────────────────────────────────────────────────
             FrpCard(
                 vm = vm,
                 config = config,
@@ -193,7 +202,7 @@ fun NetworkScreen(
                 onCopy = { url -> vm.copyPublicUrl(context, url) }
             )
 
-            // ── 3. STUN 直连 ──────────────────────────────────
+            // ── 5. STUN 直连 ──────────────────────────────────────────────────
             StunCard(
                 vm = vm,
                 config = config,
@@ -205,13 +214,13 @@ fun NetworkScreen(
                 onCopy = { url -> vm.copyPublicUrl(context, url) }
             )
 
-            // ── 4. 隧道日志 ───────────────────────────────────
-            TunnelLogPreview(consoleLines, frpState, stunState)
+            // ── 6. Nhật ký đường hầm ──────────────────────────────────────────
+            TunnelLogPreview(consoleLines, frpState, stunState, playitState)
 
-            // ── 5. 免费 FRP 平台 ──────────────────────────────
+            // ── 7. Các nền tảng mở cổng & mạng ảo miễn phí ────────────────────
             FreeFrpPlatformsCard(context)
 
-            // ── 6. 操作指南 ───────────────────────────────────
+            // ── 8. Hướng dẫn chi tiết ─────────────────────────────────────────
             NetworkGuide()
 
             Spacer(Modifier.height(16.dp))
@@ -219,18 +228,363 @@ fun NetworkScreen(
     }
 }
 
-/** 复制文本到剪贴板（含说明标签，用于系统剪贴板隐私提示）。 */
 private fun copyToClipboard(context: Context, label: String, text: String) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
     clipboard.setPrimaryClip(android.content.ClipData.newPlainText(label, text))
 }
 
-// ── 两张卡共用的骨架 ──────────────────────────────────────────
-//
-// 抽出来是为了让 FRP 与 STUN 的「状态怎么显示、按钮长什么样」出自同一份代码：
-// 各写一遍迟早会漂移成两种视觉语言。
+@Composable
+private fun PlayitEverywhereCard(
+    vm: McViewModel,
+    playitState: PlayitUiState,
+    serverRunning: Boolean,
+    serverPort: Int,
+    context: Context
+) {
+    var showSecretEditor by remember { mutableStateOf(false) }
+    var manualSecretInput by remember { mutableStateOf("") }
+    var showHowItWorks by remember { mutableStateOf(false) }
 
-/** 状态 → 语义色与文案。全局唯一一份映射。 */
+    val isRunning = playitState.stage == PlayitStage.Running
+    val isBusy = playitState.stage == PlayitStage.WaitingForClaim ||
+        playitState.stage == PlayitStage.VerifyingSecret ||
+        playitState.stage == PlayitStage.CreatingTunnel ||
+        playitState.stage == PlayitStage.ConnectingControl
+
+    val statusColor = when (playitState.stage) {
+        PlayitStage.Running -> Mint
+        PlayitStage.WaitingForClaim, PlayitStage.VerifyingSecret, PlayitStage.CreatingTunnel, PlayitStage.ConnectingControl -> Coral
+        PlayitStage.Error -> Coral
+        PlayitStage.Idle -> Muted
+    }
+
+    McCard(title = "🌍 Chơi Mọi Nơi Qua 4G / Khác Wi-Fi (Playit.gg Tích Hợp)") {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (isBusy) {
+                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = statusColor)
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(10.dp)
+                        .clip(CircleShape)
+                        .background(statusColor)
+                )
+            }
+            Spacer(Modifier.size(8.dp))
+            StatusPill(playitState.statusText, statusColor)
+            Spacer(Modifier.size(6.dp))
+            Text("· Cổng đích $serverPort", color = Muted, fontSize = 11.sp)
+        }
+
+        Spacer(Modifier.height(8.dp))
+        HintNote(
+            "Giải pháp khuyên dùng số 1 tại Việt Nam: Mở địa chỉ công khai miễn phí giúp bạn bè dùng 4G, 5G hoặc Wi-Fi khác nhà vào thẳng server mà KHÔNG cần cài thêm ứng dụng hay xác minh CCCD."
+        )
+
+        if (!serverRunning && !isRunning) {
+            Spacer(Modifier.height(8.dp))
+            WarnNote("💡 Lưu ý: Hãy bật máy chủ Minecraft (ở trang Tổng quan hoặc Quản lý) để người chơi kết nối vào được sau khi mở đường hầm.")
+        }
+
+        // Bước kích hoạt 1 lần trên trình duyệt khi chưa có Secret Key
+        if (playitState.stage == PlayitStage.WaitingForClaim && playitState.claimUrl.isNotBlank()) {
+            Spacer(Modifier.height(10.dp))
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(IndigoSoft)
+                    .padding(12.dp)
+            ) {
+                Text(
+                    "🔗 Kích hoạt 1 chạm (Chỉ cần làm 1 lần đầu tiên)",
+                    color = Indigo,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "1. Bấm nút 'Mở trang kích hoạt Playit.gg' bên dưới.\n" +
+                        "2. Trên web hiện ra, bấm 'Continue' / 'Add Agent' (có thể chọn Guest miễn phí, không cần tạo tài khoản).\n" +
+                        "3. Quay lại ứng dụng MineHost — hệ thống sẽ tự động nhận khóa và tạo địa chỉ server cho bạn!",
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontSize = 11.sp,
+                    lineHeight = 16.sp
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = {
+                            runCatching {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(playitState.claimUrl)))
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Indigo),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.AutoMirrored.Outlined.OpenInNew, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.size(6.dp))
+                        Text("Mở trang kích hoạt", color = Color.White, fontSize = 12.sp)
+                    }
+                    OutlinedButton(
+                        onClick = { vm.copyPublicUrl(context, playitState.claimUrl) },
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Outlined.ContentCopy, contentDescription = null, tint = Indigo, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.size(4.dp))
+                        Text("Copy link", color = Indigo, fontSize = 12.sp)
+                    }
+                }
+            }
+        }
+
+        if (playitState.errorMessage.isNotBlank()) {
+            Spacer(Modifier.height(10.dp))
+            WarnNote(playitState.errorMessage)
+        }
+
+        // Hiển thị Địa chỉ Công khai để gửi cho bạn bè
+        if (playitState.publicAddress.isNotBlank()) {
+            Spacer(Modifier.height(12.dp))
+            Text(
+                if (isRunning) "✅ Địa chỉ công khai (Gửi cho bạn bè dùng 4G / Wi-Fi bất kỳ):"
+                else "📌 Địa chỉ Playit.gg gần nhất của bạn (Hãy bấm Bật kết nối để hoạt động):",
+                color = if (isRunning) Mint else Muted,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(Modifier.height(6.dp))
+            AddressCopyRow(
+                label = "Địa chỉ Internet (4G / Mọi Wi-Fi)",
+                value = playitState.publicAddress,
+                onCopy = { vm.copyPublicUrl(context, playitState.publicAddress) },
+                icon = Icons.Outlined.Public,
+                accent = if (isRunning) Mint else Indigo,
+                containerColor = if (isRunning) MintSoft else IndigoSoft,
+                borderColor = if (isRunning) Mint else Indigo
+            )
+            if (playitState.secondaryAddress.isNotBlank() && playitState.secondaryAddress != playitState.publicAddress) {
+                Spacer(Modifier.height(6.dp))
+                AddressCopyRow(
+                    label = "Địa chỉ dự phòng (IP:Port)",
+                    value = playitState.secondaryAddress,
+                    onCopy = { vm.copyPublicUrl(context, playitState.secondaryAddress) },
+                    icon = Icons.Outlined.Lan,
+                    accent = Indigo,
+                    containerColor = IndigoSoft
+                )
+            }
+        }
+
+        if (isRunning) {
+            Spacer(Modifier.height(10.dp))
+            StatLine(
+                Icons.Outlined.Link,
+                "Đang có ${playitState.activeConnections} kết nối người chơi qua đường hầm Playit.gg"
+            )
+        }
+
+        Spacer(Modifier.height(12.dp))
+        TunnelActionRow(
+            startText = if (playitState.hasSavedSecret) "🚀 Bật kết nối Mọi Nơi" else "🚀 Kích hoạt & Bật kết nối",
+            stopText = "⏹️ Dừng Playit.gg",
+            startEnabled = !isRunning && !isBusy,
+            stopEnabled = isRunning || isBusy,
+            onStart = { vm.startPlayitTunnel() },
+            onStop = { vm.stopPlayitTunnel() }
+        )
+
+        Spacer(Modifier.height(6.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextButton(onClick = { showHowItWorks = !showHowItWorks }) {
+                Icon(
+                    if (showHowItWorks) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                    contentDescription = null,
+                    tint = Indigo,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(Modifier.size(4.dp))
+                Text("Hướng dẫn bạn bè vào server", color = Indigo, fontSize = 11.sp)
+            }
+            TextButton(onClick = { showSecretEditor = !showSecretEditor }) {
+                Icon(Icons.Outlined.Edit, contentDescription = null, tint = Muted, modifier = Modifier.size(14.dp))
+                Spacer(Modifier.size(4.dp))
+                Text("Quản lý khóa Agent", color = Muted, fontSize = 11.sp)
+            }
+        }
+
+        if (showHowItWorks) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(FieldBg)
+                    .padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text("📖 Cách để bạn bè ở xa (dùng 4G hoặc Wi-Fi khác) vào chơi:", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text("• Bước 1: Bạn khởi động máy chủ Minecraft ở trang Tổng quan/Quản lý (nếu bạn bè dùng tài khoản Cracked/Offline, nhớ tắt chế độ Bản quyền online-mode=false).", color = Muted, fontSize = 11.sp, lineHeight = 15.sp)
+                Text("• Bước 2: Bấm '🚀 Bật kết nối Mọi Nơi' ở trên. Sao chép địa chỉ công khai (ví dụ: xxx.gl.joinmc.link).", color = Muted, fontSize = 11.sp, lineHeight = 15.sp)
+                Text("• Bước 3: Bạn bè mở Minecraft (trên điện thoại 4G/Wi-Fi hoặc PC) -> Chơi nhiều người (Multiplayer) -> Kết nối trực tiếp / Thêm máy chủ -> Dán địa chỉ đó vào là vào chơi ngay!", color = Muted, fontSize = 11.sp, lineHeight = 15.sp)
+            }
+        }
+
+        if (showSecretEditor) {
+            Spacer(Modifier.height(6.dp))
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(FieldBg)
+                    .padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("🔑 Nhập Agent Secret Key thủ công hoặc đặt lại liên kết:", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                OutlinedTextField(
+                    value = manualSecretInput,
+                    onValueChange = { manualSecretInput = it },
+                    placeholder = { Text("Dán Agent Secret Key (hex) nếu đã có sẵn...", fontSize = 11.sp) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = {
+                            vm.setPlayitSecretKey(manualSecretInput)
+                            manualSecretInput = ""
+                            showSecretEditor = false
+                        },
+                        enabled = manualSecretInput.trim().length >= 24,
+                        colors = ButtonDefaults.buttonColors(containerColor = Indigo),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Lưu & Kết nối", color = Color.White, fontSize = 11.sp)
+                    }
+                    if (playitState.hasSavedSecret) {
+                        OutlinedButton(
+                            onClick = {
+                                vm.resetPlayitSecretKey()
+                                showSecretEditor = false
+                            },
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("Xóa khóa cũ", color = Coral, fontSize = 11.sp)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun VirtualLanCard(
+    serverPort: Int,
+    endpoints: List<VirtualLanEndpoint>,
+    onRefresh: () -> Unit,
+    onCopy: (String) -> Unit,
+    context: Context
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    McCard(title = "⚡ Mạng LAN Ảo P2P (ZeroTier / Tailscale — Ping cực thấp cho Map Mod)") {
+        Text(
+            "Nếu bạn host Map có nhiều Mod nặng và muốn đường truyền trực tiếp giữa các máy tại Việt Nam (ping 15–30ms, dùng được cả 4G lẫn Wi-Fi), hãy bật ZeroTier One hoặc Tailscale.",
+            color = Muted,
+            fontSize = 11.sp,
+            lineHeight = 16.sp
+        )
+        Spacer(Modifier.height(10.dp))
+
+        if (endpoints.isNotEmpty()) {
+            Text(
+                "✅ Đã phát hiện địa chỉ Mạng LAN Ảo đang bật trên máy của bạn:",
+                color = Mint,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(Modifier.height(6.dp))
+            endpoints.forEach { ep ->
+                val fullAddr = "${ep.ip}:$serverPort"
+                AddressCopyRow(
+                    label = "${ep.providerLabel} (${ep.interfaceName})",
+                    value = fullAddr,
+                    onCopy = { onCopy(fullAddr) },
+                    icon = Icons.Outlined.Lan,
+                    accent = Mint,
+                    containerColor = MintSoft,
+                    borderColor = Mint
+                )
+                Spacer(Modifier.height(6.dp))
+            }
+        } else {
+            HintNote("Hiện chưa phát hiện mạng ảo ZeroTier / Tailscale nào đang bật trên điện thoại. Sau khi bật VPN mạng ảo, hãy bấm 'Quét lại IP Mạng Ảo'.")
+        }
+
+        Spacer(Modifier.height(6.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(
+                onClick = onRefresh,
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(Icons.Outlined.Refresh, contentDescription = null, tint = Indigo, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.size(6.dp))
+                Text("Quét lại IP Mạng Ảo", color = Indigo, fontSize = 12.sp)
+            }
+            OutlinedButton(
+                onClick = { expanded = !expanded },
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(
+                    if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                    contentDescription = null,
+                    tint = Indigo,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(Modifier.size(6.dp))
+                Text(if (expanded) "Thu gọn hướng dẫn" else "Cách dùng ZeroTier", color = Indigo, fontSize = 12.sp)
+            }
+        }
+
+        if (expanded) {
+            Spacer(Modifier.height(10.dp))
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(FieldBg)
+                    .padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text("📖 Hướng dẫn chơi qua 4G / Khác Wi-Fi bằng ZeroTier One hoặc Tailscale:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text("1. Cả bạn và bạn bè tải ứng dụng 'ZeroTier One' hoặc 'Tailscale' (miễn phí trên CH Play / App Store / PC).", color = Muted, fontSize = 11.sp, lineHeight = 15.sp)
+                Text("2. Cùng tham gia 1 phòng mạng ảo (Network ID 16 số của ZeroTier hoặc đăng nhập chung nhóm Tailscale) và gạt công tắc BẬT.", color = Muted, fontSize = 11.sp, lineHeight = 15.sp)
+                Text("3. Bấm nút 'Quét lại IP Mạng Ảo' ở trên -> Sao chép địa chỉ IP:Port hiện ra gửi cho bạn bè nhập vào Minecraft là vào thẳng!", color = Muted, fontSize = 11.sp, lineHeight = 15.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = {
+                        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://my.zerotier.com/"))) }
+                    }) {
+                        Text("🌐 Mở ZeroTier Central", color = Indigo, fontSize = 11.sp)
+                    }
+                    TextButton(onClick = {
+                        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://tailscale.com/download"))) }
+                    }) {
+                        Text("🌐 Tải Tailscale", color = Indigo, fontSize = 11.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun statusVisual(status: TunnelStatus): Triple<Color, String, Color> = when (status) {
     TunnelStatus.Running -> Triple(Mint, stringResource(R.string.net_status_running), Mint)
@@ -240,7 +594,6 @@ private fun statusVisual(status: TunnelStatus): Triple<Color, String, Color> = w
     TunnelStatus.Idle -> Triple(Muted, stringResource(R.string.net_status_idle), Muted)
 }
 
-/** 状态行：指示灯/转圈 + 状态胶囊 +（可选）当前方式名。 */
 @Composable
 private fun TunnelStatusHeader(status: TunnelStatus, typeLabel: String?) {
     val (dotColor, text, color) = statusVisual(status)
@@ -266,7 +619,6 @@ private fun TunnelStatusHeader(status: TunnelStatus, typeLabel: String?) {
     }
 }
 
-/** 启动/停止按钮行。两张卡必须用同一个，样式才不会漂。 */
 @Composable
 private fun TunnelActionRow(
     startText: String,
@@ -308,12 +660,6 @@ private fun TunnelActionRow(
     }
 }
 
-/**
- * 运行前/运行中的提示条，两张卡共用。
- *
- * 「服务端没开」这条提醒必须留在卡里：穿透只是把公网流量转到本机端口，
- * 服务端没运行就没人接 —— 原先这条挂在已删除的总状态卡上。
- */
 @Composable
 private fun TunnelPreconditionNotes(state: TunnelState, serverRunning: Boolean) {
     if (!serverRunning && state.status != TunnelStatus.Running) {
@@ -325,18 +671,11 @@ private fun TunnelPreconditionNotes(state: TunnelState, serverRunning: Boolean) 
         WarnNote(state.errorMessage)
     }
     if (state.status == TunnelStatus.Running && state.publicUrl.isBlank()) {
-        // 隧道通了但拿不到入口地址（自建 frps 未写 remotePort、平台未下发等）。
-        // 不是错误，所以给指引而不是报警。
         Spacer(Modifier.height(10.dp))
         WarnNote(stringResource(R.string.net_public_url_unknown))
     }
 }
 
-/**
- * 公网地址展示块。
- *
- * **只在运行中显示**：隧道停止后地址即失效，继续摆在界面上会被当成可用地址发出去。
- */
 @Composable
 private fun PublicAddressBlock(
     label: String,
@@ -356,8 +695,6 @@ private fun PublicAddressBlock(
     )
 }
 
-// ── 1. 本地连接地址 ───────────────────────────────────────────
-
 @Composable
 private fun LocalAddressCard(
     vm: McViewModel,
@@ -367,14 +704,12 @@ private fun LocalAddressCard(
     context: Context
 ) {
     McCard(title = stringResource(R.string.s586)) {
-        // 服务端运行状态：与两张隧道卡同一种「胶囊」表达，不再是裸文字
         StatusPill(
             if (serverRunning) stringResource(R.string.s587) else stringResource(R.string.s280),
             if (serverRunning) Mint else Muted
         )
         Spacer(Modifier.height(12.dp))
 
-        // 本机回环地址（同设备直连测试用）
         Text(stringResource(R.string.s588), color = Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(6.dp))
         AddressCopyRow(
@@ -387,7 +722,6 @@ private fun LocalAddressCard(
 
         Spacer(Modifier.height(12.dp))
 
-        // 局域网地址（同网络下其他设备连接用）
         Text(stringResource(R.string.s590), color = Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(6.dp))
         val lanAddress = if (lanIp == "--") "--:$serverPort" else "$lanIp:$serverPort"
@@ -415,18 +749,11 @@ private fun LocalAddressCard(
                 )
             }
         }
+        Spacer(Modifier.height(6.dp))
+        HintNote("📶 Mẹo chơi qua 4G khi ngồi gần nhau: Bạn có thể bật 'Điểm truy cập cá nhân' (Phát Wi-Fi từ 4G) trên máy này cho bạn bè kết nối vào, sau đó bấm nút 🔄 làm mới ở trên để lấy địa chỉ LAN nội bộ không tốn băng thông trung gian.")
     }
 }
 
-// ── 2. FRP 卡片 ───────────────────────────────────────────────
-
-/**
- * FRP 卡。
- *
- * frp 家族（自建 frp / SakuraFrp / ME Frp）共用一条通道 —— 它们都由同一个
- * frpc 引擎进程承载，天然互斥。所以这里不提供「多条 FRP 同开」的入口，
- * 而是提供「多份配置、切换着用」。
- */
 @Composable
 private fun FrpCard(
     vm: McViewModel,
@@ -447,7 +774,6 @@ private fun FrpCard(
         Spacer(Modifier.height(12.dp))
 
         if (profile == null) {
-            // 空状态：把「下一步做什么」直接摆出来，而不是让用户对着一个禁用的启动键猜。
             HintNote(stringResource(R.string.net_frp_no_profile))
             Spacer(Modifier.height(8.dp))
             OutlinedButton(
@@ -460,7 +786,6 @@ private fun FrpCard(
                 Text(stringResource(R.string.net_frp_create), color = Indigo, fontSize = 12.sp)
             }
         } else {
-            // 配置行本身就是「切换配置」的入口（整行可点），命中区域够大
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -491,15 +816,11 @@ private fun FrpCard(
             }
         }
 
-        // 配置文本里的转发端口和真实端口对不上时必须提前说：这种情况隧道会「显示已通」，
-        // 玩家却进不来，日志里只有一句 connection refused，从字面看不出是端口错了。
-        // 运行中不提示 —— 那时启动链路已经按真实端口对齐过了。
         if (profile != null &&
             profile.kind == FrpProfileKind.CustomToml &&
             frpState.status != TunnelStatus.Running
         ) {
             val target = FrpLocalTarget.target(profile.configText)
-            // 指向别的机器的配置是用户有意为之，不该拿游戏端口去提醒他。
             if (!target.foreignHost) {
                 val only = target.only
                 when {
@@ -526,8 +847,6 @@ private fun FrpCard(
         TunnelActionRow(
             startText = stringResource(R.string.net_frp_start),
             stopText = stringResource(R.string.net_frp_stop),
-            // 没有配置时启动没有意义（一定会报错），所以在按钮层就拦住；
-            // 「缺引擎」这类运行期问题不在按钮层拦，点了会给出后端真实错误。
             startEnabled = frpState.status != TunnelStatus.Starting && profile != null,
             stopEnabled = frpState.status == TunnelStatus.Running ||
                 frpState.status == TunnelStatus.Starting,
@@ -550,12 +869,6 @@ private fun FrpCard(
     }
 }
 
-/**
- * 配置选择窗口。
- *
- * 交互定稿：**点任意一条 = 选中并自动关闭**（用户明确要求少一步操作），
- * 想编辑或删除再点该行右侧的小图标，不会误触发切换。
- */
 @Composable
 private fun FrpProfilePickerDialog(
     vm: McViewModel,
@@ -644,7 +957,6 @@ private fun FrpProfilePickerDialog(
                     onClick = {
                         vm.deleteFrpProfile(target.id)
                         pendingDelete = null
-                        // 删光之后选择窗口没有内容可点，直接收起来
                         if (vm.config.value.frpProfiles.isEmpty()) onDismiss()
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Coral),
@@ -658,19 +970,6 @@ private fun FrpProfilePickerDialog(
     }
 }
 
-// ── 3. STUN 直连卡片 ──────────────────────────────────────────
-
-/**
- * STUN 直连卡。
- *
- * 与 FRP 卡**相互独立**：各自订阅自己的状态流、各自的启停按钮，
- * 因此可以同时运行、互不干扰。
- *
- * 界面上不再出现「NAT 等级 / 全锥形 / CGNAT」这类判定结论 —— 用户看不懂，
- * 也无法据此行动。取而代之的是一句能直接指导选择的说明
- * （会暴露家庭 IP、多数家庭宽带用不了、优先用 FRP），
- * 以及失败时后端给出的人话原因。
- */
 @Composable
 private fun StunCard(
     vm: McViewModel,
@@ -709,12 +1008,10 @@ private fun StunCard(
                 color = Muted, fontSize = 10.sp
             )
         } else if (stunState.status != TunnelStatus.Failed) {
-            // 未启动（或正在启动）：只表明「地址会出现在这里」，不摆任何地址
             Spacer(Modifier.height(10.dp))
             Text(stringResource(R.string.net_stun_idle_hint), color = Muted, fontSize = 11.sp)
         }
 
-        // 运行统计：全部来自真实运行结果，平时为 0 的不显示
         if (stunState.status == TunnelStatus.Running) {
             Spacer(Modifier.height(12.dp))
             StatLine(
@@ -746,7 +1043,6 @@ private fun StunCard(
             onStop = onStop
         )
 
-        // ── 高级设置（折叠） ───────────────────────────────────
         Spacer(Modifier.height(4.dp))
         TextButton(
             onClick = { showAdvanced = !showAdvanced },
@@ -769,7 +1065,6 @@ private fun StunCard(
     }
 }
 
-/** STUN 配置里的单行开关。 */
 @Composable
 private fun StunToggleRow(title: String, checked: Boolean, onChange: (Boolean) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -780,11 +1075,9 @@ private fun StunToggleRow(title: String, checked: Boolean, onChange: (Boolean) -
 
 @Composable
 private fun StunConfigSection(vm: McViewModel, config: McConfig) {
-    // 目标端口跟随真源（服务端配置文件里的 server-port），不再读 config.localPort。
     val serverPort by vm.serverPort.collectAsState()
     val followLocalPort = config.stunLocalPort <= 0
     Column {
-        // 目标端口
         Text(stringResource(R.string.stun_target_port), color = Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(6.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -814,7 +1107,6 @@ private fun StunConfigSection(vm: McViewModel, config: McConfig) {
         }
 
         Spacer(Modifier.height(12.dp))
-        // 保活间隔
         Text(stringResource(R.string.stun_keepalive), color = Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(6.dp))
         DebouncedTextField(
@@ -831,7 +1123,6 @@ private fun StunConfigSection(vm: McViewModel, config: McConfig) {
         HintNote(stringResource(R.string.stun_keepalive_hint))
 
         Spacer(Modifier.height(12.dp))
-        // 并发上限
         Text(stringResource(R.string.stun_max_conn), color = Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(6.dp))
         DebouncedTextField(
@@ -846,7 +1137,6 @@ private fun StunConfigSection(vm: McViewModel, config: McConfig) {
         )
 
         Spacer(Modifier.height(12.dp))
-        // 开关项
         StunToggleRow(
             title = stringResource(R.string.stun_show_conn_log),
             checked = config.stunShowConnectionLog,
@@ -865,7 +1155,6 @@ private fun StunConfigSection(vm: McViewModel, config: McConfig) {
         }
 
         Spacer(Modifier.height(12.dp))
-        // 自定义服务器
         Text(stringResource(R.string.stun_servers), color = Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(6.dp))
         DebouncedTextField(
@@ -881,24 +1170,24 @@ private fun StunConfigSection(vm: McViewModel, config: McConfig) {
     }
 }
 
-// ── 4. 隧道日志预览 ───────────────────────────────────────────
-
 @Composable
 private fun TunnelLogPreview(
     consoleLines: List<String>,
     frpState: TunnelState,
-    stunState: TunnelState
+    stunState: TunnelState,
+    playitState: PlayitUiState
 ) {
-    // 过滤出隧道相关日志（两条通道都汇进同一个 [tunnel] 前缀）
-    val tunnelLogs: List<String> = remember(consoleLines) {
-        consoleLines.filter { it.contains("[tunnel]") }
+    val tunnelLogs: List<String> = remember(consoleLines, playitState.recentLogs) {
+        val fromConsole = consoleLines.filter { it.contains("[tunnel]") }
+        if (fromConsole.isNotEmpty()) fromConsole
+        else playitState.recentLogs.map { "[tunnel] [Playit] $it" }
     }
 
     var showFullLog by remember { mutableStateOf(false) }
-    // 连接数取「正在运行」那条通道的：两条都在跑时优先 FRP（与聚合语义一致）。
-    val running = when {
-        frpState.status == TunnelStatus.Running -> frpState
-        stunState.status == TunnelStatus.Running -> stunState
+    val activeConnCount = when {
+        playitState.stage == PlayitStage.Running -> playitState.activeConnections
+        frpState.status == TunnelStatus.Running -> frpState.activeConnections
+        stunState.status == TunnelStatus.Running -> stunState.activeConnections
         else -> null
     }
 
@@ -906,7 +1195,6 @@ private fun TunnelLogPreview(
         if (tunnelLogs.isEmpty()) {
             Text(stringResource(R.string.net_log_empty), color = Muted, fontSize = 11.sp)
         } else {
-            // 最近 8 条预览
             tunnelLogs.takeLast(8).forEach { line ->
                 Text(
                     line,
@@ -947,17 +1235,16 @@ private fun TunnelLogPreview(
             color = Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold
         )
         Spacer(Modifier.height(6.dp))
-        if (running != null) {
+        if (activeConnCount != null) {
             StatLine(
                 Icons.Outlined.Link,
-                stringResource(R.string.net_stats_connections, running.activeConnections)
+                stringResource(R.string.net_stats_connections, activeConnCount)
             )
             Spacer(Modifier.height(6.dp))
         }
         HintNote(stringResource(R.string.net_log_connection_hint))
     }
 
-    // 全屏日志 Dialog
     if (showFullLog) {
         AlertDialog(
             onDismissRequest = { showFullLog = false },
@@ -996,17 +1283,16 @@ private fun TunnelLogPreview(
     }
 }
 
-// ── 5. 免费 FRP 平台 ──────────────────────────────────────────
-
-/** 免费 FRP 平台清单（官方网址，点击跳转浏览器） */
 private data class FrpPlatform(val name: String, val url: String)
 
 private val freeFrpPlatforms = listOf(
+    FrpPlatform("Playit.gg (Quốc tế - Miễn phí, khuyên dùng số 1 tại VN)", "https://playit.gg/"),
+    FrpPlatform("ZeroTier Central (Mạng LAN ảo P2P ping thấp cho Map Mod)", "https://my.zerotier.com/"),
+    FrpPlatform("Tailscale (Mạng P2P tốc độ cao đa nền tảng)", "https://tailscale.com/"),
     FrpPlatform("OpenFrp", "https://www.openfrp.net/"),
     FrpPlatform("ChmlFrp", "https://www.chmlfrp.cn/"),
     FrpPlatform("StarryFrp", "https://frp.starryfrp.com/"),
-    FrpPlatform("SakuraFrp (NatFrp)", "https://www.natfrp.com/"),
-    FrpPlatform("ME Frp", "https://www.mefrp.com/")
+    FrpPlatform("SakuraFrp (NatFrp)", "https://www.natfrp.com/")
 )
 
 @Composable
@@ -1026,8 +1312,7 @@ private fun FreeFrpPlatformsCard(context: Context) {
                     .clickable {
                         try {
                             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(p.url)))
-                        } catch (e: Exception) {
-                            // 设备上无可用浏览器时静默忽略
+                        } catch (_: Exception) {
                         }
                     }
                     .padding(horizontal = 12.dp, vertical = 10.dp),
@@ -1049,13 +1334,6 @@ private fun FreeFrpPlatformsCard(context: Context) {
     }
 }
 
-// ── 6. 操作指南 ───────────────────────────────────────────────
-
-/**
- * 操作指南。
- *
- * 默认**收起**：页面顶部现在有两张大卡片，指南再默认展开会把页面拉得很长。
- */
 @Composable
 private fun NetworkGuide() {
     var expanded by remember { mutableStateOf(false) }
@@ -1087,8 +1365,6 @@ private fun NetworkGuide() {
                     color = Muted, fontSize = 11.sp, lineHeight = 16.sp
                 )
                 Spacer(Modifier.height(10.dp))
-                // 六步平铺，靠序号说话。不再分「FRP / STUN」小节 ——
-                // 小节标题会和步骤标题重复一遍，反而更难读。
                 GuideStep("1", stringResource(R.string.net_guide_frp_t), stringResource(R.string.net_guide_frp_d))
                 GuideStep("2", stringResource(R.string.net_guide_switch_t), stringResource(R.string.net_guide_switch_d))
                 GuideStep("3", stringResource(R.string.net_guide_frp_run_t), stringResource(R.string.net_guide_frp_run_d))

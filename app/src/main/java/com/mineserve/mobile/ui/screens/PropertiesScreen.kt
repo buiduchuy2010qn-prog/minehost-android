@@ -27,6 +27,9 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -47,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mineserve.mobile.ui.BackBar
 import com.mineserve.mobile.ui.HeaderBlock
+import com.mineserve.mobile.ui.HintNote
 import com.mineserve.mobile.ui.McCard
 import com.mineserve.mobile.ui.McViewModel
 import com.mineserve.mobile.ui.SegPill
@@ -56,9 +60,9 @@ import com.mineserve.mobile.ui.theme.McSpacing
 import com.mineserve.mobile.ui.theme.Coral
 import com.mineserve.mobile.ui.theme.Indigo
 import com.mineserve.mobile.ui.theme.IndigoSoft
+import com.mineserve.mobile.ui.theme.Mint
 import com.mineserve.mobile.ui.theme.Muted
-
-// ── server.properties 参数元数据（完整覆盖，基础/高级分组） ──────────
+import kotlin.math.roundToInt
 
 private enum class PropGroup(val labelRes: Int) { Basic(R.string.s841), Advanced(R.string.s842) }
 
@@ -70,12 +74,11 @@ private data class PropertySpec(
     val descRes: Int = 0,
     val type: PropType = PropType.Text,
     val group: PropGroup = PropGroup.Advanced,
-    val options: List<Pair<Int, String>> = emptyList(), // 显示名 resource ID to 值（仅 Enum）
+    val options: List<Pair<Int, String>> = emptyList(),
     val default: String = ""
 )
 
 private val propertySpecs: List<PropertySpec> = listOf(
-    // ── 基础配置 ──
     PropertySpec("difficulty", R.string.s843, R.string.s844, PropType.Enum, PropGroup.Basic,
         listOf(R.string.s845 to "peaceful", R.string.s846 to "easy", R.string.s847 to "normal", R.string.s848 to "hard"), "easy"),
     PropertySpec("gamemode", R.string.s730, R.string.s849, PropType.Enum, PropGroup.Basic,
@@ -88,8 +91,8 @@ private val propertySpecs: List<PropertySpec> = listOf(
     PropertySpec("server-port", R.string.s857, R.string.s858, PropType.Int, PropGroup.Basic, default = "25565"),
     PropertySpec("server-ip", R.string.s859, R.string.s860, PropType.Text, PropGroup.Basic),
     PropertySpec("motd", R.string.s861, R.string.s862, PropType.Text, PropGroup.Basic, default = "A Minecraft Server"),
-    PropertySpec("view-distance", R.string.s863, R.string.s864, PropType.Int, PropGroup.Basic, default = "10"),
-    PropertySpec("simulation-distance", R.string.s865, R.string.s866, PropType.Int, PropGroup.Basic, default = "10"),
+    PropertySpec("view-distance", R.string.s863, R.string.s864, PropType.Int, PropGroup.Basic, default = "12"),
+    PropertySpec("simulation-distance", R.string.s865, R.string.s866, PropType.Int, PropGroup.Basic, default = "8"),
     PropertySpec("max-world-size", R.string.s867, R.string.s868, PropType.Int, PropGroup.Basic, default = "29999984"),
     PropertySpec("spawn-protection", R.string.s869, R.string.s870, PropType.Int, PropGroup.Basic, default = "16"),
     PropertySpec("hardcore", R.string.s871, R.string.s872, PropType.Bool, PropGroup.Basic),
@@ -123,7 +126,6 @@ private val propertySpecs: List<PropertySpec> = listOf(
     PropertySpec("network-compression-threshold", R.string.s917, R.string.s918, PropType.Int, PropGroup.Basic, default = "256"),
     PropertySpec("max-chained-neighbor-updates", R.string.s919, R.string.s920, PropType.Int, PropGroup.Basic, default = "1000000"),
 
-    // ── 高级配置 ──
     PropertySpec("accepts-transfers", R.string.s921, R.string.s922, PropType.Bool),
     PropertySpec("broadcast-console-to-ops", R.string.s923, R.string.s924, PropType.Bool, default = "true"),
     PropertySpec("broadcast-rcon-to-ops", R.string.s925, R.string.s926, PropType.Bool, default = "true"),
@@ -164,6 +166,140 @@ private val propertySpecs: List<PropertySpec> = listOf(
     PropertySpec("use-native-transport", R.string.s995, R.string.s996, PropType.Bool, default = "true")
 )
 
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ViewDistanceBoosterCard(
+    props: Map<String, String>,
+    showSimulationDistance: Boolean,
+    onUpdateProps: (Map<String, String>) -> Unit,
+    onApplyImmediately: (Int, Int?) -> Unit
+) {
+    val currentView = (props["view-distance"]?.toIntOrNull() ?: 12).coerceIn(4, 32)
+    val currentSim = (props["simulation-distance"]?.toIntOrNull() ?: 8).coerceIn(4, 16)
+    val blocks = currentView * 16
+
+    McCard(title = "🔭 Bộ Tăng Tầm Nhìn Máy Chủ (View Distance 4 – 32 Chunk)") {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "Tầm nhìn hiển thị (view-distance):",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                "$currentView Chunk (~$blocks ô)",
+                color = Mint,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            val viewPresets = listOf(
+                6 to "6 Chunk (Nhẹ)",
+                10 to "10 Chunk (Chuẩn)",
+                12 to "12 Chunk (Đẹp)",
+                16 to "16 Chunk (Xa - Khuyên dùng)",
+                24 to "24 Chunk (Rất xa)",
+                32 to "32 Chunk (Tối đa)"
+            )
+            viewPresets.forEach { (v, label) ->
+                SegPill(
+                    text = label,
+                    selected = currentView == v,
+                    onClick = {
+                        onUpdateProps(props.toMutableMap().apply { put("view-distance", v.toString()) })
+                    }
+                )
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        Slider(
+            value = currentView.toFloat(),
+            onValueChange = { v ->
+                val rounded = v.roundToInt().coerceIn(4, 32)
+                onUpdateProps(props.toMutableMap().apply { put("view-distance", rounded.toString()) })
+            },
+            valueRange = 4f..32f,
+            steps = 27,
+            colors = SliderDefaults.colors(
+                thumbColor = Indigo,
+                activeTrackColor = Indigo
+            )
+        )
+
+        if (showSimulationDistance) {
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Khoảng cách mô phỏng (simulation-distance):",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    "$currentSim Chunk",
+                    color = Indigo,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                val simPresets = listOf(
+                    4 to "4 Chunk (Siêu mượt)",
+                    6 to "6 Chunk (Mượt)",
+                    8 to "8 Chunk (Khuyên dùng)",
+                    10 to "10 Chunk",
+                    12 to "12 Chunk",
+                    16 to "16 Chunk"
+                )
+                simPresets.forEach { (s, label) ->
+                    SegPill(
+                        text = label,
+                        selected = currentSim == s,
+                        onClick = {
+                            onUpdateProps(props.toMutableMap().apply { put("simulation-distance", s.toString()) })
+                        }
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+        HintNote(
+            "💡 Bí quyết nhìn siêu xa mà không lag điện thoại: Đặt Tầm nhìn (view-distance) lên 16–24 Chunk để thấy núi đồi và công trình từ rất xa, đồng thời giữ Khoảng cách mô phỏng (simulation-distance) ở 6–8 Chunk để quái vật ở xa không làm nặng CPU! (Trong cài đặt Video của game Minecraft trên máy người chơi, hãy kéo Render Distance lên tương ứng)."
+        )
+        Spacer(Modifier.height(10.dp))
+        Button(
+            onClick = {
+                onApplyImmediately(currentView, if (showSimulationDistance) currentSim else null)
+            },
+            colors = ButtonDefaults.buttonColors(containerColor = Indigo),
+            shape = McShape.Control,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                "⚡ Lưu & Áp dụng ngay Tầm nhìn ($currentView Chunk)",
+                color = Color.White,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 12.sp
+            )
+        }
+    }
+}
 
 @Composable
 fun JavaPropertiesScreen(vm: McViewModel, onBack: () -> Unit, showBackBar: Boolean = true) {
@@ -172,23 +308,16 @@ fun JavaPropertiesScreen(vm: McViewModel, onBack: () -> Unit, showBackBar: Boole
     val serverState by vm.serverState.collectAsState()
     val config by vm.config.collectAsState()
 
-    // 本地编辑状态：进入页面后由 ViewModel 加载结果同步，控件修改时本地更新
     var props by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var showRestartDialog by remember { mutableStateOf(false) }
 
-    // 进入页面时加载 server.properties
     LaunchedEffect(Unit) { vm.loadServerProperties() }
-    // ViewModel 加载完成后同步到本地编辑状态
     LaunchedEffect(loaded) { props = loaded }
 
-    // 配置页头部（返回栏 + 标题 + 当前核心提示），各状态分支共用
     val header: @Composable () -> Unit = {
         if (showBackBar) BackBar(title = stringResource(R.string.s541), onBack = onBack)
     }
 
-    // 配置文件尚未生成：不展示可编辑表单。
-    // 此处的预设值并非服务端真实生效值，编辑后保存会写出一份不完整配置，
-    // 与服务端首启自动补全的默认值产生错位。改为引导用户先启动服务端。
     if (propertiesExist == false) {
         Column(modifier = Modifier.fillMaxSize()) {
             header()
@@ -213,7 +342,8 @@ fun JavaPropertiesScreen(vm: McViewModel, onBack: () -> Unit, showBackBar: Boole
                 PropertiesNotGeneratedCard(
                     isRunning = serverState.isRunning,
                     onStartServer = { vm.startServer() },
-                    onRefresh = { vm.loadServerProperties() }
+                    onRefresh = { vm.loadServerProperties() },
+                    onCreateDefaultNow = { vm.generateDefaultServerProperties() }
                 )
                 Spacer(Modifier.height(16.dp))
             }
@@ -222,7 +352,6 @@ fun JavaPropertiesScreen(vm: McViewModel, onBack: () -> Unit, showBackBar: Boole
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // 统一返回栏；作为底部导航 tab 时隐藏
         header()
         Column(
             modifier = Modifier
@@ -231,7 +360,6 @@ fun JavaPropertiesScreen(vm: McViewModel, onBack: () -> Unit, showBackBar: Boole
         ) {
             HeaderBlock(eyebrow = stringResource(R.string.eyebrow_properties), title = stringResource(R.string.s997), statusBarPadding = !showBackBar)
 
-            // 当前核心提示：每个命名服务器拥有独立配置
             val activeCore = config.installedCores.find { it.name == config.activeCoreName }
             Text(
                 stringResource(R.string.s998, activeCore?.name ?: stringResource(R.string.s999)),
@@ -241,7 +369,17 @@ fun JavaPropertiesScreen(vm: McViewModel, onBack: () -> Unit, showBackBar: Boole
             )
             Spacer(Modifier.height(8.dp))
 
-            // ── 基础配置（常用参数，完整展示） ──
+            // ── Bộ tăng Tầm nhìn nhanh (4 - 32 Chunk) ──
+            ViewDistanceBoosterCard(
+                props = props,
+                showSimulationDistance = true,
+                onUpdateProps = { props = it },
+                onApplyImmediately = { viewDist, simDist ->
+                    vm.applyQuickServerConfig(viewDistance = viewDist, simulationDistance = simDist)
+                }
+            )
+
+            // ── 基础配置 ──
             McCard(title = stringResource(PropGroup.Basic.labelRes)) {
                 propertySpecs.filter { it.group == PropGroup.Basic }.forEach { spec ->
                     renderProperty(spec, props) { v ->
@@ -251,7 +389,7 @@ fun JavaPropertiesScreen(vm: McViewModel, onBack: () -> Unit, showBackBar: Boole
                 }
             }
 
-            // ── 高级配置（全部剩余参数） ──
+            // ── 高级配置 ──
             McCard(title = stringResource(PropGroup.Advanced.labelRes)) {
                 propertySpecs.filter { it.group == PropGroup.Advanced }.forEach { spec ->
                     renderProperty(spec, props) { v ->
@@ -259,7 +397,6 @@ fun JavaPropertiesScreen(vm: McViewModel, onBack: () -> Unit, showBackBar: Boole
                     }
                     Spacer(Modifier.height(6.dp))
                 }
-                // 兜底：未收录的新参数（保证完整加载展示，不丢失）
                 val knownKeys = propertySpecs.map { it.key }.toSet()
                 val unknownKeys = props.keys.filter { it !in knownKeys }
                 if (unknownKeys.isNotEmpty()) {
@@ -282,7 +419,6 @@ fun JavaPropertiesScreen(vm: McViewModel, onBack: () -> Unit, showBackBar: Boole
             Spacer(Modifier.height(16.dp))
         }
 
-        // 底部固定保存按钮
         Button(
             onClick = {
                 if (serverState.isRunning) {
@@ -301,7 +437,6 @@ fun JavaPropertiesScreen(vm: McViewModel, onBack: () -> Unit, showBackBar: Boole
         }
     }
 
-    // 服务器运行中时保存的重启提示弹窗
     if (showRestartDialog) {
         AlertDialog(
             onDismissRequest = { showRestartDialog = false },
@@ -322,12 +457,10 @@ fun JavaPropertiesScreen(vm: McViewModel, onBack: () -> Unit, showBackBar: Boole
     }
 }
 
-/** 从 props 读取布尔值，key 不存在或解析失败时返回 default */
 private fun boolOf(props: Map<String, String>, key: String, default: Boolean): Boolean {
     return props[key]?.let { it.equals("true", ignoreCase = true) } ?: default
 }
 
-/** 带标题/副标题的开关行 */
 @Composable
 private fun PropertySwitch(
     title: String,
@@ -356,7 +489,6 @@ private fun PropertySwitch(
     }
 }
 
-/** 带标签的数字输入框 */
 @Composable
 private fun LabeledNumberField(
     label: String,
@@ -379,7 +511,6 @@ private fun LabeledNumberField(
     )
 }
 
-/** 按类型渲染单个属性（数据驱动） */
 @Composable
 private fun renderProperty(
     spec: PropertySpec,
@@ -422,7 +553,6 @@ private fun renderProperty(
     }
 }
 
-/** 枚举选择（SegPill 流式布局，自动换行） */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun EnumField(
@@ -447,7 +577,6 @@ private fun EnumField(
     }
 }
 
-/** 带标签的文本输入框 */
 @Composable
 private fun LabeledTextField(
     label: String,
@@ -496,7 +625,7 @@ private val pnxGroups = listOf(
         PnxField("force-gamemode", R.string.pnx_force_gamemode, PnxFieldType.Toggle, "false"),
         PnxField("difficulty", R.string.pnx_difficulty, PnxFieldType.Choice, "easy", listOf("peaceful", "easy", "normal", "hard")),
         PnxField("pvp", R.string.pnx_pvp, PnxFieldType.Toggle, "true"),
-        PnxField("view-distance", R.string.pnx_view_distance, PnxFieldType.Number, "8"),
+        PnxField("view-distance", R.string.pnx_view_distance, PnxFieldType.Number, "12"),
         PnxField("spawn-protection", R.string.pnx_spawn_protection, PnxFieldType.Number, "16"),
         PnxField("allow-nether", R.string.pnx_allow_nether, PnxFieldType.Toggle, "true"),
         PnxField("allow-the-end", R.string.pnx_allow_end, PnxFieldType.Toggle, "true"),
@@ -529,17 +658,12 @@ private fun PropertiesEmptyScreen(onBack: () -> Unit, showBackBar: Boolean) {
     }
 }
 
-/**
- * 配置文件尚未生成时的引导卡片。
- *
- * 不渲染可编辑表单，避免用户在"预设值 ≠ 服务端真实值"的情况下做出错误修改。
- * 提供两条路径：直接启动服务端（推荐），或启动后回来刷新。
- */
 @Composable
 private fun PropertiesNotGeneratedCard(
     isRunning: Boolean,
     onStartServer: () -> Unit,
     onRefresh: () -> Unit,
+    onCreateDefaultNow: (() -> Unit)? = null,
     desc: String = stringResource(R.string.props_not_generated_desc),
     hint: String = stringResource(R.string.props_not_generated_hint)
 ) {
@@ -556,8 +680,23 @@ private fun PropertiesNotGeneratedCard(
             fontSize = 11.sp
         )
         Spacer(Modifier.height(12.dp))
+        if (onCreateDefaultNow != null && !isRunning) {
+            Button(
+                onClick = onCreateDefaultNow,
+                colors = ButtonDefaults.buttonColors(containerColor = Indigo),
+                shape = McShape.Control,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    "⚡ Tạo ngay tệp cấu hình (Chỉnh Tầm nhìn & Cracked trước khi chạy)",
+                    color = Color.White,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 12.sp
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+        }
         if (isRunning) {
-            // 服务端已在启动/运行中，给出刷新入口等待配置文件写出
             Text(
                 stringResource(R.string.props_not_generated_running),
                 color = Indigo,
@@ -578,15 +717,14 @@ private fun PropertiesNotGeneratedCard(
                 )
             }
         } else {
-            Button(
+            OutlinedButton(
                 onClick = onStartServer,
-                colors = ButtonDefaults.buttonColors(containerColor = Indigo),
                 shape = McShape.Control,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
                     stringResource(R.string.props_not_generated_start),
-                    color = Color.White,
+                    color = Indigo,
                     fontWeight = FontWeight.SemiBold
                 )
             }
@@ -612,7 +750,6 @@ private fun PowerNukkitXPropertiesScreen(vm: McViewModel, onBack: () -> Unit, sh
     LaunchedEffect(Unit) { vm.loadServerProperties() }
     LaunchedEffect(loaded) { props = loaded }
 
-    // 配置文件尚未生成：与 Java 版一致，引导先启动服务端而非编辑预设值。
     if (propertiesExist == false) {
         Column(Modifier.fillMaxSize()) {
             if (showBackBar) BackBar(title = stringResource(R.string.props_pnx_back), onBack = onBack)
@@ -639,6 +776,14 @@ private fun PowerNukkitXPropertiesScreen(vm: McViewModel, onBack: () -> Unit, sh
             Text(
                 stringResource(R.string.props_pnx_source),
                 color = Coral, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 16.dp)
+            )
+            ViewDistanceBoosterCard(
+                props = props,
+                showSimulationDistance = false,
+                onUpdateProps = { props = it },
+                onApplyImmediately = { viewDist, _ ->
+                    vm.applyQuickServerConfig(viewDistance = viewDist)
+                }
             )
             pnxGroups.forEach { (titleRes, fields) ->
                 McCard(title = stringResource(titleRes), compact = true) {

@@ -4075,6 +4075,7 @@ class McViewModel(
                 if (result.first) {
                     _messageFlow.tryEmit(str(R.string.s262))
                     _serverProperties.value = props
+                    _serverPropertiesExist.value = true
                     // 端口真源回写：「服务器配置」页是端口唯一编辑入口（网络页的输入框已在
                     // 1.2.8 移除）。不回写的话地址栏/穿透默认端口会停在旧值 ——
                     // 用户改了 25562 而界面仍显示 19132 就是这么来的。
@@ -4087,6 +4088,120 @@ class McViewModel(
                 }
             } catch (e: Exception) {
                 _errorFlow.tryEmit(str(R.string.s264, e.message))
+            }
+        }
+    }
+
+    // ── Playit.gg Chơi mọi nơi (4G / Khác Wi-Fi) & Chỉnh nhanh Tầm nhìn (4-32 Chunk) ──
+
+    private val playitController: PlayitTunnelController by lazy {
+        PlayitTunnelController(app, viewModelScope) { line ->
+            repo.termuxRuntime.emitLog("[tunnel] [Playit] $line")
+        }
+    }
+    val playitState: StateFlow<PlayitUiState> get() = playitController.state
+
+    fun startPlayitTunnel() {
+        playitController.start { serverPort.value }
+    }
+
+    fun stopPlayitTunnel() {
+        playitController.stop()
+    }
+
+    fun setPlayitSecretKey(secret: String) {
+        playitController.setManualSecretKey(secret) { serverPort.value }
+    }
+
+    fun resetPlayitSecretKey() {
+        playitController.resetSecretKey()
+    }
+
+    fun generateDefaultServerProperties() {
+        applyQuickServerConfig(viewDistance = 12, simulationDistance = 8)
+    }
+
+    fun applyQuickServerConfig(
+        viewDistance: Int? = null,
+        simulationDistance: Int? = null,
+        onlineMode: Boolean? = null,
+        gamemode: String? = null,
+        difficulty: String? = null,
+        maxPlayers: Int? = null
+    ) {
+        if (!isBootstrapped.value) {
+            _errorFlow.tryEmit(str(R.string.s192))
+            return
+        }
+        val dirName = activeDirName() ?: run {
+            _errorFlow.tryEmit(str(R.string.s249))
+            return
+        }
+        viewModelScope.launch {
+            try {
+                val pnx = isPowerNukkitXActive()
+                val updated = withContext(Dispatchers.IO) {
+                    val current = if (pnx) powerNukkitXConfigManager.read(dirName)
+                    else propertiesManager.readProperties(dirName)
+                    val map = current.toMutableMap()
+                    val core = activeCoreType() ?: config.value.selectedCore
+                    if (map["server-port"].isNullOrBlank()) {
+                        map["server-port"] = ServerPort.defaultFor(core).toString()
+                    }
+                    if (map["motd"].isNullOrBlank()) {
+                        map["motd"] = "MineHost Server"
+                    }
+                    if (map["gamemode"].isNullOrBlank()) {
+                        map["gamemode"] = "survival"
+                    }
+                    if (map["difficulty"].isNullOrBlank()) {
+                        map["difficulty"] = "normal"
+                    }
+                    if (map["max-players"].isNullOrBlank()) {
+                        map["max-players"] = "20"
+                    }
+                    if (map["online-mode"].isNullOrBlank()) {
+                        map["online-mode"] = "true"
+                    }
+                    if (map["view-distance"].isNullOrBlank()) {
+                        map["view-distance"] = "12"
+                    }
+                    if (!pnx && map["simulation-distance"].isNullOrBlank()) {
+                        map["simulation-distance"] = "8"
+                    }
+
+                    viewDistance?.let { map["view-distance"] = it.coerceIn(4, 32).toString() }
+                    if (!pnx) {
+                        simulationDistance?.let { map["simulation-distance"] = it.coerceIn(4, 16).toString() }
+                    }
+                    onlineMode?.let { map["online-mode"] = it.toString() }
+                    gamemode?.let { map["gamemode"] = it }
+                    difficulty?.let { map["difficulty"] = it }
+                    maxPlayers?.let { map["max-players"] = it.coerceAtLeast(1).toString() }
+
+                    if (pnx) {
+                        if (!repo.termuxRuntime.isMcRunning()) {
+                            val supported = map.filterKeys { it in powerNukkitXConfigManager.supportedKeys() }
+                            powerNukkitXConfigManager.write(dirName, supported)
+                        }
+                        propertiesManager.writeProperties(map, dirName)
+                    } else {
+                        propertiesManager.writeProperties(map, dirName)
+                    }
+                    map
+                }
+                _serverProperties.value = updated
+                _serverPropertiesExist.value = true
+                val vd = updated["view-distance"] ?: "12"
+                val sd = updated["simulation-distance"] ?: "8"
+                val crackedText = if (updated["online-mode"]?.equals("false", true) == true) "Cho phép Cracked" else "Bản quyền"
+                if (repo.termuxRuntime.isMcRunning()) {
+                    _messageFlow.tryEmit("✅ Đã lưu Tầm nhìn = $vd Chunk (Mô phỏng = $sd Chunk, $crackedText). Hãy bấm Khởi động lại máy chủ để áp dụng hoàn toàn!")
+                } else {
+                    _messageFlow.tryEmit("✅ Đã áp dụng Tầm nhìn = $vd Chunk (Mô phỏng = $sd Chunk, $crackedText)!")
+                }
+            } catch (e: Exception) {
+                _errorFlow.tryEmit("Không thể lưu cấu hình nhanh: ${e.message}")
             }
         }
     }
