@@ -1,0 +1,74 @@
+name: Publish verified MineHost alpha APK
+on:
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: write
+concurrency:
+  group: publish-minehost-alpha-1
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      SOURCE_SHA: 0cefe7fde3cfa58de3373370aa52ca03dc71896f
+      BUILD_RUN: '39385028289'
+      RELEASE_TAG: v0.1.0-alpha.1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 0cefe7fde3cfa58de3373370aa52ca03dc71896f
+          persist-credentials: false
+      - name: Download verified build on GitHub runner
+        shell: bash
+        run: |
+          test "$(gh api "repos/$GH_REPO/actions/runs/$BUILD_RUN" --jq '.conclusion')" = "success"
+          test "$(gh api "repos/$GH_REPO/actions/runs/$BUILD_RUN" --jq '.head_sha')" = "$SOURCE_SHA"
+          gh run download "$BUILD_RUN" --name MineHost-ARM64-debug-test --dir publish
+      - name: Verify artifact and prepare direct APK
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import os
+          from pathlib import Path
+          root = Path("publish")
+          assert (root / "SOURCE-COMMIT.txt").read_text().strip() == os.environ["SOURCE_SHA"]
+          apks = list(root.glob("*.apk"))
+          assert len(apks) == 1, "Expected exactly one ARM64 APK"
+          apk = apks[0]
+          lines = (root / "SHA256SUMS.txt").read_text().splitlines()
+          expected = [line.split()[0] for line in lines if Path(line.split(maxsplit=1)[1]).name == apk.name]
+          assert len(expected) == 1, "APK checksum missing"
+          actual = hashlib.sha256(apk.read_bytes()).hexdigest()
+          assert actual == expected[0], "APK checksum mismatch"
+          renamed = root / "MineHost-0.1.0-alpha.1-arm64-debug.apk"
+          apk.rename(renamed)
+          (root / "SHA256SUMS.txt").write_text(actual + "  " + renamed.name + "\n")
+          PY
+      - name: Create private prerelease without replacing existing assets
+        shell: bash
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release already exists. Refusing to overwrite."
+            exit 1
+          fi
+          gh release create "$RELEASE_TAG" \
+            --target "$SOURCE_SHA" \
+            --prerelease \
+            --title "MineHost 0.1.0-alpha.1 — Android ARM64" \
+            --notes "APK thử nghiệm để cài trực tiếp trên Android 8+ ARM64. Tải tệp .apk ở Assets. Repo riêng tư: cần đăng nhập GitHub có quyền truy cập.
+
+          Giao diện 5 mục, quản lý Minecraft server, plugin/mod, người chơi, world và backup. Dựa trên Minexa, GPL-3.0-or-later; mã nguồn tương ứng ở tag này và Source code bên dưới.
+
+          Build GitHub Actions 39385028289: 625 kiểm thử đạt. Chưa kiểm thử trên điện thoại thật; còn lỗi lint và chưa Việt hóa toàn bộ. Geyser/Floodgate hiện cài thủ công.
+
+          QUAN TRỌNG: APK debug dùng khóa ký tạm. Chỉ dùng world thử nghiệm. Xuất backup ra ngoài dữ liệu app trước khi gỡ hoặc đổi sang bản build khác. Không bảo đảm chạy nền 24/7." \
+            publish/MineHost-0.1.0-alpha.1-arm64-debug.apk \
+            publish/SHA256SUMS.txt \
+            publish/SOURCE-COMMIT.txt \
+            publish/READ-ME-FIRST.txt \
+            LICENSE NOTICE
