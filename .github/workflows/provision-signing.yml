@@ -1,0 +1,50 @@
+name: Provision stable MineHost signing key
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  provision:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - run: pip install PyNaCl==1.6.0
+      - name: Create key on runner and encrypt directly for repository secret
+        env:
+          EXISTING_SIGNING: ${{ secrets.MINEHOST_SIGNING_BUNDLE }}
+        run: |
+          python - <<'PY'
+          import os, json, base64, secrets, subprocess, pathlib
+          from nacl.public import PublicKey, SealedBox
+          from nacl.encoding import Base64Encoder
+          if os.environ.get("EXISTING_SIGNING"):
+              raise SystemExit("Signing key already exists; refusing to rotate it.")
+          password = secrets.token_urlsafe(32)
+          print("::add-mask::" + password, flush=True)
+          env = dict(os.environ, KEYSTORE_PASSWORD=password)
+          subprocess.run(["keytool", "-genkeypair", "-keystore", "minehost.p12",
+              "-storetype", "PKCS12", "-storepass:env", "KEYSTORE_PASSWORD",
+              "-keypass:env", "KEYSTORE_PASSWORD", "-alias", "minehost",
+              "-dname", "CN=MineHost Android", "-keyalg", "RSA", "-keysize", "3072",
+              "-validity", "36500"], env=env, check=True)
+          subprocess.run(["keytool", "-exportcert", "-rfc", "-keystore", "minehost.p12",
+              "-storepass:env", "KEYSTORE_PASSWORD", "-alias", "minehost",
+              "-file", "signing-certificate.pem"], env=env, check=True)
+          bundle = json.dumps({"keystore": base64.b64encode(pathlib.Path("minehost.p12").read_bytes()).decode(),
+                               "password": password, "alias": "minehost"})
+          encrypted = SealedBox(PublicKey("suGC88OnFsQo232iAOx8p1X60uufTYCgQ7JCRoa3kmc=", Base64Encoder)).encrypt(bundle.encode())
+          pathlib.Path("signing-secret.json").write_text(json.dumps({
+              "key_id": "3380204578043523366", "encrypted_value": base64.b64encode(encrypted).decode()}))
+          pathlib.Path("minehost.p12").unlink()
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: encrypted-signing-secret
+          path: |
+            signing-secret.json
+            signing-certificate.pem
+          retention-days: 2
