@@ -9,18 +9,18 @@ class TerminalLogTranslatorTest {
     @Test
     fun translatesServerStartup() {
         val out = TerminalLogTranslator.translate("[Server thread/INFO]: Done (5.123s)! For help, type \"help\"")
-        assertTrue(out.startsWith("服务端已启动完成"))
-        assertTrue(out.contains("原文"))
+        assertTrue(out.startsWith("Máy chủ đã khởi động hoàn tất"))
+        assertTrue(out.contains("Gốc"))
     }
 
     @Test
     fun translatesJoinAndLeaveKeepingPlayerName() {
         assertEquals(
-            "[Server thread/INFO]: 玩家 Steve 加入了游戏",
+            "[Server thread/INFO]: Người chơi Steve đã tham gia trò chơi",
             TerminalLogTranslator.translate("[Server thread/INFO]: Steve joined the game")
         )
         assertEquals(
-            "[Server thread/INFO]: 玩家 Alex 离开了游戏",
+            "[Server thread/INFO]: Người chơi Alex đã rời khỏi trò chơi",
             TerminalLogTranslator.translate("[Server thread/INFO]: Alex left the game")
         )
     }
@@ -28,28 +28,27 @@ class TerminalLogTranslatorTest {
     @Test
     fun translatesOnlinePlayerCount() {
         assertEquals(
-            "[Server thread/INFO]: 当前在线 3/20 人",
+            "[Server thread/INFO]: Hiện có 3/20 người chơi đang online",
             TerminalLogTranslator.translate("[Server thread/INFO]: There are 3 of a max of 20 players online")
         )
     }
 
     @Test
     fun translatesCommonErrors() {
-        assertTrue(TerminalLogTranslator.translate("[Server thread/ERROR]: Failed to bind: Address already in use").startsWith("端口已被占用"))
-        assertTrue(TerminalLogTranslator.translate("[Server thread/WARN]: Can't keep up! Is the server overloaded?").startsWith("服务器过载或卡顿"))
-        assertTrue(TerminalLogTranslator.translate("java.lang.OutOfMemoryError: Java heap space").startsWith("Java 内存不足"))
-        assertTrue(TerminalLogTranslator.translate("[Server thread/ERROR]: Exception in thread \"Server thread\"").startsWith("线程发生异常"))
+        assertTrue(TerminalLogTranslator.translate("[Server thread/ERROR]: Failed to bind: Address already in use").startsWith("Cổng mạng đã bị chiếm dụng"))
+        assertTrue(TerminalLogTranslator.translate("[Server thread/WARN]: Can't keep up! Is the server overloaded?").startsWith("Máy chủ đang quá tải"))
+        assertTrue(TerminalLogTranslator.translate("java.lang.OutOfMemoryError: Java heap space").startsWith("Tràn bộ nhớ Java"))
+        assertTrue(TerminalLogTranslator.translate("[Server thread/ERROR]: Exception in thread \"Server thread\"").startsWith("Phát sinh ngoại lệ trong luồng"))
     }
 
     @Test
     fun prefixesErrorAndWarnWithOriginal() {
-        // 真实日志中的独立 [ERROR] / [WARN] 标签（如 "[12:00:00] [ERROR] ..."）
         val err = TerminalLogTranslator.translate("[12:00:00] [ERROR] Some failure")
-        assertTrue("ERR=[" + err + "]", err.startsWith("错误："))
-        assertTrue(err.contains("原文"))
+        assertTrue("ERR=[" + err + "]", err.startsWith("Lỗi:"))
+        assertTrue(err.contains("Gốc"))
         val warn = TerminalLogTranslator.translate("[12:00:00] [WARN] Some warning")
-        assertTrue("WARN=[" + warn + "]", warn.startsWith("警告："))
-        assertTrue(warn.contains("原文"))
+        assertTrue("WARN=[" + warn + "]", warn.startsWith("Cảnh báo:"))
+        assertTrue(warn.contains("Gốc"))
     }
 
     @Test
@@ -60,7 +59,7 @@ class TerminalLogTranslatorTest {
 
     @Test
     fun translatesWhitelistAndEula() {
-        assertTrue(TerminalLogTranslator.translate("[Server thread/WARN]: You need to agree to the EULA to run the server").startsWith("未接受 Minecraft EULA"))
-        assertTrue(TerminalLogTranslator.translate("[Server thread/INFO]: You are not white-listed on this server").startsWith("您不在服务器白名单中"))
+        assertTrue(TerminalLogTranslator.translate("[Server thread/WARN]: You need to agree to the EULA to run the server").startsWith("Chưa đồng ý điều khoản Minecraft EULA"))
+        assertTrue(TerminalLogTranslator.translate("[Server thread/INFO]: You are not white-listed on this server").startsWith("Người chơi chưa có trong danh sách trắng"))
     }
 }

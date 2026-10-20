@@ -129,6 +129,15 @@ fun EnvManagerScreen(vm: McViewModel, initialTab: Int, onBack: () -> Unit) {
                     .verticalScroll(rememberScrollState())
                     .padding(vertical = 4.dp)
             ) {
+                McCard(title = "📖 Hướng dẫn cài đặt & Khắc phục lỗi") {
+                    val guideText = when (tab) {
+                        ENV_TAB_JAVA -> "• Bước 1: Qua thẻ 'Termux' cài Gói cơ sở trước nếu trạng thái báo chưa cài.\n• Bước 2: Chọn đúng bản Java theo phiên bản Minecraft: MC 1.20.5+ dùng Java 21; MC 1.18–1.20.4 dùng Java 17; MC 1.16.5 trở xuống dùng Java 8.\n• Cách sửa lỗi tải/cài Java: Kéo xuống thẻ 'Nguồn tải' -> bấm 'Tự động chọn nguồn nhanh nhất' rồi bấm Cài đặt lại."
+                        ENV_TAB_DEPS -> "• Wget & Rclone là công cụ phụ trợ tải tệp và đồng bộ đám mây; PRoot chỉ cần khi bạn muốn chạy môi trường Ubuntu.\n• Nếu cài báo lỗi mạng/403: Hãy sang thẻ 'Termux' -> chọn nguồn 'Termux CDN (Quốc tế)' rồi thử lại."
+                        ENV_TAB_PHP -> "• PHP 8 hanya dành cho máy chủ PocketMine-MP (Bedrock). Nếu bạn chạy Minecraft Java (Paper, Fabric, Forge...) thì KHÔNG cần cài PHP."
+                        else -> "• Đây là môi trường nền tảng bắt buộc. Hãy bấm 'Cài đặt' ở thẻ Môi trường cơ sở Termux trước tiên.\n• Nếu gặp lỗi thiếu thư viện hoặc quyền truy cập khi bật server: Bấm nút 'Sửa chữa môi trường' bên dưới để ứng dụng tự động khắc phục."
+                    }
+                    Text(guideText, color = Muted, fontSize = 11.sp, lineHeight = 16.sp)
+                }
                 when (tab) {
                     ENV_TAB_JAVA -> JavaModule(vm, ::requestConfirm)
                     ENV_TAB_DEPS -> DependenciesModule(vm, ::requestConfirm)

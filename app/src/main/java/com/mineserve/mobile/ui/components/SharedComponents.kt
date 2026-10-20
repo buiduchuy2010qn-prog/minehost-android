@@ -353,7 +353,7 @@ fun HeroBlock(
             if (!isRefreshing && lastRefreshAtMs > 0L) {
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "已更新 · ${formatRefreshAgo(lastRefreshAtMs)}",
+                    "Đã cập nhật · ${formatRefreshAgo(lastRefreshAtMs)}",
                     color = Color.White.copy(alpha = 0.55f),
                     fontSize = 9.sp
                 )
@@ -384,13 +384,23 @@ fun HeroBlock(
                     trackColor = Color.White.copy(alpha = 0.2f)
                 )
                 Spacer(Modifier.height(5.dp))
+                val viPhaseLabel = when (state.startupPhase.label) {
+                    "准备环境" -> "Chuẩn bị môi trường"
+                    "启动 Java" -> "Khởi chạy Java"
+                    "下载依赖" -> "Tải thư viện phụ thuộc"
+                    "加载核心" -> "Nạp Core máy chủ"
+                    "启动网络" -> "Khởi động mạng & cổng"
+                    "创建世界" -> "Đang tải / tạo thế giới"
+                    "启动完成" -> "Hoàn tất khởi động"
+                    else -> state.startupPhase.label
+                }
                 Text(
-                    "启动阶段：${state.startupPhase.label}（${(state.startupPhase.progress * 100).toInt()}%）",
+                    "Giai đoạn khởi động: $viPhaseLabel (${(state.startupPhase.progress * 100).toInt()}%)",
                     color = Color.White.copy(alpha = 0.7f),
                     fontSize = 10.sp
                 )
                 Text(
-                    "准备环境 · 下载依赖 · 启动 Java · 加载核心 · 创建世界 · 启动网络",
+                    "Chuẩn bị môi trường · Tải thư viện · Khởi chạy Java · Nạp Core · Tạo thế giới · Mở mạng",
                     color = Color.White.copy(alpha = 0.52f),
                     fontSize = 9.sp,
                     maxLines = 2,
@@ -534,10 +544,10 @@ private fun formatUptime(ms: Long): String {
 private fun formatRefreshAgo(refreshAtMs: Long): String {
     val elapsedSec = ((System.currentTimeMillis() - refreshAtMs).coerceAtLeast(0L)) / 1000
     return when {
-        elapsedSec < 5 -> "刚刚"
-        elapsedSec < 60 -> "${elapsedSec}秒前"
-        elapsedSec < 3600 -> "${elapsedSec / 60}分钟前"
-        else -> "${elapsedSec / 3600}小时前"
+        elapsedSec < 5 -> "vừa xong"
+        elapsedSec < 60 -> "${elapsedSec} giây trước"
+        elapsedSec < 3600 -> "${elapsedSec / 60} phút trước"
+        else -> "${elapsedSec / 3600} giờ trước"
     }
 }
 

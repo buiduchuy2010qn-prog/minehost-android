@@ -51,29 +51,29 @@ import com.mineserve.mobile.ui.TerminalSessionType
 private data class QuickMcCommand(val emoji: String, val label: String, val command: String)
 
 private val quickMcCommands = listOf(
-    QuickMcCommand("☀️", "晴天", "weather clear"),
-    QuickMcCommand("🌧️", "下雨", "weather rain"),
-    QuickMcCommand("⛈️", "雷雨", "weather thunder"),
-    QuickMcCommand("🌅", "白天", "time set day"),
-    QuickMcCommand("🌙", "夜晚", "time set night"),
-    QuickMcCommand("🕛", "正午", "time set noon"),
-    QuickMcCommand("🕹️", "生存模式", "gamemode survival @p"),
-    QuickMcCommand("🧱", "创造模式", "gamemode creative @p"),
-    QuickMcCommand("🗺️", "冒险模式", "gamemode adventure @p"),
-    QuickMcCommand("👁️", "旁观模式", "gamemode spectator @p"),
-    QuickMcCommand("🕊️", "和平难度", "difficulty peaceful"),
-    QuickMcCommand("⚔️", "普通难度", "difficulty normal"),
-    QuickMcCommand("🔥", "困难难度", "difficulty hard"),
-    QuickMcCommand("💀", "杀死实体", "kill @e[type=!player]"),
-    QuickMcCommand("👥", "玩家列表", "list"),
-    QuickMcCommand("📍", "出生点", "spawnpoint @p"),
-    QuickMcCommand("🎒", "清空效果", "effect clear @p"),
-    QuickMcCommand("🛡️", "保留物品", "gamerule keepInventory true"),
-    QuickMcCommand("🚫", "关闭白名单", "whitelist off"),
-    QuickMcCommand("✅", "开启白名单", "whitelist on"),
-    QuickMcCommand("💾", "保存世界", "save-all"),
-    QuickMcCommand("❓", "帮助", "help"),
-    QuickMcCommand("🛑", "停止服务端", "stop")
+    QuickMcCommand("☀️", "Trời nắng", "weather clear"),
+    QuickMcCommand("🌧️", "Trời mưa", "weather rain"),
+    QuickMcCommand("⛈️", "Giông bão", "weather thunder"),
+    QuickMcCommand("🌅", "Ban ngày", "time set day"),
+    QuickMcCommand("🌙", "Ban đêm", "time set night"),
+    QuickMcCommand("🕛", "Giữa trưa", "time set noon"),
+    QuickMcCommand("🕹️", "Sinh tồn", "gamemode survival @p"),
+    QuickMcCommand("🧱", "Sáng tạo", "gamemode creative @p"),
+    QuickMcCommand("🗺️", "Phiêu lưu", "gamemode adventure @p"),
+    QuickMcCommand("👁️", "Khán giả", "gamemode spectator @p"),
+    QuickMcCommand("🕊️", "Hòa bình", "difficulty peaceful"),
+    QuickMcCommand("⚔️", "Bình thường", "difficulty normal"),
+    QuickMcCommand("🔥", "Khó", "difficulty hard"),
+    QuickMcCommand("💀", "Dọn thực thể", "kill @e[type=!player]"),
+    QuickMcCommand("👥", "DS người chơi", "list"),
+    QuickMcCommand("📍", "Đặt điểm hồi sinh", "spawnpoint @p"),
+    QuickMcCommand("🎒", "Xóa hiệu ứng", "effect clear @p"),
+    QuickMcCommand("🛡️", "Giữ đồ khi chết", "gamerule keepInventory true"),
+    QuickMcCommand("🚫", "Tắt Whitelist", "whitelist off"),
+    QuickMcCommand("✅", "Bật Whitelist", "whitelist on"),
+    QuickMcCommand("💾", "Lưu thế giới", "save-all"),
+    QuickMcCommand("❓", "Trợ giúp", "help"),
+    QuickMcCommand("🛑", "Dừng máy chủ", "stop")
 )
 
 @Composable
@@ -189,7 +189,7 @@ fun TerminalScreen(vm: McViewModel) {
                         .size(48.dp)
                         .background(Color(0xFF3996FF), RoundedCornerShape(8.dp))
                 ) {
-                    Icon(Icons.AutoMirrored.Outlined.Send, "发送", tint = Color.White)
+                    Icon(Icons.AutoMirrored.Outlined.Send, "Gửi lệnh", tint = Color.White)
                 }
             }
         }
@@ -202,33 +202,33 @@ fun TerminalScreen(vm: McViewModel) {
             .padding(terminalPadding)
     ) {
         Row(Modifier.fillMaxWidth().padding(14.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("终端", color = Color(0xFFE8E8E8), fontSize = 22.sp, fontFamily = FontFamily.Monospace)
+            Text("Bảng điều khiển", color = Color(0xFFE8E8E8), fontSize = 20.sp, fontFamily = FontFamily.Monospace)
             Row {
-                IconButton(onClick = { showSettings = true }) { Icon(Icons.Outlined.Settings, "终端设置", tint = Color.White) }
+                IconButton(onClick = { showSettings = true }) { Icon(Icons.Outlined.Settings, "Cài đặt bảng điều khiển", tint = Color.White) }
                 IconButton(onClick = {
                     if (active.type == TerminalSessionType.Minecraft) vm.clearConsole()
                     else vm.clearTerminalSession(active.id)
-                }) { Icon(Icons.Outlined.Delete, "清空当前会话", tint = Color(0xFFFFA7A7)) }
+                }) { Icon(Icons.Outlined.Delete, "Xóa nhật ký phiên hiện tại", tint = Color(0xFFFFA7A7)) }
                 IconButton(onClick = { autoScrollPaused = !autoScrollPaused }) {
                     Icon(
                         if (autoScrollPaused) Icons.Outlined.PlayArrow else Icons.Outlined.Pause,
-                        if (autoScrollPaused) "继续自动滚动" else "暂停自动滚动",
+                        if (autoScrollPaused) "Tiếp tục tự cuộn" else "Tạm dừng tự cuộn",
                         tint = if (autoScrollPaused) Color(0xFFFFC857) else Color.White
                     )
                 }
                 IconButton(onClick = {
                     val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                     clipboard.setPrimaryClip(android.content.ClipData.newPlainText(active.name, rawLines.joinToString("\n") { it.text }))
-                    android.widget.Toast.makeText(context, "已复制当前日志", android.widget.Toast.LENGTH_SHORT).show()
-                }) { Icon(Icons.Outlined.ContentCopy, "复制当前日志", tint = Color.White) }
-                IconButton(onClick = vm::createTerminalSession) { Icon(Icons.Outlined.Add, "新建会话", tint = Color.White) }
+                    android.widget.Toast.makeText(context, "Đã sao chép nhật ký hiện tại", android.widget.Toast.LENGTH_SHORT).show()
+                }) { Icon(Icons.Outlined.ContentCopy, "Sao chép nhật ký", tint = Color.White) }
+                IconButton(onClick = vm::createTerminalSession) { Icon(Icons.Outlined.Add, "Tạo phiên mới", tint = Color.White) }
             }
         }
         Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             sessions.forEach { session ->
                 Row(Modifier.background(if (session.id == activeId) Color(0xFF2B313C) else Color(0xFF20242C), RoundedCornerShape(8.dp)).padding(start = 12.dp), horizontalArrangement = Arrangement.Center) {
                     Text(session.name, color = Color(0xFFE8E8E8), fontSize = 12.sp, modifier = Modifier.padding(vertical = 10.dp).clickable { vm.selectTerminalSession(session.id) })
-                    if (session.type == TerminalSessionType.Termux) IconButton(onClick = { vm.closeTerminalSession(session.id) }) { Icon(Icons.Outlined.Close, "关闭", tint = Color(0xFF999999)) } else Spacer(Modifier.width(8.dp))
+                    if (session.type == TerminalSessionType.Termux) IconButton(onClick = { vm.closeTerminalSession(session.id) }) { Icon(Icons.Outlined.Close, "Đóng", tint = Color(0xFF999999)) } else Spacer(Modifier.width(8.dp))
                 }
             }
         }
@@ -263,10 +263,10 @@ fun TerminalScreen(vm: McViewModel) {
     }
     if (showSettings) AlertDialog(
         onDismissRequest = { showSettings = false },
-        title = { Text("终端设置") },
+        title = { Text("Cài đặt bảng điều khiển") },
         text = {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("常用日志汉化\n仅改变终端显示，保留原始日志")
+                Text("Việt hóa nhật ký & Gợi ý sửa lỗi\nChỉ dịch trên màn hình, giữ nguyên log gốc")
                 Switch(
                     checked = translateLogs,
                     onCheckedChange = {
@@ -277,15 +277,15 @@ fun TerminalScreen(vm: McViewModel) {
                 )
             }
         },
-        confirmButton = { TextButton(onClick = { showSettings = false }) { Text("完成") } }
+        confirmButton = { TextButton(onClick = { showSettings = false }) { Text("Xong") } }
     )
     pendingDangerousCommand?.let { command ->
         AlertDialog(
             onDismissRequest = { pendingDangerousCommand = null },
-            title = { Text("确认执行危险指令", color = Color(0xFFFF7B72)) },
-            text = { Text("该指令可能停止服务端、清除实体或关闭白名单：\n\n$command") },
+            title = { Text("Xác nhận chạy lệnh quan trọng", color = Color(0xFFFF7B72)) },
+            text = { Text("Lệnh này có thể dừng máy chủ, xóa thực thể hoặc tắt Whitelist:\n\n$command") },
             dismissButton = {
-                TextButton(onClick = { pendingDangerousCommand = null }) { Text("取消") }
+                TextButton(onClick = { pendingDangerousCommand = null }) { Text("Hủy") }
             },
             confirmButton = {
                 TextButton(
@@ -294,7 +294,7 @@ fun TerminalScreen(vm: McViewModel) {
                         vm.sendCommand(command)
                     },
                     colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFFF7B72))
-                ) { Text("确认执行") }
+                ) { Text("Xác nhận chạy") }
             }
         )
     }

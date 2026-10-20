@@ -1004,8 +1004,8 @@ private data class FrpPlatform(val name: String, val url: String)
 private val freeFrpPlatforms = listOf(
     FrpPlatform("OpenFrp", "https://www.openfrp.net/"),
     FrpPlatform("ChmlFrp", "https://www.chmlfrp.cn/"),
-    FrpPlatform("StarryFrp（星空FRP）", "https://frp.starryfrp.com/"),
-    FrpPlatform("SakuraFrp（樱花映射）", "https://www.natfrp.com/"),
+    FrpPlatform("StarryFrp", "https://frp.starryfrp.com/"),
+    FrpPlatform("SakuraFrp (NatFrp)", "https://www.natfrp.com/"),
     FrpPlatform("ME Frp", "https://www.mefrp.com/")
 )
 

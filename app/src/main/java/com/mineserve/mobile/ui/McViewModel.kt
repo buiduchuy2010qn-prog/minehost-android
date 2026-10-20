@@ -145,7 +145,7 @@ class McViewModel(
 
     /** 请求切换到下一个镜像源 */
     fun switchBootstrapMirror() {
-        android.util.Log.i("McViewModel", "[切换] switchBootstrapMirror 调用, 线程=${Thread.currentThread().name}")
+        android.util.Log.i("McViewModel", "[Chuyen nguon] switchBootstrapMirror, thread=${Thread.currentThread().name}")
         app.switchBootstrapMirror()
     }
 
@@ -634,10 +634,10 @@ class McViewModel(
                 val result = downloader.downloadAndInstall(manifest) { fraction ->
                     _frpcDownload.value = DownloadState.Downloading(fraction)
                 }
-                _frpcEngineMessage.value = "引擎下载完成" +
-                    (result.version?.let { "（版本 $it）" } ?: "")
+                _frpcEngineMessage.value = "Đã tải xong engine FRPC" +
+                    (result.version?.let { " (phiên bản $it)" } ?: "")
             } catch (e: Exception) {
-                _frpcEngineMessage.value = "下载失败：${e.message ?: "网络不可用"}"
+                _frpcEngineMessage.value = "Tải thất bại: ${e.message ?: "Không có kết nối mạng"} -> Cách sửa: Kiểm tra Wi-Fi/4G hoặc nhập tệp libfrpc.so thủ công."
             } finally {
                 _frpcDownload.value = DownloadState.Idle
                 refreshFrpcEngine()
@@ -658,12 +658,12 @@ class McViewModel(
                 val name = queryDisplayName(uri)
                 app.contentResolver.openInputStream(uri)?.use { input ->
                     frpcRuntime.install(input, name)
-                } ?: throw IllegalStateException("无法读取所选文件")
-                _frpcEngineMessage.value = "引擎导入成功" +
-                    (frpcRuntime.installedVersion?.let { "（版本 $it）" } ?: "")
+                } ?: throw IllegalStateException("Không thể đọc tệp đã chọn")
+                _frpcEngineMessage.value = "Nhập engine FRPC thành công" +
+                    (frpcRuntime.installedVersion?.let { " (phiên bản $it)" } ?: "")
                 refreshFrpcEngine()
             } catch (e: Exception) {
-                _frpcEngineMessage.value = "导入失败：${e.message}"
+                _frpcEngineMessage.value = "Nhập thất bại: ${e.message} -> Cách sửa: Hãy chọn đúng tệp frpc arm64 (ELF 64-bit)."
             }
         }
     }
@@ -672,7 +672,7 @@ class McViewModel(
     fun uninstallFrpcEngine() {
         viewModelScope.launch(Dispatchers.IO) {
             val ok = frpcRuntime.uninstall()
-            _frpcEngineMessage.value = if (ok) "引擎已卸载" else "卸载失败，请重试"
+            _frpcEngineMessage.value = if (ok) "Đã gỡ cài đặt engine FRPC" else "Gỡ cài đặt thất bại, vui lòng thử lại"
             refreshFrpcEngine()
         }
     }
@@ -1195,7 +1195,7 @@ class McViewModel(
             val dirReady = dir.isDirectory && dir.canRead() && dir.canWrite()
             checks += DiagnosticCheck(
                 "core", str(R.string.diag_check_core),
-                if (!dirReady) str(R.string.diag_check_core_dir_bad) else if (jar?.isFile != true) str(R.string.diag_check_core_entry_missing, entryName ?: "未指定") else str(R.string.diag_check_core_ok, active.name),
+                if (!dirReady) str(R.string.diag_check_core_dir_bad) else if (jar?.isFile != true) str(R.string.diag_check_core_entry_missing, entryName ?: "Chưa chỉ định") else str(R.string.diag_check_core_ok, active.name),
                 if (dirReady && jar?.isFile == true) DiagnosticStatus.Pass else DiagnosticStatus.Failed
             )
             val fontNeeded = runtime.needsFontRuntime(active.core)
@@ -1381,7 +1381,7 @@ class McViewModel(
                     val (name, joined) = playerManager.extractPowerNukkitPlayerEvent(line)!!
                     repo.updateServerState { it.copy(onlinePlayers = (it.onlinePlayers + if (joined) 1 else -1).coerceAtLeast(0)) }
                     if (joined) addOnlinePlayer(name) else removeOnlinePlayer(name)
-                    recordPlayerEvent(name, if (joined) "进服" else "离服")
+                    recordPlayerEvent(name, if (joined) "Vào server" else "Rời server")
                     notifyPlayerEvent(name, joined)
                     handled = true
                 }
@@ -1392,7 +1392,7 @@ class McViewModel(
                             it.copy(onlinePlayers = (it.onlinePlayers + 1).coerceAtLeast(0))
                         }
                         addOnlinePlayer(name)
-                        recordPlayerEvent(name, "进服")
+                        recordPlayerEvent(name, "Vào server")
                         notifyPlayerEvent(name, true)
                     }
                     handled = true
@@ -1403,7 +1403,7 @@ class McViewModel(
                             it.copy(onlinePlayers = (it.onlinePlayers - 1).coerceAtLeast(0))
                         }
                         removeOnlinePlayer(name)
-                        recordPlayerEvent(name, "离服")
+                        recordPlayerEvent(name, "Rời server")
                         notifyPlayerEvent(name, false)
                     }
                     handled = true
@@ -1546,12 +1546,12 @@ class McViewModel(
     fun updateServerDisplayInfo(oldName: String, newName: String, newVersion: String, newCore: com.mineserve.mobile.data.ServerCore? = null): String? {
         val name = newName.trim()
         val version = newVersion.trim()
-        if (name.isEmpty()) return "服务器名称不能为空"
+        if (name.isEmpty()) return "Tên máy chủ không được để trống"
         val current = config.value
         val target = current.installedCores.firstOrNull { it.name == oldName }
-            ?: return "未找到服务器：$oldName"
+            ?: return "Không tìm thấy máy chủ: $oldName"
         if (current.installedCores.any { it.name == name && it.name != oldName }) {
-            return "已存在同名服务器：$name"
+            return "Đã tồn tại máy chủ cùng tên: $name"
         }
         updateConfig { cfg ->
             cfg.copy(
@@ -1605,7 +1605,7 @@ class McViewModel(
                 }
                 if (emptyDirs.isNotEmpty()) {
                     termux3Log(
-                        "扫描跳过 ${emptyDirs.size} 个空目录（未登记）: " +
+                        "Quét bỏ qua ${emptyDirs.size} thư mục trống (chưa đăng ký): " +
                             emptyDirs.joinToString(", ") { it.name }
                     )
                 }
@@ -2283,12 +2283,12 @@ class McViewModel(
                 if (mirror != null) {
                     updateConfig { it.copy(downloadMirror = mirror) }
                     repo.termuxRuntime.setDownloadMirror(mirror)
-                    appendMirrorTest("已选用可用下载源：${mirror.displayName}")
+                    appendMirrorTest("Đã tự động chọn nguồn tải tốt nhất: ${mirror.displayName}")
                 } else {
-                    appendMirrorTest("全部下载源均不可用，请检查网络后重试")
+                    appendMirrorTest("Tất cả nguồn tải đều không phản hồi -> Cách sửa: Kiểm tra kết nối Wi-Fi/4G hoặc tắt VPN rồi thử lại.")
                 }
             } catch (e: Exception) {
-                appendMirrorTest("测试失败：${e.message ?: "未知错误"}")
+                appendMirrorTest("Kiểm tra thất bại: ${e.message ?: "Lỗi không xác định"}")
             } finally {
                 _mirrorTestRunning.value = false
             }
@@ -2428,7 +2428,7 @@ class McViewModel(
                 val detectedPort = realServerPort()
                 if (detectedPort != current.localPort) {
                     repo.termuxRuntime.emitLog(
-                        "[startMc] 配置文件端口 $detectedPort 与本地记录 ${current.localPort} 不一致，本次按配置文件启动"
+                        "[startMc] Cổng trong tệp cấu hình ($detectedPort) khác với bản ghi cục bộ (${current.localPort}), ưu tiên dùng cổng $detectedPort"
                     )
                 }
                 val startConfig = current.copy(localPort = detectedPort)
@@ -2450,7 +2450,7 @@ class McViewModel(
                 repo.updateServerState {
                     it.copy(isRunning = false, runningSinceMs = 0L, startupPhase = StartupPhase.Failed)
                 }
-                repo.termuxRuntime.emitLog("[startMc] 启动失败: ${e.message}")
+                repo.termuxRuntime.emitLog("[startMc] Khởi động thất bại: ${e.message}")
                 showStartupFailureReport(e)
                 _errorFlow.tryEmit(str(R.string.s197, e.message))
             } finally { startRequestPending = false }
@@ -2595,8 +2595,8 @@ class McViewModel(
                     if (aligned.changed > 0) {
                         runtime = runtime.copy(frpConfigText = aligned.text)
                         tunnelManager.note(
-                            "配置里的转发端口 ${aligned.from} 不是游戏真实端口 $realPort，" +
-                                "本次已按 $realPort 启动（你的配置原文没有被改）"
+                            "Cổng chuyển tiếp ${aligned.from} trong cấu hình khác với cổng game thực tế ($realPort), " +
+                                "đã tự động chạy theo cổng $realPort (tệp cấu hình gốc của bạn được giữ nguyên)"
                         )
                     }
                 }
@@ -2788,7 +2788,7 @@ class McViewModel(
     /** 切换模组启用状态 */
     fun toggleModEnabled(fileName: String) {
         // VM 侧兜底：UI 前台虽已拦截，但其他调用入口不能绕过——运行中改 mods 目录会导致本轮加载状态错乱
-        if (!requireServerStopped("启用或停用模组")) return
+        if (!requireServerStopped("bật hoặc tắt Mod")) return
         val dirName = activeDirName() ?: return
         viewModelScope.launch {
             try {
@@ -2802,7 +2802,7 @@ class McViewModel(
 
     /** 删除模组 */
     fun deleteMod(fileName: String) {
-        if (!requireServerStopped("删除模组")) return
+        if (!requireServerStopped("xóa Mod")) return
         val dirName = activeDirName() ?: return
         viewModelScope.launch {
             try {
@@ -2975,7 +2975,7 @@ class McViewModel(
     /** 分页加载更多 Modrinth 模组（追加到现有结果） */
     fun loadMoreModrinthMods() {
         val args = lastModrinthModQuery ?: run {
-            _messageFlow.tryEmit("请先执行搜索")
+            _messageFlow.tryEmit("Vui lòng nhập từ khóa và bấm Tìm kiếm trước")
             return
         }
         if (_isLoadingMoreMods.value) return
@@ -2990,7 +2990,7 @@ class McViewModel(
                 // 期间若发生过新的搜索，这一页属于旧查询，追加进去会得到混合列表。
                 if (token != modrinthModSearchToken) return@launch
                 if (more.isEmpty()) {
-                    _messageFlow.tryEmit("没有更多结果")
+                    _messageFlow.tryEmit("Đã hiển thị toàn bộ kết quả")
                 } else {
                     _modrinthResults.value = (_modrinthResults.value + more).distinctBy { it.slug }
                 }
@@ -3117,7 +3117,7 @@ class McViewModel(
     /** 分页加载更多 Modrinth 插件（追加到现有结果） */
     fun loadMoreModrinthPlugin() {
         val args = lastModrinthPluginQuery ?: run {
-            _messageFlow.tryEmit("请先执行搜索")
+            _messageFlow.tryEmit("Vui lòng nhập từ khóa và bấm Tìm kiếm trước")
             return
         }
         if (_isLoadingMorePlugins.value) return
@@ -3132,7 +3132,7 @@ class McViewModel(
                 // 期间若发生过新的搜索，这一页属于旧查询，追加进去会得到混合列表。
                 if (token != modrinthPluginSearchToken) return@launch
                 if (more.isEmpty()) {
-                    _messageFlow.tryEmit("没有更多结果")
+                    _messageFlow.tryEmit("Đã hiển thị toàn bộ kết quả")
                 } else {
                     _pluginModrinthResults.value = (_pluginModrinthResults.value + more).distinctBy { it.slug }
                 }
@@ -3285,7 +3285,7 @@ class McViewModel(
     /** 删除插件 */
     fun deletePlugin(fileName: String, alsoRemoveDataDir: Boolean = false) {
         // VM 侧兜底：运行中删除插件（尤其含 removeDataDir）会与正在加载的插件文件竞争
-        if (!requireServerStopped("删除插件")) return
+        if (!requireServerStopped("xóa Plugin")) return
         val dirName = activeDirName() ?: run {
             _errorFlow.tryEmit(str(R.string.s212))
             return
@@ -3309,7 +3309,7 @@ class McViewModel(
     /** 切换插件启用/禁用 */
     fun togglePluginEnabled(fileName: String) {
         // VM 侧兜底：运行中重命名 jar 可能让服务端读到半截文件
-        if (!requireServerStopped("启用或停用插件")) return
+        if (!requireServerStopped("bật hoặc tắt Plugin")) return
         val dirName = activeDirName() ?: run {
             _errorFlow.tryEmit(str(R.string.s212))
             return
@@ -3916,7 +3916,7 @@ class McViewModel(
     /** 删除快照 */
     fun deleteSnapshot(name: String) {
         // 兜底：运行中删除快照会毁掉「出事可回滚」的备份，与服务端活动期解耦更安全
-        if (!requireServerStopped("删除快照")) return
+        if (!requireServerStopped("xóa bản sao lưu")) return
         viewModelScope.launch {
             try {
                 val ok = withContext(Dispatchers.IO) { backupManager.deleteSnapshot(name) }
@@ -4045,7 +4045,7 @@ class McViewModel(
         // PowerNukkitX 的配置落在 pnx.yml，而服务端退出时会整份回写该文件，
         // 运行期间的修改必然被覆盖；PowerNukkitXConfigManager.write 也会主动拒绝运行中写入。
         // 在这里提前拦截是为了给出明确原因，而不是让用户看到笼统的「保存失败」。
-        if (isPowerNukkitXActive() && !requireServerStopped("修改 PowerNukkitX 配置")) return
+        if (isPowerNukkitXActive() && !requireServerStopped("sửa cấu hình PowerNukkitX")) return
         val dirName = activeDirName() ?: run {
             _errorFlow.tryEmit(str(R.string.s249))
             return
@@ -4166,7 +4166,7 @@ class McViewModel(
                         val merged = fileList.distinct().sortedByDescending { it.time }
                         _playerHistory.value = merged
                         // A process restart has no trustworthy leave timestamp. Preserve it as interrupted.
-                        val interrupted = merged.map { if (it.event == "进服" && it.sessionEnd == null) it.copy(interrupted = true) else it }
+                        val interrupted = merged.map { if (isJoinEvent(it.event) && it.sessionEnd == null) it.copy(interrupted = true) else it }
                         _playerHistory.value = interrupted
                         f.writeText(historyJson.encodeToString(interrupted))
                     }
@@ -4178,17 +4178,20 @@ class McViewModel(
     }
 
     /** 追加一条进服/离服事件并异步持久化（保留最近 500 条） */
+    private fun isJoinEvent(ev: String): Boolean = ev == "Vào server" || ev == "进服"
+    private fun isLeaveEvent(ev: String): Boolean = ev == "Rời server" || ev == "离服"
+
     private fun recordPlayerEvent(player: String, event: String) {
         val now = System.currentTimeMillis()
         val previous = _playerHistory.value
-        val open = previous.firstOrNull { it.player.equals(player, true) && it.event == "进服" && it.sessionEnd == null && !it.interrupted }
-        val entry = if (event == "离服" && open != null) {
+        val open = previous.firstOrNull { it.player.equals(player, true) && isJoinEvent(it.event) && it.sessionEnd == null && !it.interrupted }
+        val entry = if (isLeaveEvent(event) && open != null) {
             PlayerHistoryEntry(player, event, timeNow(), open.sessionStart ?: now, now)
         } else {
-            PlayerHistoryEntry(player, event, timeNow(), if (event == "进服") now else null, null)
+            PlayerHistoryEntry(player, event, timeNow(), if (isJoinEvent(event)) now else null, null)
         }
         _playerHistory.value = listOf(entry) + previous.map {
-            if (event == "离服" && it == open) it.copy(sessionEnd = now) else it
+            if (isLeaveEvent(event) && it == open) it.copy(sessionEnd = now) else it
         }
         val snapshot = _playerHistory.value
         viewModelScope.launch(Dispatchers.IO) {
@@ -4206,25 +4209,25 @@ class McViewModel(
     fun playerActivitySummaries(): List<PlayerActivitySummary> {
         val entries = _playerHistory.value
         return entries.groupBy { it.player }.map { (player, rows) ->
-            val seconds = rows.filter { it.event == "离服" && !it.interrupted }.sumOf { ((it.sessionEnd ?: 0L) - (it.sessionStart ?: 0L)).coerceAtLeast(0L) / 1000 }
-            val lastJoin = rows.filter { it.event == "进服" }.maxByOrNull { it.time }
-            val lastLeave = rows.filter { it.event == "离服" }.maxByOrNull { it.time }
+            val seconds = rows.filter { isLeaveEvent(it.event) && !it.interrupted }.sumOf { ((it.sessionEnd ?: 0L) - (it.sessionStart ?: 0L)).coerceAtLeast(0L) / 1000 }
+            val lastJoin = rows.filter { isJoinEvent(it.event) }.maxByOrNull { it.time }
+            val lastLeave = rows.filter { isLeaveEvent(it.event) }.maxByOrNull { it.time }
             PlayerActivitySummary(
                 player = player,
-                sessions = rows.count { it.event == "离服" },
+                sessions = rows.count { isLeaveEvent(it.event) },
                 totalSeconds = seconds,
-                active = rows.any { it.event == "进服" && it.sessionEnd == null },
+                active = rows.any { isJoinEvent(it.event) && it.sessionEnd == null },
                 lastJoinTime = lastJoin?.time,
                 lastLeaveTime = lastLeave?.time,
                 lastExitReason = lastLeave?.let {
-                    if (it.interrupted) "服务停止或应用重启导致中断" else "日志未提供退出原因"
+                    if (it.interrupted) "Gián đoạn do dừng máy chủ hoặc khởi động lại ứng dụng" else "Nhật ký không ghi rõ lý do thoát"
                 }
             )
         }.sortedByDescending { it.totalSeconds }
     }
 
     fun interruptPlayerSessions() {
-        val open = _playerHistory.value.filter { it.event == "进服" && it.sessionEnd == null }
+        val open = _playerHistory.value.filter { isJoinEvent(it.event) && it.sessionEnd == null }
         if (open.isEmpty()) return
         val replacements = open.associateWith { it.copy(interrupted = true) }
         _playerHistory.value = _playerHistory.value.map { replacements[it] ?: it }
@@ -4554,10 +4557,10 @@ class McViewModel(
         viewModelScope.launch {
             try {
                 val ok = withContext(Dispatchers.IO) { worldManager.clearLevelSeed(dirName) }
-                if (ok) _messageFlow.tryEmit("已清空世界种子，下次生成地图时使用随机种子")
-                else _errorFlow.tryEmit("清空种子失败：当前服务端类型不支持该设置")
+                if (ok) _messageFlow.tryEmit("Đã xóa hạt giống (seed), lần tạo thế giới tiếp theo sẽ dùng seed ngẫu nhiên")
+                else _errorFlow.tryEmit("Xóa seed thất bại: Core hiện tại không hỗ trợ thiết lập này")
             } catch (e: Exception) {
-                _errorFlow.tryEmit("清空种子失败：${e.message}")
+                _errorFlow.tryEmit("Xóa seed thất bại: ${e.message}")
             }
         }
     }
@@ -4566,17 +4569,17 @@ class McViewModel(
     fun exportWorldToUri(worldName: String, uri: Uri) {
         if (!isBootstrapped.value) { _errorFlow.tryEmit(str(R.string.s192)); return }
         val dirName = activeDirName() ?: return
-        if (!requireServerStopped("导出世界")) return
+        if (!requireServerStopped("xuất thế giới")) return
         viewModelScope.launch {
             try {
                 val path = worldManager.exportWorld(dirName, worldName)
                 if (path == null) {
-                    _errorFlow.tryEmit("导出失败：世界目录不存在或存储不可写")
+                    _errorFlow.tryEmit("Xuất thế giới thất bại: Thư mục thế giới không tồn tại hoặc thiếu quyền bộ nhớ -> Cách sửa: Cấp quyền Truy cập tất cả tệp trong mục Sao lưu.")
                     return@launch
                 }
                 exportPathToUri(java.io.File(path), uri)
             } catch (e: Exception) {
-                _errorFlow.tryEmit("导出失败：${e.message}")
+                _errorFlow.tryEmit("Xuất thế giới thất bại: ${e.message}")
             }
         }
     }
@@ -4589,12 +4592,83 @@ class McViewModel(
      */
     data class WorldImportStatus(
         val phase: String = "", val copiedBytes: Long = 0, val world: String? = null,
-        val serverName: String? = null, val error: String? = null
+        val serverName: String? = null, val error: String? = null,
+        val modsInstalled: Int = 0, val configsInstalled: Int = 0
     )
     private val _worldImportBusy = MutableStateFlow(false)
     val worldImportBusy = _worldImportBusy.asStateFlow()
     private val _worldImportStatus = MutableStateFlow(WorldImportStatus())
     val worldImportStatus = _worldImportStatus.asStateFlow()
+    private val _worldModCount = MutableStateFlow(0)
+    val worldModCount = _worldModCount.asStateFlow()
+    private val _worldModBusy = MutableStateFlow(false)
+    val worldModBusy = _worldModBusy.asStateFlow()
+    private val _worldModStatus = MutableStateFlow<String?>(null)
+    val worldModStatus = _worldModStatus.asStateFlow()
+
+    fun refreshWorldModCount() {
+        val dirName = activeDirName() ?: run { _worldModCount.value = 0; return }
+        viewModelScope.launch(Dispatchers.IO) {
+            val modsDir = java.io.File(repo.termuxRuntime.serverDirFor(dirName), "mods")
+            val count = modsDir.listFiles()?.count { it.isFile && it.name.endsWith(".jar", ignoreCase = true) } ?: 0
+            _worldModCount.value = count
+        }
+    }
+
+    fun importWorldModsFromUris(uris: List<Uri>) {
+        if (uris.isEmpty() || _worldModBusy.value || _worldImportBusy.value) return
+        if (!isBootstrapped.value) {
+            _errorFlow.tryEmit("Hãy cài môi trường chạy ở mục Môi trường trước khi cài Mod.")
+            return
+        }
+        val dirName = activeDirName() ?: run {
+            _errorFlow.tryEmit("Chưa chọn máy chủ. Hãy tải hoặc chọn một máy chủ trước.")
+            return
+        }
+        if (!requireServerStopped("cài đặt Mod cho Map")) return
+        _worldModBusy.value = true
+        _worldModStatus.value = "Đang chép và giải nén Mod vào thư mục mods/…"
+        viewModelScope.launch {
+            try {
+                val summary = withContext(Dispatchers.IO) {
+                    val serverDir = repo.termuxRuntime.serverDirFor(dirName)
+                    var totalMods = 0
+                    var totalConfigs = 0
+                    for (uri in uris) {
+                        val displayName = queryDisplayName(uri)?.takeIf { it.isNotBlank() } ?: "mod.jar"
+                        val ext = if (displayName.lowercase().endsWith(".zip")) ".zip" else ".jar"
+                        val temp = java.io.File.createTempFile("mod_import_", ext, app.cacheDir)
+                        try {
+                            app.contentResolver.openInputStream(uri)?.use { input ->
+                                temp.outputStream().use { output -> input.copyTo(output) }
+                            } ?: error("Không đọc được tệp $displayName.")
+                            val res = com.mineserve.mobile.server.WorldArchive.importModFileOrPack(temp, displayName, serverDir)
+                            totalMods += res.modsInstalled
+                            totalConfigs += res.configsInstalled
+                        } finally {
+                            temp.delete()
+                        }
+                    }
+                    com.mineserve.mobile.server.WorldArchive.BundledAddons(totalMods, totalConfigs)
+                }
+                val msg = buildString {
+                    append("✅ Đã cài thành công ${summary.modsInstalled} tệp Mod (.jar)")
+                    if (summary.configsInstalled > 0) append(" và ${summary.configsInstalled} tệp cấu hình (config)")
+                    append(" vào máy chủ!")
+                }
+                _worldModStatus.value = msg
+                _messageFlow.tryEmit(msg)
+                refreshWorldModCount()
+                loadInstalledMods()
+            } catch (e: Exception) {
+                val err = "❌ Không cài được Mod: " + (e.message ?: "Lỗi không xác định")
+                _worldModStatus.value = err
+                _errorFlow.tryEmit(err)
+            } finally {
+                _worldModBusy.value = false
+            }
+        }
+    }
 
     fun importWorldFromUri(uri: Uri, preferredName: String = "", expectedServerName: String? = null) {
         if (_worldImportBusy.value || _applyingDeviceTuning.value) return
@@ -4652,9 +4726,20 @@ class McViewModel(
                     } ?: error("Không đọc được tệp đã chọn.")
                     worldManager.importWorld(dirName, archive, name) ?: error("Không nhập được world.")
                 }
+                val addons = worldManager.lastBundledAddons
+                val addonNote = if (addons.modsInstalled > 0 || addons.configsInstalled > 0) {
+                    " (Đã tự động cài kèm ${addons.modsInstalled} mod .jar và ${addons.configsInstalled} tệp config!)"
+                } else ""
                 _worldImportStatus.value = WorldImportStatus(
-                    phase = "Nhập thành công. World cũ được giữ nguyên.", world = imported, serverName = selected)
-                _messageFlow.tryEmit("Đã nhập world: " + imported + ". Chọn Dùng world này để kích hoạt.")
+                    phase = "Nhập Map thành công! World cũ vẫn được giữ nguyên." + addonNote,
+                    world = imported,
+                    serverName = selected,
+                    modsInstalled = addons.modsInstalled,
+                    configsInstalled = addons.configsInstalled
+                )
+                _messageFlow.tryEmit("Đã nhập world: " + imported + addonNote + ". Bấm 'Kích hoạt & Dùng thế giới này' để chơi.")
+                refreshWorldModCount()
+                if (addons.modsInstalled > 0) loadInstalledMods()
                 if (config.value.activeCoreName == selected) loadWorlds()
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
@@ -4678,21 +4763,21 @@ class McViewModel(
     fun resetWorld(worldName: String) {
         if (!isBootstrapped.value) { _errorFlow.tryEmit(str(R.string.s192)); return }
         val dirName = activeDirName() ?: return
-        if (!requireServerStopped("重置世界")) return
+        if (!requireServerStopped("đặt lại thế giới")) return
         viewModelScope.launch {
             try {
                 val result = worldManager.resetWorld(dirName, worldName, backupFirst = true)
                 val backupPath = result.backupPath
                 when {
-                    result.backupFailed -> _errorFlow.tryEmit("未能在删除前创建安全备份，已中止重置（存档未改动）")
-                    !result.success || backupPath == null -> _errorFlow.tryEmit("重置失败：世界目录不存在或无法删除")
+                    result.backupFailed -> _errorFlow.tryEmit("Không thể tạo bản sao lưu an toàn trước khi xóa, đã hủy đặt lại (Map vẫn an toàn) -> Cách sửa: Cấp quyền lưu trữ trong mục Sao lưu.")
+                    !result.success || backupPath == null -> _errorFlow.tryEmit("Đặt lại thất bại: Thư mục thế giới không tồn tại hoặc không thể xóa")
                     else -> _messageFlow.tryEmit(
-                        "世界「$worldName」已重置，备份保存在 ${java.io.File(backupPath).parentFile?.absolutePath ?: "导出目录"}"
+                        "Đã đặt lại thế giới '$worldName', bản sao lưu lưu tại ${java.io.File(backupPath).parentFile?.absolutePath ?: "thư mục xuất"}"
                     )
                 }
                 loadWorlds()
             } catch (e: Exception) {
-                _errorFlow.tryEmit("重置失败：${e.message}")
+                _errorFlow.tryEmit("Đặt lại thất bại: ${e.message}")
             }
         }
     }
@@ -4979,7 +5064,7 @@ class McViewModel(
                 val serverDir = repo.termuxRuntime.serverDirFor(dirName)
                 val entryName = core.serverFile?.trim()?.substringAfterLast('/')?.substringAfterLast('\\')?.takeIf { it.isNotBlank() }
                 if (entryName == null) {
-                    _errorFlow.tryEmit(str(R.string.err_core_unknown_no_repair, "未指定启动文件"))
+                    _errorFlow.tryEmit(str(R.string.err_core_unknown_no_repair, "Chưa chỉ định tệp khởi động"))
                     return@launch
                 }
                 val jar = java.io.File(serverDir, entryName)
@@ -5040,7 +5125,7 @@ class McViewModel(
      */
     fun deleteCore(name: String) {
         // 兜底：下面是对含世界存档的目录做整目录 deleteRecursively()，运行中执行会得到部分删除的存档且不可逆
-        if (!requireServerStopped("删除服务器核心")) return
+        if (!requireServerStopped("xóa Core máy chủ")) return
         viewModelScope.launch {
             try {
                 val cfg = repo.currentConfig()
@@ -5055,7 +5140,7 @@ class McViewModel(
                         return@launch
                     }
                 } else {
-                    termux3Log("deleteCore: 目录已不存在，仅清理登记 ${dir.absolutePath}")
+                    termux3Log("deleteCore: Thư mục không còn tồn tại, chỉ xóa bản ghi ${dir.absolutePath}")
                 }
                 // 原子读改写 + 落盘；based on 权威态，不会把陈旧列表写回去
                 repo.updateAndSaveConfig { current ->

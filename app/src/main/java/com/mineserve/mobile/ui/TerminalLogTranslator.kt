@@ -1,205 +1,195 @@
 package com.mineserve.mobile.ui
 
-/**
- * 终端显示层日志汉化（仅改变显示，不修改原始日志数据）。
- *
- * 规则分三档、按优先级执行：
- *  1. 整行/摘要翻译（fullLineRules）：命中后整行替换为中文摘要，并附原文
- *  2. 正则/短语替换（regexRules、phraseRules）：在原文行内替换高频英文短语，保留玩家名等上下文
- *  3. 前缀标注：ERROR / FATAL / WARN 标记行，加「错误/警告」前缀
- */
 object TerminalLogTranslator {
+    private val ERROR_TAG_RE = Regex("""\[(?:[^\]]*/)?(?:ERROR|FATAL|SEVERE)\]""", RegexOption.IGNORE_CASE)
+    private val WARN_TAG_RE = Regex("""\[(?:[^\]]*/)?WARN(?:ING)?\]""", RegexOption.IGNORE_CASE)
 
     fun translate(line: String): String {
-        // ── 整行 / 摘要级翻译 ──────────────────────────────────────
-        fullLineRules.forEach { (pattern, chinese) ->
-            if (line.contains(pattern, ignoreCase = true)) {
-                return "$chinese\n  原文: $line"
+        for ((key, vietnamese) in majorMappings) {
+            if (line.contains(key, ignoreCase = true)) {
+                return "$vietnamese\n  Gốc: $line"
             }
         }
-        // ── 正则替换（保留上下文，如玩家名） ────────────────────────
-        regexRules.forEach { (rx, replacement) ->
-            if (rx.containsMatchIn(line)) {
-                return rx.replace(line, replacement)
+        var updated = line
+        for ((pattern, replacement) in regexMappings) {
+            if (pattern.containsMatchIn(updated)) {
+                updated = updated.replace(pattern, replacement)
             }
         }
-        // ── 短语替换 ──────────────────────────────────────────────
-        phraseRules.forEach { (from, to) ->
-            if (line.contains(from, ignoreCase = true)) {
-                return line.replace(from, to, ignoreCase = true)
+        for ((en, vi) in inlineMappings) {
+            if (updated.contains(en, ignoreCase = true)) {
+                updated = updated.replace(Regex(Regex.escape(en), RegexOption.IGNORE_CASE), vi)
             }
         }
-        // ── 前缀标注 ──────────────────────────────────────────────
+        if (updated != line) return updated
         return when {
-            line.contains("[ERROR]", true) || line.contains("[FATAL]", true) ->
-                "错误：$line\n  原文: $line"
-            line.contains("[WARN]", true) ->
-                "警告：$line\n  原文: $line"
+            ERROR_TAG_RE.containsMatchIn(line) ->
+                "Lỗi: $line\n  Gốc: $line"
+            WARN_TAG_RE.containsMatchIn(line) ->
+                "Cảnh báo: $line\n  Gốc: $line"
             else -> line
         }
     }
 
-    /** 整行/摘要翻译：contains 命中即整行替换（顺序即优先级） */
-    private val fullLineRules = listOf(
-        "Done (" to "服务端已启动完成",
-        "Starting minecraft server" to "正在启动 Minecraft 服务端",
-        "Preparing level" to "正在加载世界",
-        "Preparing spawn area" to "正在准备出生点区域",
-        "Preparing start region" to "正在准备出生区域",
-        "Building terrain" to "正在生成地形",
-        "Stopping the server" to "正在停止服务端",
-        "Stopping server" to "正在停止服务端",
-        "Saving the game" to "正在保存世界",
-        "Saved the game" to "世界保存完成",
-        "Saving worlds" to "正在保存世界",
-        "Saving chunks" to "正在保存区块",
-        "Saving players" to "正在保存玩家数据",
-        "Flushing chunk data" to "正在写入区块数据",
-        "You need to agree to the EULA" to "未接受 Minecraft EULA，服务端无法启动",
-        "Can't keep up" to "服务器过载或卡顿（TPS 过低），请检查性能",
-        "Address already in use" to "端口已被占用，服务端无法监听",
-        "BindException" to "端口绑定失败（可能被占用）",
-        "OutOfMemoryError" to "Java 内存不足（OutOfMemoryError）",
-        "Java heap space" to "Java 堆内存不足",
-        "UnsupportedClassVersionError" to "Java 版本不兼容",
-        "class file version" to "class 文件版本不兼容（Java 版本过低）",
-        "mod loading has failed" to "模组加载失败或版本不匹配",
-        "Mixin apply failed" to "Mixin 注入失败（模组冲突或版本不匹配）",
-        "Could not load plugin" to "插件加载失败",
-        "Unsupported API version" to "插件 API 版本不匹配，无法加载",
-        "You are not white-listed" to "您不在服务器白名单中，无法进入",
-        "Authentication servers are down" to "Mojang 验证服务器不可用",
-        "Failed to verify username" to "用户名验证失败",
-        "Internal Exception" to "内部异常（网络连接中断）",
-        "Connection refused" to "连接被拒绝",
-        "Connection reset" to "连接被重置",
-        "Timed out" to "连接超时",
-        "Network is unreachable" to "网络不可达",
-        "No route to host" to "无法连接到目标主机",
-        "Unknown host" to "未知主机",
-        "Broken pipe" to "连接已中断（Broken pipe）",
-        "Permission denied" to "权限被拒绝（Permission denied）",
-        "No space left on device" to "磁盘空间不足",
-        "Read-only file system" to "文件系统为只读",
-        "File not found" to "文件或目录不存在",
-        "No such file" to "文件或目录不存在",
-        "Not a directory" to "路径不是目录",
-        "StackOverflowError" to "发生栈溢出（StackOverflowError）",
-        "NoClassDefFoundError" to "缺少依赖类（NoClassDefFoundError）",
-        "NoSuchMethodError" to "依赖方法缺失或版本不匹配",
-        "Exception in thread" to "线程发生异常",
-        "Caused by" to "由以下原因引起",
-        "The server crashed" to "服务端已崩溃",
-        "Minecraft has crashed" to "Minecraft 已崩溃",
-        "Saving crash report" to "正在保存崩溃报告",
-        "Corruption detected" to "检测到存档损坏",
-        "Level is corrupt" to "世界存档已损坏，无法加载",
-        "Unable to load world" to "无法加载世界",
-        "Failed to load world" to "无法加载世界",
-        "Loading plugins" to "正在加载插件",
-        "Enabling plugin" to "正在启用插件",
-        "Disabling plugin" to "正在禁用插件",
-        "Failed to start the minecraft server" to "Minecraft 服务端启动失败",
-        "Failed to start" to "启动失败",
-        "Shutting down" to "正在关闭",
-        "Closing threads" to "正在关闭线程",
-        "Closing server" to "正在关闭服务端",
-        "Deleting level" to "正在删除世界",
-        "Whitelist has been enabled" to "白名单已启用",
-        "Whitelist has been disabled" to "白名单已关闭",
-        "The server is full" to "服务器已满，无法加入",
-        "RCON not running" to "RCON 未开启",
-        "Server started" to "服务端已启动",
-        "Server is running in offline mode" to "服务器以离线模式运行",
-        "RCON running on" to "RCON 远程控制已开启",
-        "Starting GS4 status listener" to "已启动 GS4 状态监听",
-        "Started query engine" to "已启动查询引擎",
-        "Starting server" to "正在启动服务端",
-        "Loading properties" to "正在加载服务端配置",
-        "Loading server properties" to "正在加载服务端配置",
-        // contains 按列表顺序取首个命中：否定的更长规则必须排在对应 Loading 规则之前，
-        // 否则 "Unloading world" 会先命中其子串 "loading world"，把卸载/关服误显示为「正在加载世界」
-        "Unloading world" to "正在卸载世界",
-        "Loading world" to "正在加载世界",
-        "Unloading level" to "正在卸载世界",
-        "Loading level" to "正在加载世界",
-        "Preparing spawn" to "正在准备出生点",
-        "Preparing start region" to "正在准备出生区域",
-        "Listening on" to "正在监听地址",
-        "Done loading" to "加载完成",
-        // 同理 "Loaded plugin" 必须排在通用 "Loaded" 之前，否则会被降级显示为「已加载」
-        "Loaded plugin" to "插件加载完成",
-        "Loaded" to "已加载",
-        "Saving level" to "正在保存世界",
-        "Reloading" to "正在重新加载",
-        "Reload complete" to "重新加载完成",
-        "Loading plugins" to "正在加载插件",
-        "Enabling plugin" to "正在启用插件",
-        "Disabling plugin" to "正在停用插件",
-        "Plugin already initialized" to "插件已经初始化",
-        "Failed to load" to "加载失败",
-        "Failed to enable" to "启用失败",
-        "Could not connect" to "无法连接",
-        "Connection lost" to "连接已丢失",
-        "Login successful" to "登录成功",
-        "Invalid username" to "用户名无效",
-        "You have been kicked" to "您已被踢出服务器",
-        "You have been banned" to "您已被服务器封禁",
-        "Server is full" to "服务器已满",
-        "Unknown command" to "未知命令",
-        "Incorrect argument" to "命令参数错误",
-        "Usage:" to "用法：",
-        "Permission denied" to "权限不足",
-        "No permission" to "权限不足"
+    // Các sự kiện quan trọng & lỗi kèm hướng dẫn khắc phục trực tiếp trên Console
+    private val majorMappings = listOf(
+        "Done (" to "Máy chủ đã khởi động hoàn tất! Bạn đã có thể vào game.",
+        "Starting minecraft server" to "Đang khởi động máy chủ Minecraft",
+        "Preparing level" to "Đang nạp thế giới (Map)",
+        "Preparing spawn area" to "Đang chuẩn bị khu vực hồi sinh (Spawn)",
+        "Preparing start region" to "Đang chuẩn bị vùng khởi đầu",
+        "Building terrain" to "Đang tạo địa hình thế giới",
+        "Stopping the server" to "Đang dừng máy chủ",
+        "Stopping server" to "Đang dừng máy chủ",
+        "Saving the game" to "Đang lưu dữ liệu thế giới",
+        "Saved the game" to "Đã lưu thế giới hoàn tất",
+        "Saving worlds" to "Đang lưu các thế giới",
+        "Saving chunks" to "Đang lưu các vùng đất (Chunk)",
+        "Saving players" to "Đang lưu dữ liệu người chơi",
+        "Flushing chunk data" to "Đang ghi dữ liệu Chunk xuống bộ nhớ",
+        "You need to agree to the EULA" to "Chưa đồng ý điều khoản Minecraft EULA -> Cách sửa: Bật công tắc EULA ở trang Tổng quan hoặc bấm Đồng ý khi được hỏi.",
+        "Can't keep up" to "Máy chủ đang quá tải hoặc giật lag (TPS thấp) -> Cách sửa: Giảm tầm nhìn (view-distance xuống 6-8) trong Cấu hình máy chủ hoặc tăng RAM.",
+        "Address already in use" to "Cổng mạng đã bị chiếm dụng -> Cách sửa: Đổi server-port trong Cấu hình máy chủ hoặc vào Môi trường -> Dọn tiến trình treo.",
+        "BindException" to "Không thể mở cổng mạng (cổng đang bận) -> Cách sửa: Dừng máy chủ cũ đang chạy ngầm hoặc đổi cổng server-port.",
+        "OutOfMemoryError" to "Tràn bộ nhớ Java (OutOfMemoryError) -> Cách sửa: Vào Cài đặt giảm giới hạn RAM (-Xmx) cho vừa bộ nhớ trống hoặc gỡ bớt Mod nặng.",
+        "Java heap space" to "Không đủ bộ nhớ Heap cho Java -> Cách sửa: Điều chỉnh lại mức RAM (-Xmx) trong mục Cài đặt.",
+        "UnsupportedClassVersionError" to "Phiên bản Java không tương thích với Core/Mod -> Cách sửa: Vào mục Môi trường -> chọn đúng phiên bản Java (MC 1.20.5+ cần Java 21, MC 1.18-1.20.4 cần Java 17, MC 1.16.5 cần Java 8).",
+        "class file version" to "Phiên bản tệp class yêu cầu Java mới hơn -> Cách sửa: Vào mục Môi trường -> cài và chuyển sang Java 17 hoặc Java 21.",
+        "mod loading has failed" to "Tải Mod thất bại hoặc sai phiên bản -> Cách sửa: Kiểm tra Mod thiếu thư viện phụ thuộc hoặc tắt Mod chỉ dành cho Client (OptiFine/Sodium/Iris) trong mục Mod & Plugin.",
+        "Mixin apply failed" to "Lỗi xung đột Mixin giữa các Mod -> Cách sửa: Kiểm tra phiên bản Mod có khớp với phiên bản Minecraft hiện tại không.",
+        "Could not load plugin" to "Không thể tải Plugin -> Cách sửa: Kiểm tra xem Plugin có đúng phiên bản Minecraft hoặc thiếu Plugin phụ thuộc (như Vault/PlaceholderAPI) không.",
+        "Unsupported API version" to "Phiên bản API của Plugin không khớp với máy chủ -> Cách sửa: Tải phiên bản Plugin phù hợp với phiên bản MC của máy chủ.",
+        "You are not white-listed" to "Người chơi chưa có trong danh sách trắng (Whitelist) -> Cách sửa: Tắt Whitelist hoặc thêm tên người chơi trong mục Người chơi.",
+        "Authentication servers are down" to "Máy chủ xác thực Mojang không phản hồi -> Cách sửa: Nếu chơi tài khoản crack/offline, hãy tắt online-mode trong Cấu hình máy chủ.",
+        "Failed to verify username" to "Không xác thực được tên người chơi -> Cách sửa: Vào Quản lý -> Cấu hình máy chủ -> tắt chế độ Bản quyền (online-mode=false).",
+        "Internal Exception" to "Lỗi kết nối mạng nội bộ (Internal Exception)",
+        "Connection refused" to "Kết nối bị từ chối -> Cách sửa: Kiểm tra máy chủ đã báo 'Hoàn tất' chưa và kiểm tra đúng cổng mạng.",
+        "Connection reset" to "Kết nối mạng bị đặt lại (Connection reset)",
+        "Timed out" to "Quá thời gian kết nối (Timed out) -> Cách sửa: Kiểm tra mạng hoặc đường hầm FRP/STUN.",
+        "Network is unreachable" to "Mạng không thể truy cập -> Cách sửa: Kiểm tra kết nối Wi-Fi / 4G.",
+        "No route to host" to "Không tìm thấy đường truyền tới máy chủ đích",
+        "Unknown host" to "Không phân giải được tên miền máy chủ (Unknown host) -> Cách sửa: Kiểm tra kết nối Internet/DNS.",
+        "Broken pipe" to "Đường truyền kết nối bị ngắt (Broken pipe)",
+        "Permission denied" to "Từ chối quyền truy cập tệp (Permission denied) -> Cách sửa: Vào mục Môi trường -> bấm Sửa chữa môi trường.",
+        "No space left on device" to "Bộ nhớ điện thoại đã đầy -> Cách sửa: Giải phóng dung lượng trống trên điện thoại và xóa bớt bản sao lưu cũ.",
+        "Read-only file system" to "Hệ thống tệp đang ở chế độ chỉ đọc",
+        "File not found" to "Không tìm thấy tệp hoặc thư mục yêu cầu",
+        "No such file" to "Tệp hoặc thư mục không tồn tại -> Cách sửa: Kiểm tra lại Core hoặc bấm Sửa chữa môi trường.",
+        "Not a directory" to "Đường dẫn không phải là thư mục",
+        "StackOverflowError" to "Lỗi tràn ngăn xếp (StackOverflowError) do vòng lặp vô hạn trong Mod/Plugin",
+        "NoClassDefFoundError" to "Thiếu thư viện phụ thuộc (NoClassDefFoundError) -> Cách sửa: Cài thêm Mod/Plugin thư viện (Library/API) mà Mod yêu cầu.",
+        "NoSuchMethodError" to "Xung đột phiên bản thư viện (NoSuchMethodError) -> Cách sửa: Đảm bảo các Mod/Plugin dùng đúng phiên bản Minecraft của máy chủ.",
+        "Exception in thread" to "Phát sinh ngoại lệ trong luồng thực thi",
+        "Caused by" to "Nguyên nhân gốc do",
+        "The server crashed" to "Máy chủ đã bị sập (Crash) -> Cách sửa: Xem mục Sự cố (Crash) ở trang Quản lý để đọc chẩn đoán chi tiết.",
+        "Minecraft has crashed" to "Minecraft đã gặp sự cố dừng đột ngột -> Cách sửa: Kiểm tra thẻ Sự cố để xem nguyên nhân và gợi ý sửa.",
+        "Saving crash report" to "Đang lưu báo cáo sự cố (Crash Report)",
+        "Corruption detected" to "Phát hiện dữ liệu thế giới bị lỗi -> Cách sửa: Khôi phục từ bản sao lưu gần nhất trong mục Sao lưu.",
+        "Level is corrupt" to "Thế giới (Map) bị hỏng không thể tải -> Cách sửa: Khôi phục bản sao lưu hoặc nhập lại tệp ZIP của Map.",
+        "Unable to load world" to "Không thể nạp thế giới -> Cách sửa: Kiểm tra định dạng Map và phiên bản Minecraft.",
+        "Failed to load world" to "Tải thế giới thất bại -> Cách sửa: Đảm bảo đã cài đủ các Mod của Map trước khi bật máy chủ.",
+        "Loading plugins" to "Đang nạp danh sách Plugin",
+        "Enabling plugin" to "Đang kích hoạt Plugin",
+        "Disabling plugin" to "Đang tắt Plugin",
+        "Failed to start the minecraft server" to "Khởi động máy chủ Minecraft thất bại -> Cách sửa: Xem dòng lỗi phía trên (thường do sai phiên bản Java, trùng cổng hoặc lỗi Mod).",
+        "Failed to start" to "Khởi động thất bại",
+        "Shutting down" to "Đang đóng máy chủ",
+        "Closing threads" to "Đang đóng các luồng xử lý",
+        "Closing server" to "Đang đóng máy chủ",
+        "Deleting level" to "Đang xóa dữ liệu thế giới",
+        "Whitelist has been enabled" to "Đã bật danh sách trắng (Whitelist)",
+        "Whitelist has been disabled" to "Đã tắt danh sách trắng (Whitelist)",
+        "The server is full" to "Máy chủ đã đầy, không thể vào thêm -> Cách sửa: Tăng max-players trong Cấu hình máy chủ.",
+        "RCON not running" to "Chưa bật điều khiển từ xa RCON",
+        "Server started" to "Máy chủ đã bắt đầu chạy",
+        "Server is running in offline mode" to "Máy chủ đang chạy ở chế độ Offline (cho phép tài khoản không bản quyền vào)",
+        "RCON running on" to "Đã bật cổng điều khiển RCON tại",
+        "Starting GS4 status listener" to "Đã bật bộ lắng nghe trạng thái GS4",
+        "Started query engine" to "Đã khởi động bộ truy vấn trạng thái",
+        "Starting server" to "Đang khởi chạy máy chủ",
+        "Loading properties" to "Đang đọc cấu hình server.properties",
+        "Loading server properties" to "Đang đọc cấu hình server.properties"
     )
 
-    /** 正则替换：保留玩家名等上下文 */
-    private val regexRules = listOf(
-        Regex("(\\w+) joined the game") to "玩家 $1 加入了游戏",
-        Regex("(\\w+) left the game") to "玩家 $1 离开了游戏",
-        Regex("There are (\\d+) of a max of (\\d+) players online") to "当前在线 $1/$2 人"
+    private val inlineMappings = listOf(
+        "Unloading world" to "Đang đóng thế giới",
+        "Loading world" to "Đang tải thế giới",
+        "Unloading level" to "Đang đóng thế giới",
+        "Loading level" to "Đang tải thế giới",
+        "Preparing spawn" to "Đang chuẩn bị điểm hồi sinh",
+        "Preparing start region" to "Đang chuẩn bị vùng khởi đầu",
+        "Listening on" to "Đang lắng nghe kết nối tại",
+        "Done loading" to "Đã tải xong",
+        "Loaded plugin" to "Đã nạp xong Plugin",
+        "Loaded" to "Đã nạp",
+        "Saving level" to "Đang lưu thế giới",
+        "Reloading" to "Đang tải lại",
+        "Reload complete" to "Đã tải lại hoàn tất",
+        "Loading plugins" to "Đang tải Plugin",
+        "Enabling plugin" to "Đang bật Plugin",
+        "Disabling plugin" to "Đang tắt Plugin",
+        "Plugin already initialized" to "Plugin đã được khởi tạo trước đó",
+        "Failed to load" to "Tải thất bại",
+        "Failed to enable" to "Kích hoạt thất bại",
+        "Could not connect" to "Không thể kết nối",
+        "Connection lost" to "Mất kết nối",
+        "Login successful" to "Đăng nhập thành công",
+        "Invalid username" to "Tên người chơi không hợp lệ",
+        "You have been kicked" to "Bạn đã bị đuổi khỏi máy chủ",
+        "You have been banned" to "Bạn đã bị cấm khỏi máy chủ",
+        "Server is full" to "Máy chủ đã đầy",
+        "Unknown command" to "Lệnh không tồn tại",
+        "Incorrect argument" to "Sai cú pháp tham số lệnh",
+        "Usage:" to "Cách dùng:",
+        "Permission denied" to "Không đủ quyền hạn",
+        "No permission" to "Không đủ quyền hạn"
     )
 
-    /** 短语替换：行内替换高频英文短语 */
-    private val phraseRules = listOf(
-        "lost connection" to "失去连接",
-        "disconnected" to "已断开连接",
-        "was banned" to "被封禁",
-        "was unbanned" to "已被解封",
-        "was kicked" to "被踢出服务器",
-        "whispers to you" to "悄悄对你说",
-        "whispered to you" to "悄悄对你说",
-        "moved too quickly" to "移动速度过快",
-        "Illegal characters in chat" to "聊天内容包含非法字符",
-        "is already connected" to "重复连接",
-        "Failed to login" to "登录失败",
-        "Cannot join server" to "无法加入服务器",
-        "Server closed" to "服务端已关闭",
-        "Autosaved" to "已自动保存",
-        "Auto-saved" to "已自动保存",
-        "Unable to save world" to "无法保存世界",
-        "Default game type" to "默认游戏模式",
-        "Spawn radius" to "出生点半径",
-        "Difficulty" to "游戏难度",
-        "players online" to "人在线",
-        "joined the game" to "加入了游戏",
-        "left the game" to "离开了游戏",
-        "has joined" to "已加入服务器",
-        "has left" to "已离开服务器",
-        "logged in" to "已登录",
-        "logged out" to "已退出登录",
-        "Starting" to "正在启动",
-        "Loading" to "正在加载",
-        "Loaded" to "已加载",
-        "Preparing" to "正在准备",
-        "Stopping" to "正在停止",
-        "Saving" to "正在保存",
-        "Saved" to "已保存",
-        "Enabled" to "已启用",
-        "Disabled" to "已禁用",
-        "successfully" to "成功",
-        "failed" to "失败",
-        "online" to "在线",
-        "offline" to "离线"
-    )
+    private val regexMappings = listOf(
+        Regex("(\\w+) joined the game") to "Người chơi $1 đã tham gia trò chơi",
+        Regex("(\\w+) left the game") to "Người chơi $1 đã rời khỏi trò chơi",
+        Regex("There are (\\d+) of a max of (\\d+) players online") to "Hiện có $1/$2 người chơi đang online"
+    ) + listOf(
+        "lost connection" to "mất kết nối",
+        "disconnected" to "đã ngắt kết nối",
+        "was banned" to "đã bị cấm (ban)",
+        "was unbanned" to "đã được gỡ lệnh cấm",
+        "was kicked" to "đã bị đuổi khỏi máy chủ",
+        "whispers to you" to "thì thầm với bạn",
+        "whispered to you" to "đã thì thầm với bạn",
+        "moved too quickly" to "di chuyển quá nhanh",
+        "Illegal characters in chat" to "Ký tự không hợp lệ trong tin nhắn",
+        "is already connected" to "đang kết nối sẵn trong máy chủ",
+        "Failed to login" to "Đăng nhập thất bại",
+        "Cannot join server" to "Không thể vào máy chủ",
+        "Server closed" to "Máy chủ đã đóng",
+        "Autosaved" to "Đã tự động lưu",
+        "Auto-saved" to "Đã tự động lưu",
+        "Unable to save world" to "Không thể lưu thế giới",
+        "Default game type" to "Chế độ chơi mặc định",
+        "Spawn radius" to "Bán kính điểm hồi sinh",
+        "Difficulty" to "Độ khó",
+        "players online" to "người chơi đang online",
+        "joined the game" to "đã tham gia trò chơi",
+        "left the game" to "đã rời khỏi trò chơi",
+        "has joined" to "đã vào máy chủ",
+        "has left" to "đã rời máy chủ",
+        "logged in" to "đã đăng nhập",
+        "logged out" to "đã đăng xuất",
+        "Starting" to "Đang khởi động",
+        "Loading" to "Đang tải",
+        "Loaded" to "Đã tải",
+        "Preparing" to "Đang chuẩn bị",
+        "Stopping" to "Đang dừng",
+        "Saving" to "Đang lưu",
+        "Saved" to "Đã lưu",
+        "Enabled" to "Đã bật",
+        "Disabled" to "Đã tắt",
+        "successfully" to "thành công",
+        "failed" to "thất bại",
+        "online" to "trực tuyến",
+        "offline" to "ngoại tuyến"
+    ).map { (en, vi) ->
+        Regex("\\b" + Regex.escape(en) + "\\b", RegexOption.IGNORE_CASE) to vi
+    }
 }

@@ -402,7 +402,7 @@ private fun SakuraTunnelSection(
                     nodes = withContext(Dispatchers.IO) { SakuraFrpApi.nodeList(token, info.level) }
                 }
             } catch (e: Exception) {
-                message = e.message ?: "拉取失败"
+                message = e.message ?: "Tải danh sách thất bại"
             } finally {
                 loading = false
             }
@@ -490,7 +490,7 @@ private fun SakuraTunnelSection(
                         }
                         refresh(withNodes = false)
                     } catch (e: Exception) {
-                        message = e.message ?: "创建失败"
+                        message = e.message ?: "Tạo đường hầm thất bại"
                     } finally {
                         loading = false
                     }
@@ -531,7 +531,7 @@ private fun MeFrpTunnelSection(
                 account = acc
                 proxies = list
             } catch (e: Exception) {
-                message = e.message ?: "拉取失败"
+                message = e.message ?: "Tải danh sách thất bại"
             } finally {
                 loading = false
             }

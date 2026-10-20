@@ -389,7 +389,7 @@ private fun PlayerHistoryDialog(
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                                Text(buildString { append(h.time); if (h.sessionStart != null && h.sessionEnd != null) append("  |  ${formatActivitySeconds(((h.sessionEnd - h.sessionStart) / 1000).coerceAtLeast(0))}"); if (h.interrupted) append("  |  中断") }, color = Muted, fontSize = 10.sp)
+                                Text(buildString { append(h.time); if (h.sessionStart != null && h.sessionEnd != null) append("  |  ${formatActivitySeconds(((h.sessionEnd - h.sessionStart) / 1000).coerceAtLeast(0))}"); if (h.interrupted) append("  |  Gián đoạn") }, color = Muted, fontSize = 10.sp)
                             }
                         }
                     }
@@ -1057,11 +1057,11 @@ private fun PlayerDetailDialog(
 
                 activity?.let { summary ->
                     Spacer(Modifier.height(8.dp))
-                    Text("活动记录", color = Indigo, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                    DetailRow("最近进服", summary.lastJoinTime ?: "暂无记录")
-                    DetailRow("最近离服", summary.lastLeaveTime ?: if (summary.active) "当前在线" else "暂无记录")
-                    DetailRow("累计在线", formatActivitySeconds(summary.totalSeconds))
-                    DetailRow("最后退出原因", summary.lastExitReason ?: if (summary.active) "当前在线" else "暂无记录")
+                    Text("Lịch sử hoạt động", color = Indigo, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    DetailRow("Lần vào gần nhất", summary.lastJoinTime ?: "Chưa có dữ liệu")
+                    DetailRow("Lần rời gần nhất", summary.lastLeaveTime ?: if (summary.active) "Đang online" else "Chưa có dữ liệu")
+                    DetailRow("Tổng thời gian online", formatActivitySeconds(summary.totalSeconds))
+                    DetailRow("Lý do thoát cuối", summary.lastExitReason ?: if (summary.active) "Đang online" else "Chưa có dữ liệu")
                 }
 
                 Spacer(Modifier.height(12.dp))

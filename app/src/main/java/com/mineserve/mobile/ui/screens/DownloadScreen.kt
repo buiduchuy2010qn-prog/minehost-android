@@ -171,6 +171,18 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                     .verticalScroll(rememberScrollState())
             ) {
 
+            McCard(title = "📖 Hướng dẫn chọn Core & Chơi Map có Mod") {
+                Text(
+                    "• Chơi Map có Mod (.jar): Chọn Fabric, Forge hoặc NeoForge đúng phiên bản Minecraft của Map. Tải xong hãy vào Quản lý -> Quản lý thế giới -> Nhập thế giới có sẵn để tải Map & Mod lên.\n" +
+                    "• Chơi Sinh tồn / Cài Plugin mượt nhất: Khuyên dùng Paper hoặc Purpur.\n" +
+                    "• Chơi trên Minecraft PE (Bedrock): Chọn PowerNukkitX.\n" +
+                    "• Nếu tải bị lỗi: Kiểm tra đã cài Môi trường & Java đúng phiên bản chưa, hoặc dùng mục 'Nhập máy chủ / Modpack có sẵn' ở cuối trang.",
+                    color = Muted,
+                    fontSize = 11.sp,
+                    lineHeight = 16.sp
+                )
+            }
+
             // 当前下载状态（已安装核心列表，默认折叠）。折叠状态用 rememberSaveable 保存，
             // 避免在组合体内同步读 SharedPreferences 造成首帧主线程读盘。
             var installedExpanded by rememberSaveable { mutableStateOf(false) }

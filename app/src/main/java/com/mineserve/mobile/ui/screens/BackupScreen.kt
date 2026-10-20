@@ -162,11 +162,11 @@ fun BackupScreen(vm: McViewModel, onBack: () -> Unit = {}) {
         ) {
             HeaderBlock(eyebrow = stringResource(R.string.eyebrow_backup), title = stringResource(R.string.s324))
 
-            McCard(title = "自动备份") {
-                Text("仅在服务端运行时写入公共备份目录，自动清理仅作用于同服务器、同类型的自动备份。", color = Muted, fontSize = 11.sp)
+            McCard(title = "Tự động sao lưu định kỳ") {
+                Text("Chỉ tạo bản sao lưu khi máy chủ đang chạy và tự động dọn các bản sao lưu tự động cũ cùng loại.", color = Muted, fontSize = 11.sp)
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(0 to "关闭", 30 to "30分钟", 60 to "1小时", 180 to "3小时").forEach { (minutes, label) ->
+                    listOf(0 to "Tắt", 30 to "30 phút", 60 to "1 giờ", 180 to "3 giờ").forEach { (minutes, label) ->
                         SegPill(text = label, selected = config.autoBackupIntervalMin == minutes) {
                             vm.setAutoBackupInterval(minutes)
                         }
@@ -192,7 +192,7 @@ fun BackupScreen(vm: McViewModel, onBack: () -> Unit = {}) {
                         raw.toIntOrNull()?.let { vm.setAutoBackupInterval(it.coerceIn(5, 10080)) }
                     },
                     sanitize = { it.filter(Char::isDigit) },
-                    label = { Text("自定义间隔（分钟）") },
+                    label = { Text("Chu kỳ tùy chỉnh (phút)") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.width(180.dp)
@@ -200,12 +200,12 @@ fun BackupScreen(vm: McViewModel, onBack: () -> Unit = {}) {
                 OutlinedTextField(
                     value = config.maxSnapshots.toString(),
                     onValueChange = { vm.setMaxSnapshots(it.toIntOrNull() ?: config.maxSnapshots) },
-                    label = { Text("自动保留数量") },
+                    label = { Text("Số bản giữ lại") },
                     singleLine = true,
                     modifier = Modifier.width(150.dp)
                 )
             }
-            Text("间隔范围 5–10080 分钟；保留数量范围 1–100。关闭自动备份请点上方「关闭」。", color = Muted, fontSize = 11.sp)
+            Text("Chu kỳ từ 5–10080 phút; số bản giữ lại từ 1–100. Để tắt sao lưu tự động hãy chọn 'Tắt' ở trên.", color = Muted, fontSize = 11.sp)
 
             if (!hasStoragePerm) {
                 Box(
@@ -271,8 +271,8 @@ fun BackupScreen(vm: McViewModel, onBack: () -> Unit = {}) {
                 )
             }
 
-            McCard(title = "手动世界备份") {
-                Text("保存到 /storage/emulated/0/世界与服务器的备份/", color = Muted, fontSize = 11.sp)
+            McCard(title = "Sao lưu thế giới thủ công") {
+                Text("Lưu tại bộ nhớ máy: /storage/emulated/0/世界与服务器的备份/ (không bị mất khi gỡ ứng dụng)", color = Muted, fontSize = 11.sp)
                 Spacer(Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
@@ -360,9 +360,14 @@ fun BackupScreen(vm: McViewModel, onBack: () -> Unit = {}) {
                     extBackups.forEachIndexed { i, f ->
                         if (i > 0) Spacer(Modifier.height(6.dp))
                         val info = vm.externalBackupInfo(f)
-                        val kindLabel = if (info.kind == BackupManager.BackupKind.World) "世界备份" else "完整服务器"
-                        val coreLabel = if (info.kind == BackupManager.BackupKind.Server) " · 核心: ${info.coreTag ?: "—"}" else ""
-                        val detail = "$kindLabel · ${info.origin?.label ?: "历史"} · 目录: ${info.dirName ?: "—"}" +
+                        val kindLabel = if (info.kind == BackupManager.BackupKind.World) "Sao lưu thế giới" else "Toàn bộ máy chủ"
+                        val coreLabel = if (info.kind == BackupManager.BackupKind.Server) " · Core: ${info.coreTag ?: "—"}" else ""
+                        val originLabel = when (info.origin) {
+                            BackupManager.BackupOrigin.Manual -> "Thủ công"
+                            BackupManager.BackupOrigin.Automatic -> "Tự động"
+                            null -> "Lịch sử"
+                        }
+                        val detail = "$kindLabel · $originLabel · Thư mục: ${info.dirName ?: "—"}" +
                             "$coreLabel · ${formatBackupTime(info.createdTime, f.lastModified())} · ${formatBytesCompat(f.length())}"
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
@@ -523,7 +528,7 @@ fun BackupScreen(vm: McViewModel, onBack: () -> Unit = {}) {
 
             // 旧应用私有快照仅保留读取、恢复和删除能力，不再创建新文件。
             McCard(
-                title = "历史私有快照（${snapshots.size}）",
+                title = "Bản sao lưu nội bộ cũ (${snapshots.size})",
                 trailing = {
                     IconButton(onClick = { vm.loadSnapshots() }, modifier = Modifier.size(McIcon.Touch)) {
                         Icon(Icons.Outlined.Refresh, stringResource(R.string.s333), tint = Indigo, modifier = Modifier.size(McIcon.Action))
@@ -593,5 +598,5 @@ private fun formatBytesCompat(bytes: Long): String {
 
 private fun formatBackupTime(parsed: Long, modified: Long): String {
     val time = parsed.takeIf { it > 0 } ?: modified
-    return if (time > 0) SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(time)) else "未知时间"
+    return if (time > 0) SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(time)) else "Không rõ thời gian"
 }

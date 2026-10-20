@@ -125,7 +125,7 @@ private val pluginSites = listOf(
         "https://www.spigotmc.org/resources/"
     ),
     PluginSite(
-        "Hangar（Paper 官方）",
+        "Hangar (Paper chính thức)",
         R.string.s741,
         "https://hangar.papermc.io/"
     ),
@@ -135,12 +135,12 @@ private val pluginSites = listOf(
         "https://modrinth.com/plugins"
     ),
     PluginSite(
-        "BuiltByBit（原 MC-Market）",
+        "BuiltByBit (MC-Market)",
         R.string.s744,
         "https://builtbybit.com"
     ),
     PluginSite(
-        "CurseForge Bukkit 分区",
+        "CurseForge Bukkit",
         R.string.s746,
         "https://www.curseforge.com/minecraft/bukkit-plugins"
     )
@@ -674,9 +674,9 @@ private fun InstalledTab(
                     InstalledFilter.All -> installed.size
                     InstalledFilter.Enabled -> installed.count { it.isEnabled }
                     InstalledFilter.Disabled -> installed.count { !it.isEnabled }
-                    InstalledFilter.Local -> installed.count { it.sourceTag == "本地" }
+                    InstalledFilter.Local -> installed.count { it.sourceTag == "本地" || it.sourceTag == "Cục bộ" || it.sourceTag == "Local" }
                 }
-                val label = "$filter $count"
+                val label = "${stringResource(filter.labelRes)} $count"
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
@@ -701,7 +701,7 @@ private fun InstalledTab(
             (activeFilter == InstalledFilter.All ||
                 (activeFilter == InstalledFilter.Enabled && p.isEnabled) ||
                 (activeFilter == InstalledFilter.Disabled && !p.isEnabled) ||
-                (activeFilter == InstalledFilter.Local && p.sourceTag == "本地")) &&
+                (activeFilter == InstalledFilter.Local && (p.sourceTag == "本地" || p.sourceTag == "Cục bộ" || p.sourceTag == "Local"))) &&
                 (searchQuery.isBlank() || p.baseName.contains(searchQuery, ignoreCase = true) ||
                     (p.meta?.name?.contains(searchQuery, ignoreCase = true) == true))
         }
@@ -1383,7 +1383,7 @@ fontWeight = FontWeight.SemiBold
                 enabled = !isLoadingMore,
                 modifier = Modifier.fillMaxWidth().height(36.dp),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-            ) { Text(if (isLoadingMore) "加载中..." else stringResource(R.string.pl_load_more), color = Indigo, fontSize = 11.sp) }
+            ) { Text(if (isLoadingMore) "Đang tải..." else stringResource(R.string.pl_load_more), color = Indigo, fontSize = 11.sp) }
         }
     }
 
@@ -1567,7 +1567,7 @@ private fun PluginModrinthCard(
                 enabled = !isLoadingMore,
                 modifier = Modifier.fillMaxWidth().height(36.dp),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-            ) { Text(if (isLoadingMore) "加载中..." else stringResource(R.string.pl_load_more), color = Indigo, fontSize = 11.sp) }
+            ) { Text(if (isLoadingMore) "Đang tải..." else stringResource(R.string.pl_load_more), color = Indigo, fontSize = 11.sp) }
         }
     }
 

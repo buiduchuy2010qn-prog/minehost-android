@@ -29,6 +29,9 @@ class WorldManager(private val termux: TermuxRuntime) {
     /** 未配置 level-name 时的缺省世界名。 */
     private val defaultLevelName = "world"
 
+    @Volatile
+    var lastBundledAddons: WorldArchive.BundledAddons = WorldArchive.BundledAddons()
+
     fun serverDir(dirName: String): File = termux.serverDirFor(dirName)
 
     /** 是否基岩系（PowerNukkitX）布局。 */
@@ -142,6 +145,12 @@ class WorldManager(private val termux: TermuxRuntime) {
                     val to = File(root, part)
                     check(!to.exists() && from.renameTo(to)) { "Không chuyển được world vào server." }
                     committed += to
+                }
+                lastBundledAddons = if (!isBedrock(dirName)) {
+                    runCatching { WorldArchive.extractBundledAddons(zip, serverDir(dirName)) }
+                        .getOrDefault(WorldArchive.BundledAddons())
+                } else {
+                    WorldArchive.BundledAddons()
                 }
                 name
             } catch (e: Exception) {

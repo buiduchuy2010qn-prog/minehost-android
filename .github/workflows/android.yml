@@ -76,28 +76,30 @@ jobs:
         run: |
           set -euo pipefail
           APK=$(find app/build/outputs/apk/release -name '*.apk' -print -quit)
-          cp "$APK" app/build/outputs/apk/release/MineHost-0.1.0-alpha.3-arm64.apk
-          cp "$APK" app/build/outputs/apk/release/MineHost-arm64-v8a-release.apk
-          sha256sum app/build/outputs/apk/release/MineHost-0.1.0-alpha.3-arm64.apk > app/build/outputs/apk/release/SHA256SUMS.txt
-          NOTES="Bản cập nhật **MineHost 0.1.0-alpha.3 (ARM64)**:
-          - **Khắc phục lỗi 403 Forbidden khi cài môi trường & Java:** Chuyển nguồn APT mặc định từ Tsinghua TUNA sang Termux Cloudflare CDN quốc tế (`packages-cf.termux.dev`) kèm cơ chế tự động chuyển đổi dự phòng sang Hetzner/Aliyun/USTC và tự động sửa `sources.list` cũ trên máy.
-          - **Ưu tiên tải trực tiếp GitHub & Ubuntu Ports quốc tế:** Tải nhanh hơn tại Việt Nam cho gói Bootstrap, Pojav JRE và PRoot Ubuntu.
-          - **Sửa lỗi giao diện & Việt hóa:** Khắc phục lỗi tràn thanh trạng thái (status bar), tự động điền tên server mặc định khi tải core, ẩn nút video Bilibili gây tràn chữ ở trang Tệp, và Việt hóa toàn diện các màn hình Tải core, Môi trường & Công cụ, Quản lý tệp, Tổng quan và Cài đặt.
-          - Có thể **cài đặt đè trực tiếp** lên bản `0.1.0-alpha.2` mà không mất dữ liệu."
-          if gh release view v0.1.0-alpha.3 --repo "${{ github.repository }}" >/dev/null 2>&1; then
-            gh release upload v0.1.0-alpha.3 \
-              app/build/outputs/apk/release/MineHost-0.1.0-alpha.3-arm64.apk \
+          cp -f "$APK" app/build/outputs/apk/release/MineHost-0.1.0-alpha.4-arm64.apk
+          if [ "$APK" != "app/build/outputs/apk/release/MineHost-arm64-v8a-release.apk" ]; then
+            cp -f "$APK" app/build/outputs/apk/release/MineHost-arm64-v8a-release.apk
+          fi
+          sha256sum app/build/outputs/apk/release/MineHost-0.1.0-alpha.4-arm64.apk > app/build/outputs/apk/release/SHA256SUMS.txt
+          NOTES="Bản cập nhật **MineHost 0.1.0-alpha.4 (ARM64)**:
+          - **Việt hóa 100% toàn bộ ứng dụng (1.631 chuỗi giao diện & Bảng điều khiển Console):** Toàn bộ các màn hình, thông báo, nhật ký Console và nút lệnh nhanh đều đã sang tiếng Việt hoàn chỉnh.
+          - **Hỗ trợ nhập Map có sẵn Mod (.zip kèm mods/config & cài Mod .jar/mods.zip rời):** Tự động giải nén `mods/*.jar` và `config/` khi nhập Map ZIP, đồng thời bổ sung công cụ chọn nhiều tệp `.jar` hoặc `mods.zip` ngay trên trang Nhập thế giới.
+          - **Tích hợp Hướng dẫn cài đặt & Cách khắc phục lỗi trực tiếp:** Thêm thẻ hướng dẫn từng bước tại trang Môi trường, Tải Core, Nhập Map và tự động hiển thị gợi ý `-> Cách sửa:...` bằng tiếng Việt ngay trên Console khi server gặp lỗi (EULA, trùng cổng, thiếu Java, lỗi Mod, tràn RAM...).
+          - **Cài đè trực tiếp:** Cùng chữ ký số và Application ID (`vn.minehost.android`), cài đè trực tiếp lên bản `alpha.2` / `alpha.3` không mất dữ liệu."
+          if gh release view v0.1.0-alpha.4 --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release upload v0.1.0-alpha.4 \
+              app/build/outputs/apk/release/MineHost-0.1.0-alpha.4-arm64.apk \
               app/build/outputs/apk/release/MineHost-arm64-v8a-release.apk \
               app/build/outputs/apk/release/SHA256SUMS.txt \
               app/build/outputs/apk/release/SOURCE-COMMIT.txt \
               --clobber --repo "${{ github.repository }}"
           else
-            gh release create v0.1.0-alpha.3 \
-              app/build/outputs/apk/release/MineHost-0.1.0-alpha.3-arm64.apk \
+            gh release create v0.1.0-alpha.4 \
+              app/build/outputs/apk/release/MineHost-0.1.0-alpha.4-arm64.apk \
               app/build/outputs/apk/release/MineHost-arm64-v8a-release.apk \
               app/build/outputs/apk/release/SHA256SUMS.txt \
               app/build/outputs/apk/release/SOURCE-COMMIT.txt \
-              --title "MineHost 0.1.0-alpha.3 - Android ARM64" \
+              --title "MineHost 0.1.0-alpha.4 - Full Tiếng Việt & Hỗ trợ Map Mod" \
               --notes "$NOTES" \
               --latest \
               --repo "${{ github.repository }}"
