@@ -4595,16 +4595,181 @@ class McViewModel(
         val serverName: String? = null, val error: String? = null,
         val modsInstalled: Int = 0, val configsInstalled: Int = 0
     )
+    data class LocalArchiveItem(
+        val name: String,
+        val path: String,
+        val sizeBytes: Long,
+        val folderLabel: String,
+        val lastModified: Long
+    )
     private val _worldImportBusy = MutableStateFlow(false)
     val worldImportBusy = _worldImportBusy.asStateFlow()
     private val _worldImportStatus = MutableStateFlow(WorldImportStatus())
     val worldImportStatus = _worldImportStatus.asStateFlow()
+    private val _localWorldArchives = MutableStateFlow<List<LocalArchiveItem>>(emptyList())
+    val localWorldArchives = _localWorldArchives.asStateFlow()
     private val _worldModCount = MutableStateFlow(0)
     val worldModCount = _worldModCount.asStateFlow()
     private val _worldModBusy = MutableStateFlow(false)
     val worldModBusy = _worldModBusy.asStateFlow()
     private val _worldModStatus = MutableStateFlow<String?>(null)
     val worldModStatus = _worldModStatus.asStateFlow()
+
+    fun refreshLocalWorldArchives() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val found = java.util.LinkedHashMap<String, LocalArchiveItem>()
+            val roots = listOf(
+                java.io.File("/storage/emulated/0/Download") to "Download",
+                java.io.File("/storage/emulated/0/Downloads") to "Downloads",
+                java.io.File("/storage/emulated/0/Documents") to "Documents",
+                java.io.File("/storage/emulated/0/世界与服务器的备份") to "Sao lưu",
+                java.io.File("/storage/emulated/0") to "Bộ nhớ máy"
+            )
+            for ((dir, label) in roots) {
+                if (!dir.isDirectory || !dir.canRead()) continue
+                val children = dir.listFiles() ?: continue
+                for (child in children) {
+                    if (child.isFile && (child.name.endsWith(".zip", true) || child.name.endsWith(".mcworld", true)) && child.length() > 0L) {
+                        val key = runCatching { child.canonicalPath }.getOrDefault(child.absolutePath)
+                        if (!found.containsKey(key)) {
+                            found[key] = LocalArchiveItem(child.name, child.absolutePath, child.length(), label, child.lastModified())
+                        }
+                    } else if (child.isDirectory && label == "Download" && !child.name.startsWith(".")) {
+                        val subFiles = child.listFiles() ?: continue
+                        for (sub in subFiles) {
+                            if (sub.isFile && (sub.name.endsWith(".zip", true) || sub.name.endsWith(".mcworld", true)) && sub.length() > 0L) {
+                                val key = runCatching { sub.canonicalPath }.getOrDefault(sub.absolutePath)
+                                if (!found.containsKey(key)) {
+                                    found[key] = LocalArchiveItem(sub.name, sub.absolutePath, sub.length(), "Download/${child.name}", sub.lastModified())
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            _localWorldArchives.value = found.values.sortedByDescending { it.lastModified }.take(30)
+        }
+    }
+
+    private fun findLocalFallbackFile(uri: Uri, displayName: String?): java.io.File? {
+        val candidates = mutableListOf<java.io.File>()
+        uri.path?.let { rawPath ->
+            if (rawPath.contains("/storage/emulated/0/")) {
+                val sub = rawPath.substringAfter("/storage/emulated/0/")
+                candidates += java.io.File("/storage/emulated/0/$sub")
+            }
+            val primaryIdx = rawPath.indexOf("primary:")
+            if (primaryIdx >= 0) {
+                val rel = rawPath.substring(primaryIdx + "primary:".length)
+                candidates += java.io.File("/storage/emulated/0/$rel")
+            }
+        }
+        if (!displayName.isNullOrBlank()) {
+            candidates += java.io.File("/storage/emulated/0/Download", displayName)
+            candidates += java.io.File("/storage/emulated/0/Downloads", displayName)
+            candidates += java.io.File("/storage/emulated/0/Documents", displayName)
+            candidates += java.io.File("/storage/emulated/0", displayName)
+        }
+        return candidates.firstOrNull { it.isFile && it.canRead() && it.length() > 0L }
+    }
+
+    private fun formatWorldImportError(e: Throwable, displayName: String?): String {
+        val raw = e.message ?: "Lỗi không xác định"
+        val fileLabel = displayName?.takeIf { it.isNotBlank() }?.let { " ($it)" } ?: ""
+        return when {
+            raw.contains("Cello error", ignoreCase = true) || raw.contains("tbd:", ignoreCase = true) ->
+                "Lỗi Google Drive (Cello error 8)$fileLabel: Bạn đã chọn tệp nằm trên đám mây Google Drive chưa tải về máy nên Android không đọc được.\n" +
+                    "👉 Cách sửa nhanh nhất:\n" +
+                    "1) Mở Google Drive hoặc trình duyệt -> Tải tệp ZIP của Map về thư mục Download trên điện thoại.\n" +
+                    "2) Quay lại màn hình này -> Cấp quyền bộ nhớ và bấm chọn trực tiếp tệp trong mục 'Chọn nhanh tệp ZIP có sẵn trong máy (Download)' ngay bên trên (hoặc trong trình chọn tệp, bấm nút ☰ góc trái trên -> chọn 'Tệp tải xuống / Bộ nhớ máy', KHÔNG chọn từ Google Drive)."
+            else -> "Không nhập được: $raw"
+        }
+    }
+
+    fun importWorldFromLocalPath(path: String, preferredName: String = "", expectedServerName: String? = null) {
+        if (_worldImportBusy.value || _applyingDeviceTuning.value) return
+        if (!isBootstrapped.value) { _errorFlow.tryEmit("Hãy cài môi trường chạy trước."); return }
+        val selected = config.value.activeCoreName
+        if (expectedServerName != null && expectedServerName != selected) {
+            _errorFlow.tryEmit("Server đã thay đổi. Hãy chọn lại tệp."); return
+        }
+        val dirName = activeDirName() ?: run { _errorFlow.tryEmit("Chưa chọn server."); return }
+        if (!requireServerStopped("nhập world")) return
+        val srcFile = java.io.File(path)
+        if (!srcFile.isFile || !srcFile.canRead()) {
+            _errorFlow.tryEmit("Không đọc được tệp tại $path -> Cách sửa: Hãy cấp quyền Truy cập tất cả tệp cho ứng dụng.")
+            return
+        }
+        _worldImportBusy.value = true
+        _worldImportStatus.value = WorldImportStatus(phase = "Đang đọc tệp ZIP từ bộ nhớ máy…", serverName = selected)
+        viewModelScope.launch {
+            var temp: java.io.File? = null
+            try {
+                withContext(Dispatchers.IO) {
+                    temp = java.io.File.createTempFile("world_import_", ".zip", app.cacheDir)
+                }
+                val archive = checkNotNull(temp)
+                val imported = withContext(Dispatchers.IO) {
+                    val name = preferredName.trim().ifBlank {
+                        srcFile.name.replace(Regex("(?i)\\.(zip|mcworld)$"), "").takeIf { it.isNotBlank() } ?: "world_nhap"
+                    }
+                    val context = currentCoroutineContext()
+                    check(app.cacheDir.usableSpace > com.mineserve.mobile.server.WorldArchive.DISK_RESERVE_BYTES) {
+                        "Không đủ dung lượng trống để nhập world."
+                    }
+                    srcFile.inputStream().use { input ->
+                        archive.outputStream().use { output ->
+                            val buffer = ByteArray(64 * 1024)
+                            var total = 0L
+                            var reported = 0L
+                            while (true) {
+                                context.ensureActive()
+                                val read = input.read(buffer)
+                                if (read < 0) break
+                                total += read
+                                require(total <= com.mineserve.mobile.server.WorldArchive.MAX_COMPRESSED_BYTES) { "ZIP vượt 2 GB." }
+                                if (total - reported >= 4L * 1024 * 1024) {
+                                    check(app.cacheDir.usableSpace > com.mineserve.mobile.server.WorldArchive.DISK_RESERVE_BYTES) {
+                                        "Không đủ dung lượng trống để nhập world."
+                                    }
+                                    reported = total
+                                    _worldImportStatus.value = WorldImportStatus("Đang chép ZIP…", total, serverName = selected)
+                                }
+                                output.write(buffer, 0, read)
+                            }
+                            _worldImportStatus.value = WorldImportStatus("Đang kiểm tra và giải nén…", total, serverName = selected)
+                        }
+                    }
+                    com.mineserve.mobile.server.WorldArchive.normalizeWorldZipIfNeeded(archive, app.cacheDir)
+                    worldManager.importWorld(dirName, archive, name) ?: error("Không nhập được world.")
+                }
+                val addons = worldManager.lastBundledAddons
+                val addonNote = if (addons.modsInstalled > 0 || addons.configsInstalled > 0) {
+                    " (Đã tự động cài kèm ${addons.modsInstalled} mod .jar và ${addons.configsInstalled} tệp config!)"
+                } else ""
+                _worldImportStatus.value = WorldImportStatus(
+                    phase = "Nhập Map thành công! World cũ vẫn được giữ nguyên." + addonNote,
+                    world = imported,
+                    serverName = selected,
+                    modsInstalled = addons.modsInstalled,
+                    configsInstalled = addons.configsInstalled
+                )
+                _messageFlow.tryEmit("Đã nhập world: " + imported + addonNote + ". Bấm 'Kích hoạt & Dùng thế giới này' để chơi.")
+                refreshWorldModCount()
+                if (addons.modsInstalled > 0) refreshMods()
+                if (config.value.activeCoreName == selected) loadWorlds()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                val msg = formatWorldImportError(e, srcFile.name)
+                _worldImportStatus.value = WorldImportStatus(serverName = selected, error = msg)
+                _errorFlow.tryEmit(msg)
+            } finally {
+                withContext(NonCancellable + Dispatchers.IO) { temp?.delete() }
+                _worldImportBusy.value = false
+            }
+        }
+    }
 
     fun refreshWorldModCount() {
         val dirName = activeDirName() ?: run { _worldModCount.value = 0; return }
@@ -4639,9 +4804,21 @@ class McViewModel(
                         val ext = if (displayName.lowercase().endsWith(".zip")) ".zip" else ".jar"
                         val temp = java.io.File.createTempFile("mod_import_", ext, app.cacheDir)
                         try {
-                            app.contentResolver.openInputStream(uri)?.use { input ->
-                                temp.outputStream().use { output -> input.copyTo(output) }
-                            } ?: error("Không đọc được tệp $displayName.")
+                            val copiedFromSaf = runCatching {
+                                app.contentResolver.openInputStream(uri)?.use { input ->
+                                    temp.outputStream().use { output -> input.copyTo(output) }
+                                    true
+                                } ?: false
+                            }.getOrElse { err ->
+                                val localFallback = findLocalFallbackFile(uri, displayName)
+                                if (localFallback != null) {
+                                    localFallback.copyTo(temp, overwrite = true)
+                                    true
+                                } else {
+                                    throw err
+                                }
+                            }
+                            if (!copiedFromSaf) error("Không đọc được tệp $displayName.")
                             val res = com.mineserve.mobile.server.WorldArchive.importModFileOrPack(temp, displayName, serverDir)
                             totalMods += res.modsInstalled
                             totalConfigs += res.configsInstalled
@@ -4661,7 +4838,7 @@ class McViewModel(
                 refreshWorldModCount()
                 refreshMods()
             } catch (e: Exception) {
-                val err = "❌ Không cài được Mod: " + (e.message ?: "Lỗi không xác định")
+                val err = "❌ Không cài được Mod: " + formatWorldImportError(e, null).removePrefix("Không nhập được: ")
                 _worldModStatus.value = err
                 _errorFlow.tryEmit(err)
             } finally {
@@ -4701,7 +4878,7 @@ class McViewModel(
                     check(app.cacheDir.usableSpace > com.mineserve.mobile.server.WorldArchive.DISK_RESERVE_BYTES) {
                         "Không đủ dung lượng trống để nhập world."
                     }
-                    app.contentResolver.openInputStream(uri)?.use { input ->
+                    val copyStreamToArchive: (java.io.InputStream) -> Unit = { input ->
                         archive.outputStream().use { output ->
                             val buffer = ByteArray(64 * 1024)
                             var total = 0L
@@ -4723,7 +4900,24 @@ class McViewModel(
                             }
                             _worldImportStatus.value = WorldImportStatus("Đang kiểm tra và giải nén…", total, serverName = selected)
                         }
-                    } ?: error("Không đọc được tệp đã chọn.")
+                    }
+                    try {
+                        app.contentResolver.openInputStream(uri)?.use { input ->
+                            copyStreamToArchive(input)
+                        } ?: error("Không đọc được tệp đã chọn.")
+                    } catch (streamErr: Exception) {
+                        if (streamErr is kotlinx.coroutines.CancellationException) throw streamErr
+                        val localFallback = findLocalFallbackFile(uri, displayName)
+                        if (localFallback != null) {
+                            _worldImportStatus.value = WorldImportStatus("Đang đọc từ bộ nhớ máy (${localFallback.name})…", 0L, serverName = selected)
+                            localFallback.inputStream().use { fallbackInput ->
+                                copyStreamToArchive(fallbackInput)
+                            }
+                        } else {
+                            throw IllegalStateException(formatWorldImportError(streamErr, displayName).removePrefix("Không nhập được: "), streamErr)
+                        }
+                    }
+                    com.mineserve.mobile.server.WorldArchive.normalizeWorldZipIfNeeded(archive, app.cacheDir)
                     worldManager.importWorld(dirName, archive, name) ?: error("Không nhập được world.")
                 }
                 val addons = worldManager.lastBundledAddons
@@ -4744,8 +4938,9 @@ class McViewModel(
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _worldImportStatus.value = WorldImportStatus(serverName = selected, error = "Không nhập được: " + e.message)
-                _errorFlow.tryEmit("Không nhập được: " + e.message)
+                val msg = formatWorldImportError(e, null)
+                _worldImportStatus.value = WorldImportStatus(serverName = selected, error = msg)
+                _errorFlow.tryEmit(msg)
             } finally {
                 withContext(NonCancellable + Dispatchers.IO) { temp?.delete() }
                 _worldImportBusy.value = false

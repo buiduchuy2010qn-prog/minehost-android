@@ -1,7 +1,9 @@
 package com.mineserve.mobile.server
 import java.io.File
 import java.io.FileOutputStream
+import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
+import java.util.zip.ZipOutputStream
 
 /** Metadata-only preflight; extraction enforces actual byte limits separately. */
 object WorldArchive {
@@ -11,6 +13,82 @@ object WorldArchive {
     const val DISK_RESERVE_BYTES = 256L * 1024 * 1024
 
     data class BundledAddons(val modsInstalled: Int = 0, val configsInstalled: Int = 0)
+
+    /**
+     * Chuẩn hóa tệp ZIP trước khi kiểm tra nếu người dùng nén lồng nhiều thư mục
+     * (ví dụ: TenMap/saves/world/level.dat) hoặc trình nén trên điện thoại tạo đường dẫn trùng lặp.
+     */
+    fun normalizeWorldZipIfNeeded(rawZip: File, cacheDir: File): File {
+        if (!rawZip.isFile || rawZip.length() <= 0L) return rawZip
+        var hasDuplicate = false
+        var shallowWorldFound = false
+        var deepWorldParentPrefix: String? = null
+        val seenCheck = HashSet<String>()
+        runCatching {
+            ZipFile(rawZip).use { archive ->
+                val entries = archive.entries()
+                while (entries.hasMoreElements()) {
+                    val entry = entries.nextElement()
+                    val clean = entry.name.replace('\\', '/').removePrefix("./").trimStart('/')
+                    if (clean.isEmpty()) continue
+                    if (!seenCheck.add(clean)) hasDuplicate = true
+                    val parts = clean.trimEnd('/').split('/')
+                    if (parts.size == 1 && parts[0] in setOf("level.dat", "region", "db")) {
+                        shallowWorldFound = true
+                    } else if (parts.size == 2 && parts[1] in setOf("level.dat", "region", "db")) {
+                        shallowWorldFound = true
+                    } else if (parts.size >= 3 && parts.last() == "level.dat" && deepWorldParentPrefix == null) {
+                        deepWorldParentPrefix = parts.subList(0, parts.size - 2).joinToString("/") + "/"
+                    }
+                }
+            }
+        }.onFailure { return rawZip }
+
+        if (shallowWorldFound && !hasDuplicate) return rawZip
+        if (!shallowWorldFound && deepWorldParentPrefix == null && !hasDuplicate) return rawZip
+
+        val fixed = File.createTempFile("world_norm_", ".zip", cacheDir)
+        try {
+            val written = HashSet<String>()
+            val buffer = ByteArray(64 * 1024)
+            ZipFile(rawZip).use { archive ->
+                ZipOutputStream(FileOutputStream(fixed)).use { zos ->
+                    val entries = archive.entries()
+                    while (entries.hasMoreElements()) {
+                        val entry = entries.nextElement()
+                        val clean = entry.name.replace('\\', '/').removePrefix("./").trimStart('/')
+                        if (clean.isEmpty() || clean.split('/').any { it == ".." }) continue
+                        val prefixToStrip = deepWorldParentPrefix
+                        val mapped = if (!shallowWorldFound && prefixToStrip != null && clean.startsWith(prefixToStrip)) {
+                            clean.removePrefix(prefixToStrip)
+                        } else {
+                            clean
+                        }
+                        if (mapped.isEmpty() || !written.add(mapped)) continue
+                        zos.putNextEntry(ZipEntry(mapped))
+                        if (!entry.isDirectory) {
+                            archive.getInputStream(entry).use { input ->
+                                while (true) {
+                                    val r = input.read(buffer)
+                                    if (r < 0) break
+                                    zos.write(buffer, 0, r)
+                                }
+                            }
+                        }
+                        zos.closeEntry()
+                    }
+                }
+            }
+            if (fixed.length() > 0L) {
+                fixed.copyTo(rawZip, overwrite = true)
+            }
+        } catch (_: Exception) {
+            // Keep original zip so validator reports the exact reason
+        } finally {
+            fixed.delete()
+        }
+        return rawZip
+    }
 
     fun validate(zip: File, availableBytes: Long, bedrock: Boolean = false) {
         require(zip.length() in 1..MAX_COMPRESSED_BYTES) {

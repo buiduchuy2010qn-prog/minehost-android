@@ -1,42 +1,79 @@
 package com.mineserve.mobile.ui.screens
 
+import android.content.Context
+import android.content.Intent
 import android.net.Uri
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.mineserve.mobile.server.ExternalBackupStore
 import com.mineserve.mobile.server.Worlds
 import com.mineserve.mobile.ui.McViewModel
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 
+private class LocalOnlyOpenDocument : ActivityResultContracts.OpenDocument() {
+    override fun createIntent(context: Context, input: Array<String>): Intent {
+        return super.createIntent(context, input).apply {
+            putExtra(Intent.EXTRA_LOCAL_ONLY, true)
+        }
+    }
+}
+
 @Composable
 fun WorldImportScreen(vm: McViewModel, onBack: () -> Unit, onWorlds: () -> Unit) {
+    val context = LocalContext.current
     val config by vm.config.collectAsState()
     val ready by vm.isBootstrapped.collectAsState()
     val busy by vm.worldImportBusy.collectAsState()
     val result by vm.worldImportStatus.collectAsState()
+    val localArchives by vm.localWorldArchives.collectAsState()
     val modCount by vm.worldModCount.collectAsState()
     val modBusy by vm.worldModBusy.collectAsState()
     val modStatus by vm.worldModStatus.collectAsState()
     val runningFlow = remember(vm) { vm.serverState.map { it.isRunning }.distinctUntilChanged() }
     val running by runningFlow.collectAsState(initial = true)
     val selected = config.installedCores.firstOrNull { it.name == config.activeCoreName }
+    var hasStoragePerm by remember { mutableStateOf(ExternalBackupStore.hasPermission(context)) }
     var pendingUri by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingLocalPath by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingLocalName by rememberSaveable { mutableStateOf<String?>(null) }
     var pickerServer by rememberSaveable { mutableStateOf<String?>(null) }
     var name by rememberSaveable { mutableStateOf("") }
     var confirmWorld by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(config.activeCoreName, ready) {
+    val openPermissionSettings: () -> Unit = {
+        try {
+            val intent = Intent(
+                Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                Uri.parse("package:" + context.packageName)
+            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+        } catch (_: Exception) {
+            val intent = Intent(
+                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.parse("package:" + context.packageName)
+            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+        }
+    }
+
+    LaunchedEffect(config.activeCoreName, ready, hasStoragePerm) {
+        hasStoragePerm = ExternalBackupStore.hasPermission(context)
+        vm.refreshLocalWorldArchives()
         if (ready) vm.refreshWorldModCount()
     }
 
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+    val picker = rememberLauncherForActivityResult(LocalOnlyOpenDocument()) { uri ->
         pendingUri = uri?.toString()
     }
     val modPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
@@ -50,10 +87,10 @@ fun WorldImportScreen(vm: McViewModel, onBack: () -> Unit, onWorlds: () -> Unit)
         item { TextButton(onClick = onBack) { Text("← Quay lại") } }
 
         item {
-            HostCard("📖 Hướng dẫn chạy Map có sẵn Mod (3 bước chuẩn)") {
+            HostCard("📖 Hướng dẫn chạy Map có sẵn Mod & Tránh lỗi Cello error 8") {
                 Text("• Bước 1 (Chọn đúng Core): Map có Mod bắt buộc phải chạy trên Core Forge, Fabric hoặc NeoForge có cùng phiên bản Minecraft với Map (cài tại mục Tải xuống).", style = MaterialTheme.typography.bodySmall)
-                Text("• Bước 2 (Nhập Map .zip): Bấm 'Chọn tệp Map (.zip)' bên dưới. Nếu trong file .zip của bạn đã gói sẵn cả thư mục world/ lẫn thư mục mods/ và config/, ứng dụng sẽ TỰ ĐỘNG tách và cài toàn bộ Mod vào máy chủ!", style = MaterialTheme.typography.bodySmall)
-                Text("• Bước 3 (Cài Mod rời nếu có): Nếu tác giả Map để tệp Mod (.jar) hoặc gói mods.zip riêng, hãy dùng mục số 3 bên dưới để chép thẳng vào máy chủ.", style = MaterialTheme.typography.bodySmall)
+                Text("• Bước 2 (Chọn tệp ZIP từ Bộ nhớ máy / Download): Khuyên dùng danh sách 'Chọn nhanh tệp ZIP có sẵn trong máy (Download)' ở mục số 2 bên dưới để đọc trực tiếp từ bộ nhớ điện thoại — KHÔNG chọn tệp trên Google Drive đám mây (tránh lỗi tbd: Cello error 8).", style = MaterialTheme.typography.bodySmall)
+                Text("• Bước 3 (Tự động cài Mod đi kèm): Nếu trong file .zip của Map đã có sẵn thư mục mods/ và config/, MineHost sẽ TỰ ĐỘNG cài toàn bộ Mod vào máy chủ! Nếu Mod để rời, hãy dùng mục số 3 bên dưới.", style = MaterialTheme.typography.bodySmall)
             }
         }
 
@@ -86,18 +123,103 @@ fun WorldImportScreen(vm: McViewModel, onBack: () -> Unit, onWorlds: () -> Unit)
 
         item {
             HostCard("2 · Chọn tệp Map (.zip — Hỗ trợ cả gói Map kèm sẵn mods/)") {
-                Text("• Định dạng hỗ trợ: Tệp .zip chứa level.dat ở gốc hoặc trong thư mục world/ (kèm world_nether/, world_the_end/).")
-                Text("• Hỗ trợ Map Mod trọn gói: Nếu trong tệp .zip có sẵn thư mục mods/*.jar và config/, MineHost sẽ tự động cài đặt chúng vào máy chủ cho bạn!")
-                Text("• Giới hạn an toàn: ZIP tối đa 2 GB, giải nén tối đa 4 GB (cần trống ít nhất 256 MB). Map Bedrock (.mcworld) chỉ dùng cho Core PowerNukkitX.", style = MaterialTheme.typography.bodySmall)
-                Button(
+                Text("• Định dạng hỗ trợ: Tệp .zip chứa level.dat ở gốc, trong thư mục world/ hoặc lồng trong thư mục giải nén (kèm world_nether/, world_the_end/, mods/, config/).")
+                Text("• Cách tránh lỗi 'tbd: Cello error 8': Lỗi Cello error 8 xảy ra khi bạn chọn tệp .zip đang nằm trên Google Drive đám mây chưa tải về máy. Hãy chọn tệp trực tiếp từ danh sách thư mục Download bên dưới!", style = MaterialTheme.typography.bodySmall)
+
+                if (!hasStoragePerm) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        shape = MaterialTheme.shapes.medium,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                "🔓 Cấp quyền đọc thư mục Download (Khuyên dùng)",
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                "Cấp quyền 'Truy cập tất cả tệp' để ứng dụng quét và liệt kê sẵn các tệp Map (.zip) trong thư mục Download của bạn — bấm 1 chạm là nhập ngay, không bị lỗi Google Drive Cello error 8!",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(onClick = openPermissionSettings) {
+                                    Text("Cấp quyền bộ nhớ")
+                                }
+                                OutlinedButton(onClick = {
+                                    hasStoragePerm = ExternalBackupStore.hasPermission(context)
+                                    vm.refreshLocalWorldArchives()
+                                }) {
+                                    Text("Đã cấp / Làm mới")
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "📱 Tệp ZIP tìm thấy trong máy (Download / Bộ nhớ):",
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        TextButton(onClick = {
+                            hasStoragePerm = ExternalBackupStore.hasPermission(context)
+                            vm.refreshLocalWorldArchives()
+                        }) {
+                            Text("🔄 Làm mới")
+                        }
+                    }
+                    if (localArchives.isEmpty()) {
+                        Text(
+                            "Chưa tìm thấy tệp .zip hoặc .mcworld nào trong thư mục Download. Hãy tải tệp ZIP của Map về thư mục Download rồi bấm '🔄 Làm mới', hoặc dùng nút chọn tệp bên dưới.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            localArchives.take(10).forEach { item ->
+                                OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(10.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                                            Text(item.name, fontWeight = FontWeight.SemiBold)
+                                            Text(
+                                                "${item.folderLabel} • ${Worlds.formatSize(item.sizeBytes)}",
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                        }
+                                        Button(
+                                            onClick = {
+                                                pickerServer = config.activeCoreName
+                                                name = ""
+                                                pendingLocalName = item.name
+                                                pendingLocalPath = item.path
+                                            },
+                                            enabled = ready && selected != null && !running && !busy && !modBusy
+                                        ) {
+                                            Text("Nhập ngay")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(4.dp))
+                OutlinedButton(
                     onClick = {
                         pickerServer = config.activeCoreName
-                        picker.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"))
+                        picker.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream", "*/*"))
                     },
                     enabled = ready && selected != null && !running && !busy && !modBusy,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("📂 Chọn tệp Map (.zip) trên điện thoại")
+                    Text("📂 Mở trình chọn tệp khác (Chọn từ Bộ nhớ máy, KHÔNG chọn Google Drive)")
                 }
             }
         }
@@ -140,7 +262,7 @@ fun WorldImportScreen(vm: McViewModel, onBack: () -> Unit, onWorlds: () -> Unit)
                     } else if (result.error != null) {
                         Text(result.error ?: "", color = MaterialTheme.colorScheme.error)
                         Text(
-                            "💡 Hướng dẫn khắc phục: 1) Đảm bảo tệp .zip là Map Java hợp lệ (có level.dat). 2) Nếu tệp là gói Modpack CurseForge (.mrpack/manifest.json không có thư mục world/), hãy nhập ở mục Tải xuống -> Nhập Modpack. 3) Kiểm tra dung lượng trống của máy.",
+                            "💡 Hướng dẫn khắc phục: 1) Nếu gặp lỗi 'Cello error 8', hãy tải tệp ZIP về thư mục Download trên máy và bấm chọn trực tiếp trong danh sách 'Tệp ZIP tìm thấy trong máy (Download)' ở mục số 2 phía trên. 2) Đảm bảo tệp .zip có chứa level.dat. 3) Nếu tệp là gói Modpack CurseForge không kèm world, hãy nhập ở mục Tải xuống -> Nhập Modpack.",
                             style = MaterialTheme.typography.bodySmall
                         )
                     } else if (result.world != null) {
@@ -175,6 +297,35 @@ fun WorldImportScreen(vm: McViewModel, onBack: () -> Unit, onWorlds: () -> Unit)
                 style = MaterialTheme.typography.bodySmall
             )
         }
+    }
+
+    pendingLocalPath?.let { localPath ->
+        AlertDialog(
+            onDismissRequest = { pendingLocalPath = null },
+            title = { Text("Nhập Map '" + (pendingLocalName ?: "") + "' vào máy chủ " + (pickerServer ?: "") + "?") },
+            text = {
+                Column {
+                    Text("Đọc trực tiếp từ bộ nhớ máy (không qua Google Drive). Nếu trùng tên với world cũ, ứng dụng sẽ tự động đánh số để giữ nguyên world cũ. Nếu trong ZIP có thư mục mods/ và config/, chúng sẽ được cài tự động.")
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it.take(80) },
+                        label = { Text("Tên world (để trống sẽ lấy theo tên tệp ZIP)") },
+                        singleLine = true
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingLocalPath = null
+                        vm.importWorldFromLocalPath(localPath, name, pickerServer)
+                    },
+                    enabled = !busy && !running && selected != null && pickerServer == config.activeCoreName
+                ) { Text("Bắt đầu nhập") }
+            },
+            dismissButton = { TextButton(onClick = { pendingLocalPath = null }) { Text("Hủy") } }
+        )
     }
 
     pendingUri?.let { value ->
