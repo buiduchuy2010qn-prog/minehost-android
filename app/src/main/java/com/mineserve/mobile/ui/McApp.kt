@@ -115,7 +115,7 @@ fun McApp() {
 
     // 系统返回键：逐级返回上一页面，禁止直接退出应用。
     // 优先级：日志页 → 子页面 → 其他 Tab → 概览（Dashboard）；已在概览时消费返回键不退出。
-    BackHandler {
+    BackHandler(enabled = showLogs || subPage != null || tab != McTab.Dashboard) {
         when {
             showLogs -> showLogs = false
             // FRP 配置编辑页是从网络页点进来的：返回必须回到网络页，
@@ -149,7 +149,7 @@ fun McApp() {
                 )
                 destinations.forEach { (t, label) ->
                     NavigationBarItem(
-                        selected = tab == t && subPage == null,
+                        selected = tab == t,
                         onClick = { tab = t; showLogs = false; subPage = null },
                         icon = { Icon(t.icon, contentDescription = label) },
                         label = { Text(label, fontSize = 10.sp) },

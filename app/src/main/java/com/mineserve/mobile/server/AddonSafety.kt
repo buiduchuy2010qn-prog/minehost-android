@@ -86,7 +86,7 @@ object AddonSafety {
         try {
             fill(staged)
             validate(staged, mod, loader)
-            Files.move(staged.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            Files.move(staged.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
             target
         } finally { staged.delete() }
     }
