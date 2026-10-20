@@ -20,7 +20,7 @@ fun WorldImportScreen(vm: McViewModel, onBack: () -> Unit, onWorlds: () -> Unit)
     val busy by vm.worldImportBusy.collectAsState()
     val result by vm.worldImportStatus.collectAsState()
     val runningFlow = remember(vm) { vm.serverState.map { it.isRunning }.distinctUntilChanged() }
-    val running by runningFlow.collectAsState(initial = vm.serverState.value.isRunning)
+    val running by runningFlow.collectAsState(initial = true)
     val selected = config.installedCores.firstOrNull { it.name == config.activeCoreName }
     var pendingUri by rememberSaveable { mutableStateOf<String?>(null) }
     var pickerServer by rememberSaveable { mutableStateOf<String?>(null) }

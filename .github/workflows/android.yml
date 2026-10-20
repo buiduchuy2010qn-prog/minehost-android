@@ -47,7 +47,7 @@ jobs:
       - name: Tests, lint and optimized ARM64 release APK
         run: |
           chmod +x gradlew
-          ./gradlew :app:testDebugUnitTest :app:lintRelease :app:assembleRelease --no-daemon --max-workers=2 -Dorg.gradle.jvmargs="-Xmx4g -Dfile.encoding=UTF-8"
+          ./gradlew :app:testReleaseUnitTest :app:lintRelease :app:assembleRelease --no-daemon --max-workers=2 -Dorg.gradle.jvmargs="-Xmx4g -Dfile.encoding=UTF-8"
       - name: Verify signing identity and non-debuggable manifest
         run: |
           set -euo pipefail

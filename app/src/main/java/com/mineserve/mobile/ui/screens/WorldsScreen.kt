@@ -21,7 +21,7 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
     val importing by vm.worldImportBusy.collectAsState()
     val config by vm.config.collectAsState()
     val runningFlow = remember(vm) { vm.serverState.map { it.isRunning }.distinctUntilChanged() }
-    val running by runningFlow.collectAsState(initial = vm.serverState.value.isRunning)
+    val running by runningFlow.collectAsState(initial = true)
     var pendingExport by remember { mutableStateOf<String?>(null) }
     var exportServer by remember { mutableStateOf<String?>(null) }
     var reset by remember { mutableStateOf<Worlds.WorldInfo?>(null) }
