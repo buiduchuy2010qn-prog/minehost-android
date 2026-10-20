@@ -2421,7 +2421,8 @@ class McViewModel(
                 // Tự động tạo server.properties mặc định với online-mode=false & enforce-secure-profile=false
                 // nếu máy chủ mới tinh chưa có file cấu hình, tránh lỗi "Phiên chơi không hợp lệ" ở lần chạy đầu!
                 withContext(Dispatchers.IO) {
-                    if (!active.core.isBedrock && !propertiesManager.propertiesFileExists(active.dirName)) {
+                    val propFile = File(repo.termuxRuntime.serverDirFor(active.dirName), "server.properties")
+                    if (!active.core.isBedrock && !propFile.exists()) {
                         val initMap = linkedMapOf(
                             "server-port" to ServerPort.defaultFor(active.core).toString(),
                             "motd" to "MineHost Server",
