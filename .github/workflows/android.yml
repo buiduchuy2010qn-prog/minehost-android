@@ -26,24 +26,48 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Install Android build components
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "cmake;3.22.1" "ndk;27.0.12077973"
-      - name: Generate temporary test signing key
+      - name: Restore stable signing key
+        env:
+          SIGNING_BUNDLE: ${{ secrets.MINEHOST_SIGNING_BUNDLE }}
         run: |
-          mkdir -p "$HOME/.android"
-          keytool -genkeypair -keystore "$HOME/.android/debug.keystore" -storepass android -keypass android -alias androiddebugkey -dname "CN=MineHost CI test only" -keyalg RSA -keysize 2048 -validity 30
-      - name: Tests, lint and ARM64 debug APK
+          python - <<'PY'
+          import os, json, base64, pathlib
+          raw = os.environ.get("SIGNING_BUNDLE", "")
+          if not raw:
+              raise SystemExit("Missing stable signing secret. Refusing to generate a replacement key.")
+          bundle = json.loads(raw)
+          print("::add-mask::" + bundle["password"], flush=True)
+          path = pathlib.Path("signing/minehost.p12")
+          path.parent.mkdir(exist_ok=True)
+          path.write_bytes(base64.b64decode(bundle["keystore"]))
+          path.chmod(0o600)
+          with open(os.environ["GITHUB_ENV"], "a") as env:
+              env.write("MINEHOST_STORE_PASSWORD=" + bundle["password"] + "\n")
+          PY
+      - name: Tests, lint and optimized ARM64 release APK
         run: |
           chmod +x gradlew
-          ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --no-daemon --max-workers=2 -Dorg.gradle.jvmargs="-Xmx4g -Dfile.encoding=UTF-8"
-      - name: Record APK source and checksum
+          ./gradlew :app:testDebugUnitTest :app:lintRelease :app:assembleRelease --no-daemon --max-workers=2 -Dorg.gradle.jvmargs="-Xmx4g -Dfile.encoding=UTF-8"
+      - name: Verify signing identity and non-debuggable manifest
         run: |
-          git rev-parse HEAD > app/build/outputs/apk/debug/SOURCE-COMMIT.txt
-          sha256sum app/build/outputs/apk/debug/*.apk > app/build/outputs/apk/debug/SHA256SUMS.txt
-          printf '%s\n' "Experimental debug build. Temporary signing key; later builds may require uninstall/reinstall. Export worlds/backups before uninstalling. Not tested on a real Android device. GPL-3.0-or-later; see repository for source and notices." > app/build/outputs/apk/debug/READ-ME-FIRST.txt
+          set -euo pipefail
+          APK=$(find app/build/outputs/apk/release -name '*.apk' -print -quit)
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK" | tee app/build/outputs/apk/release/SIGNATURE.txt
+          EXPECTED=$(openssl x509 -in signing/minehost-certificate.pem -outform der | sha256sum | cut -d' ' -f1)
+          ACTUAL=$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' app/build/outputs/apk/release/SIGNATURE.txt)
+          test "$EXPECTED" = "$ACTUAL"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" > app/build/outputs/apk/release/APK-INFO.txt
+          ! grep -q "application-debuggable" app/build/outputs/apk/release/APK-INFO.txt
+      - name: Record source and checksum
+        run: |
+          git rev-parse HEAD > app/build/outputs/apk/release/SOURCE-COMMIT.txt
+          sha256sum app/build/outputs/apk/release/*.apk > app/build/outputs/apk/release/SHA256SUMS.txt
+          printf '%s\n' "Experimental optimized release. Stable signing from alpha.2 onward. Cannot replace alpha.1 (different key). Export and verify world/full server backups outside app storage before uninstalling alpha.1. No device performance claims. GPL-3.0-or-later." > app/build/outputs/apk/release/READ-ME-FIRST.txt
       - uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: MineHost-ARM64-debug-test
-          path: app/build/outputs/apk/debug/
+          name: MineHost-ARM64-release
+          path: app/build/outputs/apk/release/
           retention-days: 14
       - uses: actions/upload-artifact@v4
         if: always()
@@ -52,4 +76,8 @@ jobs:
           path: |
             app/build/reports/
             app/build/test-results/
+            app/build/outputs/mapping/release/
           retention-days: 7
+      - name: Remove runner signing material
+        if: always()
+        run: rm -f signing/minehost.p12

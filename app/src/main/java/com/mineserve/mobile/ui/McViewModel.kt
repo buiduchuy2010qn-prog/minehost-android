@@ -67,12 +67,15 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -129,6 +132,7 @@ class McViewModel(
 
     /** Termux 环境初始化错误信息 */
     val bootstrapError: StateFlow<String?> = app.bootstrapError
+    val bootstrapRunning = app.bootstrapRunning
 
     /** bootstrap 下载速度（bytes/s） */
     val bootstrapSpeed: StateFlow<Long> = app.bootstrapSpeed
@@ -898,27 +902,13 @@ class McViewModel(
     /** Samples values that belong to the selected server. */
     private fun startServerResourceCollection() {
         viewModelScope.launch {
-            // 首屏尽快出值：原来开局先 delay(15s)，加上「首次采样只建基线」的语义，
-            // 用户进界面后可能半分钟都看不到 CPU/内存。这里先立即采一次轻量数据
-            // （不扫服务端目录），再做原来的 15s 周期循环。
-            withContext(Dispatchers.IO) { collectServerResourcesOnce(includeDirectorySize = false) }
-            // 整机 CPU 走 /proc/stat 两次采样求差值，首次调用只建基线、拿不到读数。
-            // 若等到 15s 后的下一轮才采第二次，进界面后会有十几秒显示 `--`；
-            // 这里隔 1.2s 补采一次（采样窗口 ≥1s 才有意义），让主路径尽快出真实值，
-            // 期间 UI 会由 cpufreq 回退路径先给一个粗略值兜底。
-            delay(1_200)
-            withContext(Dispatchers.IO) { collectServerResourcesOnce(includeDirectorySize = false) }
-            // Defer the first recursive server-directory scan until the first screen settles.
-            delay(15_000)
-            while (true) {
-                // 界面不在前台时降频，并且**跳过最昂贵的服务端目录遍历**
-                // （walkTopDown 递归求和世界文件，动辄几万个小文件）：锁屏/切后台后
-                // 还在每 15 秒扫一遍既耗电，又会和正在写区块的 MC 抢 IO。
-                // 其余采样（/proc 内存与 CPU、StatFs）很廉价且悬浮窗/通知/组件要用，
-                // 所以后台仍然保留，只是放慢到 1 分钟。
-                val visible = uiVisible
-                withContext(Dispatchers.IO) { collectServerResourcesOnce(includeDirectorySize = visible) }
-                delay(if (visible) 15_000 else 60_000)
+            serverState.map { it.isRunning }.distinctUntilChanged().collectLatest { running ->
+                if (!running) return@collectLatest
+                while (true) {
+                    // Chunk directory scans are reserved for a manual refresh.
+                    withContext(Dispatchers.IO) { collectServerResourcesOnce(includeDirectorySize = false) }
+                    delay(if (uiVisible) 15_000 else 60_000)
+                }
             }
         }
     }
@@ -1014,7 +1004,7 @@ class McViewModel(
             val cpu = if (running) repo.termuxRuntime.mcProcessCpuPercent() else null
             // 整机 CPU 总使用率：与 running 解耦，服务端未运行时也要有读数；
             // 首次调用只建立基线返回 null，下一次周期采样即拿到真实值。
-            val deviceCpu = repo.termuxRuntime.deviceCpuPercent()
+            val deviceCpu = if (running || force) repo.termuxRuntime.deviceCpuPercent() else null
             if (running && now - cachedJavaAvailableAtMs >= 60_000L) {
                 cachedJavaAvailable = repo.termuxRuntime.isJavaInstalled(cfg.selectedJavaVersion, cfg.selectedJavaVendor)
                 cachedJavaAvailableAtMs = now
@@ -2128,7 +2118,50 @@ class McViewModel(
 
     fun setLocalPort(port: Int) = updateConfig { it.copy(localPort = port) }
     fun setDomain(d: String) = updateConfig { it.copy(customDomain = d) }
-    fun setMaxHeap(mb: Int) = updateConfig { it.copy(maxHeapMb = mb) }
+    fun setMaxHeap(mb: Int) = updateConfig { it.copy(maxHeapMb = mb, autoHeap = false) }
+    fun setAutoHeap(enabled: Boolean) = updateConfig { it.copy(autoHeap = enabled) }
+
+    private val _deviceProfile = MutableStateFlow<com.mineserve.mobile.data.DeviceProfile?>(null)
+    val deviceProfile = _deviceProfile.asStateFlow()
+    private val _applyingDeviceTuning = MutableStateFlow(false)
+    val applyingDeviceTuning = _applyingDeviceTuning.asStateFlow()
+
+    fun refreshDeviceProfile() {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { com.mineserve.mobile.data.DeviceMemory.read(app) }
+                .onSuccess { _deviceProfile.value = it }
+        }
+    }
+
+    fun applyDeviceTuning() {
+        if (_applyingDeviceTuning.value || serverState.value.isRunning || _worldImportBusy.value) return
+        val target = config.value.installedCores.firstOrNull { it.name == config.value.activeCoreName } ?: return
+        if (target.core.isBedrock || target.core in setOf(ServerCore.Velocity, ServerCore.BungeeCord, ServerCore.Unknown)) {
+            _errorFlow.tryEmit("Cấu hình này dành cho server Minecraft Java."); return
+        }
+        _applyingDeviceTuning.value = true
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    com.mineserve.mobile.server.AddonSafety.lifecycleGate.withLock {
+                        check(!repo.termuxRuntime.isMcRunning() && !serverState.value.isRunning) { "Hãy dừng server trước." }
+                        check(config.value.activeCoreName == target.name) { "Server đã thay đổi. Hãy thử lại." }
+                        val device = com.mineserve.mobile.data.DeviceMemory.read(app)
+                        val file = java.io.File(repo.termuxRuntime.serverDirFor(target.dirName), "server.properties")
+                        if (file.exists()) file.copyTo(java.io.File(file.parentFile,
+                            "server.properties.before-tuning-" + System.currentTimeMillis()), overwrite = false)
+                        check(propertiesManager.writeProperties(device.properties, target.dirName)) { "Không lưu được cấu hình." }
+                        repo.updateAndSaveConfig { it.copy(autoHeap = true) }
+                        _deviceProfile.value = device
+                    }
+                }
+                refreshServerPropertiesNow()
+                _messageFlow.tryEmit("Đã áp dụng RAM tự động và cấu hình nhẹ.")
+            } catch (e: Exception) {
+                _errorFlow.tryEmit("Không áp dụng được: " + e.message)
+            } finally { _applyingDeviceTuning.value = false }
+        }
+    }
     fun setAutoRestart(v: Boolean) = updateConfig { it.copy(autoRestartOnCrash = v) }
 
     /** 跳过「启动中」阶段进度展示（见 [McConfig.skipStartupProgress]）。 */
@@ -2363,7 +2396,7 @@ class McViewModel(
     }
 
     fun startServer() {
-        if (startRequestPending || serverState.value.isRunning || _stopInFlight.value) return
+        if (startRequestPending || serverState.value.isRunning || _stopInFlight.value || _worldImportBusy.value || _applyingDeviceTuning.value) return
         if (!isBootstrapped.value) {
             _errorFlow.tryEmit(str(R.string.s192))
             return
@@ -4482,31 +4515,23 @@ class McViewModel(
      * 服务端运行中时改动不会立刻生效，需要重启，这里明确提示而不是静默写入。
      */
     fun setActiveWorld(name: String) {
-        if (!isBootstrapped.value) { _errorFlow.tryEmit(str(R.string.s192)); return }
+        if (!isBootstrapped.value || _worldImportBusy.value) return
         val dirName = activeDirName() ?: return
         viewModelScope.launch {
             try {
-                val ok = withContext(Dispatchers.IO) { worldManager.setLevelName(dirName, name) }
-                if (ok) {
-                    _activeWorldName.value = name
-                    _messageFlow.tryEmit(
-                        if (repo.serverState.value.isRunning) "已切换到世界「$name」，重启服务端后生效"
-                        else "已切换到世界「$name」"
-                    )
-                    loadWorlds()
-                } else {
-                    // setLevelName 现在能区分「写不进去」与「目标实例正在运行」，别再一律
-                    // 报成配置不可写——用户会去翻存储权限，而真正原因可能只是要停服。
-                    _errorFlow.tryEmit(
-                        if (repo.termuxRuntime.isMcRunningIn(dirName)) {
-                            str(R.string.world_switch_blocked_running)
-                        } else {
-                            str(R.string.world_switch_failed)
-                        }
-                    )
+                withContext(Dispatchers.IO) {
+                    com.mineserve.mobile.server.AddonSafety.lifecycleGate.withLock {
+                        check(!repo.termuxRuntime.isMcRunning() && !serverState.value.isRunning) { "Dừng server trước khi đổi world." }
+                        check(activeDirName() == dirName) { "Server đã thay đổi." }
+                        check(java.io.File(worldManager.worldsRoot(dirName), Worlds.sanitize(name)).isDirectory) { "Không tìm thấy world." }
+                        check(worldManager.setLevelName(dirName, name)) { "Không lưu được lựa chọn world." }
+                    }
                 }
+                _activeWorldName.value = name
+                _messageFlow.tryEmit("Đã chọn world: " + name + ". Bật server để chơi.")
+                loadWorlds()
             } catch (e: Exception) {
-                _errorFlow.tryEmit("切换世界失败：${e.message}")
+                _errorFlow.tryEmit("Không đổi được world: " + e.message)
             }
         }
     }
@@ -4551,48 +4576,83 @@ class McViewModel(
      * 先复制到 cache 再解压：SAF 的 InputStream 只能顺序读一次，而解压需要随机读取
      * 条目头部（[Worlds.inspectZip] 会独立打开一次）。
      */
-    fun importWorldFromUri(uri: Uri, preferredName: String) {
-        if (!isBootstrapped.value) { _errorFlow.tryEmit(str(R.string.s192)); return }
-        val dirName = activeDirName() ?: return
-        if (!requireServerStopped("导入世界")) return
+    data class WorldImportStatus(
+        val phase: String = "", val copiedBytes: Long = 0, val world: String? = null,
+        val serverName: String? = null, val error: String? = null
+    )
+    private val _worldImportBusy = MutableStateFlow(false)
+    val worldImportBusy = _worldImportBusy.asStateFlow()
+    private val _worldImportStatus = MutableStateFlow(WorldImportStatus())
+    val worldImportStatus = _worldImportStatus.asStateFlow()
+
+    fun importWorldFromUri(uri: Uri, preferredName: String = "", expectedServerName: String? = null) {
+        if (_worldImportBusy.value || _applyingDeviceTuning.value) return
+        if (!isBootstrapped.value) { _errorFlow.tryEmit("Hãy cài môi trường chạy trước."); return }
+        val selected = config.value.activeCoreName
+        if (expectedServerName != null && expectedServerName != selected) {
+            _errorFlow.tryEmit("Server đã thay đổi. Hãy chọn lại tệp."); return
+        }
+        val dirName = activeDirName() ?: run { _errorFlow.tryEmit("Chưa chọn server."); return }
+        if (!requireServerStopped("nhập world")) return
+        _worldImportBusy.value = true
+        _worldImportStatus.value = WorldImportStatus(phase = "Đang đọc ZIP…", serverName = selected)
         viewModelScope.launch {
             var temp: java.io.File? = null
             try {
-                temp = withContext(Dispatchers.IO) {
-                    val f = java.io.File(app.cacheDir, "world_import_${System.currentTimeMillis()}.zip")
+                // Keep the handle before any cancellable copy so failures always remove the cache ZIP.
+                withContext(Dispatchers.IO) {
+                    temp = java.io.File.createTempFile("world_import_", ".zip", app.cacheDir)
+                }
+                val archive = checkNotNull(temp)
+                val imported = withContext(Dispatchers.IO) {
+                    val displayName = runCatching {
+                        app.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),
+                            null, null, null)?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+                    }.getOrNull()
+                    val name = preferredName.trim().ifBlank {
+                        displayName?.replace(Regex("(?i)\\.zip$"), "")?.takeIf { it.isNotBlank() } ?: "world_nhap"
+                    }
+                    val context = currentCoroutineContext()
+                    check(app.cacheDir.usableSpace > com.mineserve.mobile.server.WorldArchive.DISK_RESERVE_BYTES) {
+                        "Không đủ dung lượng trống để nhập world."
+                    }
                     app.contentResolver.openInputStream(uri)?.use { input ->
-                        f.outputStream().use { output ->
-                            // 边拷边计数：先全量落盘再判断大小，设备已经被填满了
-                            val buf = ByteArray(64 * 1024)
+                        archive.outputStream().use { output ->
+                            val buffer = ByteArray(64 * 1024)
                             var total = 0L
+                            var reported = 0L
                             while (true) {
-                                val read = input.read(buf)
+                                context.ensureActive()
+                                val read = input.read(buffer)
                                 if (read < 0) break
                                 total += read
-                                if (total > maxWorldImportBytes) {
-                                    throw RuntimeException("压缩包超过 2 GB，已中止导入")
+                                require(total <= com.mineserve.mobile.server.WorldArchive.MAX_COMPRESSED_BYTES) { "ZIP vượt 2 GB." }
+                                if (total - reported >= 4L * 1024 * 1024) {
+                                    check(app.cacheDir.usableSpace > com.mineserve.mobile.server.WorldArchive.DISK_RESERVE_BYTES) {
+                                        "Không đủ dung lượng trống để nhập world."
+                                    }
+                                    reported = total
+                                    _worldImportStatus.value = WorldImportStatus("Đang chép ZIP…", total, serverName = selected)
                                 }
-                                output.write(buf, 0, read)
+                                output.write(buffer, 0, read)
                             }
+                            _worldImportStatus.value = WorldImportStatus("Đang kiểm tra và giải nén…", total, serverName = selected)
                         }
-                    } ?: throw RuntimeException("无法读取所选文件")
-                    f
+                    } ?: error("Không đọc được tệp đã chọn.")
+                    worldManager.importWorld(dirName, archive, name) ?: error("Không nhập được world.")
                 }
-                val imported = withContext(Dispatchers.IO) {
-                    worldManager.importWorld(dirName, temp, preferredName)
-                }
-                if (imported != null) {
-                    _messageFlow.tryEmit("世界已导入为「$imported」")
-                    loadWorlds()
-                } else {
-                    _errorFlow.tryEmit("导入失败：压缩包内没有找到世界（缺少 level.dat / region / db）")
-                }
+                _worldImportStatus.value = WorldImportStatus(
+                    phase = "Nhập thành công. World cũ được giữ nguyên.", world = imported, serverName = selected)
+                _messageFlow.tryEmit("Đã nhập world: " + imported + ". Chọn Dùng world này để kích hoạt.")
+                if (config.value.activeCoreName == selected) loadWorlds()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
-                _errorFlow.tryEmit("导入失败：${e.message}")
+                _worldImportStatus.value = WorldImportStatus(serverName = selected, error = "Không nhập được: " + e.message)
+                _errorFlow.tryEmit("Không nhập được: " + e.message)
             } finally {
-                // NonCancellable：协程已取消时 finally 里的 withContext 会立刻抛出取消异常，
-                // 直接调用会让临时 zip 残留在 cacheDir 里。
                 withContext(NonCancellable + Dispatchers.IO) { temp?.delete() }
+                _worldImportBusy.value = false
             }
         }
     }
@@ -5227,7 +5287,7 @@ class McViewModel(
      * （historyMutex/playerManager 等），导致启动时 NullPointerException 崩溃。
      */
     init {
-        loadPlayerHistory()
+        refreshDeviceProfile()
         scanUnregisteredServers()
         viewModelScope.launch {
             config.map { it.activeCoreName }.distinctUntilChanged().collect { loadPlayerHistory() }
@@ -5396,7 +5456,7 @@ class McViewModel(
     }
 
     /** 后台周期保活开关状态（默认开启） */
-    fun isKeepAliveEnabled(): Boolean = metaPrefs().getBoolean(BootReceiver.KEY_KEEP_ALIVE, true)
+    fun isKeepAliveEnabled(): Boolean = metaPrefs().getBoolean(BootReceiver.KEY_KEEP_ALIVE, false)
 
     /** 设置后台周期保活：开启时调度 WorkManager 周期任务，关闭时取消 */
     fun setKeepAliveEnabled(v: Boolean) {
@@ -5437,3 +5497,4 @@ class McViewModel(
         androidx.work.WorkManager.getInstance(app).cancelUniqueWork("keep_alive")
     }
 }
+

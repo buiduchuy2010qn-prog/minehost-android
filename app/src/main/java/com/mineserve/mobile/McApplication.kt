@@ -52,6 +52,8 @@ class McApplication : Application(), Configuration.Provider {
     /** Termux 环境初始化错误信息，UI 层可观察 */
     private val _bootstrapError = MutableStateFlow<String?>(null)
     val bootstrapError: StateFlow<String?> = _bootstrapError.asStateFlow()
+    private val _bootstrapRunning = MutableStateFlow(false)
+    val bootstrapRunning: StateFlow<Boolean> = _bootstrapRunning.asStateFlow()
 
     /** Bootstrap 下载速度（bytes/s） */
     private val _bootstrapSpeed = MutableStateFlow(0L)
@@ -208,7 +210,7 @@ class McApplication : Application(), Configuration.Provider {
         scope().launch {
             kotlinx.coroutines.delay(3_000)
             val prefs = getSharedPreferences(BootReceiver.META_PREFS, Context.MODE_PRIVATE)
-            if (prefs.getBoolean(BootReceiver.KEY_KEEP_ALIVE, true)) {
+            if (prefs.getBoolean(BootReceiver.KEY_KEEP_ALIVE, false)) {
                 try {
                     startForegroundService(
                         android.content.Intent(this@McApplication, McForegroundService::class.java)
@@ -236,9 +238,8 @@ class McApplication : Application(), Configuration.Provider {
                 val steps = termuxRuntime.installedDependencySteps()
                 _isBootstrapped.value = true
                 repository.updateServerState { it.copy(currentProgress = 100, installSteps = steps) }
-            } else {
-                startBootstrap()
             }
+            // Installing the runtime is explicit; merely browsing does not download/unpack.
         }
     }
 
@@ -248,6 +249,7 @@ class McApplication : Application(), Configuration.Provider {
         synchronized(this) {
             if (bootstrapInitializationInFlight) return
             bootstrapInitializationInFlight = true
+            _bootstrapRunning.value = true
         }
         scope().launch {
             try {
@@ -285,6 +287,7 @@ class McApplication : Application(), Configuration.Provider {
             } finally {
                 synchronized(this@McApplication) {
                     bootstrapInitializationInFlight = false
+                    _bootstrapRunning.value = false
                 }
             }
         }
@@ -398,3 +401,4 @@ class McApplication : Application(), Configuration.Provider {
             context.applicationContext as McApplication
     }
 }
+

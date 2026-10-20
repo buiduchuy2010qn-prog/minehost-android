@@ -70,6 +70,7 @@ import com.mineserve.mobile.ui.screens.McpScreen
 import com.mineserve.mobile.ui.screens.WidgetSettingsScreen
 import com.mineserve.mobile.ui.screens.CrashReportsScreen
 import com.mineserve.mobile.ui.screens.CrashReportDialog
+import com.mineserve.mobile.ui.screens.WorldImportScreen
 import com.mineserve.mobile.ui.screens.WorldsScreen
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.MoreVert
@@ -78,7 +79,7 @@ import com.mineserve.mobile.ui.theme.IndigoSoft
 import com.mineserve.mobile.ui.theme.Muted
 
 /** 子页面类型（从设置页进入的二级页面） */
-enum class SubPage { Properties, Network, Backup, WorldManage, DownloadHelp, MtGuide, KeepAlive, OpLevelGuide, Diagnostics, Plugins, ServerIcon, CrashReports, WidgetSettings, Mcp, EnvManager, Ftp, FrpProfileEditor, More, Automation, Cores, ServerList, PlayerList, AppSettings, Crossplay }
+enum class SubPage { Properties, Network, Backup, WorldManage, WorldImport, DownloadHelp, MtGuide, KeepAlive, OpLevelGuide, Diagnostics, Plugins, ServerIcon, CrashReports, WidgetSettings, Mcp, EnvManager, Ftp, FrpProfileEditor, More, Automation, Cores, ServerList, PlayerList, AppSettings, Crossplay }
 
 /**
  * 应用根布局：底部 6 Tab；概览页可跳转日志页；设置页可跳转子页面
@@ -192,7 +193,8 @@ fun McApp() {
                             onBack = { subPage = SubPage.Network }
                         )
                         SubPage.Backup -> BackupScreen(vm = vm, onBack = { subPage = null })
-                        SubPage.WorldManage -> WorldsScreen(vm = vm, onBack = { subPage = null })
+                        SubPage.WorldManage -> WorldsScreen(vm = vm, onBack = { subPage = null }, onImport = { subPage = SubPage.WorldImport })
+                        SubPage.WorldImport -> WorldImportScreen(vm = vm, onBack = { subPage = null }, onWorlds = { subPage = SubPage.WorldManage })
                         SubPage.DownloadHelp -> DownloadHelpScreen(vm = vm, onBack = { subPage = null })
                         SubPage.MtGuide -> MtGuideScreen(onBack = { subPage = null })
                         SubPage.KeepAlive -> KeepAliveScreen(vm = vm, onBack = { subPage = null })
@@ -301,3 +303,4 @@ fun McApp() {
         }
     }
 }
+

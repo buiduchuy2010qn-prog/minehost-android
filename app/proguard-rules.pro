@@ -32,7 +32,7 @@
 -keepclassmembers enum * { *; }
 
 # ---------- Compose ----------
--keep class androidx.compose.** { *; }
+# Compose supplies consumer rules; allow R8 to optimize UI code.
 
 # Keep native entry points, dispatcher discovery, and manifest components.
 -keepclasseswithmembernames class * {
@@ -55,3 +55,4 @@
 -dontwarn org.slf4j.**
 # ftpserver-core 的可选 Spring 集成类在 Android 上无 Spring 依赖，忽略缺失告警
 -dontwarn org.springframework.**
+

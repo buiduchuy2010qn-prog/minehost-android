@@ -14,7 +14,7 @@ class KeepAliveWorker(context: Context, params: WorkerParameters) : CoroutineWor
     override suspend fun doWork(): Result {
         val keepAlive = applicationContext.getSharedPreferences(
             BootReceiver.META_PREFS, Context.MODE_PRIVATE
-        ).getBoolean(BootReceiver.KEY_KEEP_ALIVE, true)
+        ).getBoolean(BootReceiver.KEY_KEEP_ALIVE, false)
         if (keepAlive && !McForegroundService.isRunning) {
             try {
                 applicationContext.startForegroundService(
@@ -29,3 +29,4 @@ class KeepAliveWorker(context: Context, params: WorkerParameters) : CoroutineWor
         return Result.success()
     }
 }
+

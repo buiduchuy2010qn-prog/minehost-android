@@ -257,7 +257,8 @@ object Worlds {
      * 只接受主世界与它的两个维度目录，其它顶层目录一律忽略——避免把压缩包里
      * 夹带的无关文件（甚至恶意路径）铺进服务端目录。含 zip-slip 防护。
      */
-    fun importWorldZip(zip: File, worldsRoot: File, targetName: String): Boolean {
+    fun importWorldZip(zip: File, worldsRoot: File, targetName: String,
+        maxExpandedBytes: Long = WorldArchive.MAX_EXPANDED_BYTES, checkCancelled: () -> Unit = {}): Boolean {
         val name = sanitize(targetName)
         val destRoot = File(worldsRoot, name)
         val dimensionDirs = listOf(File(worldsRoot, name + NETHER_SUFFIX), File(worldsRoot, name + END_SUFFIX))
@@ -266,6 +267,7 @@ object Worlds {
         // （Bukkit 布局下 world_nether / world_the_end 是独立世界，甚至可能只有维度目录
         // 而没有主世界），无条件 deleteRecursively() 会把与本次导入无关的既有世界删掉。
         val touchedTops = linkedSetOf<File>()
+        var created = false
         return try {
             val layout = inspectZip(zip)
             val mapping = linkedMapOf<String, String>()
@@ -290,7 +292,8 @@ object Worlds {
             // 维度目录同样要查：只查主世界会让已存在的同名独立世界被静默覆写。
             if (destRoot.exists()) return false
             if (!useRootLevel && dimensionDirs.any { it.exists() }) return false
-            destRoot.mkdirs()
+            if (!destRoot.mkdirs()) return false
+            created = true
 
             // 落点上界：主世界目录本身，以及它旁边的两个维度目录。
             // 锚在 worldsRoot（= 服务端目录）会把 `world/../server.properties` 放行，
@@ -299,23 +302,39 @@ object Worlds {
             val allowedTops = setOf(name, name + NETHER_SUFFIX, name + END_SUFFIX)
 
             // 清理残渣时只能删这些目录（见 touchedTops 的说明）。
-            FileInputStream(zip).buffered().use { fis ->
-                ZipInputStream(fis).use { zis ->
-                    var entry: ZipEntry? = zis.nextEntry
-                    while (entry != null) {
-                        val rawName = entry.name.replace('\\', '/').removePrefix("./").trimStart('/')
-                        val target = resolveImportTarget(rawName, layout, mapping, destRoot, useRootLevel)
-                        if (target != null && isAllowedTarget(target, canonicalBase, allowedTops)) {
-                            owningTop(target, destRoot, dimensionDirs)?.let { touchedTops.add(it) }
-                            if (entry.isDirectory) {
-                                if (target.exists() && !target.isDirectory) target.delete()
-                                target.mkdirs()
-                            } else {
-                                target.parentFile?.mkdirs()
-                                FileOutputStream(target).use { out -> zis.copyTo(out) }
+            var expanded = 0L
+            java.util.zip.ZipFile(zip).use { archive ->
+                val entries = archive.entries()
+                var count = 0
+                val buffer = ByteArray(64 * 1024)
+                while (entries.hasMoreElements()) {
+                    checkCancelled()
+                    check(++count <= WorldArchive.MAX_ENTRIES) { "Too many ZIP entries" }
+                    val entry = entries.nextElement()
+                    val rawName = entry.name.replace('\\', '/').removePrefix("./").trimStart('/')
+                    val target = resolveImportTarget(rawName, layout, mapping, destRoot, useRootLevel)
+                    if (target != null && isAllowedTarget(target, canonicalBase, allowedTops)) {
+                        owningTop(target, destRoot, dimensionDirs)?.let { touchedTops.add(it) }
+                        if (entry.isDirectory) {
+                            check(!target.exists() || target.isDirectory) { "Conflicting ZIP paths" }
+                            target.mkdirs()
+                        } else {
+                            target.parentFile?.mkdirs()
+                            archive.getInputStream(entry).use { input ->
+                                FileOutputStream(target).use { out ->
+                                    while (true) {
+                                        checkCancelled()
+                                        val read = input.read(buffer)
+                                        if (read < 0) break
+                                        expanded += read
+                                        check(expanded <= maxExpandedBytes) { "World exceeds extraction limit" }
+                                        if (expanded % (16L * 1024 * 1024) < read)
+                                            check(worldsRoot.usableSpace > 64L * 1024 * 1024) { "Storage almost full" }
+                                        out.write(buffer, 0, read)
+                                    }
+                                }
                             }
                         }
-                        entry = zis.nextEntry
                     }
                 }
             }
@@ -331,7 +350,8 @@ object Worlds {
         } catch (e: Exception) {
             // 异常时同样只清本次写入过的部分，避免把导入前就存在的维度世界连带删掉。
             touchedTops.forEach { it.deleteRecursively() }
-            destRoot.deleteRecursively()
+            if (created) destRoot.deleteRecursively()
+            if (e is java.util.concurrent.CancellationException) throw e
             false
         }
     }
@@ -383,24 +403,24 @@ object Worlds {
         val worldLike = linkedSetOf<String>()
         var rootLevel = false
         try {
-            ZipInputStream(FileInputStream(zip).buffered()).use { zis ->
-                var entry = zis.nextEntry
-                while (entry != null) {
+            java.util.zip.ZipFile(zip).use { archive ->
+                val entries = archive.entries()
+                var count = 0
+                while (entries.hasMoreElements()) {
+                    if (++count > WorldArchive.MAX_ENTRIES) throw IllegalArgumentException("Too many ZIP entries")
+                    val entry = entries.nextElement()
                     val name = entry.name.replace('\\', '/').removePrefix("./").trimStart('/')
                     if (name.isNotEmpty()) {
                         if (!name.contains('/')) {
-                            // 条目直接在根：要么是文件，要么是 `<名>/` 这种目录占位
                             if (!entry.isDirectory) rootLevel = true
                         } else {
                             val top = name.substringBefore('/')
                             val rest = name.substringAfter('/', "").trimEnd('/')
                             topLevels += top
-                            if (rest == LEVEL_DAT || rest == REGION_DIR || rest == DB_DIR) {
-                                worldLike += top
-                            }
+                            if (rest == LEVEL_DAT || rest == REGION_DIR || rest == DB_DIR ||
+                                rest.startsWith(REGION_DIR + "/") || rest.startsWith(DB_DIR + "/")) worldLike += top
                         }
                     }
-                    entry = zis.nextEntry
                 }
             }
         } catch (_: Exception) {
@@ -468,3 +488,4 @@ object Worlds {
         }
     }
 }
+

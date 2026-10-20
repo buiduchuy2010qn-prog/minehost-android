@@ -10,6 +10,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -32,16 +33,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // 提高 UI 线程调度优先级：后台大游戏（如原神）会把 CPU 吃满，
-        // 默认优先级下主线程时间片被挤占导致页面卡顿；与前台游戏体验保持一致的提权。
-        try {
-            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_DISPLAY)
-        } catch (_: Exception) {}
         lifecycleScope.launch {
             val repo = McApplication.get(this@MainActivity).repository
             combine(repo.configFlow, repo.serverState) { config, server ->
                 config.keepScreenOnWhileRunning && server.isRunning
-            }.collect { keepOn ->
+            }.distinctUntilChanged().collect { keepOn ->
                 if (keepOn) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                 else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             }
@@ -60,7 +56,7 @@ class MainActivity : ComponentActivity() {
         }
         ensureNotificationPermission()
         // 高刷新率：见 applyHighestRefreshRate() 的说明
-        applyHighestRefreshRate()
+        // Let Android choose the display mode.
         // 更新通知点击进入：通知带 open_update extra，通知 MainActivity 打开更新对话框
         if (intent?.getBooleanExtra("open_update", false) == true) {
             McApplication.get().requestOpenUpdate()
@@ -69,52 +65,6 @@ class MainActivity : ComponentActivity() {
             MineServeMobileTheme {
                 McApp()
             }
-        }
-    }
-
-    /**
-     * 让窗口使用设备的最高刷新率（90/120/144Hz）。
-     *
-     * 背景：应用没有任何地方主动锁 60 —— 全仓库没有 preferredRefreshRate /
-     * preferredDisplayModeId / setFrameRate / Choreographer 固定延时。
-     * 真正的限制来自 **targetSdk = 28**：Android 11（API 30）起，平台对
-     * targetSdk < 30 的应用在可变刷新率屏幕上不启用高刷（兼容策略），
-     * 系统会把这类应用的帧率钉在 60Hz，应用侧改不了这一层。
-     *
-     * 而 targetSdk=28 是本项目刻意选的（依赖 Android 10 起默认变 false 的
-     * extractNativeLibs，Termux 必须能把 jniLibs 的 .so 当真实文件复制出去，
-     * 见 AndroidManifest 注释）。因此这里不升 targetSdk，而是在**运行时**
-     * 主动申请最高刷新率 —— 部分设备/系统版本会接受该申请，
-     * 不接受时保持系统默认，不产生副作用。
-     *
-     * 做法：取当前 display 支持的最高刷新率，逐个尝试
-     * `preferredDisplayModeId`（Android 6+）与 `preferredRefreshRate`（Android 7+），
-     * 失败只记日志，不影响启动。
-     */
-    private fun applyHighestRefreshRate() {
-        try {
-            val display = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                display
-            } else {
-                @Suppress("DEPRECATION")
-                windowManager.defaultDisplay
-            }
-            val modes = display?.supportedModes.orEmpty()
-            if (modes.isEmpty()) return
-            val best = modes.maxByOrNull { it.refreshRate } ?: return
-            val attrs = window.attributes
-            // 已经是最高刷新率就不动，避免多余的模式切换闪烁
-            if (best.refreshRate <= display?.refreshRate ?: 0f) return
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                attrs.preferredDisplayModeId = best.modeId
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                attrs.preferredRefreshRate = best.refreshRate
-            }
-            window.attributes = attrs
-            Log.i(TAG, "applyHighestRefreshRate: 申请 ${best.refreshRate}Hz (modeId=${best.modeId})")
-        } catch (e: Exception) {
-            Log.w(TAG, "applyHighestRefreshRate failed: ${e.message}")
         }
     }
 
@@ -153,3 +103,4 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
+

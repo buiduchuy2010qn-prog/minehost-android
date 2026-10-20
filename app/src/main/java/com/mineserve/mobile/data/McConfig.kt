@@ -605,6 +605,7 @@ data class McConfig(
     val stunShowConnectionLog: Boolean = true,
     /** STUN: 自定义 STUN 服务器（host 或 host:port）；留空使用内置列表 */
     val stunServers: String = "",
+    val autoHeap: Boolean = false, // Opt-in: preserve existing manual settings.
     val maxHeapMb: Int = 2048,            // -Xmx JVM 堆上限，按设备 RAM 给推荐值
     val autoRestartOnCrash: Boolean = false, // 默认关闭省电，避免误触发
     /**
@@ -1093,3 +1094,4 @@ internal fun isStackFrameLine(line: String): Boolean {
     // 排除误伤：真正的堆栈帧至少形如 "at xxx.yyy(" 或 "at xxx.yyy.zzz("
     return t.contains('(') || t.contains('.')
 }
+

@@ -1,8 +1,10 @@
 package com.mineserve.mobile.ui.screens
 
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -20,21 +22,25 @@ import com.mineserve.mobile.ui.McViewModel
 import com.mineserve.mobile.ui.SubPage
 
 @Composable
-private fun HostPage(title: String, subtitle: String, content: @Composable ColumnScope.() -> Unit) {
-    Column(
-        Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState()).padding(20.dp),
+internal fun HostPage(title: String, subtitle: String, content: LazyListScope.() -> Unit) {
+    LazyColumn(
+        Modifier.fillMaxSize().statusBarsPadding(),
+        contentPadding = PaddingValues(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text("MINEHOST / ANDROID", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-        Text(title, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-        Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        item(key = "heading") {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("MINEHOST / ANDROID", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                Text(title, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+                Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
         content()
-        Spacer(Modifier.height(8.dp))
     }
 }
 
 @Composable
-private fun HostCard(title: String, content: @Composable ColumnScope.() -> Unit) {
+internal fun HostCard(title: String, content: @Composable ColumnScope.() -> Unit) {
     Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
@@ -57,10 +63,22 @@ private fun HostAction(title: String, detail: String, icon: ImageVector, onClick
     }
 }
 
+private data class OverviewState(
+    val isRunning: Boolean = false, val startupPhase: StartupPhase = StartupPhase.Idle,
+    val tps: Double = 0.0, val onlinePlayers: Int = 0, val usedMemoryMb: Long = 0
+)
+
 @Composable
 fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: () -> Unit) {
     val config by vm.config.collectAsState()
-    val state by vm.serverState.collectAsState()
+    val overview = remember(vm) {
+        vm.serverState.map { OverviewState(it.isRunning, it.startupPhase, it.tps, it.onlinePlayers, it.usedMemoryMb) }.distinctUntilChanged()
+    }
+    val state by overview.collectAsState(initial = OverviewState())
+    val device by vm.deviceProfile.collectAsState()
+    val applying by vm.applyingDeviceTuning.collectAsState()
+    val importing by vm.worldImportBusy.collectAsState()
+    val bootstrapRunning by vm.bootstrapRunning.collectAsState()
     val ready by vm.isBootstrapped.collectAsState()
     val bootstrapError by vm.bootstrapError.collectAsState()
     val stopping by vm.stopInFlight.collectAsState()
@@ -73,8 +91,10 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
     val clipboard = LocalClipboardManager.current
     val active = config.installedCores.firstOrNull { it.name == config.activeCoreName }
     var confirm by remember { mutableStateOf<String?>(null) }
-    var heap by remember(config.maxHeapMb) { mutableFloatStateOf(config.maxHeapMb.toFloat().coerceIn(1024f, 4096f)) }
-    val busy = downloading || installing || addonBusy.isNotEmpty() || javaOperation != null
+    val heapLimit = device?.maxManualHeapMb ?: 2048
+    var heap by remember(config.maxHeapMb, heapLimit) { mutableFloatStateOf(config.maxHeapMb.toFloat().coerceIn(512f, heapLimit.toFloat())) }
+    var confirmTuning by remember { mutableStateOf(false) }
+    val busy = downloading || installing || addonBusy.isNotEmpty() || javaOperation != null || importing || applying
     val status = when {
         stopping -> "Đang lưu và dừng…"
         state.startupPhase == StartupPhase.Failed -> "Khởi động thất bại"
@@ -84,68 +104,116 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
     }
     LaunchedEffect(Unit) { vm.refreshLanIp() }
     HostPage("Server của bạn", "Điện thoại là máy chủ. Không cần thuê VPS để chơi cùng mạng Wi-Fi.") {
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
-            Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(status.uppercase(), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                Text(active?.name ?: "Chưa có server", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                Text(active?.let { it.core.displayName + " · " + it.version } ?: "Tạo thế giới đầu tiên để mời bạn bè.")
-                if (state.isRunning && state.startupPhase != StartupPhase.Ready) LinearProgressIndicator(Modifier.fillMaxWidth())
-                Button(
-                    onClick = {
-                        if (active == null) navigate(SubPage.Cores)
-                        else if (state.isRunning) confirm = "stop"
-                        else vm.startServer()
-                    },
-                    enabled = ready && !stopping && (state.isRunning || !busy),
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)
-                ) {
-                    Icon(if (state.isRunning) Icons.Outlined.Stop else Icons.Outlined.PlayArrow, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(if (active == null) "Tạo server" else if (state.isRunning) "Dừng an toàn" else "Bật server")
-                }
-                if (state.isRunning) OutlinedButton(onClick = { confirm = "restart" }, enabled = !stopping && !busy, modifier = Modifier.fillMaxWidth()) {
-                    Text("Lưu và khởi động lại")
+        item {
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+                Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(status.uppercase(), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    Text(active?.name ?: "Chưa có server", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                    Text(active?.let { it.core.displayName + " · " + it.version } ?: "Tạo thế giới đầu tiên để mời bạn bè.")
+                    if (state.isRunning && state.startupPhase != StartupPhase.Ready) LinearProgressIndicator(Modifier.fillMaxWidth())
+                    Button(
+                        onClick = {
+                            if (active == null) navigate(SubPage.Cores)
+                            else if (state.isRunning) confirm = "stop"
+                            else vm.startServer()
+                        },
+                        enabled = ready && !stopping && (state.isRunning || !busy),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)
+                    ) {
+                        Icon(if (state.isRunning) Icons.Outlined.Stop else Icons.Outlined.PlayArrow, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(if (active == null) "Tạo server" else if (state.isRunning) "Dừng an toàn" else "Bật server")
+                    }
+                    if (state.isRunning) OutlinedButton(onClick = { confirm = "restart" }, enabled = !stopping && !busy, modifier = Modifier.fillMaxWidth()) {
+                        Text("Lưu và khởi động lại")
+                    }
                 }
             }
         }
-        if (!ready) HostCard("Chuẩn bị lần đầu") {
-            if (bootstrapError == null) {
-                LinearProgressIndicator(Modifier.fillMaxWidth())
-                Text("Đang cài môi trường chạy vào điện thoại. Giữ ứng dụng mở và kết nối Wi-Fi; bước này có thể mất vài phút.")
+        item {
+            if (!ready) HostCard("Chuẩn bị lần đầu") {
+                if (bootstrapRunning) {
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                    Text("Đang cài môi trường chạy vào điện thoại. Giữ ứng dụng mở và kết nối Wi-Fi; bước này có thể mất vài phút.")
+                } else {
+                    Text(bootstrapError ?: "Sẵn sàng cài môi trường chạy. Dùng Wi-Fi và giữ ứng dụng mở.")
+                    Button(onClick = vm::retryBootstrap) { Text(if (bootstrapError == null) "Cài môi trường chạy" else "Thử lại") }
+                }
+            }
+        }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Metric("TPS", if (state.isRunning && state.tps > 0) "%.1f".format(state.tps) else "—", Modifier.weight(1f))
+                Metric("Người chơi", if (state.isRunning && state.startupPhase == StartupPhase.Ready) state.onlinePlayers.toString() else "—", Modifier.weight(1f))
+                Metric("RAM / MB", if (state.isRunning && state.usedMemoryMb > 0) state.usedMemoryMb.toString() else "—", Modifier.weight(1f))
+            }
+        }
+        item {
+            Text("“—” là chưa có số đo, không phải 0. TPS có thể không được core này hỗ trợ.", style = MaterialTheme.typography.bodySmall)
+        }
+        item {
+            if (active == null) {
+                HostAction("1. Tải core server", "Paper: plugin • Fabric: mod. Chọn đúng phiên bản Minecraft.", Icons.Outlined.Download) { navigate(SubPage.Cores) }
+                HostAction("2. Cài Java tương thích", "Paper 1.20–1.21.11: Java 21 • 26.1+: Java 25. Core khác: xem yêu cầu của core.", Icons.Outlined.Memory) { navigate(SubPage.EnvManager) }
             } else {
-                Text(bootstrapError ?: "")
-                Button(onClick = vm::retryBootstrap) { Text("Thử lại") }
+                HostCard("Mời bạn bè • cùng Wi-Fi") {
+                    val address = lanIp.takeIf { it.matches(Regex("""\d{1,3}(\.\d{1,3}){3}""")) && it != "0.0.0.0" && !it.startsWith("127.") }?.let { "$it:$port" }
+                    Text(address ?: "Chưa có địa chỉ LAN", style = MaterialTheme.typography.titleLarge)
+                    Text("Java: Multiplayer → Add Server. Địa chỉ này không phải địa chỉ Internet công cộng.", style = MaterialTheme.typography.bodySmall)
+                    OutlinedButton(onClick = { address?.let { clipboard.setText(AnnotatedString(it)) } }, enabled = address != null) { Text("Sao chép địa chỉ") }
+                    TextButton(onClick = { navigate(SubPage.Network) }) { Text("Bạn ở mạng khác? Thiết lập kết nối →") }
+                }
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Metric("TPS", if (state.isRunning && state.tps > 0) "%.1f".format(state.tps) else "—", Modifier.weight(1f))
-            Metric("Người chơi", if (state.isRunning && state.startupPhase == StartupPhase.Ready) state.onlinePlayers.toString() else "—", Modifier.weight(1f))
-            Metric("RAM / MB", if (state.isRunning && state.usedMemoryMb > 0) state.usedMemoryMb.toString() else "—", Modifier.weight(1f))
+        item {
+            HostAction("Nhập thế giới có sẵn", "ZIP world Java", Icons.Outlined.FileUpload) { navigate(SubPage.WorldImport) }
         }
-        Text("“—” là chưa có số đo, không phải 0. TPS có thể không được core này hỗ trợ.", style = MaterialTheme.typography.bodySmall)
-        if (active == null) {
-            HostAction("1. Tải core server", "Paper: plugin • Fabric: mod. Chọn đúng phiên bản Minecraft.", Icons.Outlined.Download) { navigate(SubPage.Cores) }
-            HostAction("2. Cài Java tương thích", "Paper 1.20–1.21.11: Java 21 • 26.1+: Java 25. Core khác: xem yêu cầu của core.", Icons.Outlined.Memory) { navigate(SubPage.EnvManager) }
-        } else {
-            HostCard("Mời bạn bè • cùng Wi-Fi") {
-                val address = lanIp.takeIf { it.matches(Regex("""\d{1,3}(\.\d{1,3}){3}""")) && it != "0.0.0.0" && !it.startsWith("127.") }?.let { "$it:$port" }
-                Text(address ?: "Chưa có địa chỉ LAN", style = MaterialTheme.typography.titleLarge)
-                Text("Java: Multiplayer → Add Server. Địa chỉ này không phải địa chỉ Internet công cộng.", style = MaterialTheme.typography.bodySmall)
-                OutlinedButton(onClick = { address?.let { clipboard.setText(AnnotatedString(it)) } }, enabled = address != null) { Text("Sao chép địa chỉ") }
-                TextButton(onClick = { navigate(SubPage.Network) }) { Text("Bạn ở mạng khác? Thiết lập kết nối →") }
+        item {
+            HostCard("Tối ưu theo điện thoại") {
+                Text(device?.let { "RAM hệ thống: %.1f GB • %d luồng CPU".format(it.totalMb / 1024.0, it.processors) } ?: "Đang đọc cấu hình máy…")
+                Text(device?.let { "Gợi ý RAM server: " + it.recommendedHeapMb + " MB" } ?: "")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Tự chọn RAM khi bật server", Modifier.weight(1f))
+                    Switch(checked = config.autoHeap, onCheckedChange = vm::setAutoHeap, enabled = !state.isRunning && !busy)
+                }
+                if (!config.autoHeap) {
+                    Text("Đã lưu: " + config.maxHeapMb + " MB")
+                    Slider(value = heap, onValueChange = { heap = it },
+                        valueRange = 512f..heapLimit.toFloat(), steps = (heapLimit - 512) / 256 - 1,
+                        enabled = !state.isRunning && !busy,
+                        onValueChangeFinished = { vm.setMaxHeap((heap.toInt() / 256) * 256) })
+                }
+                device?.let { profile ->
+                    Text("Gợi ý: view " + profile.viewDistance + " • simulation " + profile.simulationDistance +
+                        " • tối đa " + profile.maxPlayers + " người.")
+                    OutlinedButton(onClick = { confirmTuning = true }, enabled = active != null && ready && !state.isRunning && !busy) {
+                        Text(if (applying) "Đang áp dụng…" else "Áp dụng cấu hình nhẹ")
+                    }
+                }
+                TextButton(onClick = vm::refreshDeviceProfile) { Text("Đọc lại bộ nhớ") }
+                Text("RAM tự động chừa bộ nhớ cho Android và Java. Độ mượt còn phụ thuộc CPU, nhiệt độ, chunk và plugin/mod.", style = MaterialTheme.typography.bodySmall)
             }
         }
-        HostCard("RAM dành cho server") {
-            Text(heap.toInt().toString() + " MB / máy 8 GB", style = MaterialTheme.typography.titleLarge)
-            Slider(value = heap, onValueChange = { heap = it }, valueRange = 1024f..4096f, steps = 11,
-                enabled = !state.isRunning, onValueChangeFinished = { vm.setMaxHeap(heap.toInt()) })
-            Text("Bắt đầu với 2048 MB và 3–5 người. Còn phụ thuộc CPU, nhiệt độ, world và plugin; không dành hết 8 GB cho Java.", style = MaterialTheme.typography.bodySmall)
+        item {
+            HostAction("Console trực tiếp", "Xem log thật và gửi lệnh Minecraft.", Icons.Outlined.Terminal, onConsole)
         }
-        HostAction("Console trực tiếp", "Xem log thật và gửi lệnh Minecraft.", Icons.Outlined.Terminal, onConsole)
-        HostAction("Danh sách server", "Chọn hoặc nhập server có sẵn. Một server chạy tại một thời điểm.", Icons.Outlined.Dns) { navigate(SubPage.ServerList) }
-        HostAction("Sao lưu thế giới", "Tạo và khôi phục bản sao trước khi đổi mod/plugin.", Icons.Outlined.Backup) { navigate(SubPage.Backup) }
-        Text("Giữ máy thoáng, theo dõi nhiệt độ. Android có thể dừng ứng dụng nền; không cam kết host 24/7.", style = MaterialTheme.typography.bodySmall)
+        item {
+            HostAction("Danh sách server", "Chọn hoặc nhập server có sẵn. Một server chạy tại một thời điểm.", Icons.Outlined.Dns) { navigate(SubPage.ServerList) }
+        }
+        item {
+            HostAction("Sao lưu thế giới", "Tạo và khôi phục bản sao trước khi đổi mod/plugin.", Icons.Outlined.Backup) { navigate(SubPage.Backup) }
+        }
+        item {
+            Text("Giữ máy thoáng, theo dõi nhiệt độ. Android có thể dừng ứng dụng nền; không cam kết host 24/7.", style = MaterialTheme.typography.bodySmall)
+        }
     }
+    if (confirmTuning) AlertDialog(
+        onDismissRequest = { confirmTuning = false },
+        title = { Text("Áp dụng cho " + (active?.name ?: "server") + "?") },
+        text = { Text("Bật RAM tự động và thay view-distance, simulation-distance, max-players theo gợi ý ở trên. Lưu bản sao server.properties trước khi sửa.") },
+        confirmButton = { TextButton(onClick = { confirmTuning = false; vm.applyDeviceTuning() }) { Text("Áp dụng") } },
+        dismissButton = { TextButton(onClick = { confirmTuning = false }) { Text("Hủy") } }
+    )
     confirm?.let { action ->
         AlertDialog(
             onDismissRequest = { confirm = null },
@@ -173,19 +241,33 @@ private fun Metric(label: String, value: String, modifier: Modifier) {
 @Composable
 fun MineHostLibrary(navigate: (SubPage) -> Unit) {
     HostPage("Kho cài đặt", "Chọn đúng core, phiên bản Minecraft và loại add-on.") {
-        HostAction("Core Minecraft", "Paper cho plugin; Fabric cho mod. Không trộn tùy tiện hai loại.", Icons.Outlined.Dns) { navigate(SubPage.Cores) }
-        HostAction("Plugin & mod", "Tìm trên Modrinth, nhập JAR hoặc quản lý mục đã cài.", Icons.Outlined.Extension) { navigate(SubPage.Plugins) }
-        HostAction("Java + Bedrock cùng chơi", "Hướng dẫn Geyser / Floodgate cho server Paper.", Icons.Outlined.Devices) { navigate(SubPage.Crossplay) }
-        HostAction("Môi trường Java", "Cài Java phù hợp với core và phiên bản game.", Icons.Outlined.Memory) { navigate(SubPage.EnvManager) }
-        HostCard("Cài mod như thế nào?") {
-            Text("1. Tạo/chọn server Fabric, Forge, NeoForge hoặc Quilt.\n2. Dừng server, sao lưu world.\n3. Mở Plugin & mod, chọn đúng phiên bản + loader và cài JAR server.\n4. Cài thêm dependency được tác giả yêu cầu.\n5. Bật server, đọc log. Mod yêu cầu ở client phải được bạn bè cài cùng phiên bản.")
-            Text("Dependency chưa được tự động giải quyết; luôn kiểm tra trang dự án. Nếu có dependency bắt buộc, bản thử nghiệm yêu cầu tải bộ JAR tương thích từ trang dự án và nhập thủ công.", style = MaterialTheme.typography.bodySmall)
+        item {
+            HostAction("Core Minecraft", "Paper cho plugin; Fabric cho mod. Không trộn tùy tiện hai loại.", Icons.Outlined.Dns) { navigate(SubPage.Cores) }
         }
-        HostCard("OptiFine có không?") {
-            Text("OptiFine, shader và mod chỉ dành cho client không cài vào server. Cài chúng ở máy chơi Minecraft Java. Paper dùng plugin; Fabric có thể dùng mod tối ưu phía server tương thích.")
+        item {
+            HostAction("Plugin & mod", "Tìm trên Modrinth, nhập JAR hoặc quản lý mục đã cài.", Icons.Outlined.Extension) { navigate(SubPage.Plugins) }
         }
-        HostCard("Trước khi cài JAR") {
-            Text("Plugin/mod là mã thực thi, có thể đọc hoặc thay đổi dữ liệu server. Chỉ cài từ nguồn tin cậy; kiểm tra JAR không thay thế quét mã độc. Luôn sao lưu.")
+        item {
+            HostAction("Java + Bedrock cùng chơi", "Hướng dẫn Geyser / Floodgate cho server Paper.", Icons.Outlined.Devices) { navigate(SubPage.Crossplay) }
+        }
+        item {
+            HostAction("Môi trường Java", "Cài Java phù hợp với core và phiên bản game.", Icons.Outlined.Memory) { navigate(SubPage.EnvManager) }
+        }
+        item {
+            HostCard("Cài mod như thế nào?") {
+                Text("1. Tạo/chọn server Fabric, Forge, NeoForge hoặc Quilt.\n2. Dừng server, sao lưu world.\n3. Mở Plugin & mod, chọn đúng phiên bản + loader và cài JAR server.\n4. Cài thêm dependency được tác giả yêu cầu.\n5. Bật server, đọc log. Mod yêu cầu ở client phải được bạn bè cài cùng phiên bản.")
+                Text("Dependency chưa được tự động giải quyết; luôn kiểm tra trang dự án. Nếu có dependency bắt buộc, bản thử nghiệm yêu cầu tải bộ JAR tương thích từ trang dự án và nhập thủ công.", style = MaterialTheme.typography.bodySmall)
+            }
+        }
+        item {
+            HostCard("OptiFine có không?") {
+                Text("OptiFine, shader và mod chỉ dành cho client không cài vào server. Cài chúng ở máy chơi Minecraft Java. Paper dùng plugin; Fabric có thể dùng mod tối ưu phía server tương thích.")
+            }
+        }
+        item {
+            HostCard("Trước khi cài JAR") {
+                Text("Plugin/mod là mã thực thi, có thể đọc hoặc thay đổi dữ liệu server. Chỉ cài từ nguồn tin cậy; kiểm tra JAR không thay thế quét mã độc. Luôn sao lưu.")
+            }
         }
     }
 }
@@ -194,21 +276,48 @@ fun MineHostLibrary(navigate: (SubPage) -> Unit) {
 fun MineHostManage(navigate: (SubPage) -> Unit) {
     val uri = LocalUriHandler.current
     HostPage("Quản lý", "Mọi thứ của server, tập trung ở một nơi.") {
-        HostAction("Server & cấu hình", "Danh sách server, RAM, Java và core đang chọn.", Icons.Outlined.Dns) { navigate(SubPage.ServerList) }
-        HostAction("Người chơi", "Whitelist, OP, kick và ban. OP không phải quyền quản trị app.", Icons.Outlined.People) { navigate(SubPage.PlayerList) }
-        HostAction("Luật chơi", "Difficulty, gamemode, PvP và server.properties.", Icons.Outlined.Tune) { navigate(SubPage.Properties) }
-        HostAction("Thế giới", "Nhập, xuất, chọn và quản lý world.", Icons.Outlined.Public) { navigate(SubPage.WorldManage) }
-        HostAction("Sao lưu & khôi phục", "Bảo vệ world trước khi nâng cấp.", Icons.Outlined.Backup) { navigate(SubPage.Backup) }
-        HostAction("Kết nối bạn bè", "LAN, cổng và tunnel. Kiểm tra TCP/UDP theo nhu cầu.", Icons.Outlined.Lan) { navigate(SubPage.Network) }
-        HostAction("Lịch tự động", "Android có thể hạn chế tác vụ chạy nền.", Icons.Outlined.Schedule) { navigate(SubPage.Automation) }
-        HostAction("Chạy nền & pin", "Thông báo foreground, giữ Wi-Fi và tiết kiệm pin.", Icons.Outlined.BatteryChargingFull) { navigate(SubPage.KeepAlive) }
-        HostAction("Chẩn đoán", "Kiểm tra môi trường và lỗi khởi động.", Icons.Outlined.HealthAndSafety) { navigate(SubPage.Diagnostics) }
-        HostAction("Báo cáo crash", "Xem nguyên nhân và log lần chạy trước.", Icons.Outlined.BugReport) { navigate(SubPage.CrashReports) }
-        HostAction("Cài đặt nâng cao", "Một số màn hình kế thừa còn tiếng Anh/Trung.", Icons.Outlined.Settings) { navigate(SubPage.AppSettings) }
-        HostCard("MineHost • bản thử nghiệm") {
-            Text("Dựa trên Minexa (GPL-3.0-or-later), tùy biến giao diện và quy tắc an toàn. Chưa xác minh chạy Minecraft trên điện thoại của bạn.")
-            TextButton(onClick = { uri.openUri("https://github.com/duchilocket-oss/minehost-android") }) { Text("Mã nguồn & bản build trên GitHub") }
-            Text("Repo riêng tư cần đăng nhập trong trình duyệt. Không nhúng tài khoản GitHub vào APK.", style = MaterialTheme.typography.bodySmall)
+        item {
+            HostAction("Server & cấu hình", "Danh sách server, RAM, Java và core đang chọn.", Icons.Outlined.Dns) { navigate(SubPage.ServerList) }
+        }
+        item {
+            HostAction("Người chơi", "Whitelist, OP, kick và ban. OP không phải quyền quản trị app.", Icons.Outlined.People) { navigate(SubPage.PlayerList) }
+        }
+        item {
+            HostAction("Luật chơi", "Difficulty, gamemode, PvP và server.properties.", Icons.Outlined.Tune) { navigate(SubPage.Properties) }
+        }
+        item {
+            HostAction("Nhập thế giới có sẵn", "ZIP world Java", Icons.Outlined.FileUpload) { navigate(SubPage.WorldImport) }
+        }
+        item {
+            HostAction("Thế giới", "Nhập, xuất, chọn và quản lý world.", Icons.Outlined.Public) { navigate(SubPage.WorldManage) }
+        }
+        item {
+            HostAction("Sao lưu & khôi phục", "Bảo vệ world trước khi nâng cấp.", Icons.Outlined.Backup) { navigate(SubPage.Backup) }
+        }
+        item {
+            HostAction("Kết nối bạn bè", "LAN, cổng và tunnel. Kiểm tra TCP/UDP theo nhu cầu.", Icons.Outlined.Lan) { navigate(SubPage.Network) }
+        }
+        item {
+            HostAction("Lịch tự động", "Android có thể hạn chế tác vụ chạy nền.", Icons.Outlined.Schedule) { navigate(SubPage.Automation) }
+        }
+        item {
+            HostAction("Chạy nền & pin", "Thông báo foreground, giữ Wi-Fi và tiết kiệm pin.", Icons.Outlined.BatteryChargingFull) { navigate(SubPage.KeepAlive) }
+        }
+        item {
+            HostAction("Chẩn đoán", "Kiểm tra môi trường và lỗi khởi động.", Icons.Outlined.HealthAndSafety) { navigate(SubPage.Diagnostics) }
+        }
+        item {
+            HostAction("Báo cáo crash", "Xem nguyên nhân và log lần chạy trước.", Icons.Outlined.BugReport) { navigate(SubPage.CrashReports) }
+        }
+        item {
+            HostAction("Cài đặt nâng cao", "Một số màn hình kế thừa còn tiếng Anh/Trung.", Icons.Outlined.Settings) { navigate(SubPage.AppSettings) }
+        }
+        item {
+            HostCard("MineHost • bản thử nghiệm") {
+                Text("Dựa trên Minexa (GPL-3.0-or-later), tùy biến giao diện và quy tắc an toàn. Chưa xác minh chạy Minecraft trên điện thoại của bạn.")
+                TextButton(onClick = { uri.openUri("https://github.com/duchilocket-oss/minehost-android") }) { Text("Mã nguồn & bản build trên GitHub") }
+                Text("Repo riêng tư cần đăng nhập trong trình duyệt. Không nhúng tài khoản GitHub vào APK.", style = MaterialTheme.typography.bodySmall)
+            }
         }
     }
 }
@@ -217,22 +326,33 @@ fun MineHostManage(navigate: (SubPage) -> Unit) {
 fun MineHostCrossplay(onBack: () -> Unit) {
     val uri = LocalUriHandler.current
     HostPage("Java + Bedrock", "Dùng Paper + Geyser. Không phải mọi mod Java đều chơi được bằng Bedrock.") {
-        TextButton(onClick = onBack) { Text("← Quay lại") }
-        HostCard("1. Chuẩn bị server Paper") {
-            Text("Cài Paper và Java đúng yêu cầu, bật thử server, sau đó dừng và sao lưu. Chọn bản Geyser/Floodgate hỗ trợ phiên bản server; đừng mặc định bản mới nhất sẽ tương thích.")
+        item {
+            TextButton(onClick = onBack) { Text("← Quay lại") }
         }
-        HostCard("2. Tải plugin chính thức") {
-            Text("Tải Geyser-Spigot.jar và floodgate-spigot.jar chính thức. Vào Kho cài đặt → Plugin & mod → nhập JAR. Không dùng bản proxy/Fabric với Paper.")
-            TextButton(onClick = { uri.openUri("https://geysermc.org/download") }) { Text("Mở trang tải Geyser / Floodgate") }
+        item {
+            HostCard("1. Chuẩn bị server Paper") {
+                Text("Cài Paper và Java đúng yêu cầu, bật thử server, sau đó dừng và sao lưu. Chọn bản Geyser/Floodgate hỗ trợ phiên bản server; đừng mặc định bản mới nhất sẽ tương thích.")
+            }
         }
-        HostCard("3. Cấu hình và kiểm tra") {
-            Text("Bật một lần để tạo cấu hình, rồi dừng. Theo tài liệu hiện hành để đặt auth-type: floodgate ở đúng mục trong cấu hình Geyser. Giữ online-mode=true cho Java; không công khai key.pem của Floodgate.")
-            Text("Bedrock thường dùng UDP 19132. Kiểm tra cả yêu cầu TCP/UDP và NetherNet theo tài liệu hiện hành. Tunnel chỉ có TCP có thể không đủ.", style = MaterialTheme.typography.bodySmall)
-            TextButton(onClick = { uri.openUri("https://geysermc.org/wiki/geyser/setup/") }) { Text("Hướng dẫn Geyser chính thức") }
-            TextButton(onClick = { uri.openUri("https://geysermc.org/wiki/floodgate/") }) { Text("Hướng dẫn Floodgate") }
+        item {
+            HostCard("2. Tải plugin chính thức") {
+                Text("Tải Geyser-Spigot.jar và floodgate-spigot.jar chính thức. Vào Kho cài đặt → Plugin & mod → nhập JAR. Không dùng bản proxy/Fabric với Paper.")
+                TextButton(onClick = { uri.openUri("https://geysermc.org/download") }) { Text("Mở trang tải Geyser / Floodgate") }
+            }
         }
-        HostCard("4. Mời bạn bè") {
-            Text("Java dùng địa chỉ Java của server. Bedrock dùng địa chỉ/cổng Bedrock trong cấu hình. Thử cùng Wi-Fi trước, rồi thiết lập truy cập Internet. Mod cần client Java riêng không được tự động chuyển đổi.")
+        item {
+            HostCard("3. Cấu hình và kiểm tra") {
+                Text("Bật một lần để tạo cấu hình, rồi dừng. Theo tài liệu hiện hành để đặt auth-type: floodgate ở đúng mục trong cấu hình Geyser. Giữ online-mode=true cho Java; không công khai key.pem của Floodgate.")
+                Text("Bedrock thường dùng UDP 19132. Kiểm tra cả yêu cầu TCP/UDP và NetherNet theo tài liệu hiện hành. Tunnel chỉ có TCP có thể không đủ.", style = MaterialTheme.typography.bodySmall)
+                TextButton(onClick = { uri.openUri("https://geysermc.org/wiki/geyser/setup/") }) { Text("Hướng dẫn Geyser chính thức") }
+                TextButton(onClick = { uri.openUri("https://geysermc.org/wiki/floodgate/") }) { Text("Hướng dẫn Floodgate") }
+            }
+        }
+        item {
+            HostCard("4. Mời bạn bè") {
+                Text("Java dùng địa chỉ Java của server. Bedrock dùng địa chỉ/cổng Bedrock trong cấu hình. Thử cùng Wi-Fi trước, rồi thiết lập truy cập Internet. Mod cần client Java riêng không được tự động chuyển đổi.")
+            }
         }
     }
 }
+

@@ -1924,9 +1924,17 @@ class McServerController(
         if (abortIfStartCancelled(startGeneration)) return
         startupDeadlineMs = System.currentTimeMillis() + 20_000L
         processStartedAtMs = System.currentTimeMillis()
+        val effectiveHeap = if (config.autoHeap) {
+            val device = com.mineserve.mobile.data.DeviceMemory.read(McApplication.get())
+            check(device.launchHeapMb >= 768) {
+                "RAM trống quá ít để bật server an toàn. Đóng ứng dụng khác rồi thử lại."
+            }
+            termux.emitLog("[MineHost] RAM tự động: " + device.launchHeapMb + " MB; RAM hệ thống: " + device.totalMb + " MB.")
+            device.launchHeapMb
+        } else config.maxHeapMb
         termux.startMc(
             jarPath = jarPath.orEmpty(),
-            maxHeapMb = config.maxHeapMb,
+            maxHeapMb = effectiveHeap,
             dirName = dirName,
             javaVersion = finalLaunchJava,
             launchArgs = launchArgs,
@@ -2353,3 +2361,4 @@ class McServerController(
         }
     }
 }
+

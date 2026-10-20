@@ -27,8 +27,8 @@ android {
         applicationId = "vn.minehost.android"
         minSdk = 26
         targetSdk = 28
-        versionCode = 1
-        versionName = "0.1.0-alpha.1"
+        versionCode = 2
+        versionName = "0.1.0-alpha.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
@@ -55,23 +55,13 @@ android {
         }
     }
 
-    // 发布包固定用同一把密钥签名，保证新旧版本可以互相覆盖安装。
-    // 优先读仓库内的 signing/debug.keystore（CI 由 GitHub Secret KEYSTORE_BASE64 解码写回，
-    // 见 .github/workflows/build.yml 的 Restore release keystore 步骤），
-    // 本地不存在时回退到 ~/.android/debug.keystore。
-    // 注意：它是本机生成的唯一密钥（PKCS12，SHA-256 F2:29:D2:…:36），
-    // 并非 AOSP 通用调试密钥，私钥不入库。
+    // Restored on the GitHub runner. Never generate a replacement for a missing release key.
     signingConfigs {
-        getByName("debug") {
-            val repoKeystore = rootProject.file("signing/debug.keystore")
-            storeFile = if (repoKeystore.exists()) {
-                repoKeystore
-            } else {
-                file("${System.getProperty("user.home")}/.android/debug.keystore")
-            }
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
+        create("minehost") {
+            storeFile = rootProject.file("signing/minehost.p12")
+            storePassword = providers.environmentVariable("MINEHOST_STORE_PASSWORD").orNull
+            keyAlias = "minehost"
+            keyPassword = providers.environmentVariable("MINEHOST_STORE_PASSWORD").orNull
         }
     }
 
@@ -84,7 +74,8 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            // Release signing must be configured before production distribution.
+            signingConfig = signingConfigs.getByName("minehost")
+            isDebuggable = false
         }
     }
     compileOptions {
@@ -156,3 +147,4 @@ dependencies {
 
     debugImplementation(libs.androidx.ui.tooling)
 }
+

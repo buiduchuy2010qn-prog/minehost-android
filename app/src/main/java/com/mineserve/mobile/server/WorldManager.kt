@@ -3,6 +3,9 @@ package com.mineserve.mobile.server
 import com.mineserve.mobile.runtime.TermuxRuntime
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -111,14 +114,40 @@ class WorldManager(private val termux: TermuxRuntime) {
      * @return 实际使用的世界名；失败返回 null。
      */
     suspend fun importWorld(dirName: String, zip: File, preferredName: String): String? = withContext(Dispatchers.IO) {
-        try {
-            if (!zip.isFile) return@withContext null
+        AddonSafety.lifecycleGate.withLock {
+            check(!termux.isMcRunning()) { "Hãy dừng server trước khi nhập world." }
             val root = worldsRoot(dirName)
             root.mkdirs()
-            val name = Worlds.uniqueName(root, Worlds.importedWorldName(zip, preferredName))
-            if (Worlds.importWorldZip(zip, root, name)) name else null
-        } catch (e: Exception) {
-            null
+            WorldArchive.validate(zip, root.usableSpace, isBedrock(dirName))
+            val base = Worlds.importedWorldName(zip, preferredName)
+            var name = Worlds.uniqueName(root, base)
+            var number = 2
+            while (listOf(name, name + Worlds.NETHER_SUFFIX, name + Worlds.END_SUFFIX).any { File(root, it).exists() }) {
+                name = Worlds.uniqueName(root, base + "-" + number++)
+            }
+            val stage = File(root, ".minehost-world-" + java.util.UUID.randomUUID())
+            check(stage.mkdir()) { "Không tạo được thư mục tạm." }
+            val committed = mutableListOf<File>()
+            val context = currentCoroutineContext()
+            try {
+                if (!Worlds.importWorldZip(zip, stage, name,
+                        minOf(WorldArchive.MAX_EXPANDED_BYTES, root.usableSpace - WorldArchive.DISK_RESERVE_BYTES),
+                        checkCancelled = { context.ensureActive() })) {
+                    error("ZIP không hợp lệ, vượt giới hạn hoặc không giải nén được.")
+                }
+                context.ensureActive()
+                for (part in listOf(name, name + Worlds.NETHER_SUFFIX, name + Worlds.END_SUFFIX)) {
+                    val from = File(stage, part)
+                    if (!from.exists()) continue
+                    val to = File(root, part)
+                    check(!to.exists() && from.renameTo(to)) { "Không chuyển được world vào server." }
+                    committed += to
+                }
+                name
+            } catch (e: Exception) {
+                committed.forEach { it.deleteRecursively() }
+                throw e
+            } finally { stage.deleteRecursively() }
         }
     }
 
@@ -167,3 +196,4 @@ class WorldManager(private val termux: TermuxRuntime) {
         return "世界_${Worlds.sanitize(dirName)}_${Worlds.sanitize(worldName)}_$ts.zip"
     }
 }
+
