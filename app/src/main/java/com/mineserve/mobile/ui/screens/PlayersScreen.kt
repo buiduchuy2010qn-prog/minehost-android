@@ -194,8 +194,8 @@ fun PlayersScreen(
     LaunchedEffect(Unit) { vm.errorFlow.collectLatest { snackbarHostState.showInstantSnackbar(it) } }
     LaunchedEffect(Unit) { vm.messageFlow.collectLatest { snackbarHostState.showInstantSnackbar(it) } }
 
-    val isRunning = serverState.isRunning
-    val activeCore = config.installedCores.find { it.name == config.activeCoreName }
+            val isRunning = serverState.isRunning
+            val activeCore = config.installedCores.find { it.name == config.activeCoreName }
 
     Scaffold(
         snackbarHost = { SwipeableInstantSnackbarHost(snackbarHostState) },
@@ -614,15 +614,7 @@ private fun OnlinePlayerRow(
             .padding(10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier
-                .size(32.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(Mint),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(name.take(2).uppercase(), color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-        }
+        MinecraftPlayerAvatar(name = name, isOnline = true, size = 38.dp)
         Spacer(Modifier.size(10.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(name, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -735,7 +727,8 @@ private fun PersistentPlayerHistorySection(
                 "Tổng: ${summaries.size} người (🟢 $onlineCount online • ⚪ $offlineCount ngoại tuyến)",
                 color = Indigo,
                 fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f)
             )
             Text(
                 "Tích lũy: ${formatActivitySeconds(totalPlaySec)}",
@@ -846,15 +839,7 @@ private fun PersistentPlayerHistorySection(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(32.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(if (item.active) Mint else Indigo),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(item.player.take(2).uppercase(), color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                            }
+                            MinecraftPlayerAvatar(name = item.player, isOnline = item.active, size = 38.dp)
                             Spacer(Modifier.size(10.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1442,9 +1427,12 @@ private fun PlayerDetailDialog(
         onDismissRequest = onDismiss,
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.Person, contentDescription = null, tint = Indigo, modifier = Modifier.size(20.dp))
-                Spacer(Modifier.size(8.dp))
-                Text(stringResource(R.string.s720), fontWeight = FontWeight.Bold)
+                MinecraftPlayerAvatar(name = info.playerName(), isOnline = activity?.active == true, size = 34.dp)
+                Spacer(Modifier.size(10.dp))
+                Column {
+                    Text(info.playerName(), fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
+                    Text(stringResource(R.string.s720), color = Muted, fontSize = 11.sp)
+                }
             }
         },
         text = {
@@ -1586,7 +1574,103 @@ private fun PlayerDetailDialog(
     }
 }
 
-// ── 通用组件 ──────────────────────────────────────────────────────
+// ── 通用组件 & Avatar Đầu Nhân Vật Minecraft (2D/3D Skin Head + Pixel-Art Steve/Alex Fallback) ──
+
+@Composable
+fun MinecraftPlayerAvatar(
+    name: String,
+    isOnline: Boolean? = null,
+    size: androidx.compose.ui.unit.Dp = 36.dp,
+    modifier: Modifier = Modifier
+) {
+    var headBitmap by remember(name) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    LaunchedEffect(name) {
+        headBitmap = AddonIconLoader.loadPlayerHead(name)
+    }
+
+    val pixelFace = remember(name) { buildMinecraftFaceGrid(name) }
+    Box(modifier = modifier.size(size)) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color(0xFF1E293B)),
+            contentAlignment = Alignment.Center
+        ) {
+            val bmp = headBitmap
+            if (bmp != null) {
+                androidx.compose.foundation.Image(
+                    bitmap = androidx.compose.ui.graphics.asImageBitmap(bmp),
+                    contentDescription = name,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    filterQuality = androidx.compose.ui.graphics.FilterQuality.None
+                )
+            } else {
+                androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
+                    val cellW = this.size.width / 8f
+                    val cellH = this.size.height / 8f
+                    for (r in 0 until 8) {
+                        for (c in 0 until 8) {
+                            drawRect(
+                                color = Color(pixelFace[r][c]),
+                                topLeft = androidx.compose.ui.geometry.Offset(c * cellW, r * cellH),
+                                size = androidx.compose.ui.geometry.Size(cellW + 0.5f, cellH + 0.5f)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        if (isOnline != null) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .size(10.dp)
+                    .clip(RoundedCornerShape(5.dp))
+                    .background(if (isOnline) Mint else Muted)
+            )
+        }
+    }
+}
+
+private fun buildMinecraftFaceGrid(name: String): Array<IntArray> {
+    val hash = kotlin.math.abs(name.lowercase(java.util.Locale.ROOT).hashCode())
+    val hairPalette = intArrayOf(
+        0xFF3B2314.toInt(), // Steve Dark Brown
+        0xFFB45309.toInt(), // Alex Auburn Orange
+        0xFF06B6D4.toInt(), // Diamond Helmet Cyan
+        0xFF1E293B.toInt(), // Netherite Dark
+        0xFF15803D.toInt(), // Creeper Hood Green
+        0xFF7C3AED.toInt()  // Enderman Purple
+    )
+    val eyePalette = intArrayOf(
+        0xFF3B82F6.toInt(), // Steve Blue
+        0xFF16A34A.toInt(), // Alex Emerald Green
+        0xFF8B5CF6.toInt(), // Ender Violet
+        0xFFDC2626.toInt()  // Redstone Red
+    )
+    val skinPalette = intArrayOf(
+        0xFFD69E72.toInt(),
+        0xFFE5B895.toInt(),
+        0xFFC2855A.toInt()
+    )
+    val H = hairPalette[hash % hairPalette.size]
+    val E = eyePalette[(hash / 7) % eyePalette.size]
+    val S = skinPalette[(hash / 13) % skinPalette.size]
+    val W = 0xFFFFFFFF.toInt()
+    val M = 0xFF7C472F.toInt()
+    return arrayOf(
+        intArrayOf(H, H, H, H, H, H, H, H),
+        intArrayOf(H, H, H, H, H, H, H, H),
+        intArrayOf(H, S, S, S, S, S, S, H),
+        intArrayOf(S, S, S, S, S, S, S, S),
+        intArrayOf(S, W, E, S, S, E, W, S),
+        intArrayOf(S, S, S, M, M, S, S, S),
+        intArrayOf(S, S, M, M, M, M, S, S),
+        intArrayOf(S, S, S, S, S, S, S, S)
+    )
+}
 
 @Composable
 private fun PlayerListRow(
@@ -1605,15 +1689,7 @@ private fun PlayerListRow(
             .padding(10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier
-                .size(32.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(Indigo),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(name.take(2).uppercase(), color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-        }
+        MinecraftPlayerAvatar(name = name, isOnline = null, size = 36.dp)
         Spacer(Modifier.size(10.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(name, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)

@@ -230,7 +230,8 @@ private fun ViewDistanceBoosterCard(
             Text(
                 "Tầm nhìn hiển thị (view-distance):",
                 fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f)
             )
             Text(
                 "$currentView Chunk (~$blocks ô)",
@@ -267,7 +268,8 @@ private fun ViewDistanceBoosterCard(
                 Text(
                     "Khoảng cách mô phỏng (simulation-distance):",
                     fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f)
                 )
                 Text(
                     "$currentSim Chunk",

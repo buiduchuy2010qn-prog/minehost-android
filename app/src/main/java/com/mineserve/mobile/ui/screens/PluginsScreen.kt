@@ -1424,6 +1424,7 @@ private fun ModsTab(
     var installedModSearch by remember { mutableStateOf("") }
     var installedModFilter by remember { mutableStateOf(InstalledFilter.All) }
     var pendingModToggle by remember { mutableStateOf<PluginManager.ModEntry?>(null) }
+    var pendingBulkModAction by remember { mutableStateOf<String?>(null) }
     var selectedLoaders by remember { mutableStateOf(setOf<String>()) }
     var sortIndex by remember { mutableStateOf(0) }
     val sortOptions = listOf("downloads" to stringResource(R.string.s825), "relevance" to stringResource(R.string.s826), "newest" to stringResource(R.string.s827))
@@ -1479,6 +1480,116 @@ private fun ModsTab(
                 modifier = Modifier.padding(vertical = 8.dp)
             )
         } else {
+            // ── Thanh thao tác hàng loạt thông minh: Tắt toàn bộ Mod / Bật toàn bộ Mod / Chỉ bật Mod Tối ưu & Lõi ──
+            val coreLibPrefixes = remember {
+                listOf("fabric-api", "fabric-language-kotlin", "architectury", "cloth-config", "balm", "puzzleslib", "forgeconfigapiport", "collective", "craterlib")
+            }
+            val disabledCoreLibs = remember(mods) {
+                mods.filter { mod ->
+                    !mod.isEnabled && coreLibPrefixes.any { prefix ->
+                        mod.baseName.lowercase(java.util.Locale.ROOT).replace("_", "-").contains(prefix)
+                    }
+                }
+            }
+            if (enabledModsCount > 0 && disabledCoreLibs.isNotEmpty()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(CoralSoft)
+                        .padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        "🤖 Trợ lý Thông Minh phát hiện ${disabledCoreLibs.size} Thư viện Lõi đang bị tắt (${disabledCoreLibs.joinToString { it.baseName }})",
+                        color = Coral,
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                    Text(
+                        "Khi đang bật các Mod khác mà tắt Thư viện Lõi (như Fabric API, Architectury, Balm...), Server sẽ báo lỗi thiếu thư viện khi khởi động.",
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontSize = 11.sp
+                    )
+                    Button(
+                        onClick = { vm.runSmartAutoOptimization() },
+                        enabled = !serverRunning,
+                        colors = ButtonDefaults.buttonColors(containerColor = Mint),
+                        shape = McShape.ControlCompact,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("✨ Tự động bật lại Thư viện Lõi & Tối ưu ngay", color = Color.White, fontSize = 11.5.sp, fontWeight = FontWeight.ExtraBold)
+                    }
+                }
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(IndigoSoft)
+                    .padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    "⚡ Thao tác nhanh toàn bộ Mod (Có hộp thoại cảnh báo an toàn):",
+                    color = Indigo,
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Button(
+                        onClick = { pendingBulkModAction = "disable_all" },
+                        enabled = !serverRunning && enabledModsCount > 0,
+                        colors = ButtonDefaults.buttonColors(containerColor = Coral),
+                        shape = McShape.ControlCompact,
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            "🔴 Tắt toàn bộ Mod ($enabledModsCount)",
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+                    Button(
+                        onClick = { pendingBulkModAction = "enable_all" },
+                        enabled = !serverRunning && disabledModsCount > 0,
+                        colors = ButtonDefaults.buttonColors(containerColor = Mint),
+                        shape = McShape.ControlCompact,
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            "🟢 Bật toàn bộ Mod ($disabledModsCount)",
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+                }
+                OutlinedButton(
+                    onClick = { pendingBulkModAction = "optimize_only" },
+                    enabled = !serverRunning && mods.isNotEmpty(),
+                    shape = McShape.ControlCompact,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Indigo),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        "🤖 Chế độ Thông Minh: Chỉ bật Mod Tối ưu TPS/RAM & Thư viện Lõi",
+                        color = Indigo,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                }
+            }
+
             // Thanh tìm kiếm & Bộ lọc Tất cả / Đang bật / Đang tắt
             OutlinedTextField(
                 value = installedModSearch,
@@ -1644,6 +1755,81 @@ private fun ModsTab(
             },
             dismissButton = {
                 TextButton(onClick = { pendingModToggle = null }) {
+                    Text("Hủy", color = Muted)
+                }
+            }
+        )
+    }
+
+    // Hộp thoại Cảnh báo xác nhận trước khi Tắt / Bật TOÀN BỘ Mod
+    pendingBulkModAction?.let { bulkAction ->
+        AlertDialog(
+            onDismissRequest = { pendingBulkModAction = null },
+            title = {
+                Text(
+                    when (bulkAction) {
+                        "disable_all" -> "⚠️ Cảnh báo trước khi TẮT TOÀN BỘ MOD?"
+                        "enable_all" -> "🟢 Xác nhận BẬT LẠI TOÀN BỘ MOD?"
+                        else -> "🤖 Chế độ Thông Minh: Chỉ Bật Mod Tối Ưu & Lõi?"
+                    },
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        when (bulkAction) {
+                            "disable_all" ->
+                                "Bạn sắp TẮT TOÀN BỘ $enabledModsCount Mod đang bật trong thư mục mods/ (tất cả sẽ được đổi đuôi thành .jar.disabled, KHÔNG bị xóa khỏi máy).\n\n" +
+                                    "💡 Khi nào nên dùng:\n" +
+                                    "• Khi bạn muốn kiểm tra lỗi Crash hoặc muốn Server khởi động siêu nhanh như bản gốc.\n" +
+                                    "• Khi muốn cho bạn bè dùng điện thoại Minecraft PE (qua Geyser) hoặc máy không cài Mod vào chơi.\n\n" +
+                                    "⚠️ LƯU Ý QUAN TRỌNG: Nếu Map hiện tại đã đặt sẵn các khối Nội thất / Ẩm thực của Mod, hãy bấm '📦 Sao lưu Mod cho Map này' hoặc tạo Map mới trước khi mở Server không có Mod!"
+                            "enable_all" ->
+                                "Bạn sắp BẬT LẠI TOÀN BỘ ${mods.size} Mod trong thư mục mods/.\n\n" +
+                                    "• Tất cả các tệp .jar.disabled sẽ được khôi phục về .jar để nạp trong lần bật Server tiếp theo."
+                            else ->
+                                "Trợ lý Thông Minh sẽ CHỈ GIỮ LẠI các Mod Tối ưu TPS/RAM (Lithium, FerriteCore, C2ME, ModernFix, Krypton, ServerCore...) & Thư viện Lõi (Fabric API, Architectury...), đồng thời tạm tắt các Mod thêm khối 3D nặng.\n\n" +
+                                    "✨ Giúp máy yếu chạy siêu mượt 20 TPS và cho phép cả người chơi không cài Mod vào Server!"
+                        },
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val action = bulkAction
+                        pendingBulkModAction = null
+                        when (action) {
+                            "disable_all" -> vm.setAllModsEnabled(false)
+                            "enable_all" -> vm.setAllModsEnabled(true)
+                            else -> vm.enableOnlyCoreAndOptimizationMods()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = when (bulkAction) {
+                            "disable_all" -> Coral
+                            "enable_all" -> Mint
+                            else -> Indigo
+                        }
+                    )
+                ) {
+                    Text(
+                        when (bulkAction) {
+                            "disable_all" -> "🔴 Đồng ý Tắt Toàn Bộ Mod"
+                            "enable_all" -> "🟢 Đồng ý Bật Toàn Bộ Mod"
+                            else -> "⚡ Áp Dụng Chế Độ Tối Ưu"
+                        },
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingBulkModAction = null }) {
                     Text("Hủy", color = Muted)
                 }
             }
@@ -2734,7 +2920,8 @@ private fun ModPackDecoderAndTransferCard(
                             "$grpTitle (Đã cài $grpInstalledCount/${grpItems.size} mod)",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.ExtraBold,
-                            color = if (grpIsFull) Mint else Indigo
+                            color = if (grpIsFull) Mint else Indigo,
+                            modifier = Modifier.weight(1f)
                         )
                         if (selectedCategoryGroup == "ALL") {
                             if (grpIsFull) {

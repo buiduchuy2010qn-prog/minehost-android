@@ -729,6 +729,65 @@ class PluginManager(
         return@withContext if (file.renameTo(File(dir, target))) target else null
     }
 
+    /** Bật hoặc Tắt toàn bộ Mod trong thư mục mods/ cùng lúc (Trả về số lượng Mod đã đổi trạng thái) */
+    suspend fun setAllModsEnabled(dirName: String, enabled: Boolean): Int = withContext(Dispatchers.IO) {
+        val dir = modsDirOf(dirName)
+        if (!dir.exists()) return@withContext 0
+        var changedCount = 0
+        dir.listFiles()?.forEach { file ->
+            if (!file.isFile) return@forEach
+            val name = file.name
+            if (!name.endsWith(".jar", true) && !name.endsWith(".jar.disabled", true)) return@forEach
+            val (_, currentEnabled) = parseModFileName(name)
+            if (currentEnabled != enabled) {
+                val target = modToggleTarget(name, enabled)
+                if (target != name && file.renameTo(File(dir, target))) {
+                    changedCount++
+                }
+            }
+        }
+        changedCount
+    }
+
+    /** Chế độ Thông Minh: Chỉ bật các Mod Tối ưu TPS/RAM & Thư viện Lõi, tạm tắt các Mod nội dung nặng */
+    suspend fun enableOnlyCoreAndOptimizationMods(dirName: String): Pair<Int, Int> = withContext(Dispatchers.IO) {
+        val dir = modsDirOf(dirName)
+        if (!dir.exists()) return@withContext (0 to 0)
+        val safePrefixes = listOf(
+            "fabric-api", "fabric-language-kotlin", "architectury", "cloth-config", "balm",
+            "puzzleslib", "forgeconfigapiport", "collective", "craterlib", "cristellib",
+            "placeholder-api", "cardinal-components", "geckolib", "yet_another_config_lib", "yacl",
+            "lithium", "ferritecore", "c2me", "modernfix", "krypton", "servercore", "spark",
+            "noisium", "threadtweak", "vmp", "alternate-current", "clumps", "letmedespawn",
+            "neruina", "chunky", "ksyxis", "fastload", "immediatelyfast", "entityculling",
+            "ledger", "geyser", "floodgate", "viaversion", "viabackwards"
+        )
+        var enabledCount = 0
+        var disabledCount = 0
+        dir.listFiles()?.forEach { file ->
+            if (!file.isFile) return@forEach
+            val name = file.name
+            if (!name.endsWith(".jar", true) && !name.endsWith(".jar.disabled", true)) return@forEach
+            val (baseName, currentEnabled) = parseModFileName(name)
+            val norm = baseName.lowercase(java.util.Locale.ROOT).replace("_", "-")
+            val shouldEnable = safePrefixes.any { prefix ->
+                val p = prefix.lowercase(java.util.Locale.ROOT).replace("_", "-")
+                norm.startsWith(p) || norm.contains(p)
+            }
+            if (currentEnabled != shouldEnable) {
+                val target = modToggleTarget(name, shouldEnable)
+                if (target != name && file.renameTo(File(dir, target))) {
+                    if (shouldEnable) enabledCount++ else disabledCount++
+                } else {
+                    if (currentEnabled) enabledCount++ else disabledCount++
+                }
+            } else {
+                if (currentEnabled) enabledCount++ else disabledCount++
+            }
+        }
+        enabledCount to disabledCount
+    }
+
     /** 删除模组文件 */
     suspend fun deleteMod(fileName: String, dirName: String): Boolean = withContext(Dispatchers.IO) {
         val dir = modsDirOf(dirName)

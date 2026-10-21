@@ -473,7 +473,7 @@ fun ServerManagementScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("Tầm nhìn hiển thị (view-distance):", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Text("Tầm nhìn hiển thị (view-distance):", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                             Text(
                                 "$viewDistDraft Chunk (~${viewDistDraft * 16} ô)",
                                 color = Mint,
@@ -516,7 +516,7 @@ fun ServerManagementScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("Khoảng cách mô phỏng (simulation-distance):", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                Text("Khoảng cách mô phỏng (simulation-distance):", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                                 Text("$simDistDraft Chunk", color = Indigo, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                             }
                             Spacer(Modifier.height(6.dp))

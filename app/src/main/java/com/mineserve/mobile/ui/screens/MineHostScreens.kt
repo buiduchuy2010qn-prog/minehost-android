@@ -666,6 +666,96 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
             }
         }
 
+        // ── 3.5. TRỢ LÝ THÔNG MINH MINEHOST AI & TẮT/BẬT TOÀN BỘ MOD 1 CHẠM ──
+        item {
+            if (active != null) {
+                val enabledModCount = installedMods.count { it.isEnabled }
+                val disabledModCount = installedMods.count { !it.isEnabled }
+                var homeBulkModConfirm by remember { mutableStateOf<String?>(null) }
+                HostCard(
+                    title = "🤖 Trợ Lý Thông Minh MineHost & Quản Lý Mod Nhanh",
+                    artKind = MinecraftArtKind.REDSTONE,
+                    badgeText = if (installedMods.isNotEmpty()) "$enabledModCount/${installedMods.size} Mod Bật" else "Tự động tối ưu"
+                ) {
+                    Text(
+                        buildString {
+                            append("• Máy chủ: ${active.name} (${active.core.displayName} ${active.version}) • RAM cấp phát: ${config.maxHeapMb} MB\n")
+                            if (active.core.supportsMods) {
+                                append("• Trạng thái Mod: Đang bật $enabledModCount Mod • Đang tắt $disabledModCount Mod\n")
+                            }
+                            append("• Sao lưu đám mây: ${if (autoBackupOnStop) "Tự động sao lưu khi đóng SV đang BẬT" else "Chưa bật tự sao lưu khi đóng SV"}")
+                        },
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        Button(
+                            onClick = { vm.runSmartAutoOptimization() },
+                            enabled = ready && !isCleaningRam,
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("✨ Tối Ưu Thông Minh 1 Chạm", fontWeight = FontWeight.ExtraBold, fontSize = 11.5.sp)
+                        }
+                        if (active.core.supportsMods && installedMods.isNotEmpty()) {
+                            OutlinedButton(
+                                onClick = {
+                                    homeBulkModConfirm = if (enabledModCount > 0) "disable_all" else "enable_all"
+                                },
+                                enabled = !state.isRunning,
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(
+                                    if (enabledModCount > 0) "🔴 Tắt Toàn Bộ Mod ($enabledModCount)"
+                                    else "🟢 Bật Toàn Bộ Mod ($disabledModCount)",
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 11.5.sp,
+                                    color = if (enabledModCount > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    }
+                    if (homeBulkModConfirm != null) {
+                        val isDisabling = homeBulkModConfirm == "disable_all"
+                        AlertDialog(
+                            onDismissRequest = { homeBulkModConfirm = null },
+                            title = {
+                                Text(
+                                    if (isDisabling) "⚠️ Cảnh báo trước khi TẮT TOÀN BỘ MOD?"
+                                    else "🟢 Xác nhận BẬT LẠI TOÀN BỘ MOD?",
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                            },
+                            text = {
+                                Text(
+                                    if (isDisabling) {
+                                        "Bạn sắp tạm tắt toàn bộ $enabledModCount Mod của Server '${active.name}' (đổi sang .jar.disabled, không xóa tệp).\n\n" +
+                                            "⚠️ Lưu ý: Nếu Map hiện tại có các khối Nội thất / Ẩm thực của Mod, hãy sao lưu Map trước khi mở Server không có Mod!"
+                                    } else {
+                                        "Toàn bộ ${installedMods.size} Mod trong thư mục mods/ sẽ được kích hoạt trở lại cho lần bật Server tiếp theo."
+                                    }
+                                )
+                            },
+                            confirmButton = {
+                                Button(
+                                    onClick = {
+                                        val disable = isDisabling
+                                        homeBulkModConfirm = null
+                                        vm.setAllModsEnabled(!disable)
+                                    }
+                                ) {
+                                    Text(if (isDisabling) "🔴 Đồng ý Tắt All Mod" else "🟢 Đồng ý Bật All Mod", fontWeight = FontWeight.Bold)
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { homeBulkModConfirm = null }) { Text("Hủy") }
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
         // ── 4. BẢNG ĐIỀU KHIỂN NHANH 8 Ô PIXEL-ART MINECRAFT (2×4) ──
         item {
             HostCard(
@@ -1363,30 +1453,49 @@ fun MineHostLibrary(navigate: (SubPage) -> Unit) {
 @Composable
 fun MineHostManage(navigate: (SubPage) -> Unit) {
     val uri = LocalUriHandler.current
-    HostPage("Trung tâm Quản lý Server", "Quản lý đa server, thế giới, người chơi, biểu tượng 64×64 và luật chơi.") {
+    HostPage(
+        "Trung tâm Quản lý Server (Cộng Đồng Việt)",
+        "Đã phân thành 4 nhóm chức năng trực quan, dễ tìm và đầy đủ công cụ cho chủ Server Việt Nam."
+    ) {
+        // ── NHÓM 1: MÁY CHỦ, THẾ GIỚI (MAP) & GIAO DIỆN ──
+        item {
+            Surface(
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    "🖥️ 1. QUẢN LÝ MÁY CHỦ, THẾ GIỚI (MAP) & GIAO DIỆN",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                )
+            }
+        }
         item {
             HostAction(
-                "🖥️ Danh sách Server, Tạo thêm SV & Chỉnh nhanh",
-                "Chuyển đổi giữa các server, tạo thêm server mới, bật Cracked & chỉnh Tầm nhìn Chunk.",
+                "🖥️ Quản lý các Server riêng & Chỉnh nhanh",
+                "Chuyển đổi giữa các server, xem dung lượng từng SV, bật Cracked & chỉnh Tầm nhìn Chunk.",
                 Icons.Outlined.Dns,
                 artKind = MinecraftArtKind.COMMAND_BLOCK
             ) { navigate(SubPage.ServerList) }
         }
         item {
             HostAction(
-                "➕ Tạo Thêm Server Mới (Chọn Core & Phiên bản)",
-                "Tải thêm server Fabric, Paper, Forge, NeoForge ở bất kỳ phiên bản Minecraft nào.",
+                "➕ Tạo Thêm Server Mới (Có Hình Ảnh Từng Loại Core)",
+                "Chọn Fabric, Paper, NeoForge, Forge, Bedrock PE với thẻ hình ảnh & gợi ý phiên bản.",
                 Icons.Outlined.AddCircleOutline,
                 artKind = MinecraftArtKind.CREEPER
             ) { navigate(SubPage.Cores) }
         }
         item {
             HostAction(
-                "📦 Kho 56 Mod (Phân 6 Nhóm) & Quản lý Plugin",
-                "Cài đặt theo nhóm, cài lẻ từng Mod, giải mã thư mục/ZIP mod hoặc xuất gói Mod.",
-                Icons.Outlined.Extension,
-                artKind = MinecraftArtKind.CHEST
-            ) { navigate(SubPage.Plugins) }
+                "🌍 Thế giới (Map) & Xem dung lượng từng file",
+                "Kiểm tra thế giới, xem dung lượng region/playerdata, nhập ZIP Map & xuất bản sao.",
+                Icons.Outlined.Public,
+                artKind = MinecraftArtKind.GRASS
+            ) { navigate(SubPage.WorldManage) }
         }
         item {
             HostAction(
@@ -1396,81 +1505,140 @@ fun MineHostManage(navigate: (SubPage) -> Unit) {
                 artKind = MinecraftArtKind.GOLDEN_APPLE
             ) { navigate(SubPage.ServerIcon) }
         }
+
+        // ── NHÓM 2: KHO MOD, TẮT/BẬT ALL MOD & SAO LƯU GOOGLE DRIVE ──
+        item {
+            Surface(
+                color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.14f),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    "🧩 2. KHO 56 MOD, TẮT/BẬT ALL MOD & SAO LƯU DRIVE",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                )
+            }
+        }
         item {
             HostAction(
-                "👥 Người chơi & Lịch sử tham gia",
-                "Xem ai đang trực tuyến, lịch sử từng người chơi, Whitelist, OP, kick và ban.",
+                "📦 Kho 56 Mod (6 Nhóm) & Tắt / Bật Toàn Bộ Mod",
+                "Có nút Tắt toàn bộ Mod 1 chạm (kèm cảnh báo), lọc Mod tối ưu & tải từ Modrinth.",
+                Icons.Outlined.Extension,
+                artKind = MinecraftArtKind.CHEST
+            ) { navigate(SubPage.Plugins) }
+        }
+        item {
+            HostAction(
+                "☁️ Sao lưu Map + Mod & Tự động lưu Google Drive",
+                "Tự động nén Map & Mod mỗi khi đóng Server và đẩy lên Google Drive an toàn.",
+                Icons.Outlined.Backup,
+                artKind = MinecraftArtKind.CHEST
+            ) { navigate(SubPage.Backup) }
+        }
+
+        // ── NHÓM 3: CỘNG ĐỒNG NGƯỜI CHƠI (SKIN AVATAR) & CHƠI CHUNG PE ──
+        item {
+            Surface(
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    "🧑‍🎮 3. NGƯỜI CHƠI (HIỆN SKIN AVATAR), LUẬT CHƠI & PE",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                )
+            }
+        }
+        item {
+            HostAction(
+                "🧑‍🎮 Người chơi, Avatar Đầu Skin Minecraft & Lịch sử",
+                "Hiện trực tiếp mặt Skin Minecraft của từng người chơi Online, Lịch sử, OP, Whitelist & Ban.",
                 Icons.Outlined.People,
                 artKind = MinecraftArtKind.DIAMOND_SWORD
             ) { navigate(SubPage.PlayerList) }
         }
         item {
             HostAction(
-                "🌍 Thế giới (World) & Nhập Map ZIP / Thư mục",
-                "Kiểm tra thế giới, nhập từ ZIP/thư mục kèm tự động cài mod, đổi tên và xuất ZIP.",
-                Icons.Outlined.Public,
-                artKind = MinecraftArtKind.GRASS
-            ) { navigate(SubPage.WorldManage) }
+                "📱 Chế độ Chơi Chung Điện Thoại PE + Máy Tính Java",
+                "Tự động cài GeyserMC + Floodgate để bạn bè dùng Minecraft PE vào chung server.",
+                Icons.Outlined.Devices,
+                artKind = MinecraftArtKind.DIAMOND_SWORD
+            ) { navigate(SubPage.Crossplay) }
         }
         item {
             HostAction(
-                "🔮 Luật chơi & Cấu hình server.properties",
-                "Difficulty, gamemode, PvP, gamerule và toàn bộ thông số server.properties.",
+                "🔮 Luật chơi, Bật Tọa Độ, Giữ Đồ & server.properties",
+                "Chỉnh độ khó, chế độ chơi, PvP, keepInventory, showCoordinates và chống lag.",
                 Icons.Outlined.Tune,
                 artKind = MinecraftArtKind.ENDER_EYE
             ) { navigate(SubPage.Properties) }
         }
+
+        // ── NHÓM 4: KẾT NỐI MẠNG PLAYIT.GG, TỰ SỬA LỖI & HỆ THỐNG ──
         item {
-            HostAction(
-                "💾 Sao lưu & Khôi phục",
-                "Bảo vệ thế giới trước khi nâng cấp hoặc thêm mod mới.",
-                Icons.Outlined.Backup,
-                artKind = MinecraftArtKind.CHEST
-            ) { navigate(SubPage.Backup) }
+            Surface(
+                color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.14f),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    "🩺 4. MẠNG LAN / PLAYIT.GG, TỰ SỬA LỖI & HỆ THỐNG",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                )
+            }
         }
         item {
             HostAction(
-                "🌐 Kết nối bạn bè (LAN & Playit.gg)",
-                "Địa chỉ tự động cập nhật khi đổi mạng, kiểm tra kết nối thực tế.",
+                "🌐 Kết nối bạn bè (Cùng Wi-Fi LAN & Mọi Mạng Playit.gg)",
+                "Hiện cả IP tên miền lẫn IP toàn số Playit.gg (không lộ IP nhà), tự đồng bộ cổng Server.",
                 Icons.Outlined.Lan,
                 artKind = MinecraftArtKind.ENDER_EYE
             ) { navigate(SubPage.Network) }
         }
         item {
             HostAction(
-                "🩺 Chẩn đoán & Tự sửa lỗi",
-                "Kiểm tra môi trường, cổng mạng, Java và lỗi khởi động bằng tiếng Việt.",
+                "🩺 Chẩn đoán & Tự sửa lỗi bằng tiếng Việt",
+                "Kiểm tra môi trường, cổng mạng, phiên bản Java và tự động sửa lỗi khởi động.",
                 Icons.Outlined.HealthAndSafety,
                 artKind = MinecraftArtKind.REDSTONE
             ) { navigate(SubPage.Diagnostics) }
         }
         item {
             HostAction(
-                "⏰ Lịch tự động & Chạy nền",
-                "Tự động sao lưu/khởi động lại theo lịch và giữ ứng dụng chạy nền ổn định.",
-                Icons.Outlined.Schedule,
-                artKind = MinecraftArtKind.REDSTONE
-            ) { navigate(SubPage.Automation) }
-        }
-        item {
-            HostAction(
-                "🐞 Báo cáo Crash & Log lỗi",
-                "Phân tích nguyên nhân crash bằng tiếng Việt và gợi ý cách khắc phục.",
+                "🐞 Báo cáo Crash & Giải thích nguyên nhân lỗi",
+                "Phân tích nguyên nhân sập server bằng tiếng Việt dễ hiểu kèm nút sửa nhanh.",
                 Icons.Outlined.BugReport,
                 artKind = MinecraftArtKind.CREEPER
             ) { navigate(SubPage.CrashReports) }
         }
         item {
             HostAction(
-                "⚙️ Cài đặt nâng cao",
-                "Tùy chỉnh thông báo sự kiện, giao diện và hệ thống MineHost.",
+                "⏰ Lịch tự động & Giữ Server chạy nền ổn định",
+                "Tự động sao lưu/khởi động lại theo lịch và chống hệ thống Android tắt ngầm.",
+                Icons.Outlined.Schedule,
+                artKind = MinecraftArtKind.REDSTONE
+            ) { navigate(SubPage.Automation) }
+        }
+        item {
+            HostAction(
+                "⚙️ Cài đặt Giao diện (Cỡ chữ, Bảng màu dịu mắt) & Hệ thống",
+                "Tùy chỉnh cỡ chữ, bảng màu bảo vệ mắt, thông báo sự kiện và môi trường Java.",
                 Icons.Outlined.Settings,
                 artKind = MinecraftArtKind.COMMAND_BLOCK
             ) { navigate(SubPage.AppSettings) }
         }
         item {
-            HostCard("MineHost • Minecraft Server Mobile", artKind = MinecraftArtKind.CREEPER) {
-                Text("Dựa trên Minexa (GPL-3.0-or-later), nâng cấp giao diện Minecraft Pixel-Art, Việt hóa toàn diện và tích hợp Kho 56 Mod đa phiên bản.")
+            HostCard("🇻🇳 MineHost 2.1 • Bản Cộng Đồng Minecraft Việt Nam", artKind = MinecraftArtKind.CREEPER) {
+                Text("Phát triển trên nền tảng mã nguồn mở (GPL-3.0-or-later), tối ưu chuyên sâu cho cộng đồng người chơi Minecraft Việt Nam: Giao diện dịu mắt chữ to rõ, Trợ lý AI thông minh, Kho 56 Mod đa phiên bản, Sao lưu Google Drive và Avatar Skin người chơi.")
                 TextButton(onClick = { uri.openUri("https://github.com/duchilocket-oss/minehost-android") }) {
                     Text("Mã nguồn & bản build trên GitHub")
                 }

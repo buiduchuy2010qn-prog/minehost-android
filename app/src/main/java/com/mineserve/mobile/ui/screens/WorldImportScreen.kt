@@ -166,7 +166,8 @@ fun WorldImportScreen(vm: McViewModel, onBack: () -> Unit, onWorlds: () -> Unit)
                     ) {
                         Text(
                             "📱 Tệp ZIP tìm thấy trong máy (Download / Bộ nhớ):",
-                            fontWeight = FontWeight.SemiBold
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.weight(1f)
                         )
                         TextButton(onClick = {
                             hasStoragePerm = ExternalBackupStore.hasPermission(context)

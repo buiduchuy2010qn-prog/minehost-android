@@ -3194,6 +3194,76 @@ class McViewModel(
         }
     }
 
+    /** Bật hoặc Tắt toàn bộ Mod trong thư mục mods/ của Server hiện tại */
+    fun setAllModsEnabled(enabled: Boolean) {
+        if (!requireServerStopped(if (enabled) "bật toàn bộ Mod" else "tắt toàn bộ Mod")) return
+        val dirName = activeDirName() ?: return
+        viewModelScope.launch {
+            try {
+                val changed = withContext(Dispatchers.IO) { pluginManager.setAllModsEnabled(dirName, enabled) }
+                refreshMods()
+                notifyActionDone(
+                    if (enabled) "🟢 Đã bật lại toàn bộ Mod ($changed tệp được kích hoạt)!"
+                    else "⏸ Đã tắt toàn bộ Mod ($changed tệp chuyển sang .disabled an toàn)!"
+                )
+            } catch (e: Exception) {
+                _errorFlow.tryEmit("Không thể đổi trạng thái toàn bộ Mod: ${e.message}")
+            }
+        }
+    }
+
+    /** Chế độ Thông Minh: Chỉ bật các Mod Tối ưu TPS/RAM & Thư viện Lõi */
+    fun enableOnlyCoreAndOptimizationMods() {
+        if (!requireServerStopped("chuyển sang chế độ chỉ bật Mod Tối ưu & Lõi")) return
+        val dirName = activeDirName() ?: return
+        viewModelScope.launch {
+            try {
+                val (enabledCount, disabledCount) = withContext(Dispatchers.IO) {
+                    pluginManager.enableOnlyCoreAndOptimizationMods(dirName)
+                }
+                refreshMods()
+                notifyActionDone("⚡ Đã bật $enabledCount Mod Tối ưu & Thư viện Lõi (Tạm tắt $disabledCount Mod nặng)!")
+            } catch (e: Exception) {
+                _errorFlow.tryEmit("Không thể lọc Mod tối ưu: ${e.message}")
+            }
+        }
+    }
+
+    /** Trợ lý Thông Minh MineHost AI: Tự động tối ưu RAM, tự bật lại Thư viện Lõi bị tắt & dọn RAM */
+    fun runSmartAutoOptimization() {
+        viewModelScope.launch {
+            try {
+                setAutoCleanRamOnStart(true)
+                val dirName = activeDirName()
+                var reEnabledCoreLibs = 0
+                if (dirName != null && !serverState.value.isRunning) {
+                    val currentMods = _mods.value
+                    val hasEnabledContentMod = currentMods.any { it.isEnabled }
+                    if (hasEnabledContentMod) {
+                        val corePrefixes = listOf("fabric-api", "fabric-language-kotlin", "architectury", "cloth-config", "balm", "puzzleslib", "forgeconfigapiport", "collective", "craterlib")
+                        currentMods.filter { !it.isEnabled }.forEach { disabledMod ->
+                            val norm = disabledMod.baseName.lowercase(java.util.Locale.ROOT).replace("_", "-")
+                            if (corePrefixes.any { norm.startsWith(it) || norm.contains(it) }) {
+                                withContext(Dispatchers.IO) { pluginManager.toggleModEnabled(disabledMod.fileName, dirName) }
+                                reEnabledCoreLibs++
+                            }
+                        }
+                        if (reEnabledCoreLibs > 0) refreshMods()
+                    }
+                }
+                cleanRamNow()
+                val note = if (reEnabledCoreLibs > 0) {
+                    "✨ Trợ lý Thông Minh: Đã dọn RAM, bật tự động dọn RAM & tự bật lại $reEnabledCoreLibs Thư viện Lõi bị tắt!"
+                } else {
+                    "✨ Trợ lý Thông Minh: Đã dọn RAM hệ thống & tối ưu cấu hình khởi động!"
+                }
+                notifyActionDone(note)
+            } catch (e: Exception) {
+                _errorFlow.tryEmit("Lỗi tối ưu thông minh: ${e.message}")
+            }
+        }
+    }
+
     /** 删除模组 */
     fun deleteMod(fileName: String) {
         if (!requireServerStopped("xóa Mod")) return

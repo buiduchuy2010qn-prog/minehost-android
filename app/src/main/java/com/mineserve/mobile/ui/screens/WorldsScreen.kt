@@ -303,7 +303,8 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
                             " • " + world.sizeText + (if (world.sizeTruncated) "+" else ""),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = if (compatible) Indigo else Coral
+                        color = if (compatible) Indigo else Coral,
+                        modifier = Modifier.weight(1f)
                     )
                     if (world.isActive) {
                         Surface(

@@ -45,8 +45,8 @@ internal object AddonIconLoader {
                     connection = address.openConnection() as HttpURLConnection
                     connection.connectTimeout = 5000
                     connection.readTimeout = 5000
-                    connection.instanceFollowRedirects = false
-                    connection.setRequestProperty("User-Agent", "MineHost/1.5.1")
+                    connection.instanceFollowRedirects = true
+                    connection.setRequestProperty("User-Agent", "MineHost/2.1")
                     if (connection.responseCode != HttpURLConnection.HTTP_OK) return@withContext null
                     if (connection.contentLengthLong > MAX_DOWNLOAD_BYTES) return@withContext null
                     val context = coroutineContext
@@ -71,6 +71,15 @@ internal object AddonIconLoader {
             }
             bitmap
         }
+    }
+
+    suspend fun loadPlayerHead(playerName: String): Bitmap? {
+        val clean = playerName.trim().removePrefix(".").replace(Regex("[^a-zA-Z0-9_]"), "")
+        if (clean.isBlank()) return null
+        val primaryUrl = "https://mc-heads.net/avatar/$clean/64"
+        load(primaryUrl)?.let { return it }
+        val fallbackUrl = "https://minotar.net/helm/$clean/64.png"
+        return load(fallbackUrl)
     }
 
     private fun decode(bytes: ByteArray): Bitmap? {

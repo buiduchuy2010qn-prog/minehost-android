@@ -15,11 +15,15 @@ object TerminalLogTranslator {
                 return line.replace(pattern, replacement)
             }
         }
+        var current = line
+        var replacedInline = false
         for ((en, vi) in inlineMappings) {
-            if (line.contains(en, ignoreCase = true)) {
-                return line.replace(en, vi, ignoreCase = true)
+            if (current.contains(en, ignoreCase = true)) {
+                current = current.replace(en, vi, ignoreCase = true)
+                replacedInline = true
             }
         }
+        if (replacedInline) return current
         return when {
             ERROR_TAG_RE.containsMatchIn(line) ->
                 "Lỗi: $line\n  Gốc: $line"
@@ -146,6 +150,11 @@ object TerminalLogTranslator {
         "Usage:" to "Cách dùng:",
         "Permission denied" to "Không đủ quyền hạn",
         "No permission" to "Không đủ quyền hạn",
+        "[download]" to "[Tải xuống]",
+        "[installer]" to "[Trình cài đặt]",
+        "Maven 版本:" to "Danh sách phiên bản Maven:",
+        "版本:" to "Phiên bản:",
+        " 个" to " phiên bản",
         "开始下载" to "Đang bắt đầu tải",
         "保存路径:" to "Đường dẫn lưu:",
         "多线程下载:" to "Tải đa luồng tốc độ cao:",
