@@ -115,8 +115,13 @@ import kotlinx.coroutines.launch
 
 private enum class PluginTab(val labelRes: Int) { Installed(R.string.s735), Upload(R.string.s736) }
 
-/** 资源类型：插件 / 模组（按核心兼容性屏蔽） */
-private enum class ResourceType(val labelRes: Int) { Plugin(R.string.s737), Mod(R.string.s738) }
+/** 4 Phân mục Tài nguyên theo Mục 7: Plugin / Mod / Gói Mod (56 Mod gốc) / Gói Tài Nguyên */
+private enum class ResourceType(val titleVi: String) {
+    Plugin("🔌 Plugin"),
+    Mod("🧩 Mod"),
+    Modpack("📦 Gói 56 Mod"),
+    ResourcePack("🎨 Gói Tài Nguyên")
+}
 
 /** 插件资源站点（点击跳转官网） */
 private data class PluginSite(val name: String, val descRes: Int, val url: String)
@@ -278,19 +283,28 @@ fun PluginsScreen(vm: McViewModel) {
     // 按核心兼容性计算可用资源类型（不支持的分类自动屏蔽）
     val availableTypes = buildList {
         if (coreType.supportsPlugins) add(ResourceType.Plugin)
-        if (coreType.supportsMods) add(ResourceType.Mod)
+        if (coreType.supportsMods) {
+            add(ResourceType.Mod)
+            add(ResourceType.Modpack)
+        }
+        add(ResourceType.ResourcePack)
     }
-    var resourceType by remember { mutableStateOf(ResourceType.Plugin) }
+    var resourceType by remember { mutableStateOf(ResourceType.Mod) }
     // 核心切换时校正资源类型（默认取第一个可用类型）
     LaunchedEffect(coreType) {
-        resourceType = availableTypes.firstOrNull() ?: ResourceType.Plugin
+        if (resourceType !in availableTypes) {
+            resourceType = availableTypes.firstOrNull() ?: ResourceType.ResourcePack
+        }
     }
     // 进入模组分类时刷新模组列表 + 加载 Modrinth 加载器与游戏版本
     LaunchedEffect(isBootstrapped, config.activeCoreName, resourceType) {
-        if (isBootstrapped && config.activeCoreName != null && resourceType == ResourceType.Mod) {
+        if (isBootstrapped && config.activeCoreName != null && (resourceType == ResourceType.Mod || resourceType == ResourceType.Modpack)) {
             vm.refreshMods()
             vm.loadModrinthLoaders()
             vm.loadModrinthGameVersions()
+        }
+        if (isBootstrapped && config.activeCoreName != null && resourceType == ResourceType.ResourcePack) {
+            vm.loadServerProperties()
         }
     }
     // 进入插件分类时加载插件 Modrinth 资源
@@ -402,7 +416,7 @@ fun PluginsScreen(vm: McViewModel) {
                 }
             }
 
-            // ── 资源类型切换（按核心兼容性屏蔽不支持的分类） ──
+            // ── 4 Phân mục Tài nguyên: Plugin / Mod / Gói 56 Mod / Gói Tài Nguyên ──
             if (availableTypes.isEmpty()) {
                 Text(
                     stringResource(R.string.s758, coreType.displayName),
@@ -414,8 +428,8 @@ fun PluginsScreen(vm: McViewModel) {
             } else {
                 val types = availableTypes
                 SegmentedTabs(
-                    options = types.map { stringResource(it.labelRes) },
-                    selectedIndex = types.indexOf(resourceType),
+                    options = types.map { it.titleVi },
+                    selectedIndex = types.indexOf(resourceType).coerceAtLeast(0),
                     modifier = Modifier.padding(horizontal = McSpacing.Page, vertical = 4.dp),
                     onSelect = { index -> types.getOrNull(index)?.let { resourceType = it } }
                 )
@@ -423,64 +437,79 @@ fun PluginsScreen(vm: McViewModel) {
 
             // ── 标签切换栏（仅插件分类显示） ──
             if (resourceType == ResourceType.Plugin) {
-            val tabs = PluginTab.values()
-            SegmentedTabs(
-                options = tabs.map { tab ->
-                    val count = if (tab == PluginTab.Installed) installedPlugins.size else 0
-                    if (count > 0) "${stringResource(tab.labelRes)} $count" else stringResource(tab.labelRes)
-                },
-                selectedIndex = tabs.indexOf(activeTab),
-                modifier = Modifier.padding(horizontal = McSpacing.Page, vertical = 4.dp),
-                onSelect = { index -> tabs.getOrNull(index)?.let { activeTab = it } }
-            )
-            }
-
-            // ── 内容区（插件 / 模组按资源类型分流） ──
-            if (resourceType == ResourceType.Plugin) {
-            when (activeTab) {
-                PluginTab.Installed -> InstalledTab(
-                    installed = installedPlugins,
-                    conflicts = pluginConflicts,
-                    activeCoreExists = activeCore != null,
-                    serverRunning = isServerRunning,
-                    onToggle = { vm.togglePluginEnabled(it.fileName) },
-                    onDelete = { pendingDelete = it },
-                    onShowDetail = { detailPlugin = it }
-                )
-
-                PluginTab.Upload -> UploadTab(
-                    activeCoreExists = activeCore != null,
-                    customUrlProgress = vm.customUrlDownloadProgress(),
-                    onPickFile = { uri -> vm.installPluginFromUri(uri) },
-                    onInstallFromUrl = { url, name -> vm.installPluginFromUrl(url, name) },
-                    onGotoInstalled = { activeTab = PluginTab.Installed }
-                )
-            }
-            } else {
-                ModsTab(
-                    vm = vm,
-                    mods = mods,
-                    curatedMods = vm.curatedMods,
-                    activeCoreExists = activeCore != null,
-                    coreType = coreType,
-                    currentServerVersion = activeCore?.version ?: config.mcVersion,
-                    serverRunning = isServerRunning,
-                    modrinthResults = modrinthResults,
-                    modrinthLoaders = modrinthLoaders,
-                    modrinthGameVersions = modrinthGameVersions,
-                    selectedModVersion = selectedModVersion,
-                    onSetModVersion = { vm.setSelectedModVersion(it) },
-                    onToggle = { vm.toggleModEnabled(it) },
-                    onDelete = { pendingModDelete = it },
-                    onUpload = { uri -> vm.installModFromUri(uri) },
-                    onInstallCurated = { vm.installCuratedMod(it) },
-                    onSearchModrinth = { query, loaders, sort, version ->
-                        vm.searchModrinthMods(query, loaders, sort, version)
+                val tabs = PluginTab.values()
+                SegmentedTabs(
+                    options = tabs.map { tab ->
+                        val count = if (tab == PluginTab.Installed) installedPlugins.size else 0
+                        if (count > 0) "${stringResource(tab.labelRes)} $count" else stringResource(tab.labelRes)
                     },
-                    onInstallModrinth = { hit, version -> vm.installModrinthMod(hit, version) },
-                    onLoadMoreModrinth = { vm.loadMoreModrinthMods() },
-                    isLoadingMore = isLoadingMoreMods
+                    selectedIndex = tabs.indexOf(activeTab),
+                    modifier = Modifier.padding(horizontal = McSpacing.Page, vertical = 4.dp),
+                    onSelect = { index -> tabs.getOrNull(index)?.let { activeTab = it } }
                 )
+            }
+
+            // ── 内容区（Plugin / Mod / Gói 56 Mod / Gói Tài Nguyên） ──
+            when (resourceType) {
+                ResourceType.Plugin -> {
+                    when (activeTab) {
+                        PluginTab.Installed -> InstalledTab(
+                            installed = installedPlugins,
+                            conflicts = pluginConflicts,
+                            activeCoreExists = activeCore != null,
+                            serverRunning = isServerRunning,
+                            onToggle = { vm.togglePluginEnabled(it.fileName) },
+                            onDelete = { pendingDelete = it },
+                            onShowDetail = { detailPlugin = it }
+                        )
+
+                        PluginTab.Upload -> UploadTab(
+                            activeCoreExists = activeCore != null,
+                            customUrlProgress = vm.customUrlDownloadProgress(),
+                            onPickFile = { uri -> vm.installPluginFromUri(uri) },
+                            onInstallFromUrl = { url, name -> vm.installPluginFromUrl(url, name) },
+                            onGotoInstalled = { activeTab = PluginTab.Installed }
+                        )
+                    }
+                }
+                ResourceType.Mod -> {
+                    ModsTab(
+                        vm = vm,
+                        mods = mods,
+                        curatedMods = vm.curatedMods,
+                        activeCoreExists = activeCore != null,
+                        coreType = coreType,
+                        currentServerVersion = activeCore?.version ?: config.mcVersion,
+                        serverRunning = isServerRunning,
+                        modrinthResults = modrinthResults,
+                        modrinthLoaders = modrinthLoaders,
+                        modrinthGameVersions = modrinthGameVersions,
+                        selectedModVersion = selectedModVersion,
+                        onSetModVersion = { vm.setSelectedModVersion(it) },
+                        onToggle = { vm.toggleModEnabled(it) },
+                        onDelete = { pendingModDelete = it },
+                        onUpload = { uri -> vm.installModFromUri(uri) },
+                        onInstallCurated = { vm.installCuratedMod(it) },
+                        onSearchModrinth = { query, loaders, sort, version ->
+                            vm.searchModrinthMods(query, loaders, sort, version)
+                        },
+                        onInstallModrinth = { hit, version -> vm.installModrinthMod(hit, version) },
+                        onLoadMoreModrinth = { vm.loadMoreModrinthMods() },
+                        isLoadingMore = isLoadingMoreMods
+                    )
+                }
+                ResourceType.Modpack -> {
+                    ModPackDecoderAndTransferCard(
+                        vm = vm,
+                        activeCoreExists = activeCore != null,
+                        serverRunning = isServerRunning,
+                        hasInstalledMods = mods.isNotEmpty(),
+                        showFull56ListByDefault = true
+                    )
+                }
+                ResourceType.ResourcePack -> {
+                    ResourcePackConfigCard(vm = vm, activeCoreExists = activeCore != null)
+                }
             }
 
             // ── 插件页 Modrinth 资源检索（与模组页布局统一） ──
@@ -1795,15 +1824,30 @@ private fun ModPackDecoderAndTransferCard(
     vm: McViewModel,
     activeCoreExists: Boolean,
     serverRunning: Boolean,
-    hasInstalledMods: Boolean
+    hasInstalledMods: Boolean,
+    showFull56ListByDefault: Boolean = false
 ) {
     val config by vm.config.collectAsStateWithLifecycle()
+    val installedMods by vm.mods.collectAsStateWithLifecycle()
+    val all56Items = remember { vm.userScreenshot56ModItems() }
     val otherServers = remember(config.installedCores, config.activeCoreName) {
         config.installedCores.filter { it.name != config.activeCoreName }
     }
     var showServerTransferDialog by remember { mutableStateOf(false) }
     var showAutoPackConfirmDialog by remember { mutableStateOf(false) }
+    var showFull56List by remember(showFull56ListByDefault) { mutableStateOf(showFull56ListByDefault) }
     var copyConfigsToo by remember { mutableStateOf(true) }
+
+    val installedNamesLower = remember(installedMods) {
+        installedMods.filter { it.isEnabled }.map { it.baseName.lowercase(java.util.Locale.ROOT) }
+    }
+    val matched56Count = remember(installedNamesLower, all56Items) {
+        all56Items.count { item ->
+            val slugPrefix = item.slug.lowercase(java.util.Locale.ROOT)
+            val jarPrefix = item.originalJarName.substringBefore('-').substringBefore('_').lowercase(java.util.Locale.ROOT)
+            installedNamesLower.any { it.startsWith(slugPrefix) || it.startsWith(jarPrefix) || it.contains(slugPrefix) }
+        }
+    }
 
     // 1. Chọn nguyên Thư mục Full Mod (SAF OpenDocumentTree)
     val folderTreeLauncher = rememberLauncherForActivityResult(
@@ -1841,15 +1885,44 @@ private fun ModPackDecoderAndTransferCard(
         }
     }
 
-    McCard(title = "📦 Giải Mã Thư Mục Full Mod & Chuyển Mod Sang Server Mới") {
+    McCard(
+        title = "📦 Bộ Đủ 56 Mod Gốc (Từ 5 Ảnh Của Bạn) & Giải Mã Gói Mod",
+        trailing = {
+            Text(
+                "Đang có $matched56Count/${all56Items.size} mod gốc",
+                color = if (matched56Count >= all56Items.size) Mint else Indigo,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    ) {
         Text(
-            "Bạn có thư mục chứa nhiều mod (.minecraft/mods), gói nén (.zip / .mrpack) hoặc muốn chuyển toàn bộ mod sang server mới? " +
-                "Hệ thống sẽ tự động giải mã, đưa mod vào thư mục mods/, chép kèm config/ và tự động tắt (.jar.disabled) các mod chỉ dành cho máy khách (Sodium, Litematica, MaLiLib, EntityCulling, Stfu...) để server không bị sập!",
+            "Đã tích hợp chính xác 100% danh sách ĐỦ 56 MOD từ 5 ảnh chụp màn hình (.minecraft/mods Fabric 1.21.11) của bạn " +
+                "(12 bộ Macaw's, Farmer's Delight + 5 bản mở rộng, Furnish, 3D Placeable Food, Animal Garden, Tom's Mobs, Waystones, Simple Voice Chat, Lithium, FerriteCore, C2ME, ServerCore, Sodium, Litematica...).\n" +
+                "Nếu server đang báo lỗi do thiếu mod hoặc dính mod lạ từ lần cài trước, hãy bấm nút màu xanh bên dưới để tự động dọn mod lạ và cài lại đủ 56/56 mod!",
             color = Muted,
             fontSize = 11.sp,
             lineHeight = 16.sp
         )
         Spacer(Modifier.height(10.dp))
+
+        // Nút chính nổi bật: Dọn mod lạ & Cài lại ĐỦ 56 Mod gốc từ 5 ảnh của bạn
+        Button(
+            onClick = { showAutoPackConfirmDialog = true },
+            enabled = activeCoreExists && !serverRunning,
+            colors = ButtonDefaults.buttonColors(containerColor = Mint),
+            shape = McShape.Control,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                "⚡ Dọn Mod Lạ & Tải ĐỦ 56/56 Mod Gốc (Từ 5 Ảnh Của Bạn)",
+                color = Color.White,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        Spacer(Modifier.height(8.dp))
 
         // Hàng 1: Giải mã Thư mục Full Mod & Giải mã Gói ZIP/MRPACK
         Row(
@@ -1868,7 +1941,7 @@ private fun ModPackDecoderAndTransferCard(
             Button(
                 onClick = { archiveLauncher.launch(arrayOf("application/zip", "application/x-modrinth-modpack+zip", "*/*")) },
                 enabled = activeCoreExists && !serverRunning,
-                colors = ButtonDefaults.buttonColors(containerColor = Mint),
+                colors = ButtonDefaults.buttonColors(containerColor = Indigo),
                 shape = McShape.ControlCompact,
                 modifier = Modifier.weight(1f)
             ) {
@@ -1903,7 +1976,7 @@ private fun ModPackDecoderAndTransferCard(
 
         Spacer(Modifier.height(8.dp))
 
-        // Hàng 3: Xuất toàn bộ Mod ra ZIP & Tải tự động bộ 50+ Mod từ Modrinth
+        // Hàng 3: Xuất toàn bộ Mod ra ZIP & Xem danh sách 56 Mod
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -1920,12 +1993,80 @@ private fun ModPackDecoderAndTransferCard(
                 Text("📤 Xuất Full Mod ra ZIP", color = Indigo, fontSize = 11.sp)
             }
             OutlinedButton(
-                onClick = { showAutoPackConfirmDialog = true },
-                enabled = activeCoreExists && !serverRunning,
+                onClick = { showFull56List = !showFull56List },
                 shape = McShape.ControlCompact,
                 modifier = Modifier.weight(1f)
             ) {
-                Text("⚡ Tải Bộ Mod Của Bạn", color = Mint, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    if (showFull56List) "🔼 Ẩn danh sách 56 Mod" else "📋 Xem đủ 56 Mod ($matched56Count/56)",
+                    color = Mint,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+
+        if (showFull56List) {
+            Spacer(Modifier.height(10.dp))
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(FieldGray)
+                    .padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    "📋 Danh sách đối chiếu đủ 56/56 Mod từ 5 ảnh chụp màn hình của bạn:",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Indigo
+                )
+                all56Items.forEach { item ->
+                    val slugPrefix = item.slug.lowercase(java.util.Locale.ROOT)
+                    val jarPrefix = item.originalJarName.substringBefore('-').substringBefore('_').lowercase(java.util.Locale.ROOT)
+                    val isInstalled = installedNamesLower.any {
+                        it.startsWith(slugPrefix) || it.startsWith(jarPrefix) || it.contains(slugPrefix)
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(MaterialTheme.colorScheme.surface)
+                            .padding(horizontal = 8.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "#${item.index}",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Indigo,
+                            modifier = Modifier.size(width = 28.dp, height = 16.dp)
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "${item.title} (${item.category})",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                item.originalJarName,
+                                fontSize = 9.sp,
+                                color = Muted,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Text(
+                            if (isInstalled) "✅ Đã bật" else "⏳ Chưa cài",
+                            color = if (isInstalled) Mint else Coral,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
             }
         }
     }
@@ -1941,7 +2082,7 @@ private fun ModPackDecoderAndTransferCard(
                 ) {
                     if (otherServers.isEmpty()) {
                         Text(
-                            "Hiện chỉ có 1 server trong ứng dụng. Nếu bộ mod cũ của bạn nằm trong thư mục điện thoại hoặc từ launcher khác (Pojav/Zalith/FCL), hãy bấm nút '📂 Tải Thư Mục Full Mod' hoặc '⚡ Tải Bộ Mod Của Bạn' nhé!",
+                            "Hiện chỉ có 1 server trong ứng dụng. Nếu bộ mod cũ của bạn nằm trong thư mục điện thoại hoặc từ launcher khác (Pojav/Zalith/FCL), hãy bấm nút '📂 Tải Thư Mục Full Mod' hoặc '⚡ Dọn Mod Lạ & Tải ĐỦ 56/56 Mod Gốc' nhé!",
                             color = Muted,
                             fontSize = 12.sp
                         )
@@ -1984,38 +2125,57 @@ private fun ModPackDecoderAndTransferCard(
     }
 
     if (showAutoPackConfirmDialog) {
+        var cleanAllNon56 by remember { mutableStateOf(true) }
         AlertDialog(
             onDismissRequest = { showAutoPackConfirmDialog = false },
-            title = { Text("⚡ Cài Tự Động Bộ Mod Sinh Tồn & Thế Giới Mở", fontSize = 15.sp, fontWeight = FontWeight.Bold) },
+            title = { Text("⚡ Cài Đặt ĐỦ 56/56 Mod Gốc Từ 5 Ảnh Của Bạn", fontSize = 15.sp, fontWeight = FontWeight.Bold) },
             text = {
                 Column(
                     modifier = Modifier.verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        "Tính năng này sẽ tự động tải trực tiếp từ Modrinth trọn bộ 45+ Mod Server & Thư viện phụ thuộc (trong bộ mod bạn đã gửi ảnh chụp) phù hợp với phiên bản server hiện tại:",
-                        fontSize = 12.sp
+                        "Hệ thống sẽ tải trực tiếp từ Modrinth ĐỦ 56 MOD CHÍNH XÁC theo đúng 5 ảnh chụp màn hình `.minecraft/mods` (Fabric 1.21.11) của bạn:",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        "• Thư viện lõi: Fabric API, Lithium, FerriteCore, Architectury API, Cloth Config, Collective, Balm, YUNG's API, Lithostitched, GlitchCore, Forge Config API Port.\n" +
-                            "• Thế giới & Công trình: Terralith, Tectonic, Biomes O' Plenty, YUNG's Better (Dungeons, Mineshafts, Strongholds, Desert/Jungle Temples, Ocean Monuments, Nether Fortresses, End Island, Witch Huts, Bridges, Extras), Dungeons & Taverns, Towns & Towers, Structory, Tidal Towns, ChoiceTheorem's Overhauled Village, Hopo Better Ruins/Portals, Moog's End/Voyager Structures.\n" +
-                            "• Tiện ích Sinh tồn: Waystones, Explorer's Compass, Nature's Compass, Backpacked, Farmer's Delight, Tree Harvester, Carry On, VillagersPlus, Guard Villagers, Trade Cycling, Universal Graves.\n" +
-                            "• Lưu ý bảo vệ Server: Các mod thuần đồ họa/giao diện máy khách (Sodium, Litematica, MaLiLib, EntityCulling, Stfu) đã được tự động loại trừ để server không bị sập.",
+                        "• Ảnh 1 (1–13): 3D Placeable Food, Alternate Current, Animal Garden (Manatee & Mouse), AppleSkin, Architectury API, Balm, C2ME, Chef's Delight, Chunky, Cloth Config, Cooking for Blockheads, Crate Delight.\n" +
+                            "• Ảnh 2 (14–26): Debugify, Emotecraft, EntityCulling, Fabric API, Farmer's Delight Refabricated, FerriteCore, Forge Config API Port, Furnish, JamLib, Ksyxis, Litematica, Lithium, MaLiLib.\n" +
+                            "• Ảnh 3 (27–39): Trọn bộ 12 mod Macaw's (Bridges, Doors, Fences, Furniture, Holidays, Lights, Paintings, Paths, Roofs, Stairs, Trapdoors, Windows) + ModernFix-mVUS.\n" +
+                            "• Ảnh 4 (40–52): More Delight, NoisiumForked, Player Animation Lib, Polymer, Puzzles Lib, Quick Leaf Decay, RightClickHarvest, Rustic Delight, ServerCore, Sodium, Stfu, ThreadTweak, Tom's Mobs.\n" +
+                            "• Ảnh 5 (53–56): Ube's Delight, Simple Voice Chat, Waystones, YetAnotherConfigLib (YACL).",
                         fontSize = 11.sp,
                         color = Muted,
                         lineHeight = 16.sp
                     )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(FieldGray)
+                            .clickable { cleanAllNon56 = !cleanAllNon56 }
+                            .padding(8.dp)
+                    ) {
+                        Checkbox(checked = cleanAllNon56, onCheckedChange = { cleanAllNon56 = it })
+                        Text(
+                            "🧹 Dọn sạch các mod lạ không nằm trong 56 mod này (Khuyên dùng để sửa dứt điểm lỗi server)",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
                 }
             },
             confirmButton = {
                 Button(
                     onClick = {
                         showAutoPackConfirmDialog = false
-                        vm.installUserScreenshotModpackFromModrinth()
+                        vm.installUserScreenshotModpackFromModrinth(cleanOtherMods = cleanAllNon56)
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Mint)
                 ) {
-                    Text("Bắt đầu tải & cài đặt", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text("Tải & Cài Đủ 56 Mod", color = Color.White, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
@@ -2024,5 +2184,104 @@ private fun ModPackDecoderAndTransferCard(
                 }
             }
         )
+    }
+}
+
+@Composable
+private fun ResourcePackConfigCard(
+    vm: McViewModel,
+    activeCoreExists: Boolean
+) {
+    val props by vm.serverProperties.collectAsStateWithLifecycle()
+    var url by remember(props["resource-pack"]) { mutableStateOf(props["resource-pack"].orEmpty()) }
+    var sha1 by remember(props["resource-pack-sha1"]) { mutableStateOf(props["resource-pack-sha1"].orEmpty()) }
+    var prompt by remember(props["resource-pack-prompt"]) { mutableStateOf(props["resource-pack-prompt"].orEmpty()) }
+    var requirePack by remember(props["require-resource-pack"]) {
+        mutableStateOf(props["require-resource-pack"]?.equals("true", ignoreCase = true) == true)
+    }
+
+    McCard(title = "🎨 Quản Lý Gói Tài Nguyên (Resource Pack)") {
+        Text(
+            "💡 Phân biệt rõ 2 cách dùng Gói Tài Nguyên (Texture Pack / Resource Pack):\n" +
+                "1️⃣ Cài riêng trên máy người chơi: Người chơi tự chép tệp .zip vào thư mục `resourcepacks/` trong game của họ (không bắt buộc cài trên server).\n" +
+                "2️⃣ Đồng bộ tự động từ Server: Nhập đường dẫn tải trực tiếp (.zip) bên dưới để mọi người chơi khi vào server đều được tự động tải gói tài nguyên về máy!",
+            color = Muted,
+            fontSize = 11.sp,
+            lineHeight = 16.sp
+        )
+        Spacer(Modifier.height(10.dp))
+        OutlinedTextField(
+            value = url,
+            onValueChange = { url = it },
+            label = { Text("Đường dẫn tải trực tiếp Resource Pack (.zip URL)", fontSize = 11.sp) },
+            placeholder = { Text("https://example.com/resourcepack.zip", fontSize = 11.sp) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = sha1,
+            onValueChange = { sha1 = it },
+            label = { Text("Mã kiểm tra SHA-1 (Tùy chọn, giúp game xác thực tệp)", fontSize = 11.sp) },
+            placeholder = { Text("Để trống nếu chưa có mã SHA-1", fontSize = 11.sp) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = prompt,
+            onValueChange = { prompt = it },
+            label = { Text("Lời nhắn hiển thị khi mời người chơi tải gói", fontSize = 11.sp) },
+            placeholder = { Text("Hãy tải gói tài nguyên của server để hiển thị đầy đủ hình ảnh!", fontSize = 11.sp) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .background(FieldGray)
+                .clickable { requirePack = !requirePack }
+                .padding(horizontal = 10.dp, vertical = 6.dp)
+        ) {
+            Checkbox(checked = requirePack, onCheckedChange = { requirePack = it })
+            Text(
+                "Bắt buộc người chơi phải chấp nhận Gói tài nguyên mới được vào server (require-resource-pack)",
+                fontSize = 11.sp,
+                modifier = Modifier.weight(1f)
+            )
+        }
+        Spacer(Modifier.height(10.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Button(
+                onClick = { vm.applyServerResourcePack(url, sha1, prompt, requirePack) },
+                enabled = activeCoreExists,
+                colors = ButtonDefaults.buttonColors(containerColor = Mint),
+                shape = McShape.ControlCompact,
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("💾 Lưu Gói Tài Nguyên Server", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
+            if (url.isNotBlank()) {
+                OutlinedButton(
+                    onClick = {
+                        url = ""
+                        sha1 = ""
+                        prompt = ""
+                        requirePack = false
+                        vm.applyServerResourcePack("", "", "", false)
+                    },
+                    enabled = activeCoreExists,
+                    shape = McShape.ControlCompact
+                ) {
+                    Text("Xóa", color = Coral, fontSize = 11.sp)
+                }
+            }
+        }
     }
 }

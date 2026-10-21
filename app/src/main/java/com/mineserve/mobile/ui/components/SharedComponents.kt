@@ -145,6 +145,11 @@ fun HeaderBlock(
             )
             Spacer(Modifier.height(3.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
+                MinecraftPixelArtIcon(
+                    kind = remember(title) { inferCardArtKind(title) },
+                    size = 24.dp
+                )
+                Spacer(Modifier.width(10.dp))
                 Text(
                     text = title,
                     color = MaterialTheme.colorScheme.onBackground,
@@ -266,6 +271,11 @@ fun HeroBlock(
                     modifier = Modifier.weight(1f, fill = false),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    MinecraftPixelArtIcon(
+                        kind = if (state.isRunning) MinecraftArtKind.CREEPER else MinecraftArtKind.GRASS,
+                        size = 22.dp
+                    )
+                    Spacer(Modifier.size(8.dp))
                     // 状态指示点：启动中橙色，运行中亮绿，未运行半透明白
                     Box(
                         modifier = Modifier
@@ -558,6 +568,157 @@ private fun formatRefreshAgo(refreshAtMs: Long): String {
  * 这样不同页面上下滚动时卡片边缘始终在同一条竖线上，不会因为某个页面写了 14dp、
  * 另一个页面写了 20dp 而出现整体错位。
  */
+enum class MinecraftArtKind(val titleVi: String, val subtitleVi: String) {
+    GRASS("Khối Cỏ (Grass Block)", "Sinh tồn cổ điển"),
+    CREEPER("Creeper Xanh", "Biểu tượng Minecraft"),
+    COMMAND_BLOCK("Khối Lệnh (Command Block)", "Máy chủ Kỹ thuật & Lệnh"),
+    DIAMOND_SWORD("Kiếm Kim Cương", "PvP & Chiến đấu"),
+    CHEST("Rương Kho Báu", "Lưu trữ & Gói Mod"),
+    ENDER_EYE("Mắt Ender", "Khám phá & Dịch chuyển"),
+    GOLDEN_APPLE("Táo Vàng Phù Phép", "Hardcore & Thử thách"),
+    REDSTONE("Đá Đỏ (Redstone)", "Tối ưu & Tự động hóa")
+}
+
+private fun pixelGridFor(kind: MinecraftArtKind): Array<IntArray> = when (kind) {
+    MinecraftArtKind.GRASS -> arrayOf(
+        intArrayOf(0xFF22C55E.toInt(), 0xFF16A34A.toInt(), 0xFF22C55E.toInt(), 0xFF4ADE80.toInt(), 0xFF22C55E.toInt(), 0xFF16A34A.toInt(), 0xFF22C55E.toInt(), 0xFF15803D.toInt()),
+        intArrayOf(0xFF16A34A.toInt(), 0xFF4ADE80.toInt(), 0xFF16A34A.toInt(), 0xFF22C55E.toInt(), 0xFF15803D.toInt(), 0xFF22C55E.toInt(), 0xFF4ADE80.toInt(), 0xFF16A34A.toInt()),
+        intArrayOf(0xFF15803D.toInt(), 0xFF22C55E.toInt(), 0xFF854D0E.toInt(), 0xFF16A34A.toInt(), 0xFF22C55E.toInt(), 0xFF854D0E.toInt(), 0xFF16A34A.toInt(), 0xFF713F12.toInt()),
+        intArrayOf(0xFF854D0E.toInt(), 0xFF713F12.toInt(), 0xFFA16207.toInt(), 0xFF854D0E.toInt(), 0xFF713F12.toInt(), 0xFFA16207.toInt(), 0xFF854D0E.toInt(), 0xFF713F12.toInt()),
+        intArrayOf(0xFF713F12.toInt(), 0xFFA16207.toInt(), 0xFF854D0E.toInt(), 0xFF5C3409.toInt(), 0xFF854D0E.toInt(), 0xFF713F12.toInt(), 0xFFA16207.toInt(), 0xFF5C3409.toInt()),
+        intArrayOf(0xFF854D0E.toInt(), 0xFF5C3409.toInt(), 0xFF713F12.toInt(), 0xFFA16207.toInt(), 0xFF713F12.toInt(), 0xFF854D0E.toInt(), 0xFF5C3409.toInt(), 0xFF854D0E.toInt()),
+        intArrayOf(0xFF5C3409.toInt(), 0xFF854D0E.toInt(), 0xFFA16207.toInt(), 0xFF713F12.toInt(), 0xFF5C3409.toInt(), 0xFFA16207.toInt(), 0xFF713F12.toInt(), 0xFF5C3409.toInt()),
+        intArrayOf(0xFF452606.toInt(), 0xFF5C3409.toInt(), 0xFF713F12.toInt(), 0xFF452606.toInt(), 0xFF713F12.toInt(), 0xFF5C3409.toInt(), 0xFF452606.toInt(), 0xFF5C3409.toInt())
+    )
+    MinecraftArtKind.CREEPER -> arrayOf(
+        intArrayOf(0xFF22C55E.toInt(), 0xFF16A34A.toInt(), 0xFF4ADE80.toInt(), 0xFF22C55E.toInt(), 0xFF16A34A.toInt(), 0xFF22C55E.toInt(), 0xFF4ADE80.toInt(), 0xFF15803D.toInt()),
+        intArrayOf(0xFF16A34A.toInt(), 0xFF111827.toInt(), 0xFF111827.toInt(), 0xFF22C55E.toInt(), 0xFF4ADE80.toInt(), 0xFF111827.toInt(), 0xFF111827.toInt(), 0xFF22C55E.toInt()),
+        intArrayOf(0xFF4ADE80.toInt(), 0xFF111827.toInt(), 0xFF111827.toInt(), 0xFF16A34A.toInt(), 0xFF15803D.toInt(), 0xFF111827.toInt(), 0xFF111827.toInt(), 0xFF16A34A.toInt()),
+        intArrayOf(0xFF22C55E.toInt(), 0xFF16A34A.toInt(), 0xFF22C55E.toInt(), 0xFF111827.toInt(), 0xFF111827.toInt(), 0xFF22C55E.toInt(), 0xFF4ADE80.toInt(), 0xFF15803D.toInt()),
+        intArrayOf(0xFF15803D.toInt(), 0xFF4ADE80.toInt(), 0xFF111827.toInt(), 0xFF111827.toInt(), 0xFF111827.toInt(), 0xFF111827.toInt(), 0xFF16A34A.toInt(), 0xFF22C55E.toInt()),
+        intArrayOf(0xFF22C55E.toInt(), 0xFF16A34A.toInt(), 0xFF111827.toInt(), 0xFF111827.toInt(), 0xFF111827.toInt(), 0xFF111827.toInt(), 0xFF22C55E.toInt(), 0xFF16A34A.toInt()),
+        intArrayOf(0xFF16A34A.toInt(), 0xFF22C55E.toInt(), 0xFF111827.toInt(), 0xFF22C55E.toInt(), 0xFF16A34A.toInt(), 0xFF111827.toInt(), 0xFF15803D.toInt(), 0xFF4ADE80.toInt()),
+        intArrayOf(0xFF15803D.toInt(), 0xFF16A34A.toInt(), 0xFF22C55E.toInt(), 0xFF15803D.toInt(), 0xFF22C55E.toInt(), 0xFF16A34A.toInt(), 0xFF22C55E.toInt(), 0xFF15803D.toInt())
+    )
+    MinecraftArtKind.COMMAND_BLOCK -> arrayOf(
+        intArrayOf(0xFF9A5B3E.toInt(), 0xFFC27853.toInt(), 0xFFD98A63.toInt(), 0xFF9A5B3E.toInt(), 0xFF9A5B3E.toInt(), 0xFFD98A63.toInt(), 0xFFC27853.toInt(), 0xFF9A5B3E.toInt()),
+        intArrayOf(0xFFC27853.toInt(), 0xFF7C472F.toInt(), 0xFFC27853.toInt(), 0xFF475569.toInt(), 0xFF475569.toInt(), 0xFFC27853.toInt(), 0xFF7C472F.toInt(), 0xFFC27853.toInt()),
+        intArrayOf(0xFFD98A63.toInt(), 0xFFC27853.toInt(), 0xFF334155.toInt(), 0xFF38BDF8.toInt(), 0xFFFACC15.toInt(), 0xFF334155.toInt(), 0xFFC27853.toInt(), 0xFFD98A63.toInt()),
+        intArrayOf(0xFF9A5B3E.toInt(), 0xFF475569.toInt(), 0xFFFACC15.toInt(), 0xFF22C55E.toInt(), 0xFFEF4444.toInt(), 0xFF38BDF8.toInt(), 0xFF475569.toInt(), 0xFF9A5B3E.toInt()),
+        intArrayOf(0xFF9A5B3E.toInt(), 0xFF475569.toInt(), 0xFF38BDF8.toInt(), 0xFFEF4444.toInt(), 0xFF22C55E.toInt(), 0xFFFACC15.toInt(), 0xFF475569.toInt(), 0xFF9A5B3E.toInt()),
+        intArrayOf(0xFFD98A63.toInt(), 0xFFC27853.toInt(), 0xFF334155.toInt(), 0xFFFACC15.toInt(), 0xFF38BDF8.toInt(), 0xFF334155.toInt(), 0xFFC27853.toInt(), 0xFFD98A63.toInt()),
+        intArrayOf(0xFFC27853.toInt(), 0xFF7C472F.toInt(), 0xFFC27853.toInt(), 0xFF475569.toInt(), 0xFF475569.toInt(), 0xFFC27853.toInt(), 0xFF7C472F.toInt(), 0xFFC27853.toInt()),
+        intArrayOf(0xFF9A5B3E.toInt(), 0xFFC27853.toInt(), 0xFFD98A63.toInt(), 0xFF9A5B3E.toInt(), 0xFF9A5B3E.toInt(), 0xFFD98A63.toInt(), 0xFFC27853.toInt(), 0xFF9A5B3E.toInt())
+    )
+    MinecraftArtKind.DIAMOND_SWORD -> arrayOf(
+        intArrayOf(0xFF0F172A.toInt(), 0xFF0F172A.toInt(), 0xFF0F172A.toInt(), 0xFF0F172A.toInt(), 0xFF0F172A.toInt(), 0xFF06B6D4.toInt(), 0xFF67E8F9.toInt(), 0xFF22D3EE.toInt()),
+        intArrayOf(0xFF0F172A.toInt(), 0xFF0F172A.toInt(), 0xFF0F172A.toInt(), 0xFF0F172A.toInt(), 0xFF06B6D4.toInt(), 0xFF67E8F9.toInt(), 0xFF22D3EE.toInt(), 0xFF06B6D4.toInt()),
+        intArrayOf(0xFF0F172A.toInt(), 0xFF0F172A.toInt(), 0xFF0F172A.toInt(), 0xFF06B6D4.toInt(), 0xFF67E8F9.toInt(), 0xFF22D3EE.toInt(), 0xFF06B6D4.toInt(), 0xFF0F172A.toInt()),
+        intArrayOf(0xFF0F172A.toInt(), 0xFF0891B2.toInt(), 0xFF06B6D4.toInt(), 0xFF67E8F9.toInt(), 0xFF22D3EE.toInt(), 0xFF06B6D4.toInt(), 0xFF0F172A.toInt(), 0xFF0F172A.toInt()),
+        intArrayOf(0xFF0F172A.toInt(), 0xFF06B6D4.toInt(), 0xFF22D3EE.toInt(), 0xFF0891B2.toInt(), 0xFF06B6D4.toInt(), 0xFF0F172A.toInt(), 0xFF0F172A.toInt(), 0xFF0F172A.toInt()),
+        intArrayOf(0xFF0F172A.toInt(), 0xFF854D0E.toInt(), 0xFF0891B2.toInt(), 0xFF06B6D4.toInt(), 0xFF0F172A.toInt(), 0xFF0F172A.toInt(), 0xFF0F172A.toInt(), 0xFF0F172A.toInt()),
+        intArrayOf(0xFF713F12.toInt(), 0xFFA16207.toInt(), 0xFF854D0E.toInt(), 0xFF0F172A.toInt(), 0xFF0F172A.toInt(), 0xFF0F172A.toInt(), 0xFF0F172A.toInt(), 0xFF0F172A.toInt()),
+        intArrayOf(0xFF0891B2.toInt(), 0xFF713F12.toInt(), 0xFF0F172A.toInt(), 0xFF0F172A.toInt(), 0xFF0F172A.toInt(), 0xFF0F172A.toInt(), 0xFF0F172A.toInt(), 0xFF0F172A.toInt())
+    )
+    MinecraftArtKind.CHEST -> arrayOf(
+        intArrayOf(0xFF451A03.toInt(), 0xFF78350F.toInt(), 0xFF92400E.toInt(), 0xFFB45309.toInt(), 0xFFB45309.toInt(), 0xFF92400E.toInt(), 0xFF78350F.toInt(), 0xFF451A03.toInt()),
+        intArrayOf(0xFF78350F.toInt(), 0xFFB45309.toInt(), 0xFFD97706.toInt(), 0xFFD97706.toInt(), 0xFFD97706.toInt(), 0xFFD97706.toInt(), 0xFFB45309.toInt(), 0xFF78350F.toInt()),
+        intArrayOf(0xFF78350F.toInt(), 0xFF92400E.toInt(), 0xFFB45309.toInt(), 0xFFFACC15.toInt(), 0xFFFACC15.toInt(), 0xFFB45309.toInt(), 0xFF92400E.toInt(), 0xFF78350F.toInt()),
+        intArrayOf(0xFF1F2937.toInt(), 0xFF1F2937.toInt(), 0xFF1F2937.toInt(), 0xFFFDE047.toInt(), 0xFFFDE047.toInt(), 0xFF1F2937.toInt(), 0xFF1F2937.toInt(), 0xFF1F2937.toInt()),
+        intArrayOf(0xFF78350F.toInt(), 0xFFB45309.toInt(), 0xFFD97706.toInt(), 0xFFEAB308.toInt(), 0xFFEAB308.toInt(), 0xFFD97706.toInt(), 0xFFB45309.toInt(), 0xFF78350F.toInt()),
+        intArrayOf(0xFF78350F.toInt(), 0xFF92400E.toInt(), 0xFFB45309.toInt(), 0xFFD97706.toInt(), 0xFFD97706.toInt(), 0xFFB45309.toInt(), 0xFF92400E.toInt(), 0xFF78350F.toInt()),
+        intArrayOf(0xFF78350F.toInt(), 0xFF92400E.toInt(), 0xFFB45309.toInt(), 0xFFB45309.toInt(), 0xFFB45309.toInt(), 0xFFB45309.toInt(), 0xFF92400E.toInt(), 0xFF78350F.toInt()),
+        intArrayOf(0xFF451A03.toInt(), 0xFF451A03.toInt(), 0xFF78350F.toInt(), 0xFF78350F.toInt(), 0xFF78350F.toInt(), 0xFF78350F.toInt(), 0xFF451A03.toInt(), 0xFF451A03.toInt())
+    )
+    MinecraftArtKind.ENDER_EYE -> arrayOf(
+        intArrayOf(0xFF0F172A.toInt(), 0xFF064E3B.toInt(), 0xFF047857.toInt(), 0xFF10B981.toInt(), 0xFF10B981.toInt(), 0xFF047857.toInt(), 0xFF064E3B.toInt(), 0xFF0F172A.toInt()),
+        intArrayOf(0xFF064E3B.toInt(), 0xFF047857.toInt(), 0xFF10B981.toInt(), 0xFF34D399.toInt(), 0xFF34D399.toInt(), 0xFF10B981.toInt(), 0xFF047857.toInt(), 0xFF064E3B.toInt()),
+        intArrayOf(0xFF047857.toInt(), 0xFF10B981.toInt(), 0xFF6EE7B7.toInt(), 0xFF064E3B.toInt(), 0xFF064E3B.toInt(), 0xFF6EE7B7.toInt(), 0xFF10B981.toInt(), 0xFF047857.toInt()),
+        intArrayOf(0xFF10B981.toInt(), 0xFF34D399.toInt(), 0xFF84CC16.toInt(), 0xFF111827.toInt(), 0xFF111827.toInt(), 0xFF84CC16.toInt(), 0xFF34D399.toInt(), 0xFF10B981.toInt()),
+        intArrayOf(0xFF10B981.toInt(), 0xFF34D399.toInt(), 0xFF84CC16.toInt(), 0xFF111827.toInt(), 0xFF111827.toInt(), 0xFF84CC16.toInt(), 0xFF34D399.toInt(), 0xFF10B981.toInt()),
+        intArrayOf(0xFF047857.toInt(), 0xFF10B981.toInt(), 0xFF6EE7B7.toInt(), 0xFF064E3B.toInt(), 0xFF064E3B.toInt(), 0xFF6EE7B7.toInt(), 0xFF10B981.toInt(), 0xFF047857.toInt()),
+        intArrayOf(0xFF064E3B.toInt(), 0xFF047857.toInt(), 0xFF10B981.toInt(), 0xFF34D399.toInt(), 0xFF34D399.toInt(), 0xFF10B981.toInt(), 0xFF047857.toInt(), 0xFF064E3B.toInt()),
+        intArrayOf(0xFF0F172A.toInt(), 0xFF064E3B.toInt(), 0xFF047857.toInt(), 0xFF10B981.toInt(), 0xFF10B981.toInt(), 0xFF047857.toInt(), 0xFF064E3B.toInt(), 0xFF0F172A.toInt())
+    )
+    MinecraftArtKind.GOLDEN_APPLE -> arrayOf(
+        intArrayOf(0xFF1E1B4B.toInt(), 0xFF1E1B4B.toInt(), 0xFF1E1B4B.toInt(), 0xFF15803D.toInt(), 0xFF22C55E.toInt(), 0xFF1E1B4B.toInt(), 0xFF1E1B4B.toInt(), 0xFF1E1B4B.toInt()),
+        intArrayOf(0xFF1E1B4B.toInt(), 0xFF1E1B4B.toInt(), 0xFFD97706.toInt(), 0xFFFACC15.toInt(), 0xFFFACC15.toInt(), 0xFFD97706.toInt(), 0xFF1E1B4B.toInt(), 0xFF1E1B4B.toInt()),
+        intArrayOf(0xFF1E1B4B.toInt(), 0xFFD97706.toInt(), 0xFFFDE047.toInt(), 0xFFFEF08A.toInt(), 0xFFFACC15.toInt(), 0xFFEAB308.toInt(), 0xFFD97706.toInt(), 0xFF1E1B4B.toInt()),
+        intArrayOf(0xFF1E1B4B.toInt(), 0xFFD97706.toInt(), 0xFFFEF08A.toInt(), 0xFFFDE047.toInt(), 0xFFFACC15.toInt(), 0xFFEAB308.toInt(), 0xFFB45309.toInt(), 0xFF1E1B4B.toInt()),
+        intArrayOf(0xFF1E1B4B.toInt(), 0xFFD97706.toInt(), 0xFFFACC15.toInt(), 0xFFFACC15.toInt(), 0xFFEAB308.toInt(), 0xFFD97706.toInt(), 0xFFB45309.toInt(), 0xFF1E1B4B.toInt()),
+        intArrayOf(0xFF1E1B4B.toInt(), 0xFFB45309.toInt(), 0xFFEAB308.toInt(), 0xFFFACC15.toInt(), 0xFFEAB308.toInt(), 0xFFD97706.toInt(), 0xFF92400E.toInt(), 0xFF1E1B4B.toInt()),
+        intArrayOf(0xFF1E1B4B.toInt(), 0xFF1E1B4B.toInt(), 0xFFB45309.toInt(), 0xFFD97706.toInt(), 0xFFD97706.toInt(), 0xFFB45309.toInt(), 0xFF1E1B4B.toInt(), 0xFF1E1B4B.toInt()),
+        intArrayOf(0xFF1E1B4B.toInt(), 0xFF1E1B4B.toInt(), 0xFF1E1B4B.toInt(), 0xFF92400E.toInt(), 0xFF92400E.toInt(), 0xFF1E1B4B.toInt(), 0xFF1E1B4B.toInt(), 0xFF1E1B4B.toInt())
+    )
+    MinecraftArtKind.REDSTONE -> arrayOf(
+        intArrayOf(0xFF1F1215.toInt(), 0xFF450A0A.toInt(), 0xFF7F1D1D.toInt(), 0xFFDC2626.toInt(), 0xFFDC2626.toInt(), 0xFF7F1D1D.toInt(), 0xFF450A0A.toInt(), 0xFF1F1215.toInt()),
+        intArrayOf(0xFF450A0A.toInt(), 0xFF7F1D1D.toInt(), 0xFFEF4444.toInt(), 0xFFF87171.toInt(), 0xFFEF4444.toInt(), 0xFFDC2626.toInt(), 0xFF7F1D1D.toInt(), 0xFF450A0A.toInt()),
+        intArrayOf(0xFF7F1D1D.toInt(), 0xFFEF4444.toInt(), 0xFFFCA5A5.toInt(), 0xFFFECACA.toInt(), 0xFFF87171.toInt(), 0xFFEF4444.toInt(), 0xFFDC2626.toInt(), 0xFF7F1D1D.toInt()),
+        intArrayOf(0xFFDC2626.toInt(), 0xFFF87171.toInt(), 0xFFFECACA.toInt(), 0xFFFFFFFF.toInt(), 0xFFFCA5A5.toInt(), 0xFFF87171.toInt(), 0xFFEF4444.toInt(), 0xFFDC2626.toInt()),
+        intArrayOf(0xFFDC2626.toInt(), 0xFFEF4444.toInt(), 0xFFF87171.toInt(), 0xFFFCA5A5.toInt(), 0xFFEF4444.toInt(), 0xFFDC2626.toInt(), 0xFFB91C1C.toInt(), 0xFF991B1B.toInt()),
+        intArrayOf(0xFF7F1D1D.toInt(), 0xFFDC2626.toInt(), 0xFFEF4444.toInt(), 0xFFDC2626.toInt(), 0xFFB91C1C.toInt(), 0xFF991B1B.toInt(), 0xFF7F1D1D.toInt(), 0xFF450A0A.toInt()),
+        intArrayOf(0xFF450A0A.toInt(), 0xFF7F1D1D.toInt(), 0xFFB91C1C.toInt(), 0xFF991B1B.toInt(), 0xFF7F1D1D.toInt(), 0xFF450A0A.toInt(), 0xFF450A0A.toInt(), 0xFF1F1215.toInt()),
+        intArrayOf(0xFF1F1215.toInt(), 0xFF450A0A.toInt(), 0xFF450A0A.toInt(), 0xFF7F1D1D.toInt(), 0xFF450A0A.toInt(), 0xFF1F1215.toInt(), 0xFF1F1215.toInt(), 0xFF1F1215.toInt())
+    )
+}
+
+@Composable
+fun MinecraftPixelArtIcon(
+    kind: MinecraftArtKind,
+    size: androidx.compose.ui.unit.Dp = 32.dp,
+    modifier: Modifier = Modifier
+) {
+    val grid = remember(kind) { pixelGridFor(kind) }
+    androidx.compose.foundation.Canvas(
+        modifier = modifier
+            .size(size)
+            .clip(RoundedCornerShape(6.dp))
+            .border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(6.dp))
+    ) {
+        val cellW = this.size.width / 8f
+        val cellH = this.size.height / 8f
+        for (r in 0 until 8) {
+            for (c in 0 until 8) {
+                drawRect(
+                    color = Color(grid[r][c]),
+                    topLeft = androidx.compose.ui.geometry.Offset(c * cellW, r * cellH),
+                    size = androidx.compose.ui.geometry.Size(cellW + 0.5f, cellH + 0.5f)
+                )
+            }
+        }
+    }
+}
+
+fun createMinecraftPixelArtBitmap(kind: MinecraftArtKind, sizePx: Int = 64): android.graphics.Bitmap {
+    val bmp = android.graphics.Bitmap.createBitmap(sizePx, sizePx, android.graphics.Bitmap.Config.ARGB_8888)
+    val grid = pixelGridFor(kind)
+    val cell = sizePx / 8
+    for (y in 0 until sizePx) {
+        val r = (y / cell).coerceIn(0, 7)
+        for (x in 0 until sizePx) {
+            val c = (x / cell).coerceIn(0, 7)
+            bmp.setPixel(x, y, grid[r][c])
+        }
+    }
+    return bmp
+}
+
+private fun inferCardArtKind(title: String): MinecraftArtKind {
+    val lower = title.lowercase()
+    return when {
+        lower.contains("mod") || lower.contains("rương") || lower.contains("sao lưu") || lower.contains("backup") -> MinecraftArtKind.CHEST
+        lower.contains("lệnh") || lower.contains("console") || lower.contains("cấu hình") || lower.contains("core") -> MinecraftArtKind.COMMAND_BLOCK
+        lower.contains("mạng") || lower.contains("playit") || lower.contains("ip") || lower.contains("địa chỉ") -> MinecraftArtKind.ENDER_EYE
+        lower.contains("người chơi") || lower.contains("pvp") || lower.contains("op") || lower.contains("quyền") -> MinecraftArtKind.DIAMOND_SWORD
+        lower.contains("sự cố") || lower.contains("crash") || lower.contains("ram") || lower.contains("java") -> MinecraftArtKind.REDSTONE
+        lower.contains("creeper") || lower.contains("minehost") -> MinecraftArtKind.CREEPER
+        else -> MinecraftArtKind.GRASS
+    }
+}
+
+/**
+ * 通用卡片容器：Phong cách Minecraft hiện đại với viền Emerald mỏng + biểu tượng khối Pixel trực quan.
+ */
 @Composable
 fun McCard(
     title: String,
@@ -566,6 +727,7 @@ fun McCard(
     compact: Boolean = false,
     content: @Composable () -> Unit
 ) {
+    val artKind = remember(title) { inferCardArtKind(title) }
     Card(
         modifier = modifier
             .fillMaxWidth()
@@ -575,33 +737,48 @@ fun McCard(
             ),
         shape = McShape.Card,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         border = androidx.compose.foundation.BorderStroke(1.dp, Line)
     ) {
-        Column(
-            Modifier.padding(
-                if (compact) McSpacing.CardInnerCompact else McSpacing.CardInner
+        Column {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(3.dp)
+                    .background(Brush.horizontalGradient(listOf(Indigo, Mint, IndigoDark)))
             )
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            Column(
+                Modifier.padding(
+                    if (compact) McSpacing.CardInnerCompact else McSpacing.CardInner
+                )
             ) {
-                Text(
-                    title,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f, fill = false)
+                    ) {
+                        MinecraftPixelArtIcon(kind = artKind, size = 18.dp)
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            title,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                    trailing?.invoke()
+                }
+                Spacer(
+                    Modifier.height(
+                        if (compact) McSpacing.CardHeaderCompact else McSpacing.CardHeader
+                    )
                 )
-                trailing?.invoke()
+                content()
             }
-            Spacer(
-                Modifier.height(
-                    if (compact) McSpacing.CardHeaderCompact else McSpacing.CardHeader
-                )
-            )
-            content()
         }
     }
 }

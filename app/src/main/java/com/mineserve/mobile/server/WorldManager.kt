@@ -200,6 +200,177 @@ class WorldManager(private val termux: TermuxRuntime) {
             }
         }
 
+    /**
+     * Đổi tên thư mục thế giới (kèm các chiều _nether / _the_end) và tự động cập nhật level-name
+     * trong server.properties nếu thế giới đó đang được chọn. Chỉ thực hiện khi server đã dừng.
+     */
+    suspend fun renameWorld(dirName: String, oldName: String, newRawName: String): String =
+        withContext(Dispatchers.IO) {
+            AddonSafety.lifecycleGate.withLock {
+                check(!termux.isMcRunning()) { "Hãy dừng server trước khi đổi tên thế giới." }
+                val root = worldsRoot(dirName)
+                val oldSafe = Worlds.sanitize(oldName)
+                val newSafe = Worlds.sanitize(newRawName)
+                require(newSafe.isNotBlank()) { "Tên thế giới mới không hợp lệ." }
+                require(oldSafe != newSafe) { "Tên mới trùng với tên hiện tại." }
+                val srcMain = File(root, oldSafe)
+                check(srcMain.isDirectory && Worlds.isInside(srcMain, root)) { "Không tìm thấy thư mục thế giới '$oldSafe'." }
+                val suffixes = listOf("", Worlds.NETHER_SUFFIX, Worlds.END_SUFFIX)
+                for (suffix in suffixes) {
+                    val dst = File(root, newSafe + suffix)
+                    check(!dst.exists()) { "Đã tồn tại thư mục '${dst.name}'. Hãy chọn tên khác." }
+                }
+                val renamedPairs = mutableListOf<Pair<File, File>>()
+                try {
+                    for (suffix in suffixes) {
+                        val src = File(root, oldSafe + suffix)
+                        if (src.isDirectory) {
+                            val dst = File(root, newSafe + suffix)
+                            check(src.renameTo(dst)) { "Không thể đổi tên thư mục '${src.name}'." }
+                            renamedPairs += (src to dst)
+                        }
+                    }
+                    if (readLevelName(dirName) == oldSafe) {
+                        setLevelName(dirName, newSafe)
+                    }
+                    newSafe
+                } catch (e: Exception) {
+                    renamedPairs.reversed().forEach { (orig, moved) -> moved.renameTo(orig) }
+                    throw e
+                }
+            }
+        }
+
+    data class WorldHealthReport(
+        val worldName: String,
+        val kind: Worlds.Kind,
+        val isServerBedrock: Boolean,
+        val compatibleWithServer: Boolean,
+        val hasLevelDat: Boolean,
+        val hasLevelDatOld: Boolean,
+        val regionFileCount: Int,
+        val playerDataCount: Int,
+        val dimensions: List<String>,
+        val sizeText: String,
+        val isHealthy: Boolean,
+        val summaryTitle: String,
+        val details: List<String>
+    )
+
+    /**
+     * Kiểm tra tình trạng thế giới (không sửa đổi bất kỳ dữ liệu nào).
+     */
+    suspend fun inspectWorldHealth(dirName: String, worldName: String): WorldHealthReport =
+        withContext(Dispatchers.IO) {
+            val root = worldsRoot(dirName)
+            val safeName = Worlds.sanitize(worldName)
+            val worldDir = File(root, safeName)
+            val serverBedrock = isBedrock(dirName)
+            val kind = Worlds.detectKind(worldDir)
+            val compatible = (kind == Worlds.Kind.Bedrock && serverBedrock) ||
+                (kind == Worlds.Kind.Java && !serverBedrock)
+            val levelDat = File(worldDir, Worlds.LEVEL_DAT)
+            val hasLevelDat = levelDat.isFile && levelDat.length() > 0L
+            val hasLevelDatOld = File(worldDir, "level.dat_old").isFile
+
+            val netherDir = File(root, safeName + Worlds.NETHER_SUFFIX)
+            val endDir = File(root, safeName + Worlds.END_SUFFIX)
+            val dimNetherInside = File(worldDir, "DIM-1")
+            val dimEndInside = File(worldDir, "DIM1")
+
+            val dims = mutableListOf("Overworld (Thế giới chính)")
+            if (netherDir.isDirectory || dimNetherInside.isDirectory) dims += "Nether (Địa ngục)"
+            if (endDir.isDirectory || dimEndInside.isDirectory) dims += "The End"
+
+            val regionDirs = listOf(
+                File(worldDir, "region"),
+                File(dimNetherInside, "region"),
+                File(dimEndInside, "region"),
+                File(netherDir, "region"),
+                File(endDir, "region")
+            )
+            val regionCount = regionDirs.sumOf { rDir ->
+                rDir.listFiles()?.count { f ->
+                    f.isFile && (f.name.endsWith(".mca", true) || f.name.endsWith(".mcr", true)) && f.length() > 0L
+                } ?: 0
+            }
+            val playerDataCount = File(worldDir, "playerdata").listFiles()?.count {
+                it.isFile && it.name.endsWith(".dat", true)
+            } ?: 0
+
+            val allNames = root.listFiles()?.map { it.name }?.toSet().orEmpty()
+            val (sizeBytes, truncated) = Worlds.sizeOf(Worlds.includeDimensions(worldDir, allNames))
+            val sizeText = Worlds.formatSize(sizeBytes) + (if (truncated) "+" else "")
+
+            val details = mutableListOf<String>()
+            var healthy = true
+
+            if (!worldDir.isDirectory) {
+                healthy = false
+                details += "❌ Thư mục thế giới '$safeName' không tồn tại."
+            } else {
+                if (kind == Worlds.Kind.Java) {
+                    if (hasLevelDat) {
+                        details += "✅ Có tệp gốc level.dat hợp lệ (${Worlds.formatSize(levelDat.length())})."
+                    } else if (hasLevelDatOld) {
+                        healthy = false
+                        details += "⚠️ Thiếu level.dat nhưng còn bản dự phòng level.dat_old (có thể khôi phục)."
+                    } else {
+                        healthy = false
+                        details += "❌ Thiếu tệp level.dat! Thế giới có thể bị lỗi hoặc giải nén sai cấp thư mục."
+                    }
+                    if (regionCount > 0) {
+                        details += "✅ Tìm thấy $regionCount tệp vùng địa hình (.mca/.mcr) trong region/."
+                    } else {
+                        details += "⚠️ Chưa có tệp vùng .mca trong region/ (thế giới mới tạo hoặc chưa sinh chunk)."
+                    }
+                } else if (kind == Worlds.Kind.Bedrock) {
+                    val dbFiles = File(worldDir, "db").listFiles()?.size ?: 0
+                    details += "✅ Cấu trúc Bedrock (db/ gồm $dbFiles tệp dữ liệu)."
+                } else {
+                    healthy = false
+                    details += "❌ Không nhận diện được định dạng thế giới (thiếu cả level.dat, region/ và db/)."
+                }
+
+                if (!compatible) {
+                    healthy = false
+                    if (kind == Worlds.Kind.Bedrock && !serverBedrock) {
+                        details += "❌ CẢNH BÁO TƯƠNG THÍCH: Đây là thế giới Minecraft Bedrock (PE - có thư mục db/), KHÔNG chạy trực tiếp được trên Server Java (${dirName}). Hãy dùng công cụ Chunker để chuyển sang Java hoặc chọn Server PowerNukkitX."
+                    } else if (kind == Worlds.Kind.Java && serverBedrock) {
+                        details += "❌ CẢNH BÁO TƯƠNG THÍCH: Đây là thế giới Minecraft Java (level.dat + region/), KHÔNG chạy trực tiếp được trên Server Bedrock PowerNukkitX."
+                    }
+                } else {
+                    details += "✅ Tương thích chuẩn với loại Server hiện tại (${if (serverBedrock) "Bedrock" else "Java Edition"})."
+                }
+
+                details += "🌍 Các chiều không gian: ${dims.joinToString(", ")}."
+                details += "👤 Dữ liệu nhân vật đã lưu (playerdata): $playerDataCount người chơi."
+                details += "💾 Tổng dung lượng (gồm cả Nether/End): $sizeText."
+            }
+
+            val summaryTitle = if (healthy) {
+                "✅ Thế giới '$safeName' hoàn toàn khỏe mạnh & sẵn sàng chạy!"
+            } else {
+                "⚠️ Phát hiện vấn đề cần chú ý với thế giới '$safeName'"
+            }
+
+            WorldHealthReport(
+                worldName = safeName,
+                kind = kind,
+                isServerBedrock = serverBedrock,
+                compatibleWithServer = compatible,
+                hasLevelDat = hasLevelDat,
+                hasLevelDatOld = hasLevelDatOld,
+                regionFileCount = regionCount,
+                playerDataCount = playerDataCount,
+                dimensions = dims,
+                sizeText = sizeText,
+                isHealthy = healthy,
+                summaryTitle = summaryTitle,
+                details = details
+            )
+        }
+
     private fun exportFileName(dirName: String, worldName: String): String {
         val ts = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
         return "世界_${Worlds.sanitize(dirName)}_${Worlds.sanitize(worldName)}_$ts.zip"

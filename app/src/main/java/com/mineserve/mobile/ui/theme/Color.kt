@@ -16,35 +16,31 @@ val LightMuted = Color(0xFF6B7385)
 // 加深后卡片边界更清晰，同时仍然足够轻，不会显得厚重。
 val LightLine = Color(0xFFE4E7EE)
 
-val Indigo = Color(0xFF146C43)
-val IndigoDark = Color(0xFF0D4D30)
-val LightIndigoSoft = Color(0xFFE1F3E8)
+val Indigo = Color(0xFF14B86A)
+val IndigoDark = Color(0xFF0C5934)
+val LightIndigoSoft = Color(0xFFDDF7EA)
 
-val Mint = Color(0xFF2FBF87)
-val LightMintSoft = Color(0xFFE7F8F0)
-val MintBright = Color(0xFF8CF0C4)
+val Mint = Color(0xFF22C55E)
+val LightMintSoft = Color(0xFFE3F9EC)
+val MintBright = Color(0xFF86EFAC)
 
-val Coral = Color(0xFFF97066)
-val LightCoralSoft = Color(0xFFFDEEEC)
+val Coral = Color(0xFFEF4444)
+val LightCoralSoft = Color(0xFFFEE2E2)
 
-val LightFieldGray = Color(0xFFF0F1F5)
+val LightFieldGray = Color(0xFFEEF2F6)
 
-// ── 深色设计令牌 ─────────────────────────────────────────────────
-val DarkBg = Color(0xFF10131A)
-val DarkCard = Color(0xFF1A1F2B)
-val DarkInk = Color(0xFFE6E9F2)
-val DarkMuted = Color(0xFF9AA3B5)
-val DarkLine = Color(0xFF2A3140)
-val DarkIndigoSoft = Color(0xFF174D35)
-val DarkMintSoft = Color(0xFF17382C)
-val DarkCoralSoft = Color(0xFF3D2424)
-val DarkFieldGray = Color(0xFF232936)
+// ── Bảng màu Minecraft Dark Charcoal & Emerald Green (Mục 4.2) ──
+val DarkBg = Color(0xFF0D1318)
+val DarkCard = Color(0xFF151F2A)
+val DarkInk = Color(0xFFF3F6F8)
+val DarkMuted = Color(0xFFA8B6C6)
+val DarkLine = Color(0xFF243447)
+val DarkIndigoSoft = Color(0xFF123D2B)
+val DarkMintSoft = Color(0xFF143829)
+val DarkCoralSoft = Color(0xFF3E1F23)
+val DarkFieldGray = Color(0xFF1C2938)
 
 // ── 容器色阶 ──────────────────────────────────────────────────────
-// Material3 的弹窗、下拉菜单、Chip 等组件默认取 surfaceContainer* 系列色，
-// 若不在 colorScheme 里显式覆盖，它们会落到 M3 内置的淡紫灰（#ECE6F0 一类），
-// 与项目的中性灰蓝体系明显不是一套配色。这里把整条容器色阶显式定义出来，
-// 让所有走默认值的组件自动落在同一套配色上，不必逐个调用点去改。
 val LightContainerLowest = Color(0xFFFFFFFF)
 val LightContainerLow = Color(0xFFFAFBFC)
 val LightContainer = Color(0xFFF7F8FA)
@@ -53,13 +49,13 @@ val LightContainerHighest = Color(0xFFF0F1F5)
 val LightSurfaceDim = Color(0xFFE9EBF1)
 val LightSurfaceBright = Color(0xFFFFFFFF)
 
-val DarkContainerLowest = Color(0xFF0B0E14)
-val DarkContainerLow = Color(0xFF161B25)
-val DarkContainer = Color(0xFF1A1F2B)
-val DarkContainerHigh = Color(0xFF20262F)
-val DarkContainerHighest = Color(0xFF262C38)
-val DarkSurfaceDim = Color(0xFF10131A)
-val DarkSurfaceBright = Color(0xFF343B49)
+val DarkContainerLowest = Color(0xFF090E12)
+val DarkContainerLow = Color(0xFF111922)
+val DarkContainer = Color(0xFF151F2A)
+val DarkContainerHigh = Color(0xFF1C2938)
+val DarkContainerHighest = Color(0xFF243447)
+val DarkSurfaceDim = Color(0xFF0D1318)
+val DarkSurfaceBright = Color(0xFF2C3E55)
 
 // Theme tokens come from MaterialTheme, so previews and explicit theme overrides
 // remain consistent instead of silently reading the system theme again.

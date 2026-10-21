@@ -755,6 +755,43 @@ class PluginManager(
         result
     }
 
+    /**
+     * Cài đặt tệp Mod thuộc Gói 56 Mod từ URL vào thư mục `mods/` ở trạng thái BẬT (`.jar`),
+     * cho phép cả các mod hỗ trợ song song/client trong bộ 56 mod của người dùng (Fabric Loader trên server
+     * tự động bỏ qua entrypoint client mà không gây lỗi, đảm bảo đủ 56/56 mod trong thư mục `mods/`).
+     */
+    suspend fun installModPackJarFromUrl(
+        url: String,
+        targetFileName: String,
+        dirName: String,
+        onProgress: (Long, Long, Long) -> Unit = { _, _, _ -> }
+    ): File = withContext(Dispatchers.IO) {
+        check(!termux.isMcRunning()) { "Hãy dừng server trước khi cài gói mod." }
+        val dir = modsDirOf(dirName).apply { mkdirs() }
+        val cleanJarName = ensureJarExtension(sanitizeFileName(targetFileName, "mod.jar"))
+        val target = File(dir, cleanJarName)
+        val staged = File.createTempFile("minehost-packmod-", ".part", dir)
+        try {
+            downloadTo(url, staged) { downloaded, total, speed ->
+                require(downloaded <= AddonSafety.MAX_BYTES && total <= AddonSafety.MAX_BYTES) { "JAR vượt giới hạn 256 MB." }
+                onProgress(downloaded, total, speed)
+            }
+            require(isLikelyModJar(staged)) { "Tệp tải về không phải JAR mod hợp lệ: $cleanJarName" }
+            val (baseName, _) = parseModFileName(cleanJarName)
+            File(dir, "$baseName$MOD_DISABLED_SUFFIX").takeIf { it.exists() }?.delete()
+            java.nio.file.Files.move(
+                staged.toPath(),
+                target.toPath(),
+                java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING
+            )
+            metaCache.remove(target.absolutePath)
+            target
+        } finally {
+            staged.delete()
+        }
+    }
+
     /** 从本地 Uri 上传模组到 mods/ 目录 */
     suspend fun installModFromUri(uri: Uri, dirName: String, fallbackName: String = "mod.jar"): String =
         withContext(Dispatchers.IO) {
@@ -943,7 +980,11 @@ class PluginManager(
                 skipped += cleanName
                 return
             }
-            val clientOnly = isClientOnlyModJar(staged, "$baseName.jar")
+            val lowerBase = baseName.lowercase(Locale.ROOT)
+            val isPartOfUser56Pack = USER_SCREENSHOT_56_JAR_PREFIXES.any { prefix ->
+                lowerBase.startsWith(prefix)
+            }
+            val clientOnly = if (isPartOfUser56Pack) false else isClientOnlyModJar(staged, "$baseName.jar")
             val finalFileName = if (clientOnly || wasExplicitlyDisabled) {
                 "$baseName$MOD_DISABLED_SUFFIX"
             } else {
@@ -1392,66 +1433,147 @@ class PluginManager(
         exportedCount
     }
 
-    /**
-     * Danh sách các Mod Server/Universal trong bộ Mod của người dùng (từ 5 ảnh chụp màn hình `.minecraft/mods`)
-     * kèm các thư viện phụ thuộc (Fabric API, Architectury, Cloth Config, Collective, Balm, YUNG's API, Lithostitched, GlitchCore...).
-     * Các mod thuần Client (Sodium, Litematica, MaLiLib, EntityCulling, Stfu) đã được lọc bỏ sẵn để server chạy mượt mà.
-     */
-    val USER_SCREENSHOT_SERVER_MOD_SLUGS = listOf(
-        "fabric-api",
-        "lithium",
-        "ferrite-core",
-        "architectury-api",
-        "cloth-config",
-        "collective",
-        "balm",
-        "yungs-api",
-        "lithostitched",
-        "glitchcore",
-        "forge-config-api-port",
-        "terralith",
-        "tectonic",
-        "biomes-o-plenty",
-        "waystones",
-        "explorers-compass",
-        "natures-compass",
-        "backpacked",
-        "farmers-delight-refabricated",
-        "tree-harvester",
-        "carry-on",
-        "dungeons-and-taverns",
-        "towns-and-towers",
-        "structory",
-        "tidal-towns",
-        "ct-overhauled-village",
-        "villagersplus",
-        "guard-villagers",
-        "trade-cycling",
-        "universal-graves",
-        "yungs-better-dungeons",
-        "yungs-better-mineshafts",
-        "yungs-better-strongholds",
-        "yungs-better-desert-temples",
-        "yungs-better-jungle-temples",
-        "yungs-better-ocean-monuments",
-        "yungs-better-nether-fortresses",
-        "yungs-better-end-island",
-        "yungs-better-witch-huts",
-        "yungs-bridges",
-        "yungs-extras",
-        "hopo-better-ruined-portals",
-        "hopo-better-underwater-ruins",
-        "mes-moogs-end-structures",
-        "mvs-moogs-voyager-structures"
+    data class UserScreenshotModItem(
+        val index: Int,
+        val slug: String,
+        val title: String,
+        val originalJarName: String,
+        val category: String
     )
+
+    /**
+     * Danh sách ĐỦ 56 MOD CHÍNH XÁC 100% từ 5 ảnh chụp màn hình `.minecraft/mods` (Fabric 1.21.11) của người dùng:
+     * - Ảnh 1 (1..13): 3d-placeable-food -> cratedelight
+     * - Ảnh 2 (14..26): debugify -> malilib
+     * - Ảnh 3 (27..39): mcw-bridges -> modernfix
+     * - Ảnh 4 (40..52): moredelight -> toms_mobs
+     * - Ảnh 5 (53..56): ubesdelight -> yet_another_config_lib_v3
+     */
+    val USER_SCREENSHOT_56_MOD_ITEMS: List<UserScreenshotModItem> = listOf(
+        UserScreenshotModItem(1, "3d-placeable-food", "3D Placeable Food", "3d-placeable-food-3.0.1-fabric-1.21.11.jar", "Ẩm thực & Trang trí"),
+        UserScreenshotModItem(2, "alternate-current", "Alternate Current", "alternate-current-mc1.21.11-1.9.0.jar", "Tối ưu Server"),
+        UserScreenshotModItem(3, "animal-garden-manatee", "Animal Garden - Manatee", "animalgarden_manatee-1.0.0-fabric-1.21.11-0.140.0.jar", "Sinh vật mới"),
+        UserScreenshotModItem(4, "animal-garden-mouse", "Animal Garden - Mouse", "animalgarden_mouse-1.0.5-fabric-1.21.11-0.140.0.jar", "Sinh vật mới"),
+        UserScreenshotModItem(5, "appleskin", "AppleSkin", "appleskin-fabric-mc1.21.11-3.0.8.jar", "Tiện ích Sinh tồn"),
+        UserScreenshotModItem(6, "architectury-api", "Architectury API", "architectury-19.0.1-fabric.jar", "Thư viện nền"),
+        UserScreenshotModItem(7, "balm", "Balm", "balm-fabric-1.21.11-21.11.9.jar", "Thư viện nền"),
+        UserScreenshotModItem(8, "c2me-fabric", "C2ME (Fabric)", "c2me-fabric-mc1.21.11-0.3.7+alpha.0.10.jar", "Tối ưu Đa luồng Chunk"),
+        UserScreenshotModItem(9, "chefs-delight", "Chef's Delight", "chefs-delight-1.0.5-fabric-1.21.11.jar", "Ẩm thực & Dân làng"),
+        UserScreenshotModItem(10, "chunky", "Chunky", "Chunky-Fabric-1.4.55.jar", "Tối ưu & Tạo sẵn Chunk"),
+        UserScreenshotModItem(11, "cloth-config", "Cloth Config API", "cloth-config-21.11.153-fabric.jar", "Thư viện nền"),
+        UserScreenshotModItem(12, "cooking-for-blockheads", "Cooking for Blockheads", "cookingforblockheads-fabric-1.21.11-21.11.6.jar", "Ẩm thực & Nhà bếp"),
+        UserScreenshotModItem(13, "crate-delight", "Crate Delight", "cratedelight-25.09.22-1.21.7-fabric.jar", "Ẩm thực & Lưu trữ"),
+        UserScreenshotModItem(14, "debugify", "Debugify", "debugify-1.21.11+1.1.jar", "Sửa lỗi Vanilla"),
+        UserScreenshotModItem(15, "emotecraft", "Emotecraft", "emotecraft-fabric-for-MC1.21.11-3.2.0-b.build.149.jar", "Biểu cảm nhân vật"),
+        UserScreenshotModItem(16, "entityculling", "Entity Culling", "entityculling-fabric-1.10.2-mc1.21.11.jar", "Tối ưu Thực thể"),
+        UserScreenshotModItem(17, "fabric-api", "Fabric API", "fabric-api-0.141.4+1.21.11.jar", "Thư viện nền"),
+        UserScreenshotModItem(18, "farmers-delight-refabricated", "Farmer's Delight Refabricated", "FarmersDelight-1.21.11-3.4.9+refabricated.jar", "Ẩm thực & Nông trại"),
+        UserScreenshotModItem(19, "ferrite-core", "FerriteCore", "ferritecore-8.2.0-fabric.jar", "Giảm RAM Server"),
+        UserScreenshotModItem(20, "forge-config-api-port", "Forge Config API Port", "ForgeConfigAPIPort-v21.11.1-mc1.21.11-Fabric.jar", "Thư viện nền"),
+        UserScreenshotModItem(21, "furnish-furniture", "Furnish", "furnish-31.jar", "Nội thất & Trang trí"),
+        UserScreenshotModItem(22, "jamlib", "JamLib", "jamlib-fabric-2.0.0+1.21.11.jar", "Thư viện nền"),
+        UserScreenshotModItem(23, "ksyxis", "Ksyxis", "Ksyxis-1.4.3.jar", "Tăng tốc tải World"),
+        UserScreenshotModItem(24, "litematica", "Litematica", "litematica-fabric-1.21.11-0.26.8.jar", "Sơ đồ Xây dựng"),
+        UserScreenshotModItem(25, "lithium", "Lithium", "lithium-fabric-0.21.4+mc1.21.11.jar", "Tối ưu Tick Server"),
+        UserScreenshotModItem(26, "malilib", "MaLiLib", "malilib-fabric-1.21.11-0.27.7.jar", "Thư viện nền"),
+        UserScreenshotModItem(27, "macaws-bridges", "Macaw's Bridges", "mcw-bridges-3.1.2-mc1.21.11fabric.jar", "Kiến trúc Macaw's"),
+        UserScreenshotModItem(28, "macaws-doors", "Macaw's Doors", "mcw-doors-1.1.5-mc1.21.11fabric.jar", "Kiến trúc Macaw's"),
+        UserScreenshotModItem(29, "macaws-fences-and-walls", "Macaw's Fences and Walls", "mcw-fences-1.2.1-mc1.21.11fabric.jar", "Kiến trúc Macaw's"),
+        UserScreenshotModItem(30, "macaws-furniture", "Macaw's Furniture", "mcw-furniture-3.4.2-mc1.21.11fabric.jar", "Kiến trúc Macaw's"),
+        UserScreenshotModItem(31, "macaws-holidays", "Macaw's Holidays", "mcw-holidays-1.1.2-mc1.21.11fabric.jar", "Kiến trúc Macaw's"),
+        UserScreenshotModItem(32, "macaws-lights-and-lamps", "Macaw's Lights and Lamps", "mcw-lights-1.1.5-mc1.21.11fabric.jar", "Kiến trúc Macaw's"),
+        UserScreenshotModItem(33, "macaws-paintings", "Macaw's Paintings", "mcw-paintings-1.1.0-mc1.21.11fabric.jar", "Kiến trúc Macaw's"),
+        UserScreenshotModItem(34, "macaws-paths-and-pavings", "Macaw's Paths and Pavings", "mcw-paths-1.1.1-mc1.21.11fabric.jar", "Kiến trúc Macaw's"),
+        UserScreenshotModItem(35, "macaws-roofs", "Macaw's Roofs", "mcw-roofs-2.3.2-mc1.21.11fabric.jar", "Kiến trúc Macaw's"),
+        UserScreenshotModItem(36, "macaws-stairs", "Macaw's Stairs", "mcw-stairs-1.0.2-mc1.21.11fabric.jar", "Kiến trúc Macaw's"),
+        UserScreenshotModItem(37, "macaws-trapdoors", "Macaw's Trapdoors", "mcw-trapdoors-1.1.5-mc1.21.11fabric.jar", "Kiến trúc Macaw's"),
+        UserScreenshotModItem(38, "macaws-windows", "Macaw's Windows", "mcw-windows-2.4.2-mc1.21.11fabric.jar", "Kiến trúc Macaw's"),
+        UserScreenshotModItem(39, "modernfix-mvus", "ModernFix-mVUS", "modernfix-5.26.2-build.1.jar", "Tối ưu Hiệu năng & RAM"),
+        UserScreenshotModItem(40, "more-delight", "More Delight", "moredelight-25.12.10-1.21.11-fabric.jar", "Ẩm thực & Nông trại"),
+        UserScreenshotModItem(41, "noisiumforked", "NoisiumForked", "noisium-fabric-2.8.3+mc1.21.11.jar", "Tối ưu Tạo địa hình"),
+        UserScreenshotModItem(42, "player-animation-library", "Player Animation Library", "PlayerAnimationLibFabric-1.1.7+mc1.21.11.jar", "Thư viện nền"),
+        UserScreenshotModItem(43, "polymer", "Polymer", "polymer-bundled-0.15.2+1.21.11.jar", "Thư viện nền"),
+        UserScreenshotModItem(44, "puzzles-lib", "Puzzles Lib", "PuzzlesLib-v21.11.12-mc1.21.11-Fabric.jar", "Thư viện nền"),
+        UserScreenshotModItem(45, "quickleafdecay", "Quick Leaf Decay", "quickleafdecay-mc1.21.11-0.4.1.jar", "Tiện ích Sinh tồn"),
+        UserScreenshotModItem(46, "rightclickharvest", "RightClickHarvest", "rightclickharvest-fabric-4.6.1+1.21.11.jar", "Tiện ích Nông trại"),
+        UserScreenshotModItem(47, "rustic-delight", "Rustic Delight", "rusticdelight-fabric-1.21.11-1.5.4.jar", "Ẩm thực & Nông trại"),
+        UserScreenshotModItem(48, "servercore", "ServerCore", "servercore-fabric-1.5.15+1.21.11.jar", "Tối ưu TPS Server"),
+        UserScreenshotModItem(49, "sodium", "Sodium", "sodium-fabric-0.8.12+mc1.21.11.jar", "Tối ưu Đồ họa"),
+        UserScreenshotModItem(50, "shuttfup", "Stfu", "Stfu-2.9.1-1.21.11.jar", "Tối ưu Log & Mạng"),
+        UserScreenshotModItem(51, "threadtweak", "ThreadTweak", "threadtweak-fabric-0.1.8+mc1.21.11.jar", "Tối ưu Luồng CPU"),
+        UserScreenshotModItem(52, "toms-mobs", "Tom's Mobs", "toms_mobs-3.0.2+1.21.11.jar", "Sinh vật mới"),
+        UserScreenshotModItem(53, "ubes-delight", "Ube's Delight", "ubesdelight-fabric-1.21.11-0.4.11.jar", "Ẩm thực & Nông trại"),
+        UserScreenshotModItem(54, "simple-voice-chat", "Simple Voice Chat", "voicechat-fabric-1.21.11-2.6.18.jar", "Đàm thoại trong Game"),
+        UserScreenshotModItem(55, "waystones", "Waystones", "waystones-fabric-1.21.11-21.11.9.jar", "Cột Dịch chuyển"),
+        UserScreenshotModItem(56, "yacl", "YetAnotherConfigLib (YACL)", "yet_another_config_lib_v3-3.8.2+1.21.11-fabric.jar", "Thư viện nền")
+    )
+
+    val USER_SCREENSHOT_SERVER_MOD_SLUGS: List<String> = USER_SCREENSHOT_56_MOD_ITEMS.map { it.slug }
+
+    private val USER_SCREENSHOT_56_JAR_PREFIXES: List<String> = listOf(
+        "3d-placeable-food", "alternate-current", "animalgarden_manatee", "animalgarden_mouse",
+        "appleskin", "architectury", "balm", "c2me", "chefs-delight", "chunky",
+        "cloth-config", "cookingforblockheads", "cratedelight", "debugify", "emotecraft",
+        "entityculling", "fabric-api", "farmersdelight", "ferritecore", "forgeconfigapiport",
+        "furnish", "jamlib", "ksyxis", "litematica", "lithium", "malilib",
+        "mcw-bridges", "mcw-doors", "mcw-fences", "mcw-furniture", "mcw-holidays",
+        "mcw-lights", "mcw-paintings", "mcw-paths", "mcw-roofs", "mcw-stairs",
+        "mcw-trapdoors", "mcw-windows", "modernfix", "moredelight", "noisium",
+        "playeranimationlib", "polymer", "puzzleslib", "quickleafdecay", "rightclickharvest",
+        "rusticdelight", "servercore", "sodium", "stfu", "shuttfup", "threadtweak",
+        "toms_mobs", "toms-mobs", "ubesdelight", "voicechat", "waystones", "yet_another_config_lib", "yacl"
+    )
+
+    /**
+     * Các prefix mod lạ từ danh sách mẫu cũ (Terralith, Tectonic, Biomes O' Plenty, YUNG's...) không thuộc 56 mod của người dùng.
+     * Khi người dùng bấm cài lại đủ 56 mod gốc, tự động dọn sạch các mod lạ này để không gây xung đột/lỗi server.
+     */
+    private val LEGACY_WRONG_PACK_PREFIXES = listOf(
+        "collective", "yungsapi", "yungs-api", "yungs_", "yungs-",
+        "lithostitched", "glitchcore", "terralith", "tectonic", "biomesoplenty", "biomes-o-plenty",
+        "explorerscompass", "explorers-compass", "naturescompass", "natures-compass",
+        "backpacked", "treeharvester", "tree-harvester", "carryon", "carry-on",
+        "dungeons-and-taverns", "dungeons_and_taverns", "towns-and-towers", "towns_and_towers",
+        "structory", "tidal-towns", "tidaltowns", "ct-overhauled-village", "ctov",
+        "villagersplus", "guardvillagers", "guard-villagers", "tradecycling", "trade-cycling",
+        "universal-graves", "universalgraves", "hopobetter", "hopo-", "mes-", "mvs-", "framework"
+    )
+
+    /**
+     * Dọn các mod lạ/xung đột trong thư mục `mods/` và bật lại toàn bộ các mod thuộc bộ 56 mod bị tắt nhầm (`.jar.disabled` -> `.jar`).
+     */
+    fun cleanConflictingModsForUser56Pack(dirName: String, removeAllNon56: Boolean = false): Int {
+        val modsDir = modsDirOf(dirName)
+        if (!modsDir.isDirectory) return 0
+        var removedCount = 0
+        modsDir.listFiles()?.forEach { file ->
+            if (!file.isFile) return@forEach
+            val lower = file.name.lowercase(Locale.ROOT)
+            val isIn56 = USER_SCREENSHOT_56_JAR_PREFIXES.any { lower.startsWith(it) } ||
+                USER_SCREENSHOT_SERVER_MOD_SLUGS.any { lower.startsWith(it) }
+            val isLegacyWrong = LEGACY_WRONG_PACK_PREFIXES.any { lower.startsWith(it) }
+            if (isLegacyWrong || (removeAllNon56 && !isIn56 && (lower.endsWith(".jar") || lower.endsWith(".disabled")))) {
+                if (file.delete()) removedCount++
+            } else if (isIn56 && lower.endsWith(MOD_DISABLED_SUFFIX)) {
+                val enabledName = file.name.removeSuffix(".disabled")
+                val target = File(modsDir, enabledName)
+                if (!target.exists()) {
+                    file.renameTo(target)
+                } else {
+                    file.delete()
+                }
+            }
+        }
+        return removedCount
+    }
 
     private fun candidateMcVersions(mcVersion: String): List<String> {
         val clean = mcVersion.trim()
-        if (clean.isBlank()) return listOf("1.21.4", "1.21.1", "1.21")
+        if (clean.isBlank()) return listOf("1.21.11", "1.21.10", "1.21.9", "1.21.8", "1.21.7", "1.21.5", "1.21.4", "1.21.1", "1.21")
         val list = mutableListOf(clean)
-        // Nếu server là 1.21.11 / 1.21.5+, fallback sang các bản 1.21.x phổ biến nhất trên Modrinth nếu mod chưa kịp gắn tag phụ
+        // Nếu server là 1.21.11 / 1.21.x, fallback đầy đủ từ 1.21.11 xuống 1.21 để các mod như Crate Delight (1.21.7/1.21.10) luôn tìm thấy bản tương thích
         if (clean.startsWith("1.21")) {
-            listOf("1.21.5", "1.21.4", "1.21.3", "1.21.1", "1.21").forEach {
+            listOf("1.21.11", "1.21.10", "1.21.9", "1.21.8", "1.21.7", "1.21.6", "1.21.5", "1.21.4", "1.21.3", "1.21.2", "1.21.1", "1.21").forEach {
                 if (it !in list) list += it
             }
         } else if (clean.startsWith("1.20")) {
@@ -1460,6 +1582,36 @@ class PluginManager(
             }
         }
         return list
+    }
+
+    /**
+     * Phân giải trực tiếp 1 slug trên Modrinth sang `(downloadUrl, targetFileName)` cho bộ 56 mod đã bao gồm sẵn toàn bộ thư viện nền.
+     */
+    fun resolveSingleModrinthSlug(
+        slugOrId: String,
+        mcVersion: String,
+        loader: String
+    ): Pair<String, String>? {
+        val loaderList = when (loader) {
+            "paper" -> "[\"paper\",\"spigot\",\"bukkit\"]"
+            "bukkit" -> "[\"spigot\",\"bukkit\"]"
+            else -> "[\"$loader\"]"
+        }
+        val encodedLoaders = java.net.URLEncoder.encode(loaderList, "UTF-8")
+        for (verCandidate in candidateMcVersions(mcVersion)) {
+            val encodedVer = java.net.URLEncoder.encode("[\"$verCandidate\"]", "UTF-8")
+            val body = runCatching {
+                fetchModrinthText("https://api.modrinth.com/v2/project/$slugOrId/version?game_versions=$encodedVer&loaders=$encodedLoaders")
+            }.getOrNull() ?: continue
+            val versions = runCatching { modrinthJson.decodeFromString<List<ModrinthVersion>>(body) }.getOrNull().orEmpty()
+            val found = versions.firstOrNull { it.version_type == "release" } ?: versions.firstOrNull() ?: continue
+            val primaryFile = found.files.firstOrNull { it.primary } ?: found.files.firstOrNull() ?: continue
+            if (primaryFile.url.isNotBlank()) {
+                val fileName = primaryFile.filename.ifBlank { "$slugOrId-$verCandidate.jar" }
+                return primaryFile.url to fileName
+            }
+        }
+        return null
     }
 
     /**

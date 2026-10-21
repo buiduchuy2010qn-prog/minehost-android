@@ -41,7 +41,10 @@ object TerminalLogTranslator {
         "Stopping server" to "Đang dừng máy chủ",
         "Saving the game" to "Đang lưu dữ liệu thế giới",
         "Saved the game" to "Đã lưu thế giới hoàn tất",
+        "All chunks are saved" to "Đã lưu toàn bộ các vùng đất (Chunk) hoàn tất",
+        "All dimensions are saved" to "Đã lưu toàn bộ các chiều không gian (Overworld / Nether / End) hoàn tất",
         "Saving worlds" to "Đang lưu các thế giới",
+        "Saving chunks for level" to "Đang lưu dữ liệu Chunk cho thế giới",
         "Saving chunks" to "Đang lưu các vùng đất (Chunk)",
         "Saving players" to "Đang lưu dữ liệu người chơi",
         "Flushing chunk data" to "Đang ghi dữ liệu Chunk xuống bộ nhớ",
@@ -119,7 +122,6 @@ object TerminalLogTranslator {
         "Listening on" to "Đang lắng nghe kết nối tại",
         "Done loading" to "Đã tải xong",
         "Loaded plugin" to "Đã nạp xong Plugin",
-        "Loaded" to "Đã nạp",
         "Saving level" to "Đang lưu thế giới",
         "Reloading" to "Đang tải lại",
         "Reload complete" to "Đã tải lại hoàn tất",
@@ -173,20 +175,7 @@ object TerminalLogTranslator {
         "has joined" to "đã vào máy chủ",
         "has left" to "đã rời máy chủ",
         "logged in" to "đã đăng nhập",
-        "logged out" to "đã đăng xuất",
-        "Starting" to "Đang khởi động",
-        "Loading" to "Đang tải",
-        "Loaded" to "Đã tải",
-        "Preparing" to "Đang chuẩn bị",
-        "Stopping" to "Đang dừng",
-        "Saving" to "Đang lưu",
-        "Saved" to "Đã lưu",
-        "Enabled" to "Đã bật",
-        "Disabled" to "Đã tắt",
-        "successfully" to "thành công",
-        "failed" to "thất bại",
-        "online" to "trực tuyến",
-        "offline" to "ngoại tuyến"
+        "logged out" to "đã đăng xuất"
     ).map { (en, vi) ->
         Regex("\\b" + Regex.escape(en) + "\\b", RegexOption.IGNORE_CASE) to vi
     }

@@ -478,6 +478,82 @@ class McViewModel(
         }
     }
 
+    /** Đặt ảnh đại diện Server (server-icon.png 64x64) từ bộ 8 biểu tượng Pixel Art Minecraft có sẵn */
+    fun setServerIconFromMinecraftArt(kind: MinecraftArtKind) {
+        if (!isBootstrapped.value) {
+            _errorFlow.tryEmit(str(R.string.s192))
+            return
+        }
+        val dirName = activeDirName() ?: run {
+            _errorFlow.tryEmit(str(R.string.s212))
+            return
+        }
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    val bmp = createMinecraftPixelArtBitmap(kind, 64)
+                    try {
+                        val target = File(repo.termuxRuntime.serverDirFor(dirName), "server-icon.png")
+                        target.parentFile?.mkdirs()
+                        java.io.FileOutputStream(target).use { fos ->
+                            bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, fos)
+                        }
+                    } finally {
+                        if (!bmp.isRecycled) bmp.recycle()
+                    }
+                }
+                _messageFlow.tryEmit("✅ Đã áp dụng ảnh đại diện Minecraft「${kind.titleVi}」(server-icon.png 64×64)!")
+                _serverIconVersion.value++
+            } catch (e: Exception) {
+                _errorFlow.tryEmit("Không thể lưu biểu tượng server: ${e.message}")
+            }
+        }
+    }
+
+    /** Đổi tên hiển thị của Server và dòng mô tả MOTD mà không làm mất dữ liệu thế giới hay cài đặt */
+    fun renameAndDescribeActiveServer(newDisplayName: String, motd: String) {
+        val cleanName = newDisplayName.trim()
+        if (cleanName.isBlank()) {
+            _errorFlow.tryEmit("Tên hiển thị server không được để trống.")
+            return
+        }
+        val currentActiveName = config.value.activeCoreName ?: run {
+            _errorFlow.tryEmit(str(R.string.s212))
+            return
+        }
+        val dirName = activeDirName() ?: return
+        val duplicate = config.value.installedCores.firstOrNull {
+            it.name != currentActiveName && it.name.equals(cleanName, ignoreCase = true)
+        }
+        if (duplicate != null) {
+            _errorFlow.tryEmit("Tên server「$cleanName」đã tồn tại. Hãy chọn tên khác để dễ phân biệt.")
+            return
+        }
+        viewModelScope.launch {
+            try {
+                repo.updateAndSaveConfig { cfg ->
+                    cfg.copy(
+                        installedCores = cfg.installedCores.map { core ->
+                            if (core.name == currentActiveName) core.copy(name = cleanName) else core
+                        },
+                        activeCoreName = cleanName
+                    )
+                }
+                if (motd.isNotBlank()) {
+                    withContext(Dispatchers.IO) {
+                        val currentProps = propertiesManager.readProperties(dirName).toMutableMap()
+                        currentProps["motd"] = motd.trim()
+                        propertiesManager.writeProperties(currentProps, dirName)
+                        _serverProperties.value = currentProps
+                    }
+                }
+                _messageFlow.tryEmit("✅ Đã cập nhật tên hiển thị server thành「$cleanName」& lưu mô tả MOTD (dữ liệu thế giới giữ nguyên 100%)!")
+            } catch (e: Exception) {
+                _errorFlow.tryEmit("Không thể đổi tên server: ${e.message}")
+            }
+        }
+    }
+
     /** 恢复默认：删除 server-icon.png */
     fun removeServerIcon() {
         if (!isBootstrapped.value) {
@@ -3458,16 +3534,19 @@ class McViewModel(
         }
     }
 
+    fun userScreenshot56ModItems(): List<PluginManager.UserScreenshotModItem> =
+        pluginManager.USER_SCREENSHOT_56_MOD_ITEMS
+
     /**
-     * Tải tự động trọn bộ Mod Sinh Tồn & Thế Giới Mở (từ danh sách 50+ mod trong ảnh chụp của bạn)
-     * tương thích với phiên bản Minecraft của server hiện tại từ Modrinth.
+     * Tải tự động trọn bộ ĐỦ 56 MOD CHÍNH XÁC từ 5 ảnh chụp màn hình `.minecraft/mods` của bạn
+     * tương thích với phiên bản Minecraft của server hiện tại từ Modrinth, đồng thời dọn các mod lạ gây lỗi server.
      */
-    fun installUserScreenshotModpackFromModrinth() {
-        if (!requireServerStopped("tải gói mod tự động")) return
+    fun installUserScreenshotModpackFromModrinth(cleanOtherMods: Boolean = false) {
+        if (!requireServerStopped("tải gói 56 mod tự động")) return
         val activeInstalled = config.value.installedCores.firstOrNull { it.name == config.value.activeCoreName }
         val targetCore = activeInstalled?.core
         if (targetCore == null || !targetCore.supportsMods || targetCore.isBedrock) {
-            _errorFlow.tryEmit("Hãy chọn server chạy Fabric / Forge / NeoForge / Quilt trước khi cài bộ mod này.")
+            _errorFlow.tryEmit("Hãy chọn server chạy Fabric / Forge / NeoForge / Quilt trước khi cài bộ 56 mod này.")
             return
         }
         val dirName = activeDirName() ?: run {
@@ -3475,49 +3554,94 @@ class McViewModel(
             return
         }
         val loader = modrinthLoader(targetCore)
-        val mcVer = currentServerVersion()
-        val slugs = pluginManager.USER_SCREENSHOT_SERVER_MOD_SLUGS
+        val mcVer = currentServerVersion().ifBlank { "1.21.11" }
+        val items = pluginManager.USER_SCREENSHOT_56_MOD_ITEMS
 
         viewModelScope.launch {
-            _modBatchProgress.value = "Đang chuẩn bị tải bộ ${slugs.size} mod cho $loader $mcVer..."
-            val installed = mutableListOf<String>()
-            val skipped = mutableListOf<String>()
-            val downloadedUrls = mutableSetOf<String>()
+            _modBatchProgress.value = "Đang chuẩn bị dọn mod lạ & tải đủ ${items.size} mod gốc cho $loader $mcVer..."
+            val installed = java.util.Collections.synchronizedList(mutableListOf<String>())
+            val skipped = java.util.Collections.synchronizedList(mutableListOf<String>())
+            var cleanedLegacyCount = 0
             try {
                 withContext(Dispatchers.IO) {
-                    slugs.forEachIndexed { idx, slug ->
-                        _modBatchProgress.value = "Đang tải (${idx + 1}/${slugs.size}): $slug ($mcVer)..."
-                        runCatching {
-                            val resolved = pluginManager.resolveModrinthDownloadWithDeps(slug, mcVer, loader)
-                            if (resolved.isEmpty()) {
-                                skipped += slug
-                            } else {
-                                for ((url, fileName) in resolved) {
-                                    if (downloadedUrls.add(url)) {
-                                        pluginManager.installModFromUrl(url, fileName, dirName)
+                    cleanedLegacyCount = pluginManager.cleanConflictingModsForUser56Pack(dirName, removeAllNon56 = cleanOtherMods)
+                    val semaphore = kotlinx.coroutines.sync.Semaphore(4)
+                    val doneCounter = java.util.concurrent.atomic.AtomicInteger(0)
+                    kotlinx.coroutines.coroutineScope {
+                        items.map { item ->
+                            launch(Dispatchers.IO) {
+                                semaphore.acquire()
+                                try {
+                                    val resolved = pluginManager.resolveSingleModrinthSlug(item.slug, mcVer, loader)
+                                    if (resolved == null) {
+                                        skipped += "${item.title} (${item.slug})"
+                                    } else {
+                                        val (url, fileName) = resolved
+                                        pluginManager.installModPackJarFromUrl(url, fileName, dirName)
                                         installed += fileName
                                     }
+                                } catch (e: Exception) {
+                                    skipped += "${item.title} (${item.slug})"
+                                } finally {
+                                    val done = doneCounter.incrementAndGet()
+                                    _modBatchProgress.value = "Đang tải & cài đặt ($done/${items.size}): ${item.title} ($mcVer)..."
+                                    semaphore.release()
                                 }
                             }
-                        }.onFailure {
-                            skipped += slug
-                        }
+                        }.forEach { it.join() }
                     }
                 }
                 refreshMods()
+                refreshWorldModCount()
                 _lastModImportReport.value = buildString {
-                    appendLine("✅ Đã tải & cài tự động Bộ Mod của bạn cho $loader $mcVer!")
-                    appendLine("• Đã cài đặt thành công: ${installed.size} tệp mod & thư viện phụ thuộc.")
-                    appendLine("• Các mod thuần Client (Sodium, Litematica, MaLiLib, EntityCulling, Stfu) đã được tự động loại trừ để server không bị crash.")
+                    appendLine("✅ Đã cài đặt hoàn tất Bộ ${installed.size}/${items.size} Mod gốc từ 5 ảnh chụp của bạn ($loader $mcVer)!")
+                    appendLine("• Đã tải & bật đầy đủ: ${installed.size} tệp .jar trong thư mục mods/ (Macaw's 12 bộ, Farmer's Delight + 5 bản mở rộng, Furnish, 3D Placeable Food, Animal Garden, Tom's Mobs, Waystones, Simple Voice Chat, Lithium, FerriteCore, C2ME, ServerCore, Sodium, Litematica...).")
+                    if (cleanedLegacyCount > 0) {
+                        appendLine("• Đã tự động dọn sạch $cleanedLegacyCount tệp mod lạ/xung đột từ lần cài trước để khắc phục lỗi server.")
+                    }
                     if (skipped.isNotEmpty()) {
-                        appendLine("• Có ${skipped.size} mod chưa phát hành bản chính thức cho $mcVer trên Modrinth: ${skipped.take(6).joinToString(", ")}${if (skipped.size > 6) "..." else ""}.")
+                        appendLine("• Có ${skipped.size} mod chưa tìm thấy cho $mcVer: ${skipped.take(6).joinToString(", ")}.")
                     }
                 }.trim()
-                _messageFlow.tryEmit("Đã cài xong ${installed.size} mod vào server!")
+                _messageFlow.tryEmit("🎉 Đã cài xong ${installed.size}/${items.size} mod gốc vào server!")
             } catch (e: Exception) {
-                _errorFlow.tryEmit("Lỗi khi tải bộ mod: ${e.message}")
+                _errorFlow.tryEmit("Lỗi khi tải bộ 56 mod: ${e.message}")
             } finally {
                 _modBatchProgress.value = null
+            }
+        }
+    }
+
+    /** Thiết lập Gói tài nguyên (Resource Pack) cho Server trong server.properties */
+    fun applyServerResourcePack(url: String, sha1: String, prompt: String, requirePack: Boolean) {
+        if (!isBootstrapped.value) {
+            _errorFlow.tryEmit(str(R.string.s192))
+            return
+        }
+        val dirName = activeDirName() ?: run {
+            _errorFlow.tryEmit(str(R.string.s249))
+            return
+        }
+        viewModelScope.launch {
+            try {
+                val updated = withContext(Dispatchers.IO) {
+                    val current = propertiesManager.readProperties(dirName).toMutableMap()
+                    current["resource-pack"] = url.trim()
+                    current["resource-pack-sha1"] = sha1.trim()
+                    current["resource-pack-prompt"] = prompt.trim()
+                    current["require-resource-pack"] = requirePack.toString()
+                    check(propertiesManager.writeProperties(current, dirName)) { "Không lưu được cấu hình Resource Pack." }
+                    current
+                }
+                _serverProperties.value = updated
+                _serverPropertiesExist.value = true
+                if (url.isBlank()) {
+                    _messageFlow.tryEmit("Đã xóa cấu hình Gói tài nguyên (Resource Pack) trên server.")
+                } else {
+                    _messageFlow.tryEmit("✅ Đã lưu Gói tài nguyên (Resource Pack) cho server! Khởi động lại server để áp dụng.")
+                }
+            } catch (e: Exception) {
+                _errorFlow.tryEmit("Không thể lưu Gói tài nguyên: ${e.message}")
             }
         }
     }
@@ -5902,6 +6026,171 @@ class McViewModel(
                 loadWorlds()
             } catch (e: Exception) {
                 _errorFlow.tryEmit("Đặt lại thất bại: ${e.message}")
+            }
+        }
+    }
+
+    private val _worldHealthReport = MutableStateFlow<WorldManager.WorldHealthReport?>(null)
+    val worldHealthReport: StateFlow<WorldManager.WorldHealthReport?> = _worldHealthReport.asStateFlow()
+
+    fun clearWorldHealthReport() {
+        _worldHealthReport.value = null
+    }
+
+    /** Kiểm tra tình trạng thế giới (không sửa đổi bất kỳ dữ liệu nào). */
+    fun checkWorldHealth(worldName: String) {
+        if (!isBootstrapped.value) { _errorFlow.tryEmit(str(R.string.s192)); return }
+        val dirName = activeDirName() ?: return
+        viewModelScope.launch {
+            try {
+                val report = worldManager.inspectWorldHealth(dirName, worldName)
+                _worldHealthReport.value = report
+            } catch (e: Exception) {
+                _errorFlow.tryEmit("Không thể kiểm tra thế giới: ${e.message}")
+            }
+        }
+    }
+
+    /** Đổi tên thư mục thế giới (kèm các chiều đi kèm) và đồng bộ level-name khi server dừng. */
+    fun renameWorld(oldName: String, newName: String) {
+        if (!isBootstrapped.value) { _errorFlow.tryEmit(str(R.string.s192)); return }
+        val dirName = activeDirName() ?: return
+        if (!requireServerStopped("đổi tên thế giới")) return
+        viewModelScope.launch {
+            try {
+                val renamed = worldManager.renameWorld(dirName, oldName, newName)
+                _messageFlow.tryEmit("✅ Đã đổi tên thế giới '$oldName' thành '$renamed' (đồng bộ cả Nether/The End & level-name)!")
+                loadWorlds()
+                loadServerProperties()
+            } catch (e: Exception) {
+                _errorFlow.tryEmit("Đổi tên thế giới thất bại: ${e.message}")
+            }
+        }
+    }
+
+    /** Nhập thế giới trực tiếp từ Thư mục (SAF DocumentTree), hỗ trợ cả thư mục cha chứa world con và mods/ đi kèm. */
+    fun importWorldFromFolderUri(treeUri: Uri, preferredName: String = "", expectedServerName: String? = null) {
+        if (_worldImportBusy.value || _applyingDeviceTuning.value) return
+        if (!isBootstrapped.value) { _errorFlow.tryEmit("Hãy cài môi trường chạy trước."); return }
+        val selected = config.value.activeCoreName
+        if (expectedServerName != null && expectedServerName != selected) {
+            _errorFlow.tryEmit("Server đã thay đổi. Hãy chọn lại thư mục."); return
+        }
+        val dirName = activeDirName() ?: run { _errorFlow.tryEmit("Chưa chọn server."); return }
+        if (!requireServerStopped("nhập world từ thư mục")) return
+        _worldImportBusy.value = true
+        _worldImportStatus.value = WorldImportStatus(phase = "Đang quét thư mục thế giới…", serverName = selected)
+        viewModelScope.launch {
+            var temp: java.io.File? = null
+            try {
+                withContext(Dispatchers.IO) {
+                    temp = java.io.File.createTempFile("world_folder_import_", ".zip", app.cacheDir)
+                }
+                val archive = checkNotNull(temp)
+                val imported = withContext(Dispatchers.IO) {
+                    val rootDocId = android.provider.DocumentsContract.getTreeDocumentId(treeUri)
+                    val folderDisplayName = rootDocId.substringAfterLast(':').substringAfterLast('/').takeIf { it.isNotBlank() }
+                    val name = preferredName.trim().ifBlank {
+                        folderDisplayName ?: "world_folder"
+                    }
+                    val context = currentCoroutineContext()
+                    check(app.cacheDir.usableSpace > com.mineserve.mobile.server.WorldArchive.DISK_RESERVE_BYTES) {
+                        "Không đủ dung lượng trống để nhập thư mục thế giới."
+                    }
+                    var totalBytes = 0L
+                    var reportedBytes = 0L
+                    var entryCount = 0
+                    val buffer = ByteArray(64 * 1024)
+                    java.util.zip.ZipOutputStream(java.io.FileOutputStream(archive)).use { zos ->
+                        fun walkFolder(docId: String, relativePath: String, depth: Int) {
+                            if (depth > 8) return
+                            context.ensureActive()
+                            val childrenUri = android.provider.DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, docId)
+                            val projection = arrayOf(
+                                android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                                android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                                android.provider.DocumentsContract.Document.COLUMN_MIME_TYPE
+                            )
+                            app.contentResolver.query(childrenUri, projection, null, null, null)?.use { cursor ->
+                                val idIdx = cursor.getColumnIndex(android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                                val nameIdx = cursor.getColumnIndex(android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                                val mimeIdx = cursor.getColumnIndex(android.provider.DocumentsContract.Document.COLUMN_MIME_TYPE)
+                                while (cursor.moveToNext()) {
+                                    context.ensureActive()
+                                    val childId = if (idIdx >= 0) cursor.getString(idIdx) else continue
+                                    val childName = if (nameIdx >= 0) cursor.getString(nameIdx) ?: "" else ""
+                                    val mime = if (mimeIdx >= 0) cursor.getString(mimeIdx) ?: "" else ""
+                                    if (childName.isBlank() || childName == "." || childName == "..") continue
+                                    val childRel = if (relativePath.isEmpty()) childName else "$relativePath/$childName"
+                                    val isDir = mime == android.provider.DocumentsContract.Document.MIME_TYPE_DIR
+                                    if (isDir) {
+                                        walkFolder(childId, childRel, depth + 1)
+                                    } else {
+                                        check(++entryCount <= com.mineserve.mobile.server.WorldArchive.MAX_ENTRIES) {
+                                            "Thư mục chứa quá nhiều tệp."
+                                        }
+                                        val childUri = android.provider.DocumentsContract.buildDocumentUriUsingTree(treeUri, childId)
+                                        zos.putNextEntry(java.util.zip.ZipEntry(childRel.replace('\\', '/')))
+                                        app.contentResolver.openInputStream(childUri)?.use { input ->
+                                            while (true) {
+                                                context.ensureActive()
+                                                val read = input.read(buffer)
+                                                if (read < 0) break
+                                                totalBytes += read
+                                                require(totalBytes <= com.mineserve.mobile.server.WorldArchive.MAX_EXPANDED_BYTES) {
+                                                    "Thư mục thế giới vượt quá giới hạn dung lượng."
+                                                }
+                                                if (totalBytes - reportedBytes >= 4L * 1024 * 1024) {
+                                                    reportedBytes = totalBytes
+                                                    _worldImportStatus.value = WorldImportStatus(
+                                                        phase = "Đang đọc thư mục thế giới ($entryCount tệp)…",
+                                                        copiedBytes = totalBytes,
+                                                        serverName = selected
+                                                    )
+                                                }
+                                                zos.write(buffer, 0, read)
+                                            }
+                                        }
+                                        zos.closeEntry()
+                                    }
+                                }
+                            }
+                        }
+                        walkFolder(rootDocId, "", 0)
+                    }
+                    check(entryCount > 0) { "Thư mục đã chọn đang trống." }
+                    _worldImportStatus.value = WorldImportStatus(
+                        phase = "Đang chuẩn hóa cấu trúc thế giới ($entryCount tệp)…",
+                        copiedBytes = totalBytes,
+                        serverName = selected
+                    )
+                    com.mineserve.mobile.server.WorldArchive.normalizeWorldZipIfNeeded(archive, app.cacheDir)
+                    worldManager.importWorld(dirName, archive, name) ?: error("Thư mục không chứa dữ liệu thế giới hợp lệ (thiếu level.dat / region / db).")
+                }
+                val addons = worldManager.lastBundledAddons
+                val addonNote = if (addons.modsInstalled > 0 || addons.configsInstalled > 0) {
+                    " (Đã tự động cài kèm ${addons.modsInstalled} mod .jar và ${addons.configsInstalled} tệp config!)"
+                } else ""
+                _worldImportStatus.value = WorldImportStatus(
+                    phase = "Nhập thư mục thế giới thành công! World cũ vẫn được giữ nguyên." + addonNote,
+                    world = imported,
+                    serverName = selected,
+                    modsInstalled = addons.modsInstalled,
+                    configsInstalled = addons.configsInstalled
+                )
+                _messageFlow.tryEmit("Đã nhập thư mục thế giới: $imported$addonNote. Bấm 'Kích hoạt & Dùng thế giới này' để chơi.")
+                refreshWorldModCount()
+                if (addons.modsInstalled > 0) refreshMods()
+                if (config.value.activeCoreName == selected) loadWorlds()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                val msg = formatWorldImportError(e, null)
+                _worldImportStatus.value = WorldImportStatus(serverName = selected, error = msg)
+                _errorFlow.tryEmit(msg)
+            } finally {
+                withContext(NonCancellable + Dispatchers.IO) { temp?.delete() }
+                _worldImportBusy.value = false
             }
         }
     }

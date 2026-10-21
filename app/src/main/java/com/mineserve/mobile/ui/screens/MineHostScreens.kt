@@ -20,21 +20,38 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.mineserve.mobile.data.StartupPhase
 import com.mineserve.mobile.ui.McViewModel
+import com.mineserve.mobile.ui.MinecraftArtKind
+import com.mineserve.mobile.ui.MinecraftPixelArtIcon
 import com.mineserve.mobile.ui.PlayConnectionMode
 import com.mineserve.mobile.ui.SubPage
+import androidx.compose.foundation.BorderStroke
 
 @Composable
 internal fun HostPage(title: String, subtitle: String, content: LazyListScope.() -> Unit) {
+    val artKind = remember(title) {
+        when {
+            title.contains("Thế giới", ignoreCase = true) || title.contains("Map", ignoreCase = true) -> MinecraftArtKind.GrassBlock
+            title.contains("Người chơi", ignoreCase = true) -> MinecraftArtKind.DiamondSword
+            title.contains("Kho", ignoreCase = true) || title.contains("Quản lý", ignoreCase = true) -> MinecraftArtKind.CommandBlock
+            else -> MinecraftArtKind.CreeperFace
+        }
+    }
     LazyColumn(
         Modifier.fillMaxSize().statusBarsPadding(),
         contentPadding = PaddingValues(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item(key = "heading") {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("MINEHOST / ANDROID", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                Text(title, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-                Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                MinecraftPixelArtIcon(kind = artKind, size = 44.dp)
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.weight(1f)) {
+                    Text("MINEHOST / MINECRAFT SERVER", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                    Text(title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
+                    Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
         }
         content()
@@ -43,9 +60,13 @@ internal fun HostPage(title: String, subtitle: String, content: LazyListScope.()
 
 @Composable
 internal fun HostCard(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+    Card(
+        Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.28f))
+    ) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
             content()
         }
     }
@@ -373,21 +394,48 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
         }
         item {
             if (active?.core?.supportsMods == true) {
-                HostAction(
-                    "Quản lý Mod & Giải mã Thư mục Full Mod",
-                    "Giải mã thư mục/ZIP full mod, chuyển mod sang server mới hoặc tải tự động từ Modrinth.",
-                    Icons.Outlined.Extension
-                ) { navigate(SubPage.Plugins) }
+                HostCard("📦 Bộ 56 Mod Gốc Của Bạn & Sửa Lỗi Server") {
+                    Text(
+                        "Đã tích hợp danh sách ĐỦ 56/56 Mod chính xác từ 5 ảnh chụp màn hình của bạn (Macaw's 12 bộ, Farmer's Delight + 5 addon, Furnish, 3D Placeable Food, Animal Garden, Tom's Mobs, Waystones, Simple Voice Chat, Lithium, C2ME, ServerCore, Sodium, Litematica...).",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        Button(
+                            onClick = { vm.installUserScreenshotModpackFromModrinth(cleanOtherMods = true) },
+                            enabled = ready && !state.isRunning && !busy,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("⚡ Dọn Mod Lạ & Tải Đủ 56/56 Mod")
+                        }
+                        OutlinedButton(
+                            onClick = { navigate(SubPage.Plugins) },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("📦 Xem 56 Mod")
+                        }
+                    }
+                }
             } else if (active != null) {
                 HostAction(
-                    "Quản lý Plugin",
-                    "Cài đặt và bật/tắt plugin cho server.",
+                    "Quản lý Plugin & Gói tài nguyên",
+                    "Cài đặt, bật/tắt plugin và cấu hình Resource Pack cho server.",
                     Icons.Outlined.Extension
                 ) { navigate(SubPage.Plugins) }
             }
         }
         item {
-            HostAction("Nhập thế giới có sẵn", "ZIP world Java", Icons.Outlined.FileUpload) { navigate(SubPage.WorldImport) }
+            HostAction(
+                "Đổi Tên, Ảnh đại diện (64×64) & Mô tả Server",
+                "Chọn biểu tượng Pixel-Art Minecraft hoặc ảnh trong máy làm server-icon.png.",
+                Icons.Outlined.Image
+            ) { navigate(SubPage.ServerIcon) }
+        }
+        item {
+            HostAction(
+                "Quản lý Thế giới (Nhập ZIP/Thư mục, Kiểm tra lỗi, Đổi tên)",
+                "Chuyển đổi, kiểm tra level.dat/region, nhập từ thư mục hoặc ZIP.",
+                Icons.Outlined.Public
+            ) { navigate(SubPage.WorldManage) }
         }
         item {
             HostCard("Tối ưu theo điện thoại") {
@@ -501,37 +549,43 @@ fun MineHostManage(navigate: (SubPage) -> Unit) {
             HostAction("Server & cấu hình", "Danh sách server, RAM, Java và core đang chọn.", Icons.Outlined.Dns) { navigate(SubPage.ServerList) }
         }
         item {
-            HostAction("Người chơi", "Whitelist, OP, kick và ban. OP không phải quyền quản trị app.", Icons.Outlined.People) { navigate(SubPage.PlayerList) }
+            HostAction("Đổi Tên, Ảnh đại diện (64×64) & Mô tả MOTD", "Chọn biểu tượng Pixel-Art Minecraft hoặc ảnh trong máy làm server-icon.png.", Icons.Outlined.Image) { navigate(SubPage.ServerIcon) }
         }
         item {
-            HostAction("Luật chơi", "Difficulty, gamemode, PvP và server.properties.", Icons.Outlined.Tune) { navigate(SubPage.Properties) }
+            HostAction("Người chơi & Lịch sử tham gia", "Trực tuyến, lịch sử từng người chơi, Whitelist, OP, kick và ban.", Icons.Outlined.People) { navigate(SubPage.PlayerList) }
         }
         item {
-            HostAction("Nhập thế giới có sẵn", "ZIP world Java", Icons.Outlined.FileUpload) { navigate(SubPage.WorldImport) }
+            HostAction("Luật chơi & Lệnh quản trị", "Difficulty, gamemode, PvP, gamerule và server.properties.", Icons.Outlined.Tune) { navigate(SubPage.Properties) }
         }
         item {
-            HostAction("Thế giới", "Nhập, xuất, chọn và quản lý world.", Icons.Outlined.Public) { navigate(SubPage.WorldManage) }
+            HostAction("Nhập thế giới (ZIP / Thư mục / Map Mod)", "Nhập từ ZIP hoặc thư mục giải nén kèm tự động cài mod.", Icons.Outlined.FileUpload) { navigate(SubPage.WorldImport) }
+        }
+        item {
+            HostAction("Quản lý Thế giới (World)", "Kiểm tra thế giới, đổi tên, xuất ZIP, chọn và đặt lại world.", Icons.Outlined.Public) { navigate(SubPage.WorldManage) }
+        }
+        item {
+            HostAction("Quản lý Tệp tin & Trình sửa cấu hình", "Duyệt thư mục server, sửa tệp văn bản (.properties, .yml, .json).", Icons.Outlined.Folder) { navigate(SubPage.Files) }
         }
         item {
             HostAction("Sao lưu & khôi phục", "Bảo vệ world trước khi nâng cấp.", Icons.Outlined.Backup) { navigate(SubPage.Backup) }
         }
         item {
-            HostAction("Kết nối bạn bè", "LAN, cổng và tunnel. Kiểm tra TCP/UDP theo nhu cầu.", Icons.Outlined.Lan) { navigate(SubPage.Network) }
+            HostAction("Kết nối bạn bè (LAN & Playit.gg)", "Địa chỉ tự động cập nhật khi đổi mạng, kiểm tra kết nối thực tế.", Icons.Outlined.Lan) { navigate(SubPage.Network) }
         }
         item {
-            HostAction("Lịch tự động", "Android có thể hạn chế tác vụ chạy nền.", Icons.Outlined.Schedule) { navigate(SubPage.Automation) }
+            HostAction("Lịch tự động", "Tự động sao lưu hoặc khởi động lại theo lịch.", Icons.Outlined.Schedule) { navigate(SubPage.Automation) }
         }
         item {
             HostAction("Chạy nền & pin", "Thông báo foreground, giữ Wi-Fi và tiết kiệm pin.", Icons.Outlined.BatteryChargingFull) { navigate(SubPage.KeepAlive) }
         }
         item {
-            HostAction("Chẩn đoán", "Kiểm tra môi trường và lỗi khởi động.", Icons.Outlined.HealthAndSafety) { navigate(SubPage.Diagnostics) }
+            HostAction("Chẩn đoán & Tự sửa lỗi", "Kiểm tra môi trường, cổng mạng, Java và lỗi khởi động bằng tiếng Việt.", Icons.Outlined.HealthAndSafety) { navigate(SubPage.Diagnostics) }
         }
         item {
-            HostAction("Báo cáo crash", "Xem nguyên nhân và log lần chạy trước.", Icons.Outlined.BugReport) { navigate(SubPage.CrashReports) }
+            HostAction("Báo cáo crash", "Xem nguyên nhân dễ hiểu và log lần chạy trước.", Icons.Outlined.BugReport) { navigate(SubPage.CrashReports) }
         }
         item {
-            HostAction("Cài đặt nâng cao", "Một số màn hình kế thừa còn tiếng Anh/Trung.", Icons.Outlined.Settings) { navigate(SubPage.AppSettings) }
+            HostAction("Cài đặt nâng cao", "Tùy chỉnh thông báo sự kiện, giao diện và hệ thống MineHost.", Icons.Outlined.Settings) { navigate(SubPage.AppSettings) }
         }
         item {
             HostCard("MineHost • bản thử nghiệm") {

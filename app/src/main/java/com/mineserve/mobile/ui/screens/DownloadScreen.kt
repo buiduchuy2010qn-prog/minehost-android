@@ -171,12 +171,131 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                     .verticalScroll(rememberScrollState())
             ) {
 
-            McCard(title = "📖 Hướng dẫn chọn Core & Chơi Map có Mod") {
+            val freeStorageMb = remember { (context.filesDir.usableSpace / (1024L * 1024L)).coerceAtLeast(0L) }
+            var showSoftwareComparison by rememberSaveable { mutableStateOf(false) }
+
+            McCard(title = "🚀 Tạo Server Nhanh Theo Mẫu (1 Chạm) — Chuẩn Minecraft") {
                 Text(
-                    "• Chơi Map có Mod (.jar): Chọn Fabric, Forge hoặc NeoForge đúng phiên bản Minecraft của Map. Tải xong hãy vào Quản lý -> Quản lý thế giới -> Nhập thế giới có sẵn để tải Map & Mod lên.\n" +
-                    "• Chơi Sinh tồn / Cài Plugin mượt nhất: Khuyên dùng Paper hoặc Purpur.\n" +
-                    "• Chơi trên Minecraft PE (Bedrock): Chọn PowerNukkitX.\n" +
-                    "• Nếu tải bị lỗi: Kiểm tra đã cài Môi trường & Java đúng phiên bản chưa, hoặc dùng mục 'Nhập máy chủ / Modpack có sẵn' ở cuối trang.",
+                    "Chưa từng tạo server Minecraft? Hãy chọn ngay 1 trong 5 mẫu cài sẵn bên dưới — MineHost sẽ tự động chọn đúng Phần mềm (Core), Phiên bản Minecraft và đặt sẵn tên server cho bạn:",
+                    color = Muted,
+                    fontSize = 11.sp,
+                    lineHeight = 16.sp
+                )
+                Spacer(Modifier.height(8.dp))
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            vm.selectCore(ServerCore.Fabric)
+                            vm.setMcVersion("1.21.11")
+                            customCoreName = "Server-56Mod-Fabric-1.21.11"
+                            scope.launch {
+                                snackbarHostState.showSnackbar("📦 Đã chọn mẫu: Fabric 1.21.11 (Chơi trọn bộ 56 Mod của bạn). Hãy kéo xuống bấm Tải Core!")
+                            }
+                        },
+                        shape = McShape.ControlCompact,
+                        border = BorderStroke(1.5.dp, Indigo)
+                    ) {
+                        Text("📦 Bộ 56 Mod Của Bạn (Fabric 1.21.11)", color = Indigo, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            vm.selectCore(ServerCore.Paper)
+                            vm.setMcVersion("1.21.11")
+                            customCoreName = "SinhTon-Paper-1.21.11"
+                            scope.launch {
+                                snackbarHostState.showSnackbar("🌱 Đã chọn mẫu: Sinh tồn mượt nhất (Paper 1.21.11 - Hỗ trợ Plugin).")
+                            }
+                        },
+                        shape = McShape.ControlCompact,
+                        border = BorderStroke(1.dp, Mint)
+                    ) {
+                        Text("🌱 Sinh tồn mượt nhất (Paper 1.21.11)", color = Mint, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            vm.selectCore(ServerCore.Paper)
+                            vm.setMcVersion("1.21.11")
+                            customCoreName = "SangTao-Paper-1.21.11"
+                            scope.launch {
+                                snackbarHostState.showSnackbar("🎨 Đã chọn mẫu: Sáng tạo xây dựng (Paper 1.21.11).")
+                            }
+                        },
+                        shape = McShape.ControlCompact
+                    ) {
+                        Text("🎨 Sáng tạo (Paper 1.21.11)", fontSize = 11.sp)
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            vm.selectCore(ServerCore.NeoForge)
+                            vm.setMcVersion("1.21.1")
+                            customCoreName = "ModPack-NeoForge-1.21.1"
+                            scope.launch {
+                                snackbarHostState.showSnackbar("⚒️ Đã chọn mẫu: Chơi Mod NeoForge 1.21.1.")
+                            }
+                        },
+                        shape = McShape.ControlCompact
+                    ) {
+                        Text("⚒️ Mod NeoForge 1.21.1", fontSize = 11.sp)
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            vm.selectCore(ServerCore.PowerNukkitX)
+                            customCoreName = "Bedrock-PE-Server"
+                            scope.launch {
+                                snackbarHostState.showSnackbar("📱 Đã chọn mẫu: Minecraft PE / Bedrock (PowerNukkitX).")
+                            }
+                        },
+                        shape = McShape.ControlCompact
+                    ) {
+                        Text("📱 Minecraft PE / Bedrock", fontSize = 11.sp)
+                    }
+                }
+
+                Spacer(Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "💾 Bộ nhớ trống hiện tại: ${freeStorageMb} MB • RAM cấp phát: ${config.memoryMb} MB",
+                        color = if (freeStorageMb > 1024) Indigo else Coral,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    TextButton(onClick = { showSoftwareComparison = !showSoftwareComparison }) {
+                        Text(
+                            if (showSoftwareComparison) "▲ Ẩn so sánh Core" else "▼ So sánh Paper / Fabric / Forge",
+                            color = Indigo,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+
+                androidx.compose.animation.AnimatedVisibility(visible = showSoftwareComparison) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(McShape.Row)
+                            .background(IndigoSoft)
+                            .padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Text("📊 Bảng So Sánh Phần Mềm Server (Nên chọn loại nào?):", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Indigo)
+                        Text("• 🧩 Fabric (Khuyên dùng cho Mod): Siêu nhẹ, khởi động nhanh, hỗ trợ 100% bộ 56 Mod từ ảnh chụp của bạn (Macaw's, Farmer's Delight, Furnish, Waystones, Voice Chat, Sodium...).", fontSize = 11.sp, color = Muted)
+                        Text("• ⚡ Paper / Purpur (Khuyên dùng cho Sinh tồn & Plugin): Tối ưu TPS cực tốt trên điện thoại, cài được Plugin (SkinRestorer, EssentialsX, AuthMe, Geyser), không chạy Mod .jar.", fontSize = 11.sp, color = Muted)
+                        Text("• ⚒️ Forge / NeoForge: Chuyên trị các gói Modpack nặng cổ điển; tốn RAM hơn Fabric (khuyên dùng RAM ≥ 4GB).", fontSize = 11.sp, color = Muted)
+                        Text("• 🧱 Vanilla: Bản gốc Mojang 100%, không cài được Mod hay Plugin, nặng hơn Paper.", fontSize = 11.sp, color = Muted)
+                        Text("• ⚠️ Lưu ý Modpack lớn (RLCraft, ATM, DawnCraft, Cobblemon lớn): Điện thoại tầm trung dễ quá tải RAM nếu chạy >150 mod nặng — bộ 56 Mod Fabric tối ưu của bạn chạy rất mượt ở mức 3GB–5GB RAM!", fontSize = 11.sp, color = Coral)
+                    }
+                }
+
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "📌 4 bước sau khi tải Core xong: 1) Vào tab Mod & Plugin -> Gói 56 Mod bấm tải đủ 56/56 mod • 2) Vào Quản lý Thế giới chọn/nhập Map • 3) Đổi Ảnh đại diện 64×64 • 4) Bật Server & gửi IP cho bạn bè!",
                     color = Muted,
                     fontSize = 11.sp,
                     lineHeight = 16.sp

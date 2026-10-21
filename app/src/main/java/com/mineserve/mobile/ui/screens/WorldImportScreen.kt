@@ -45,6 +45,7 @@ fun WorldImportScreen(vm: McViewModel, onBack: () -> Unit, onWorlds: () -> Unit)
     val selected = config.installedCores.firstOrNull { it.name == config.activeCoreName }
     var hasStoragePerm by remember { mutableStateOf(ExternalBackupStore.hasPermission(context)) }
     var pendingUri by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingFolderTreeUri by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingLocalPath by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingLocalName by rememberSaveable { mutableStateOf<String?>(null) }
     var pickerServer by rememberSaveable { mutableStateOf<String?>(null) }
@@ -75,6 +76,9 @@ fun WorldImportScreen(vm: McViewModel, onBack: () -> Unit, onWorlds: () -> Unit)
 
     val picker = rememberLauncherForActivityResult(LocalOnlyOpenDocument()) { uri ->
         pendingUri = uri?.toString()
+    }
+    val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        pendingFolderTreeUri = uri?.toString()
     }
     val modPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) vm.importWorldModsFromUris(uris)
@@ -219,7 +223,19 @@ fun WorldImportScreen(vm: McViewModel, onBack: () -> Unit, onWorlds: () -> Unit)
                     enabled = ready && selected != null && !running && !busy && !modBusy,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("📂 Mở trình chọn tệp khác (Chọn từ Bộ nhớ máy, KHÔNG chọn Google Drive)")
+                    Text("📦 Mở trình chọn tệp ZIP khác (Chọn từ Bộ nhớ máy, KHÔNG chọn Google Drive)")
+                }
+                Spacer(Modifier.height(4.dp))
+                OutlinedButton(
+                    onClick = {
+                        pickerServer = config.activeCoreName
+                        name = ""
+                        folderPicker.launch(null)
+                    },
+                    enabled = ready && selected != null && !running && !busy && !modBusy,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("📂 Hoặc chọn Thư mục Thế giới đã giải nén sẵn trên máy")
                 }
             }
         }
@@ -354,6 +370,35 @@ fun WorldImportScreen(vm: McViewModel, onBack: () -> Unit, onWorlds: () -> Unit)
                 ) { Text("Bắt đầu nhập") }
             },
             dismissButton = { TextButton(onClick = { pendingUri = null }) { Text("Hủy") } }
+        )
+    }
+
+    pendingFolderTreeUri?.let { value ->
+        AlertDialog(
+            onDismissRequest = { pendingFolderTreeUri = null },
+            title = { Text("📂 Nhập Thư mục Thế giới vào " + (pickerServer ?: "") + "?") },
+            text = {
+                Column {
+                    Text("Hỗ trợ cả thư mục chứa trực tiếp level.dat lẫn thư mục cha chứa world con bên trong. Thế giới cũ sẽ được giữ nguyên an toàn; nếu có thư mục mods/ đi kèm sẽ tự động cài đặt.")
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it.take(80) },
+                        label = { Text("Tên world (để trống sẽ lấy theo tên thư mục)") },
+                        singleLine = true
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingFolderTreeUri = null
+                        vm.importWorldFromFolderUri(Uri.parse(value), name, pickerServer)
+                    },
+                    enabled = !busy && !running && selected != null && pickerServer == config.activeCoreName
+                ) { Text("Bắt đầu nhập") }
+            },
+            dismissButton = { TextButton(onClick = { pendingFolderTreeUri = null }) { Text("Hủy") } }
         )
     }
 
