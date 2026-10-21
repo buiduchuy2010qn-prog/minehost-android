@@ -12,7 +12,7 @@ class DeviceProfileTest {
     @Test fun smallerDevicesGetSmallerBudgets() {
         val p = DeviceProfile(3072, 2048, 4, false)
         assertEquals(1024, p.recommendedHeapMb)
-        assertEquals(4, p.viewDistance)
+        assertEquals(6, p.viewDistance)
         assertEquals(3, p.maxPlayers)
     }
     @Test fun memoryPressureLowersLaunchBudget() {
@@ -27,7 +27,7 @@ class DeviceProfileTest {
     @Test fun lowRamUsesConservativeLimits() {
         val p = DeviceProfile(8192, 6000, 8, true)
         assertEquals(1024, p.recommendedHeapMb)
-        assertEquals(4, p.viewDistance)
+        assertEquals(6, p.viewDistance)
     }
     @Test fun highRamIsCapped() {
         val p = DeviceProfile(24576, 20000, 12, false)

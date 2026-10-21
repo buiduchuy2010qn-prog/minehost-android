@@ -1,5 +1,7 @@
 package com.mineserve.mobile.ui.screens
 
+import com.mineserve.mobile.data.JavaServerPerformance
+
 import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.background
@@ -45,6 +47,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -137,14 +140,14 @@ private val categorizedCommands = listOf(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TerminalScreen(vm: McViewModel) {
-    val sessions by vm.terminalSessions.collectAsState()
-    val activeId by vm.activeTerminalSessionId.collectAsState()
+    val sessions by vm.terminalSessions.collectAsStateWithLifecycle()
+    val activeId by vm.activeTerminalSessionId.collectAsStateWithLifecycle()
     val active = sessions.firstOrNull { it.id == activeId } ?: sessions.first()
-    val mcLines by vm.terminalConsoleLines.collectAsState()
-    val serverState by vm.serverState.collectAsState()
-    val serverProps by vm.serverProperties.collectAsState()
-    val onlinePlayers by vm.onlinePlayerNames.collectAsState()
-    val serverPort by vm.serverPort.collectAsState()
+    val mcLines by vm.terminalConsoleLines.collectAsStateWithLifecycle()
+    val serverState by vm.serverState.collectAsStateWithLifecycle()
+    val serverProps by vm.serverProperties.collectAsStateWithLifecycle()
+    val onlinePlayers by vm.onlinePlayerNames.collectAsStateWithLifecycle()
+    val serverPort by vm.serverPort.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     var input by remember(activeId) { mutableStateOf("") }
@@ -171,8 +174,8 @@ fun TerminalScreen(vm: McViewModel) {
     val listState = rememberLazyListState()
     val rawLines = if (active.type == TerminalSessionType.Minecraft) mcLines else active.lines
 
-    val currentViewDist = (serverProps["view-distance"]?.toIntOrNull() ?: 12).coerceIn(4, 32)
-    val currentSimDist = (serverProps["simulation-distance"]?.toIntOrNull() ?: 8).coerceIn(4, 16)
+    val currentViewDist = (serverProps["view-distance"]?.toIntOrNull() ?: JavaServerPerformance.VIEW_DISTANCE).coerceIn(4, 32)
+    val currentSimDist = (serverProps["simulation-distance"]?.toIntOrNull() ?: JavaServerPerformance.SIMULATION_DISTANCE).coerceIn(4, 16)
 
     LaunchedEffect(Unit) {
         vm.setLogTranslationEnabled(translateLogs)
@@ -601,7 +604,7 @@ fun TerminalScreen(vm: McViewModel) {
                         if (selectedCategory == CmdCategory.ProTools) {
                             AssistChip(
                                 onClick = { showViewDistDialog = true },
-                                label = { Text("🔭 Nâng tầm nhìn ($currentViewDist Chunk)", fontSize = 11.sp, color = Color(0xFFA6E3A1)) },
+                                label = { Text("🔭 Cấu hình nhẹ ($currentViewDist Chunk)", fontSize = 11.sp, color = Color(0xFFA6E3A1)) },
                                 colors = AssistChipDefaults.assistChipColors(containerColor = Color(0xFF1F2D27))
                             )
                             AssistChip(
@@ -657,59 +660,20 @@ fun TerminalScreen(vm: McViewModel) {
         }
     }
 
-    // ── Hộp thoại 1: Nâng tầm nhìn máy chủ (4 - 32 Chunk) ──────────────
+    // Lightweight preset; existing manual values stay unchanged until explicitly saved.
     if (showViewDistDialog) {
-        var viewDraft by remember(currentViewDist) { mutableIntStateOf(currentViewDist) }
-        var simDraft by remember(currentSimDist) { mutableIntStateOf(currentSimDist) }
+        val viewDraft = JavaServerPerformance.VIEW_DISTANCE
+        val simDraft = JavaServerPerformance.SIMULATION_DISTANCE
 
         AlertDialog(
             onDismissRequest = { showViewDistDialog = false },
-            title = { Text("🔭 Chỉnh Tầm Nhìn Máy Chủ (4 – 32 Chunk)", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
+            title = { Text("🔭 Cấu hình nhẹ 6 / 4 chunk", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Đang lưu: tầm nhìn $currentViewDist chunk, mô phỏng $currentSimDist chunk.")
+                    Text("Áp dụng: tầm nhìn $viewDraft chunk (~96 ô), mô phỏng $simDraft chunk.")
                     Text(
-                        "Tầm nhìn hiển thị (view-distance): $viewDraft Chunk (~${viewDraft * 16} ô)",
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 13.sp
-                    )
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        listOf(6, 10, 12, 16, 24, 32).forEach { v ->
-                            FilterChip(
-                                selected = viewDraft == v,
-                                onClick = { viewDraft = v },
-                                label = { Text("$v Chunk", fontSize = 11.sp) }
-                            )
-                        }
-                    }
-                    Slider(
-                        value = viewDraft.toFloat(),
-                        onValueChange = { viewDraft = it.roundToInt().coerceIn(4, 32) },
-                        valueRange = 4f..32f,
-                        steps = 27,
-                        colors = SliderDefaults.colors(thumbColor = Color(0xFF3996FF), activeTrackColor = Color(0xFF3996FF))
-                    )
-                    Text(
-                        "Khoảng cách mô phỏng (simulation-distance): $simDraft Chunk",
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 13.sp
-                    )
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        listOf(4, 6, 8, 10, 12).forEach { s ->
-                            FilterChip(
-                                selected = simDraft == s,
-                                onClick = { simDraft = s },
-                                label = { Text("$s Chunk", fontSize = 11.sp) }
-                            )
-                        }
-                    }
-                    Text(
-                        "💡 Mẹo: Đặt Tầm nhìn 16–24 Chunk + Mô phỏng 6–8 Chunk giúp nhìn cảnh vật siêu xa mà không gây lag điện thoại.",
+                        "Giảm tải chunk cho điện thoại. CPU, nhiệt độ, số người chơi và mod vẫn ảnh hưởng đến độ mượt. Cấu hình có hiệu lực sau khi khởi động lại server.",
                         color = Color(0xFF888888),
                         fontSize = 11.sp
                     )
@@ -719,8 +683,11 @@ fun TerminalScreen(vm: McViewModel) {
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (serverState.isRunning) {
                         OutlinedButton(onClick = {
-                            vm.applyQuickServerConfig(viewDistance = viewDraft, simulationDistance = simDraft)
-                            vm.restartServer()
+                            vm.applyQuickServerConfig(
+                                viewDistance = viewDraft,
+                                simulationDistance = simDraft,
+                                autoRestartIfRunning = true
+                            )
                             showViewDistDialog = false
                         }) {
                             Text("Lưu & Khởi động lại", fontSize = 11.sp)

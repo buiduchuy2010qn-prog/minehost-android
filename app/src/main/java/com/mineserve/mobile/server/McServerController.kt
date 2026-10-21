@@ -1,5 +1,7 @@
 package com.mineserve.mobile.server
 
+import com.mineserve.mobile.data.JavaServerPerformance
+
 import android.util.Log
 import com.mineserve.mobile.R
 import com.mineserve.mobile.McApplication
@@ -1694,6 +1696,27 @@ class McServerController(
             throw RuntimeException(
                 "PocketMine-MP 核心需要 PHP 运行环境，请在「运行环境」中切换为 PHP 后重试"
             )
+        }
+
+        // All managed Java starts (including schedules/crash restarts) share the same
+        // missing-key defaults. Explicit imported/manual values are never replaced.
+        if (!coreType.isBedrock &&
+            coreType !in setOf(ServerCore.Velocity, ServerCore.BungeeCord, ServerCore.Unknown)
+        ) {
+            val performanceFile = File(serverDir, "server.properties")
+            val existing = if (performanceFile.exists()) {
+                ServerProperties.parse(performanceFile.readText()).toMap()
+            } else emptyMap()
+            val missing = JavaServerPerformance.missingProperties(existing)
+            if (missing.isNotEmpty()) {
+                if (performanceFile.exists()) {
+                    performanceFile.copyTo(File(serverDir,
+                        "server.properties.before-defaults-" + System.currentTimeMillis()), overwrite = false)
+                }
+                check(ServerPropertiesManager(termux).writeProperties(missing, dirName)) {
+                    "Không lưu được cấu hình nhẹ."
+                }
+            }
         }
 
         if (coreType == ServerCore.PowerNukkitX) {

@@ -22,6 +22,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -64,7 +68,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -76,11 +80,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.ui.platform.LocalContext
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -161,23 +164,24 @@ private enum class InstalledFilter(val labelRes: Int) { All(R.string.s747), Enab
 @Composable
 fun PluginsScreen(vm: McViewModel) {
     val context = LocalContext.current
-    val config by vm.config.collectAsState()
-    val isBootstrapped by vm.isBootstrapped.collectAsState()
-    val installedPlugins by vm.installedPlugins.collectAsState()
-    val mods by vm.mods.collectAsState()
-    val modrinthResults by vm.modrinthResults.collectAsState()
-    val modrinthLoaders by vm.modrinthLoaders.collectAsState()
-    val modrinthGameVersions by vm.modrinthGameVersions.collectAsState()
-    val selectedModVersion by vm.selectedModVersion.collectAsState()
-    val pluginModrinthResults by vm.pluginModrinthResults.collectAsState()
-    val pluginModrinthLoaders by vm.pluginModrinthLoaders.collectAsState()
-    val selectedPluginVersion by vm.selectedPluginVersion.collectAsState()
-    val isLoadingMoreMods by vm.isLoadingMoreMods.collectAsState()
-    val isLoadingMorePlugins by vm.isLoadingMorePlugins.collectAsState()
-    val downloadProgress by vm.pluginDownloadProgress.collectAsState()
-    val modBatchProgress by vm.modBatchProgress.collectAsState()
-    val lastModImportReport by vm.lastModImportReport.collectAsState()
-    val serverState by vm.serverState.collectAsState()
+    val config by vm.config.collectAsStateWithLifecycle()
+    val isBootstrapped by vm.isBootstrapped.collectAsStateWithLifecycle()
+    val installedPlugins by vm.installedPlugins.collectAsStateWithLifecycle()
+    val mods by vm.mods.collectAsStateWithLifecycle()
+    val modrinthResults by vm.modrinthResults.collectAsStateWithLifecycle()
+    val modrinthLoaders by vm.modrinthLoaders.collectAsStateWithLifecycle()
+    val modrinthGameVersions by vm.modrinthGameVersions.collectAsStateWithLifecycle()
+    val selectedModVersion by vm.selectedModVersion.collectAsStateWithLifecycle()
+    val pluginModrinthResults by vm.pluginModrinthResults.collectAsStateWithLifecycle()
+    val pluginModrinthLoaders by vm.pluginModrinthLoaders.collectAsStateWithLifecycle()
+    val selectedPluginVersion by vm.selectedPluginVersion.collectAsStateWithLifecycle()
+    val isLoadingMoreMods by vm.isLoadingMoreMods.collectAsStateWithLifecycle()
+    val isLoadingMorePlugins by vm.isLoadingMorePlugins.collectAsStateWithLifecycle()
+    val downloadProgress by vm.pluginDownloadProgress.collectAsStateWithLifecycle()
+    val modBatchProgress by vm.modBatchProgress.collectAsStateWithLifecycle()
+    val lastModImportReport by vm.lastModImportReport.collectAsStateWithLifecycle()
+    val runningFlow = remember(vm) { vm.serverState.map { it.isRunning }.distinctUntilChanged() }
+    val isServerRunning by runningFlow.collectAsStateWithLifecycle(initialValue = vm.serverState.value.isRunning)
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
@@ -297,7 +301,6 @@ fun PluginsScreen(vm: McViewModel) {
         }
     }
     val pluginsPath = vm.currentPluginsPath()
-    val isServerRunning = serverState.isRunning
     // 插件冲突检测接近 O(n²)，用 remember 缓存，避免每次重组全量重算
     val pluginConflicts = remember(installedPlugins) { vm.detectPluginConflicts(installedPlugins) }
 
@@ -731,7 +734,7 @@ private fun InstalledTab(
         Spacer(Modifier.height(10.dp))
 
         // 过滤 + 搜索
-        val filtered = installed.filter { p ->
+        val filtered = remember(installed, activeFilter, searchQuery) { installed.filter { p ->
             (activeFilter == InstalledFilter.All ||
                 (activeFilter == InstalledFilter.Enabled && p.isEnabled) ||
                 (activeFilter == InstalledFilter.Disabled && !p.isEnabled) ||
@@ -739,14 +742,18 @@ private fun InstalledTab(
                 (searchQuery.isBlank() || p.baseName.contains(searchQuery, ignoreCase = true) ||
                     (p.meta?.name?.contains(searchQuery, ignoreCase = true) == true))
         }
+        }
 
         if (filtered.isEmpty()) {
             EmptyHint(icon = Icons.Outlined.Extension, text = stringResource(R.string.s773))
             return@McCard
         }
 
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            filtered.forEach { p ->
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(filtered, key = { it.fileName }) { p ->
                 InstalledPluginRow(
                     plugin = p,
                     enabled = !serverRunning,
@@ -1212,8 +1219,11 @@ private fun ModsTab(
                 modifier = Modifier.padding(vertical = 8.dp)
             )
         } else {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                mods.forEach { mod ->
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                items(mods, key = { it.fileName }) { mod ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1373,7 +1383,10 @@ fontWeight = FontWeight.SemiBold
         if (modrinthResults.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
             val coreLoader = if (coreType == ServerCore.Fabric || coreType == ServerCore.Quilt) "fabric" else "forge"
-            modrinthResults.forEach { hit ->
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp)
+            ) {
+                itemsIndexed(modrinthResults, key = { index, hit -> "${hit.slug}:$index" }) { _, hit ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1418,6 +1431,7 @@ fontWeight = FontWeight.SemiBold
                     ) {
                         Text(stringResource(R.string.s837), color = Color.White, fontSize = 11.sp)
                     }
+                }
                 }
             }
             Spacer(Modifier.height(4.dp))
@@ -1559,7 +1573,10 @@ private fun PluginModrinthCard(
         // 结果列表（条目下方红字提示版本不匹配）
         if (results.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
-            results.forEach { hit ->
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp)
+            ) {
+                itemsIndexed(results, key = { index, hit -> "${hit.slug}:$index" }) { _, hit ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1602,6 +1619,7 @@ private fun PluginModrinthCard(
                     ) {
                         Text(stringResource(R.string.s837), color = Color.White, fontSize = 11.sp)
                     }
+                }
                 }
             }
             Spacer(Modifier.height(4.dp))
@@ -1736,27 +1754,9 @@ private fun ModrinthDetailDialog(hit: PluginManager.ModrinthHit?, onDismiss: () 
 
 @Composable
 private fun ModrinthIcon(url: String, size: Dp = 32.dp) {
-    var bitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var bitmap by remember(url) { mutableStateOf<Bitmap?>(null) }
     LaunchedEffect(url) {
-        bitmap = null
-        if (url.isNotBlank()) {
-            bitmap = withContext(Dispatchers.IO) {
-                var conn: java.net.HttpURLConnection? = null
-                try {
-                    val connection = java.net.URL(url).openConnection() as java.net.HttpURLConnection
-                    conn = connection
-                    connection.connectTimeout = 8000
-                    connection.readTimeout = 8000
-                    connection.setRequestProperty("User-Agent", "McServerManager/1.0 (mcserver-manager)")
-                    val bytes = connection.inputStream.use { it.readBytes() }
-                    decodeModrinthIcon(bytes)
-                } catch (e: Exception) {
-                    null
-                } finally {
-                    conn?.disconnect()
-                }
-            }
-        }
+        bitmap = AddonIconLoader.load(url)
     }
     Box(
         modifier = Modifier
@@ -1779,24 +1779,6 @@ private fun ModrinthIcon(url: String, size: Dp = 32.dp) {
     }
 }
 
-/** Plugin cards render icons at 32dp, so retaining full-size remote artwork only wastes memory. */
-private fun decodeModrinthIcon(bytes: ByteArray): Bitmap? {
-    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
-    var sample = 1
-    while (bounds.outWidth / sample > 96 || bounds.outHeight / sample > 96) sample *= 2
-    return BitmapFactory.decodeByteArray(
-        bytes,
-        0,
-        bytes.size,
-        BitmapFactory.Options().apply {
-            inSampleSize = sample
-            inPreferredConfig = Bitmap.Config.ARGB_8888
-        }
-    )
-}
-
 /** 字节数格式化（进度对话框使用） */
 private fun formatBytes(bytes: Long): String {
     if (bytes <= 0) return "0 B"
@@ -1815,7 +1797,7 @@ private fun ModPackDecoderAndTransferCard(
     serverRunning: Boolean,
     hasInstalledMods: Boolean
 ) {
-    val config by vm.config.collectAsState()
+    val config by vm.config.collectAsStateWithLifecycle()
     val otherServers = remember(config.installedCores, config.activeCoreName) {
         config.installedCores.filter { it.name != config.activeCoreName }
     }

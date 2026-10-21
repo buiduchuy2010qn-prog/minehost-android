@@ -1,5 +1,7 @@
 package com.mineserve.mobile.ui
 
+import com.mineserve.mobile.data.JavaServerPerformance
+
 // 性能修改理由：日志只在有新增内容时发布不可变快照，并降低资源采样频率以减少界面重组。
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -2632,16 +2634,16 @@ class McViewModel(
                             "motd" to "MineHost Server",
                             "gamemode" to "survival",
                             "difficulty" to "normal",
-                            "max-players" to "20",
+                            "max-players" to com.mineserve.mobile.data.DeviceMemory.read(app).maxPlayers.toString(),
                             "online-mode" to "false",
                             "enforce-secure-profile" to "false",
                             "allow-flight" to "true",
                             "enable-command-block" to "true",
                             "spawn-protection" to "0",
-                            "view-distance" to "12",
-                            "simulation-distance" to "8"
+                            "view-distance" to JavaServerPerformance.VIEW_DISTANCE.toString(),
+                            "simulation-distance" to JavaServerPerformance.SIMULATION_DISTANCE.toString()
                         )
-                        propertiesManager.writeProperties(initMap, active.dirName)
+                        check(propertiesManager.writeProperties(initMap, active.dirName)) { "Không lưu được cấu hình server." }
                     }
                 }
                 // 启动前重读配置文件里的端口：用户可能刚在文件管理器里改过 server-port
@@ -4612,8 +4614,8 @@ class McViewModel(
 
     fun generateDefaultServerProperties() {
         applyQuickServerConfig(
-            viewDistance = 12,
-            simulationDistance = 8,
+            viewDistance = JavaServerPerformance.VIEW_DISTANCE,
+            simulationDistance = JavaServerPerformance.SIMULATION_DISTANCE,
             onlineMode = false,
             enforceSecureProfile = false,
             allowFlight = true,
@@ -4666,7 +4668,7 @@ class McViewModel(
                         map["difficulty"] = "normal"
                     }
                     if (map["max-players"].isNullOrBlank()) {
-                        map["max-players"] = "20"
+                        map["max-players"] = com.mineserve.mobile.data.DeviceMemory.read(app).maxPlayers.toString()
                     }
                     if (map["online-mode"].isNullOrBlank()) {
                         map["online-mode"] = "false"
@@ -4675,10 +4677,10 @@ class McViewModel(
                         map["enforce-secure-profile"] = "false"
                     }
                     if (map["view-distance"].isNullOrBlank()) {
-                        map["view-distance"] = "12"
+                        map["view-distance"] = JavaServerPerformance.VIEW_DISTANCE.toString()
                     }
                     if (!pnx && map["simulation-distance"].isNullOrBlank()) {
-                        map["simulation-distance"] = "8"
+                        map["simulation-distance"] = JavaServerPerformance.SIMULATION_DISTANCE.toString()
                     }
 
                     viewDistance?.let { map["view-distance"] = it.coerceIn(4, 32).toString() }
@@ -4708,16 +4710,16 @@ class McViewModel(
                             val supported = map.filterKeys { it in powerNukkitXConfigManager.supportedKeys() }
                             powerNukkitXConfigManager.write(dirName, supported)
                         }
-                        propertiesManager.writeProperties(map, dirName)
+                        check(propertiesManager.writeProperties(map, dirName)) { "Không lưu được cấu hình server." }
                     } else {
-                        propertiesManager.writeProperties(map, dirName)
+                        check(propertiesManager.writeProperties(map, dirName)) { "Không lưu được cấu hình server." }
                     }
                     map
                 }
                 _serverProperties.value = updated
                 _serverPropertiesExist.value = true
-                val vd = updated["view-distance"] ?: "12"
-                val sd = updated["simulation-distance"] ?: "8"
+                val vd = updated["view-distance"] ?: JavaServerPerformance.VIEW_DISTANCE.toString()
+                val sd = updated["simulation-distance"] ?: JavaServerPerformance.SIMULATION_DISTANCE.toString()
                 val crackedText = if (updated["online-mode"]?.equals("false", true) == true) "Cho phép Cracked (Đã tắt kiểm tra bản quyền)" else "Chỉ Bản quyền"
                 if (repo.termuxRuntime.isMcRunning()) {
                     if (autoRestartIfRunning) {

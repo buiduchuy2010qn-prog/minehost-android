@@ -1,5 +1,7 @@
 package com.mineserve.mobile.ui.screens
 
+import com.mineserve.mobile.data.JavaServerPerformance
+
 import androidx.compose.ui.res.stringResource
 import com.mineserve.mobile.R
 
@@ -91,8 +93,8 @@ private val propertySpecs: List<PropertySpec> = listOf(
     PropertySpec("server-port", R.string.s857, R.string.s858, PropType.Int, PropGroup.Basic, default = "25565"),
     PropertySpec("server-ip", R.string.s859, R.string.s860, PropType.Text, PropGroup.Basic),
     PropertySpec("motd", R.string.s861, R.string.s862, PropType.Text, PropGroup.Basic, default = "A Minecraft Server"),
-    PropertySpec("view-distance", R.string.s863, R.string.s864, PropType.Int, PropGroup.Basic, default = "12"),
-    PropertySpec("simulation-distance", R.string.s865, R.string.s866, PropType.Int, PropGroup.Basic, default = "8"),
+    PropertySpec("view-distance", R.string.s863, R.string.s864, PropType.Int, PropGroup.Basic, default = JavaServerPerformance.VIEW_DISTANCE.toString()),
+    PropertySpec("simulation-distance", R.string.s865, R.string.s866, PropType.Int, PropGroup.Basic, default = JavaServerPerformance.SIMULATION_DISTANCE.toString()),
     PropertySpec("max-world-size", R.string.s867, R.string.s868, PropType.Int, PropGroup.Basic, default = "29999984"),
     PropertySpec("spawn-protection", R.string.s869, R.string.s870, PropType.Int, PropGroup.Basic, default = "16"),
     PropertySpec("hardcore", R.string.s871, R.string.s872, PropType.Bool, PropGroup.Basic),
@@ -174,13 +176,13 @@ private fun ViewDistanceBoosterCard(
     onUpdateProps: (Map<String, String>) -> Unit,
     onApplyImmediately: (Int, Int?) -> Unit
 ) {
-    val currentView = (props["view-distance"]?.toIntOrNull() ?: 12).coerceIn(4, 32)
-    val currentSim = (props["simulation-distance"]?.toIntOrNull() ?: 8).coerceIn(4, 16)
+    val currentView = (props["view-distance"]?.toIntOrNull() ?: JavaServerPerformance.VIEW_DISTANCE).coerceIn(4, 32)
+    val currentSim = (props["simulation-distance"]?.toIntOrNull() ?: JavaServerPerformance.SIMULATION_DISTANCE).coerceIn(4, 16)
     val isCracked = props["online-mode"]?.trim()?.equals("false", ignoreCase = true) == true
     val isSecureOff = props["enforce-secure-profile"]?.trim()?.equals("false", ignoreCase = true) == true
     val blocks = currentView * 16
 
-    McCard(title = "🔭 Sửa Lỗi Kết Nối & Bộ Tăng Tầm Nhìn (4 – 32 Chunk)") {
+    McCard(title = "🔭 Kết nối & cấu hình nhẹ 6 / 4 chunk") {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -242,14 +244,7 @@ private fun ViewDistanceBoosterCard(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            val viewPresets = listOf(
-                6 to "6 Chunk (Nhẹ)",
-                10 to "10 Chunk (Chuẩn)",
-                12 to "12 Chunk (Đẹp)",
-                16 to "16 Chunk (Xa - Khuyên dùng)",
-                24 to "24 Chunk (Rất xa)",
-                32 to "32 Chunk (Tối đa)"
-            )
+            val viewPresets = listOf(JavaServerPerformance.VIEW_DISTANCE to "6 Chunk (Cấu hình nhẹ)")
             viewPresets.forEach { (v, label) ->
                 SegPill(
                     text = label,
@@ -260,20 +255,7 @@ private fun ViewDistanceBoosterCard(
                 )
             }
         }
-        Spacer(Modifier.height(4.dp))
-        Slider(
-            value = currentView.toFloat(),
-            onValueChange = { v ->
-                val rounded = v.roundToInt().coerceIn(4, 32)
-                onUpdateProps(props.toMutableMap().apply { put("view-distance", rounded.toString()) })
-            },
-            valueRange = 4f..32f,
-            steps = 27,
-            colors = SliderDefaults.colors(
-                thumbColor = Indigo,
-                activeTrackColor = Indigo
-            )
-        )
+
 
         if (showSimulationDistance) {
             Spacer(Modifier.height(8.dp))
@@ -299,14 +281,7 @@ private fun ViewDistanceBoosterCard(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                val simPresets = listOf(
-                    4 to "4 Chunk (Siêu mượt)",
-                    6 to "6 Chunk (Mượt)",
-                    8 to "8 Chunk (Khuyên dùng)",
-                    10 to "10 Chunk",
-                    12 to "12 Chunk",
-                    16 to "16 Chunk"
-                )
+                val simPresets = listOf(JavaServerPerformance.SIMULATION_DISTANCE to "4 Chunk (Giảm tải CPU)")
                 simPresets.forEach { (s, label) ->
                     SegPill(
                         text = label,
@@ -321,19 +296,19 @@ private fun ViewDistanceBoosterCard(
 
         Spacer(Modifier.height(8.dp))
         HintNote(
-            "💡 Bí quyết nhìn siêu xa mà không lag điện thoại: Đặt Tầm nhìn (view-distance) lên 16–24 Chunk để thấy núi đồi và công trình từ rất xa, đồng thời giữ Khoảng cách mô phỏng (simulation-distance) ở 6–8 Chunk để quái vật ở xa không làm nặng CPU! (Trong cài đặt Video của game Minecraft trên máy người chơi, hãy kéo Render Distance lên tương ứng)."
+            "💡 Cấu hình nhẹ: tầm nhìn 6 chunk, mô phỏng 4 chunk. Nút bên dưới áp dụng 6/4; cấu hình đang lưu chỉ đổi khi bạn xác nhận. CPU, nhiệt độ, người chơi và mod vẫn ảnh hưởng TPS. World nhập từ Paper/Spigot có thể có cấu hình chunk riêng trong spigot.yml."
         )
         Spacer(Modifier.height(10.dp))
         Button(
             onClick = {
-                onApplyImmediately(currentView, if (showSimulationDistance) currentSim else null)
+                onApplyImmediately(JavaServerPerformance.VIEW_DISTANCE, if (showSimulationDistance) JavaServerPerformance.SIMULATION_DISTANCE else null)
             },
             colors = ButtonDefaults.buttonColors(containerColor = Indigo),
             shape = McShape.Control,
             modifier = Modifier.fillMaxWidth()
         ) {
             Text(
-                "⚡ Lưu & Áp dụng ngay Tầm nhìn ($currentView Chunk)",
+                "⚡ Áp dụng cấu hình nhẹ 6 / 4 chunk",
                 color = Color.White,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 12.sp
@@ -672,7 +647,7 @@ private val pnxGroups = listOf(
         PnxField("force-gamemode", R.string.pnx_force_gamemode, PnxFieldType.Toggle, "false"),
         PnxField("difficulty", R.string.pnx_difficulty, PnxFieldType.Choice, "easy", listOf("peaceful", "easy", "normal", "hard")),
         PnxField("pvp", R.string.pnx_pvp, PnxFieldType.Toggle, "true"),
-        PnxField("view-distance", R.string.pnx_view_distance, PnxFieldType.Number, "12"),
+        PnxField("view-distance", R.string.pnx_view_distance, PnxFieldType.Number, JavaServerPerformance.VIEW_DISTANCE.toString()),
         PnxField("spawn-protection", R.string.pnx_spawn_protection, PnxFieldType.Number, "16"),
         PnxField("allow-nether", R.string.pnx_allow_nether, PnxFieldType.Toggle, "true"),
         PnxField("allow-the-end", R.string.pnx_allow_end, PnxFieldType.Toggle, "true"),

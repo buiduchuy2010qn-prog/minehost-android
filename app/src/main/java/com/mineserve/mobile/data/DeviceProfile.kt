@@ -5,9 +5,9 @@ data class DeviceProfile(val totalMb: Int, val availableMb: Int, val processors:
     val maxManualHeapMb: Int get() = roundDown((totalMb / 2).coerceIn(1024, 6144))
     val recommendedHeapMb: Int get() = roundDown((totalMb / 3).coerceIn(512, if (lowRam) 1024 else 4096))
     val launchHeapMb: Int get() = minOf(recommendedHeapMb, roundDown(((availableMb - 768).coerceAtLeast(0) * 3) / 4))
-    val viewDistance: Int get() = if (lowRam || totalMb < 5000 || processors <= 4) 4 else 6
-    val simulationDistance: Int get() = 4
-    val maxPlayers: Int get() = if (viewDistance == 4) 3 else 5
+    val viewDistance: Int get() = JavaServerPerformance.VIEW_DISTANCE
+    val simulationDistance: Int get() = JavaServerPerformance.SIMULATION_DISTANCE
+    val maxPlayers: Int get() = if (lowRam || totalMb < 5000 || processors <= 4) 3 else 5
     val properties: Map<String, String> get() = mapOf(
         "view-distance" to viewDistance.toString(), "simulation-distance" to simulationDistance.toString(),
         "max-players" to maxPlayers.toString())

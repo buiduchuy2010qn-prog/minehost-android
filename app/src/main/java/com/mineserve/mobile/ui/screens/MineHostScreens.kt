@@ -9,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -71,31 +72,31 @@ private data class OverviewState(
 
 @Composable
 fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: () -> Unit) {
-    val config by vm.config.collectAsState()
+    val config by vm.config.collectAsStateWithLifecycle()
     val overview = remember(vm) {
         vm.serverState.map { OverviewState(it.isRunning, it.startupPhase, it.tps, it.onlinePlayers, it.usedMemoryMb) }.distinctUntilChanged()
     }
-    val state by overview.collectAsState(initial = OverviewState())
-    val device by vm.deviceProfile.collectAsState()
-    val applying by vm.applyingDeviceTuning.collectAsState()
-    val importing by vm.worldImportBusy.collectAsState()
-    val bootstrapRunning by vm.bootstrapRunning.collectAsState()
-    val ready by vm.isBootstrapped.collectAsState()
-    val bootstrapError by vm.bootstrapError.collectAsState()
-    val stopping by vm.stopInFlight.collectAsState()
-    val downloading by vm.isDownloadingCore.collectAsState()
-    val installing by vm.isInstalling.collectAsState()
-    val addonBusy by vm.pluginDownloadProgress.collectAsState()
-    val javaOperation by vm.javaOperation.collectAsState()
-    val lanIp by vm.lanIp.collectAsState()
-    val lanInterfaceLabel by vm.lanInterfaceLabel.collectAsState()
-    val lanLastUpdated by vm.lanLastUpdatedText.collectAsState()
-    val vpnActiveWarning by vm.vpnActiveWarning.collectAsState()
-    val connectionCheckStatus by vm.connectionCheckStatus.collectAsState()
-    val connectionCheckRunning by vm.connectionCheckRunning.collectAsState()
-    val playConnectionMode by vm.playConnectionMode.collectAsState()
-    val playitState by vm.playitState.collectAsState()
-    val port by vm.serverPort.collectAsState()
+    val state by overview.collectAsStateWithLifecycle(initialValue = OverviewState())
+    val device by vm.deviceProfile.collectAsStateWithLifecycle()
+    val applying by vm.applyingDeviceTuning.collectAsStateWithLifecycle()
+    val importing by vm.worldImportBusy.collectAsStateWithLifecycle()
+    val bootstrapRunning by vm.bootstrapRunning.collectAsStateWithLifecycle()
+    val ready by vm.isBootstrapped.collectAsStateWithLifecycle()
+    val bootstrapError by vm.bootstrapError.collectAsStateWithLifecycle()
+    val stopping by vm.stopInFlight.collectAsStateWithLifecycle()
+    val downloading by vm.isDownloadingCore.collectAsStateWithLifecycle()
+    val installing by vm.isInstalling.collectAsStateWithLifecycle()
+    val addonBusy by vm.pluginDownloadProgress.collectAsStateWithLifecycle()
+    val javaOperation by vm.javaOperation.collectAsStateWithLifecycle()
+    val lanIp by vm.lanIp.collectAsStateWithLifecycle()
+    val lanInterfaceLabel by vm.lanInterfaceLabel.collectAsStateWithLifecycle()
+    val lanLastUpdated by vm.lanLastUpdatedText.collectAsStateWithLifecycle()
+    val vpnActiveWarning by vm.vpnActiveWarning.collectAsStateWithLifecycle()
+    val connectionCheckStatus by vm.connectionCheckStatus.collectAsStateWithLifecycle()
+    val connectionCheckRunning by vm.connectionCheckRunning.collectAsStateWithLifecycle()
+    val playConnectionMode by vm.playConnectionMode.collectAsStateWithLifecycle()
+    val playitState by vm.playitState.collectAsStateWithLifecycle()
+    val port by vm.serverPort.collectAsStateWithLifecycle()
     val clipboard = LocalClipboardManager.current
     val uriHandler = LocalUriHandler.current
     val context = androidx.compose.ui.platform.LocalContext.current

@@ -63,6 +63,29 @@ jobs:
           git rev-parse HEAD > app/build/outputs/apk/release/SOURCE-COMMIT.txt
           sha256sum app/build/outputs/apk/release/*.apk > app/build/outputs/apk/release/SHA256SUMS.txt
           printf '%s\n' "Experimental optimized release. Stable signing from alpha.2 onward. Cannot replace alpha.1 (different key). Export and verify world/full server backups outside app storage before uninstalling alpha.1. No device performance claims. GPL-3.0-or-later." > app/build/outputs/apk/release/READ-ME-FIRST.txt
+      - name: Summarize tests and lint without device-performance claims
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib, xml.etree.ElementTree as ET
+          totals = dict(tests=0, failures=0, errors=0, skipped=0, suites=0)
+          for report in pathlib.Path("app/build/test-results/testReleaseUnitTest").glob("TEST-*.xml"):
+              suite = ET.parse(report).getroot()
+              totals["suites"] += 1
+              for key in ("tests", "failures", "errors", "skipped"):
+                  totals[key] += int(suite.get(key, 0))
+          assert totals["tests"] > 0 and totals["failures"] == totals["errors"] == 0, totals
+          lint = {}
+          lint_path = pathlib.Path("app/build/reports/lint-results-release.xml")
+          if lint_path.exists():
+              for issue in ET.parse(lint_path).getroot().findall("issue"):
+                  severity = issue.get("severity", "Unknown")
+                  lint[severity] = lint.get(severity, 0) + 1
+          result = dict(source=os.environ["GITHUB_SHA"], tests=totals, lint=lint,
+              device_tested=False, view_distance_default=6, simulation_distance_default=4)
+          pathlib.Path("app/build/outputs/apk/release/VERIFICATION.json").write_text(
+              json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+          print(json.dumps(result, ensure_ascii=False))
+          PY
       - uses: actions/upload-artifact@v4
         if: success()
         with:
@@ -75,35 +98,29 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          VERSION=$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts)
+          test -n "$VERSION"
+          TAG="v$VERSION"
           APK=$(find app/build/outputs/apk/release -name '*.apk' -print -quit)
-          cp -f "$APK" app/build/outputs/apk/release/MineHost-1.5-arm64.apk
-          if [ "$APK" != "app/build/outputs/apk/release/MineHost-arm64-v8a-release.apk" ]; then
-            cp -f "$APK" app/build/outputs/apk/release/MineHost-arm64-v8a-release.apk
+          cp "$APK" "app/build/outputs/apk/release/MineHost-$VERSION-arm64.apk"
+          sha256sum "app/build/outputs/apk/release/MineHost-$VERSION-arm64.apk" > app/build/outputs/apk/release/SHA256SUMS.txt
+          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "Release already exists. Refusing to replace published APKs; increment the version."
+            exit 1
           fi
-          sha256sum app/build/outputs/apk/release/MineHost-1.5-arm64.apk > app/build/outputs/apk/release/SHA256SUMS.txt
-          NOTES='Bản chính thức **MineHost 1.5 (ARM64)**:
-          - **Giải mã Thư Mục / Gói Full Mod & Chuyển Mod Sang Server Mới:** Hỗ trợ chọn cả thư mục (`mods/` hoặc gói giải nén), nén `.zip` / `.mrpack`, chọn nhiều file `.jar` cùng lúc, sao chép toàn bộ Mod + Config giữa các máy chủ, tự động tải thư viện phụ thuộc bắt buộc trên Modrinth, nhận diện và tự động tắt (`.jar.disabled`) các mod chỉ chạy trên máy khách (Sodium, Litematica, Iris, EntityCulling...), kèm nút **tải tự động trọn bộ 45+ Mod Server Fabric** từ danh sách của bạn.
-          - **Dọn Sẵn Địa Chỉ Kết Nối Theo Chế Độ & Tự Cập Nhật Khi Đổi Mạng:** Loại bỏ hoàn toàn IP dữ liệu di động 4G/5G (`10.x.x.x` CGNAT) khỏi mục Wi-Fi LAN, ưu tiên địa chỉ `host:port` thực tế của Playit.gg (`217.ip.gl.ply.gg:38773`), tự động làm mới khi đổi mạng Wi-Fi/Hotspot và bổ sung nút **Kiểm tra kết nối thực tế (TCP)**.
-          - **Lưu Lịch Sử Người Chơi Bền Vững Theo Từng Server:** Lưu trữ bền vững danh sách người chơi (kèm UUID thực từ `usercache.json` / Authenticator, thời điểm tham gia đầu tiên/gần nhất, tổng thời gian chơi, trạng thái phiên bị ngắt khi dừng server), tìm kiếm, lọc, sắp xếp và xuất CSV.
-          - Hỗ trợ **cài đè trực tiếp** lên bản 1.4 / 1.3 / 1.2 không mất dữ liệu.'
-          if gh release view v1.5 --repo "${{ github.repository }}" >/dev/null 2>&1; then
-            gh release upload v1.5 \
-              app/build/outputs/apk/release/MineHost-1.5-arm64.apk \
-              app/build/outputs/apk/release/MineHost-arm64-v8a-release.apk \
-              app/build/outputs/apk/release/SHA256SUMS.txt \
-              app/build/outputs/apk/release/SOURCE-COMMIT.txt \
-              --clobber --repo "${{ github.repository }}"
-          else
-            gh release create v1.5 \
-              app/build/outputs/apk/release/MineHost-1.5-arm64.apk \
-              app/build/outputs/apk/release/MineHost-arm64-v8a-release.apk \
-              app/build/outputs/apk/release/SHA256SUMS.txt \
-              app/build/outputs/apk/release/SOURCE-COMMIT.txt \
-              --title "MineHost 1.5 - Giải Mã Full Mod, Dọn Sẵn IP Kết Nối Chính Xác & Lưu Lịch Sử Người Chơi Bền Vững" \
-              --notes "$NOTES" \
-              --latest \
-              --repo "${{ github.repository }}"
-          fi
+          gh release create "$TAG" \
+            "app/build/outputs/apk/release/MineHost-$VERSION-arm64.apk" \
+            "$APK" \
+            app/build/outputs/apk/release/SHA256SUMS.txt \
+            app/build/outputs/apk/release/SOURCE-COMMIT.txt \
+            app/build/outputs/apk/release/SIGNATURE.txt \
+            app/build/outputs/apk/release/APK-INFO.txt \
+            app/build/outputs/apk/release/VERIFICATION.json \
+            --target "$GITHUB_SHA" \
+            --title "MineHost $VERSION - Cấu hình nhẹ 6 chunk" \
+            --notes-file docs/RELEASE-1.5.1.md \
+            --latest \
+            --repo "${{ github.repository }}"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
