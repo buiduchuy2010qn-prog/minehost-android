@@ -268,6 +268,7 @@ fun PluginsScreen(vm: McViewModel) {
     LaunchedEffect(isBootstrapped, config.activeCoreName) {
         if (isBootstrapped && config.activeCoreName != null) {
             vm.refreshInstalledPlugins()
+            vm.refreshMods()
         }
     }
     LaunchedEffect(Unit) {
@@ -315,6 +316,27 @@ fun PluginsScreen(vm: McViewModel) {
         }
     }
     val pluginsPath = vm.currentPluginsPath()
+    val modsPath = remember(pluginsPath) {
+        pluginsPath?.replace(Regex("plugins$"), "mods")
+    }
+    val all56ItemsTop = remember { vm.userScreenshot56ModItems() }
+    val matched56Top = remember(mods, all56ItemsTop) {
+        all56ItemsTop.count { item ->
+            val slugLower = item.slug.lowercase(java.util.Locale.ROOT)
+            val slugNorm = slugLower.replace("-", "").replace("_", "")
+            val jarPrefix = item.originalJarName.substringBefore('-').substringBefore('_').lowercase(java.util.Locale.ROOT)
+            val jarNorm = jarPrefix.replace("-", "").replace("_", "")
+            mods.any { mod ->
+                val baseLower = mod.baseName.lowercase(java.util.Locale.ROOT)
+                val baseNorm = baseLower.replace("-", "").replace("_", "")
+                baseLower.startsWith(slugLower) ||
+                    (jarPrefix.length >= 3 && baseLower.startsWith(jarPrefix)) ||
+                    baseLower.contains(slugLower) ||
+                    (slugNorm.length >= 4 && baseNorm.startsWith(slugNorm)) ||
+                    (jarNorm.length >= 4 && baseNorm.startsWith(jarNorm))
+            }
+        }
+    }
     // 插件冲突检测接近 O(n²)，用 remember 缓存，避免每次重组全量重算
     val pluginConflicts = remember(installedPlugins) { vm.detectPluginConflicts(installedPlugins) }
 
@@ -351,6 +373,7 @@ fun PluginsScreen(vm: McViewModel) {
                         modifier = Modifier.clickable {
                             if (activeCore != null) {
                                 vm.refreshInstalledPlugins()
+                                vm.refreshMods()
                                 scope.launch { snackbarHostState.showSnackbar(context.getString(R.string.s752)) }
                             } else {
                                 scope.launch { snackbarHostState.showSnackbar(context.getString(R.string.s753)) }
@@ -373,30 +396,73 @@ fun PluginsScreen(vm: McViewModel) {
                         fontWeight = FontWeight.SemiBold
                     )
                     Spacer(Modifier.height(4.dp))
-                    Text(
-                        stringResource(R.string.s755, pluginsPath ?: "--"),
-                        color = Muted,
-                        fontSize = 10.sp,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .clip(CircleShape)
-                                .background(if (installedPlugins.isEmpty()) Muted else Mint)
-                        )
-                        Spacer(Modifier.size(6.dp))
+                    if (coreType.supportsMods && !coreType.supportsPlugins) {
+                        val enabledCount = mods.count { it.isEnabled }
+                        val disabledCount = mods.count { !it.isEnabled }
                         Text(
-                            stringResource(R.string.s756, installedPlugins.size) +
-                                if (installedPlugins.count { !it.isEnabled } > 0)
-                                    stringResource(R.string.s757, installedPlugins.count { !it.isEnabled })
-                                else "",
+                            "Thư mục mod: ${modsPath ?: "--"}",
                             color = Muted,
-                            fontSize = 11.sp
+                            fontSize = 10.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
+                        Spacer(Modifier.height(8.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(if (mods.isEmpty()) Muted else Mint)
+                            )
+                            Spacer(Modifier.size(6.dp))
+                            Text(
+                                if (mods.isEmpty()) {
+                                    "Chưa tải mod nào trong thư mục mods/"
+                                } else {
+                                    "✅ Đã tải & cài đặt: ${mods.size} mod (Đang bật: $enabledCount" +
+                                        (if (disabledCount > 0) " · Đang tắt: $disabledCount" else "") +
+                                        " · Bộ 56 Mod gốc: Đã cài $matched56Top/56)"
+                                },
+                                color = if (mods.isEmpty()) Muted else Mint,
+                                fontSize = 11.sp,
+                                fontWeight = if (mods.isEmpty()) FontWeight.Normal else FontWeight.SemiBold
+                            )
+                        }
+                    } else {
+                        Text(
+                            stringResource(R.string.s755, pluginsPath ?: "--"),
+                            color = Muted,
+                            fontSize = 10.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(if (installedPlugins.isEmpty() && mods.isEmpty()) Muted else Mint)
+                            )
+                            Spacer(Modifier.size(6.dp))
+                            val pluginSummary = if (installedPlugins.isEmpty()) {
+                                stringResource(R.string.s756, 0)
+                            } else {
+                                "✅ Đã tải & cài đặt ${installedPlugins.size} plugin" +
+                                    if (installedPlugins.count { !it.isEnabled } > 0)
+                                        stringResource(R.string.s757, installedPlugins.count { !it.isEnabled })
+                                    else ""
+                            }
+                            val modHybridSummary = if (coreType.supportsMods && mods.isNotEmpty()) {
+                                " · ✅ Đã cài ${mods.size} mod"
+                            } else ""
+                            Text(
+                                pluginSummary + modHybridSummary,
+                                color = if (installedPlugins.isEmpty() && mods.isEmpty()) Muted else Mint,
+                                fontSize = 11.sp,
+                                fontWeight = if (installedPlugins.isEmpty() && mods.isEmpty()) FontWeight.Normal else FontWeight.SemiBold
+                            )
+                        }
                     }
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -428,7 +494,14 @@ fun PluginsScreen(vm: McViewModel) {
             } else {
                 val types = availableTypes
                 SegmentedTabs(
-                    options = types.map { it.titleVi },
+                    options = types.map { type ->
+                        when (type) {
+                            ResourceType.Plugin -> if (installedPlugins.isNotEmpty()) "${type.titleVi} (${installedPlugins.size})" else type.titleVi
+                            ResourceType.Mod -> if (mods.isNotEmpty()) "${type.titleVi} (${mods.size})" else type.titleVi
+                            ResourceType.Modpack -> if (matched56Top > 0) "📦 56 Mod ($matched56Top/56)" else type.titleVi
+                            ResourceType.ResourcePack -> type.titleVi
+                        }
+                    },
                     selectedIndex = types.indexOf(resourceType).coerceAtLeast(0),
                     modifier = Modifier.padding(horizontal = McSpacing.Page, vertical = 4.dp),
                     onSelect = { index -> types.getOrNull(index)?.let { resourceType = it } }
@@ -516,6 +589,7 @@ fun PluginsScreen(vm: McViewModel) {
             if (resourceType == ResourceType.Plugin) {
                 PluginModrinthCard(
                     results = pluginModrinthResults,
+                    installedPlugins = installedPlugins,
                     loaders = pluginModrinthLoaders,
                     gameVersions = modrinthGameVersions,
                     selectedVersion = selectedPluginVersion,
@@ -1234,7 +1308,13 @@ private fun ModsTab(
     )
 
     // 已安装模组
-    McCard(title = stringResource(R.string.s828)) {
+    McCard(
+        title = if (mods.isEmpty()) {
+            stringResource(R.string.s828)
+        } else {
+            "✅ Mod đã tải & cài đặt trong Server (${mods.size} tệp)"
+        }
+    ) {
         if (serverRunning) {
             // 服务端运行中禁止启用/禁用或删除模组（文件正被 JVM 占用，改动不会生效且易损坏）
             Text(stringResource(R.string.pl_running_block), color = Coral, fontSize = 11.sp, lineHeight = 15.sp)
@@ -1257,7 +1337,7 @@ private fun ModsTab(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(10.dp))
-                            .background(IndigoSoft)
+                            .background(if (mod.isEnabled) MintSoft else IndigoSoft)
                             .padding(10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -1265,7 +1345,7 @@ private fun ModsTab(
                             modifier = Modifier
                                 .size(32.dp)
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(Indigo),
+                                .background(if (mod.isEnabled) Mint else Indigo),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(mod.baseName.take(2).uppercase(), color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
@@ -1273,11 +1353,12 @@ private fun ModsTab(
                         Spacer(Modifier.size(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(mod.baseName, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            val statusText = if (mod.isEnabled) stringResource(R.string.s238) else stringResource(R.string.s237)
+                            val statusText = if (mod.isEnabled) "✅ Đã cài & Đang bật" else "⏸ Đã tải (Đang tắt)"
                             Text(
-                                "${mod.sizeText} · $statusText",
-                                color = Muted,
-                                fontSize = 10.sp
+                                "$statusText · ${mod.sizeText}",
+                                color = if (mod.isEnabled) Mint else Muted,
+                                fontSize = 10.sp,
+                                fontWeight = if (mod.isEnabled) FontWeight.SemiBold else FontWeight.Normal
                             )
                         }
                         TextButton(onClick = { onToggle(mod.fileName) }, enabled = !serverRunning) {
@@ -1416,6 +1497,17 @@ fontWeight = FontWeight.SemiBold
                 modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp)
             ) {
                 itemsIndexed(modrinthResults, key = { index, hit -> "${hit.slug}:$index" }) { _, hit ->
+                val slugLower = hit.slug.lowercase(java.util.Locale.ROOT)
+                val slugNorm = slugLower.replace("-", "").replace("_", "")
+                val titleNorm = hit.title.lowercase(java.util.Locale.ROOT).replace(Regex("[^a-z0-9]"), "")
+                val matchedInstalledMod = mods.firstOrNull { m ->
+                    val baseLower = m.baseName.lowercase(java.util.Locale.ROOT)
+                    val baseNorm = baseLower.replace("-", "").replace("_", "")
+                    baseLower.startsWith(slugLower) ||
+                        baseLower.contains(slugLower) ||
+                        (slugNorm.length >= 4 && baseNorm.startsWith(slugNorm)) ||
+                        (titleNorm.length >= 5 && baseNorm.startsWith(titleNorm))
+                }
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1453,12 +1545,33 @@ fontWeight = FontWeight.SemiBold
                             Text(hit.description, color = Muted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
-                    Button(
-                        onClick = { onInstallModrinth(hit, selectedModVersion) },
-                        colors = ButtonDefaults.buttonColors(containerColor = Mint),
-                        shape = McShape.ControlCompact
-                    ) {
-                        Text(stringResource(R.string.s837), color = Color.White, fontSize = 11.sp)
+                    if (matchedInstalledMod != null) {
+                        if (matchedInstalledMod.isEnabled) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(MintSoft)
+                                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                Text("✅ Đã cài", color = Mint, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        } else {
+                            OutlinedButton(
+                                onClick = { onToggle(matchedInstalledMod.fileName) },
+                                enabled = !serverRunning,
+                                shape = McShape.ControlCompact
+                            ) {
+                                Text("⏸ Đã tải · Bật", color = Indigo, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    } else {
+                        Button(
+                            onClick = { onInstallModrinth(hit, selectedModVersion) },
+                            colors = ButtonDefaults.buttonColors(containerColor = Mint),
+                            shape = McShape.ControlCompact
+                        ) {
+                            Text(stringResource(R.string.s837), color = Color.White, fontSize = 11.sp)
+                        }
                     }
                 }
                 }
@@ -1482,6 +1595,7 @@ fontWeight = FontWeight.SemiBold
 @Composable
 private fun PluginModrinthCard(
     results: List<PluginManager.ModrinthHit>,
+    installedPlugins: List<PluginManager.InstalledPlugin>,
     loaders: List<String>,
     gameVersions: List<String>,
     selectedVersion: String,
@@ -1606,6 +1720,16 @@ private fun PluginModrinthCard(
                 modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp)
             ) {
                 itemsIndexed(results, key = { index, hit -> "${hit.slug}:$index" }) { _, hit ->
+                val slugLower = hit.slug.lowercase(java.util.Locale.ROOT)
+                val titleNorm = hit.title.lowercase(java.util.Locale.ROOT).replace(Regex("[^a-z0-9]"), "")
+                val matchedInstalledPlugin = installedPlugins.firstOrNull { p ->
+                    val nameLower = p.name.lowercase(java.util.Locale.ROOT)
+                    val fileLower = p.fileName.lowercase(java.util.Locale.ROOT)
+                    val nameNorm = nameLower.replace(Regex("[^a-z0-9]"), "")
+                    nameLower == slugLower ||
+                        fileLower.startsWith(slugLower) ||
+                        (titleNorm.length >= 4 && nameNorm == titleNorm)
+                }
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1641,12 +1765,28 @@ private fun PluginModrinthCard(
                             Text(hit.description, color = Muted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
-                    Button(
-                        onClick = { onInstall(hit, selectedVersion) },
-                        colors = ButtonDefaults.buttonColors(containerColor = Mint),
-                        shape = McShape.ControlCompact
-                    ) {
-                        Text(stringResource(R.string.s837), color = Color.White, fontSize = 11.sp)
+                    if (matchedInstalledPlugin != null) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(MintSoft)
+                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                if (matchedInstalledPlugin.isEnabled) "✅ Đã cài" else "⏸ Đã tải",
+                                color = Mint,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    } else {
+                        Button(
+                            onClick = { onInstall(hit, selectedVersion) },
+                            colors = ButtonDefaults.buttonColors(containerColor = Mint),
+                            shape = McShape.ControlCompact
+                        ) {
+                            Text(stringResource(R.string.s837), color = Color.White, fontSize = 11.sp)
+                        }
                     }
                 }
                 }
@@ -1850,16 +1990,32 @@ private fun ModPackDecoderAndTransferCard(
 
     val effectiveMcVer = selectedCustomVersion.ifBlank { serverMcVer }
 
-    val installedNamesLower = remember(installedMods) {
-        installedMods.filter { it.isEnabled }.map { it.baseName.lowercase(java.util.Locale.ROOT) }
-    }
-    val matched56Count = remember(installedNamesLower, all56Items) {
-        all56Items.count { item ->
-            val slugPrefix = item.slug.lowercase(java.util.Locale.ROOT)
-            val jarPrefix = item.originalJarName.substringBefore('-').substringBefore('_').lowercase(java.util.Locale.ROOT)
-            installedNamesLower.any { it.startsWith(slugPrefix) || it.startsWith(jarPrefix) || it.contains(slugPrefix) }
+    fun findInstalledModFor56(item: McViewModel.CatalogModItem): PluginManager.ModEntry? {
+        val slugLower = item.slug.lowercase(java.util.Locale.ROOT)
+        val slugNorm = slugLower.replace("-", "").replace("_", "")
+        val jarPrefix = item.originalJarName
+            .substringBefore('-')
+            .substringBefore('_')
+            .lowercase(java.util.Locale.ROOT)
+        val jarNorm = jarPrefix.replace("-", "").replace("_", "")
+        return installedMods.firstOrNull { mod ->
+            val baseLower = mod.baseName.lowercase(java.util.Locale.ROOT)
+            val baseNorm = baseLower.replace("-", "").replace("_", "")
+            baseLower.startsWith(slugLower) ||
+                (jarPrefix.length >= 3 && baseLower.startsWith(jarPrefix)) ||
+                baseLower.contains(slugLower) ||
+                (slugNorm.length >= 4 && baseNorm.startsWith(slugNorm)) ||
+                (jarNorm.length >= 4 && baseNorm.startsWith(jarNorm))
         }
     }
+
+    val downloaded56Count = remember(installedMods, all56Items) {
+        all56Items.count { findInstalledModFor56(it) != null }
+    }
+    val enabled56Count = remember(installedMods, all56Items) {
+        all56Items.count { findInstalledModFor56(it)?.isEnabled == true }
+    }
+    val matched56Count = downloaded56Count
 
     val filteredCatalogItems = remember(all56Items, selectedCategoryGroup, catalogSearchQuery) {
         all56Items.filter { item ->
@@ -1914,8 +2070,8 @@ private fun ModPackDecoderAndTransferCard(
         title = "📦 Kho 56 Mod Gốc (Phân 6 Nhóm & Đa Phiên Bản) + Giải Mã Gói Mod",
         trailing = {
             Text(
-                "Đã bật $matched56Count/${all56Items.size} mod",
-                color = if (matched56Count >= all56Items.size) Mint else Indigo,
+                if (downloaded56Count > 0) "✅ Đã cài $downloaded56Count/${all56Items.size} mod" else "Chưa cài (0/${all56Items.size})",
+                color = if (downloaded56Count > 0) Mint else Indigo,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold
             )
@@ -1923,7 +2079,7 @@ private fun ModPackDecoderAndTransferCard(
     ) {
         Text(
             "Đã tích hợp và PHÂN LOẠI ĐỦ 56 MOD từ 5 ảnh chụp màn hình của bạn thành 6 nhóm chức năng rõ ràng (hỗ trợ đa phiên bản Minecraft: 1.21.11, 1.21.4, 1.21.1, 1.20.4, 1.20.1, 1.19.2, 1.18.2, 1.16.5...).\n" +
-                "• Bạn có thể tải trọn bộ 56/56 Mod, tải riêng từng nhóm (tự động kèm Thư viện Lõi), hoặc bấm '➕ Cài' trên từng Mod lẻ mà không làm nặng APK!",
+                "• Những mod nào đã tải sẽ hiển thị rõ '✅ Đã cài' và tự động bỏ qua khi tải lại để không bao giờ bị tải trùng!",
             color = Muted,
             fontSize = 11.sp,
             lineHeight = 16.sp
@@ -1978,20 +2134,88 @@ private fun ModPackDecoderAndTransferCard(
 
         Spacer(Modifier.height(10.dp))
 
-        // Nút chính nổi bật: Dọn mod lạ & Cài lại ĐỦ 56 Mod gốc từ 5 ảnh của bạn
-        Button(
-            onClick = { showAutoPackConfirmDialog = true },
-            enabled = activeCoreExists && !serverRunning,
-            colors = ButtonDefaults.buttonColors(containerColor = Mint),
-            shape = McShape.Control,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(
-                "⚡ Dọn Mod Lạ & Tải ĐỦ 56/56 Mod Gốc (MC $effectiveMcVer)",
-                color = Color.White,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold
-            )
+        // Trạng thái / Nút chính cho trọn bộ 56 Mod
+        if (downloaded56Count >= all56Items.size) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MintSoft)
+                    .padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    "✅ ĐÃ TẢI & CÀI ĐẶT ĐỦ 56/56 MOD GỐC (MC $effectiveMcVer)",
+                    color = Mint,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+                Text(
+                    "Toàn bộ 56/56 mod trong danh sách của bạn đã có sẵn trong thư mục mods/ (Đang bật: $enabled56Count/56). Bạn không cần tải lại nữa!",
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp
+                )
+                OutlinedButton(
+                    onClick = { showAutoPackConfirmDialog = true },
+                    enabled = activeCoreExists && !serverRunning,
+                    shape = McShape.ControlCompact,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        "🔄 Tuỳ chọn: Kiểm tra / Dọn mod lạ / Cài lại",
+                        color = Indigo,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        } else if (downloaded56Count > 0) {
+            val missingCount = all56Items.size - downloaded56Count
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(IndigoSoft)
+                    .padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    "📊 Đã tải & cài $downloaded56Count/56 Mod gốc (Còn thiếu $missingCount Mod)",
+                    color = Indigo,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Button(
+                    onClick = { showAutoPackConfirmDialog = true },
+                    enabled = activeCoreExists && !serverRunning,
+                    colors = ButtonDefaults.buttonColors(containerColor = Mint),
+                    shape = McShape.Control,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        "➕ Tải BỔ SUNG $missingCount Mod Còn Thiếu (MC $effectiveMcVer)",
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        } else {
+            Button(
+                onClick = { showAutoPackConfirmDialog = true },
+                enabled = activeCoreExists && !serverRunning,
+                colors = ButtonDefaults.buttonColors(containerColor = Mint),
+                shape = McShape.Control,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    "⚡ Dọn Mod Lạ & Tải ĐỦ 56/56 Mod Gốc (MC $effectiveMcVer)",
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
 
         Spacer(Modifier.height(8.dp))
@@ -2070,7 +2294,7 @@ private fun ModPackDecoderAndTransferCard(
                 modifier = Modifier.weight(1f)
             ) {
                 Text(
-                    if (showFull56List) "🔼 Thu gọn 6 Nhóm Mod" else "📋 Xem 6 Nhóm 56 Mod ($matched56Count/56)",
+                    if (showFull56List) "🔼 Thu gọn 6 Nhóm Mod" else "📋 Xem 6 Nhóm (Đã cài $downloaded56Count/56)",
                     color = Mint,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold
@@ -2109,7 +2333,11 @@ private fun ModPackDecoderAndTransferCard(
                             .padding(horizontal = 9.dp, vertical = 5.dp)
                     ) {
                         Text(
-                            "📦 Tất cả 6 Nhóm (${all56Items.size})",
+                            if (downloaded56Count >= all56Items.size) {
+                                "✅ Tất cả 6 Nhóm (Đã cài $downloaded56Count/${all56Items.size})"
+                            } else {
+                                "📦 Tất cả 6 Nhóm ($downloaded56Count/${all56Items.size})"
+                            },
                             color = if (allSelected) Color.White else Indigo,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold
@@ -2118,50 +2346,92 @@ private fun ModPackDecoderAndTransferCard(
 
                     categoryGroups.forEach { groupName ->
                         val groupCount = all56Items.count { it.categoryGroup == groupName }
+                        val installedInGroup = all56Items.count { it.categoryGroup == groupName && findInstalledModFor56(it) != null }
+                        val isGroupFull = installedInGroup >= groupCount
                         val isGroupSelected = selectedCategoryGroup == groupName
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(if (isGroupSelected) Indigo else MaterialTheme.colorScheme.surface)
+                                .background(
+                                    when {
+                                        isGroupSelected -> Indigo
+                                        isGroupFull -> MintSoft
+                                        else -> MaterialTheme.colorScheme.surface
+                                    }
+                                )
                                 .clickable { selectedCategoryGroup = groupName }
                                 .padding(horizontal = 9.dp, vertical = 5.dp)
                         ) {
                             Text(
-                                "$groupName ($groupCount)",
-                                color = if (isGroupSelected) Color.White else MaterialTheme.colorScheme.onSurface,
+                                if (isGroupFull) {
+                                    "✅ $groupName (Đã cài $installedInGroup/$groupCount)"
+                                } else if (installedInGroup > 0) {
+                                    "$groupName (Đã cài $installedInGroup/$groupCount)"
+                                } else {
+                                    "$groupName (0/$groupCount)"
+                                },
+                                color = when {
+                                    isGroupSelected -> Color.White
+                                    isGroupFull -> Mint
+                                    else -> MaterialTheme.colorScheme.onSurface
+                                },
                                 fontSize = 10.sp,
-                                fontWeight = if (isGroupSelected) FontWeight.Bold else FontWeight.SemiBold
+                                fontWeight = if (isGroupSelected || isGroupFull) FontWeight.Bold else FontWeight.SemiBold
                             )
                         }
                     }
                 }
 
-                // Nếu người dùng đang chọn 1 nhóm cụ thể -> Hiện nút Cài Nhanh Nguyên Nhóm đó (kèm Thư viện Lõi)
+                // Nếu người dùng đang chọn 1 nhóm cụ thể -> Hiện trạng thái Đã cài hoặc nút Cài Nhanh Nguyên Nhóm đó
                 if (selectedCategoryGroup != "ALL") {
                     val groupOnlyCount = all56Items.count { it.categoryGroup == selectedCategoryGroup }
-                    Button(
-                        onClick = {
-                            vm.installUserScreenshotModCategory(
-                                categoryGroup = selectedCategoryGroup,
-                                includeCoreLibs = true,
-                                customMcVersion = selectedCustomVersion
+                    val installedInSelectedGroup = all56Items.count {
+                        it.categoryGroup == selectedCategoryGroup && findInstalledModFor56(it) != null
+                    }
+                    val missingInSelectedGroup = (groupOnlyCount - installedInSelectedGroup).coerceAtLeast(0)
+
+                    if (installedInSelectedGroup >= groupOnlyCount) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(MintSoft)
+                                .padding(horizontal = 10.dp, vertical = 8.dp)
+                        ) {
+                            Text(
+                                "✅ Nhóm '$selectedCategoryGroup' đã tải & cài đặt đủ ($installedInSelectedGroup/$groupOnlyCount Mod)",
+                                color = Mint,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
                             )
-                        },
-                        enabled = activeCoreExists && !serverRunning,
-                        colors = ButtonDefaults.buttonColors(containerColor = Indigo),
-                        shape = McShape.ControlCompact,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            if (selectedCategoryGroup == "🧱 Thư viện Lõi") {
-                                "⚡ Cài trọn bộ $selectedCategoryGroup ($groupOnlyCount Mod • MC $effectiveMcVer)"
-                            } else {
-                                "⚡ Cài Nhóm '$selectedCategoryGroup' ($groupOnlyCount Mod + Tự kèm Thư viện Lõi • MC $effectiveMcVer)"
+                        }
+                    } else {
+                        Button(
+                            onClick = {
+                                vm.installUserScreenshotModCategory(
+                                    categoryGroup = selectedCategoryGroup,
+                                    includeCoreLibs = true,
+                                    customMcVersion = selectedCustomVersion
+                                )
                             },
-                            color = Color.White,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                            enabled = activeCoreExists && !serverRunning,
+                            colors = ButtonDefaults.buttonColors(containerColor = Indigo),
+                            shape = McShape.ControlCompact,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                if (installedInSelectedGroup > 0) {
+                                    "➕ Đã cài $installedInSelectedGroup/$groupOnlyCount · Tải bổ sung $missingInSelectedGroup Mod thiếu của '$selectedCategoryGroup'"
+                                } else if (selectedCategoryGroup == "🧱 Thư viện Lõi") {
+                                    "⚡ Tải & Cài trọn bộ $selectedCategoryGroup ($groupOnlyCount Mod • MC $effectiveMcVer)"
+                                } else {
+                                    "⚡ Tải & Cài Nhóm '$selectedCategoryGroup' ($groupOnlyCount Mod + Kèm Thư viện Lõi • MC $effectiveMcVer)"
+                                },
+                                color = Color.White,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
 
@@ -2188,6 +2458,8 @@ private fun ModPackDecoderAndTransferCard(
                 }
 
                 groupedDisplay.forEach { (grpTitle, grpItems) ->
+                    val grpInstalledCount = grpItems.count { findInstalledModFor56(it) != null }
+                    val grpIsFull = grpInstalledCount >= grpItems.size
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -2196,37 +2468,48 @@ private fun ModPackDecoderAndTransferCard(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            "$grpTitle (${grpItems.size} mod)",
+                            "$grpTitle (Đã cài $grpInstalledCount/${grpItems.size} mod)",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.ExtraBold,
-                            color = Indigo
+                            color = if (grpIsFull) Mint else Indigo
                         )
                         if (selectedCategoryGroup == "ALL") {
-                            Text(
-                                "⚡ Cài nhóm này",
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Mint,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .clickable(enabled = activeCoreExists && !serverRunning) {
-                                        vm.installUserScreenshotModCategory(
-                                            categoryGroup = grpTitle,
-                                            includeCoreLibs = true,
-                                            customMcVersion = selectedCustomVersion
-                                        )
-                                    }
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
+                            if (grpIsFull) {
+                                Text(
+                                    "✅ Đã cài đủ (${grpInstalledCount}/${grpItems.size})",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Mint,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(MintSoft)
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            } else {
+                                Text(
+                                    if (grpInstalledCount > 0) "➕ Tải thiếu (${grpItems.size - grpInstalledCount} mod)" else "⚡ Cài nhóm này",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Mint,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .clickable(enabled = activeCoreExists && !serverRunning) {
+                                            vm.installUserScreenshotModCategory(
+                                                categoryGroup = grpTitle,
+                                                includeCoreLibs = true,
+                                                customMcVersion = selectedCustomVersion
+                                            )
+                                        }
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
                         }
                     }
 
                     grpItems.forEach { item ->
-                        val slugPrefix = item.slug.lowercase(java.util.Locale.ROOT)
-                        val jarPrefix = item.originalJarName.substringBefore('-').substringBefore('_').lowercase(java.util.Locale.ROOT)
-                        val isInstalled = installedNamesLower.any {
-                            it.startsWith(slugPrefix) || it.startsWith(jarPrefix) || it.contains(slugPrefix)
-                        }
+                        val matchedMod = findInstalledModFor56(item)
+                        val isInstalled = matchedMod != null
+                        val isEnabledMod = matchedMod?.isEnabled == true
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -2239,7 +2522,7 @@ private fun ModPackDecoderAndTransferCard(
                                 "#${item.index}",
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Indigo,
+                                color = if (isInstalled) Mint else Indigo,
                                 modifier = Modifier.size(width = 28.dp, height = 18.dp)
                             )
                             Column(modifier = Modifier.weight(1f)) {
@@ -2265,21 +2548,43 @@ private fun ModPackDecoderAndTransferCard(
                                     BadgeChip(item.scopeVi, Indigo, IndigoSoft)
                                 }
                                 Text(
-                                    item.originalJarName,
+                                    if (matchedMod != null) {
+                                        "✅ Đã tải tệp: ${matchedMod.fileName} (${matchedMod.sizeText})"
+                                    } else {
+                                        "Chưa tải (${item.originalJarName})"
+                                    },
                                     fontSize = 9.sp,
-                                    color = Muted,
+                                    color = if (matchedMod != null) Mint else Muted,
+                                    fontWeight = if (matchedMod != null) FontWeight.SemiBold else FontWeight.Normal,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
                             }
                             Spacer(Modifier.size(6.dp))
-                            if (isInstalled) {
-                                Text(
-                                    "✅ Đã bật",
-                                    color = Mint,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
+                            if (isInstalled && isEnabledMod) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(MintSoft)
+                                        .padding(horizontal = 8.dp, vertical = 5.dp)
+                                ) {
+                                    Text(
+                                        "✅ Đã cài",
+                                        color = Mint,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            } else if (isInstalled && !isEnabledMod) {
+                                OutlinedButton(
+                                    onClick = { vm.toggleModEnabled(matchedMod!!.fileName) },
+                                    enabled = activeCoreExists && !serverRunning,
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                    modifier = Modifier.height(30.dp)
+                                ) {
+                                    Text("⏸ Đã tải · Bật", color = Indigo, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                }
                             } else {
                                 Button(
                                     onClick = {
@@ -2356,19 +2661,45 @@ private fun ModPackDecoderAndTransferCard(
 
     if (showAutoPackConfirmDialog) {
         var cleanAllNon56 by remember { mutableStateOf(true) }
+        var forceReinstallAll by remember { mutableStateOf(false) }
+        val missingCountDialog = (all56Items.size - downloaded56Count).coerceAtLeast(0)
         AlertDialog(
             onDismissRequest = { showAutoPackConfirmDialog = false },
-            title = { Text("⚡ Cài Đặt ĐỦ 56/56 Mod Gốc (MC $effectiveMcVer)", fontSize = 15.sp, fontWeight = FontWeight.Bold) },
+            title = {
+                Text(
+                    if (downloaded56Count >= all56Items.size) {
+                        "✅ Đã Cài Đủ 56/56 Mod (MC $effectiveMcVer)"
+                    } else {
+                        "⚡ Cài Đặt Bộ 56 Mod Gốc (MC $effectiveMcVer)"
+                    },
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            },
             text = {
                 Column(
                     modifier = Modifier.verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text(
-                        "Hệ thống sẽ tải trực tiếp từ Modrinth ĐỦ 56 MOD CHÍNH XÁC theo 6 nhóm phân loại cho phiên bản Minecraft $effectiveMcVer:",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (downloaded56Count >= all56Items.size) MintSoft else IndigoSoft)
+                            .padding(8.dp)
+                    ) {
+                        Text(
+                            if (downloaded56Count >= all56Items.size) {
+                                "✅ Máy chủ đã tải & cài đặt đủ 56/56 Mod! Hệ thống sẽ không tải lại các mod đã có (trừ khi bạn tích chọn 'Tải lại từ đầu' bên dưới)."
+                            } else {
+                                "📊 Trạng thái hiện tại: Đã cài $downloaded56Count/56 Mod · Còn thiếu $missingCountDialog Mod.\nHệ thống sẽ giữ nguyên $downloaded56Count mod đã có và CHỈ TẢI BỔ SUNG $missingCountDialog mod còn thiếu!"
+                            },
+                            fontSize = 11.sp,
+                            color = if (downloaded56Count >= all56Items.size) Mint else Indigo,
+                            fontWeight = FontWeight.SemiBold,
+                            lineHeight = 15.sp
+                        )
+                    }
                     Text(
                         "• ⚡ Tối ưu & Chống Lag (14 Mod): Alternate Current, C2ME, Chunky, Debugify, EntityCulling, FerriteCore, Ksyxis, Lithium, ModernFix-mVUS, NoisiumForked, ServerCore, Sodium, Stfu, ThreadTweak.\n" +
                             "• 🧱 Thư viện Lõi (11 Mod): Architectury API, Balm, Cloth Config, Fabric API, Forge Config API Port, JamLib, MaLiLib, Player Animation Lib, Polymer, Puzzles Lib, YACL.\n" +
@@ -2396,6 +2727,23 @@ private fun ModPackDecoderAndTransferCard(
                             fontWeight = FontWeight.SemiBold
                         )
                     }
+                    if (downloaded56Count > 0) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(FieldGray)
+                                .clickable { forceReinstallAll = !forceReinstallAll }
+                                .padding(8.dp)
+                        ) {
+                            Checkbox(checked = forceReinstallAll, onCheckedChange = { forceReinstallAll = it })
+                            Text(
+                                "🔄 Tải lại từ đầu cả $downloaded56Count mod đã cài (Chỉ bật nếu file mod cũ bị hỏng)",
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
                 }
             },
             confirmButton = {
@@ -2404,12 +2752,23 @@ private fun ModPackDecoderAndTransferCard(
                         showAutoPackConfirmDialog = false
                         vm.installUserScreenshotModpackFromModrinth(
                             cleanOtherMods = cleanAllNon56,
-                            customMcVersion = selectedCustomVersion
+                            customMcVersion = selectedCustomVersion,
+                            forceReinstallAll = forceReinstallAll
                         )
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Mint)
                 ) {
-                    Text("Tải & Cài Đủ 56 Mod ($effectiveMcVer)", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(
+                        if (!forceReinstallAll && missingCountDialog in 1 until all56Items.size) {
+                            "Tải bổ sung $missingCountDialog Mod thiếu ($effectiveMcVer)"
+                        } else if (!forceReinstallAll && downloaded56Count >= all56Items.size) {
+                            "Kiểm tra & Dọn mod lạ"
+                        } else {
+                            "Tải & Cài Đủ 56 Mod ($effectiveMcVer)"
+                        },
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             },
             dismissButton = {

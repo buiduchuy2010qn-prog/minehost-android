@@ -295,10 +295,34 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
     val playConnectionMode by vm.playConnectionMode.collectAsStateWithLifecycle()
     val playitState by vm.playitState.collectAsStateWithLifecycle()
     val port by vm.serverPort.collectAsStateWithLifecycle()
+    val installedMods by vm.mods.collectAsStateWithLifecycle()
     val clipboard = LocalClipboardManager.current
     val uriHandler = LocalUriHandler.current
     val context = androidx.compose.ui.platform.LocalContext.current
     val active = config.installedCores.firstOrNull { it.name == config.activeCoreName }
+    val all56Items = remember { vm.userScreenshot56ModItems() }
+    val categoryGroups = remember { vm.modPackCategoryGroups() }
+
+    fun isCatalogItemInstalled(item: McViewModel.CatalogModItem): Boolean {
+        val slugLower = item.slug.lowercase(java.util.Locale.ROOT)
+        val slugNorm = slugLower.replace("-", "").replace("_", "")
+        val jarPrefix = item.originalJarName.substringBefore('-').substringBefore('_').lowercase(java.util.Locale.ROOT)
+        val jarNorm = jarPrefix.replace("-", "").replace("_", "")
+        return installedMods.any { mod ->
+            val baseLower = mod.baseName.lowercase(java.util.Locale.ROOT)
+            val baseNorm = baseLower.replace("-", "").replace("_", "")
+            baseLower.startsWith(slugLower) ||
+                (jarPrefix.length >= 3 && baseLower.startsWith(jarPrefix)) ||
+                baseLower.contains(slugLower) ||
+                (slugNorm.length >= 4 && baseNorm.startsWith(slugNorm)) ||
+                (jarNorm.length >= 4 && baseNorm.startsWith(jarNorm))
+        }
+    }
+
+    val downloaded56Count = remember(installedMods, all56Items) {
+        all56Items.count { isCatalogItemInstalled(it) }
+    }
+
     var confirm by remember { mutableStateOf<String?>(null) }
     val heapLimit = device?.maxManualHeapMb ?: 2048
     var heap by remember(config.maxHeapMb, heapLimit) { mutableFloatStateOf(config.maxHeapMb.toFloat().coerceIn(512f, heapLimit.toFloat())) }
@@ -312,6 +336,12 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
         else -> "⚪ ĐANG DỪNG (SẴN SÀNG)"
     }
     LaunchedEffect(Unit) { vm.refreshLanIp() }
+    LaunchedEffect(ready, config.activeCoreName) {
+        if (ready && config.activeCoreName != null) {
+            vm.refreshMods()
+            vm.refreshInstalledPlugins()
+        }
+    }
 
     HostPage(
         title = "Server của bạn",
@@ -550,7 +580,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
 
                     QuickPixelTile(
                         title = "Kho 56 Mod",
-                        subtitle = "Đã chia 6 nhóm",
+                        subtitle = if (downloaded56Count > 0) "✅ Đã cài $downloaded56Count/56 Mod" else "Đã chia 6 nhóm (0/56)",
                         artKind = MinecraftArtKind.CHEST,
                         modifier = Modifier.weight(1f)
                     ) { navigate(SubPage.Plugins) }
@@ -819,31 +849,33 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                 HostCard(
                     title = "Kho 56 Mod Gốc (Đã Phân 6 Nhóm & Đa Phiên Bản)",
                     artKind = MinecraftArtKind.CHEST,
-                    badgeText = "56 Mod"
+                    badgeText = if (downloaded56Count > 0) "✅ Đã cài $downloaded56Count/56" else "Chưa cài (0/56)"
                 ) {
                     Text(
-                        "Tích hợp đủ 56/56 Mod từ 5 ảnh chụp của bạn, đã phân loại thành 6 nhóm chức năng rõ ràng (hỗ trợ tải theo từng nhóm, tải lẻ từng mod hoặc tải đủ 56 mod cho nhiều phiên bản Minecraft):",
+                        if (downloaded56Count >= all56Items.size) {
+                            "✅ Máy chủ hiện tại đã tải và cài đặt ĐỦ ${all56Items.size}/${all56Items.size} Mod gốc trong thư mục mods/ (${installedMods.size} tệp mod tổng cộng). Bạn có thể vào Kho Mod để bật/tắt hoặc xem từng nhóm:"
+                        } else if (downloaded56Count > 0) {
+                            "📊 Đã tải & cài $downloaded56Count/${all56Items.size} Mod gốc (Còn thiếu ${all56Items.size - downloaded56Count} Mod). Bấm nút bên dưới để chỉ tải bổ sung các mod còn thiếu mà không tải lại mod đã có:"
+                        } else {
+                            "Tích hợp đủ 56/56 Mod từ 5 ảnh chụp của bạn, đã phân loại thành 6 nhóm chức năng rõ ràng (hỗ trợ tải theo từng nhóm, tải lẻ từng mod hoặc tải đủ 56 mod cho nhiều phiên bản Minecraft):"
+                        },
                         style = MaterialTheme.typography.bodySmall
                     )
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        listOf(
-                            "⚡ Tối ưu & Chống Lag (14)",
-                            "🧱 Thư viện Lõi (11)",
-                            "🏠 Nội thất Macaw's & Xây dựng (14)",
-                            "🍳 Ẩm thực & Nông trại (8)",
-                            "🌿 Tiện ích & Voice Chat (6)",
-                            "🐾 Động vật & Sinh vật (3)"
-                        ).forEach { badge ->
+                        categoryGroups.forEach { grpName ->
+                            val grpTotal = all56Items.count { it.categoryGroup == grpName }
+                            val grpInstalled = all56Items.count { it.categoryGroup == grpName && isCatalogItemInstalled(it) }
+                            val grpFull = grpInstalled >= grpTotal
                             Surface(
-                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                                color = if (grpFull) MaterialTheme.colorScheme.primary.copy(alpha = 0.22f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
                                 shape = RoundedCornerShape(8.dp),
                                 modifier = Modifier.clickable { navigate(SubPage.Plugins) }
                             ) {
                                 Text(
-                                    badge,
+                                    if (grpFull) "✅ $grpName ($grpInstalled/$grpTotal)" else "$grpName ($grpInstalled/$grpTotal)",
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.primary,
@@ -852,21 +884,39 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             }
                         }
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    if (downloaded56Count >= all56Items.size) {
                         Button(
-                            onClick = { vm.installUserScreenshotModpackFromModrinth(cleanOtherMods = true) },
-                            enabled = ready && !state.isRunning && !busy,
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("⚡ Dọn Lạ & Tải Đủ 56 Mod", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
-                        }
-                        OutlinedButton(
                             onClick = { navigate(SubPage.Plugins) },
                             shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("📦 Xem 6 Nhóm Mod", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text("✅ Đã Cài Đủ 56/56 Mod · Mở Quản Lý 6 Nhóm Mod", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                        }
+                    } else {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                            Button(
+                                onClick = { vm.installUserScreenshotModpackFromModrinth(cleanOtherMods = true) },
+                                enabled = ready && !state.isRunning && !busy,
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(
+                                    if (downloaded56Count > 0) {
+                                        "➕ Tải Bổ Sung ${all56Items.size - downloaded56Count} Mod Thiếu"
+                                    } else {
+                                        "⚡ Dọn Lạ & Tải Đủ 56 Mod"
+                                    },
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                            }
+                            OutlinedButton(
+                                onClick = { navigate(SubPage.Plugins) },
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("📦 Xem 6 Nhóm ($downloaded56Count/56)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }

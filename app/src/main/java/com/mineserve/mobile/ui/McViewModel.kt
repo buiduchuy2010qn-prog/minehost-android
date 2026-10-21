@@ -3546,12 +3546,29 @@ class McViewModel(
     fun currentServerVersionForUi(): String =
         currentServerVersion().ifBlank { "1.21.11" }
 
+    fun findMatchingInstalledMod(
+        item: PluginManager.UserScreenshotModItem,
+        existingMods: List<PluginManager.ModEntry> = _mods.value
+    ): PluginManager.ModEntry? {
+        val slugPrefix = item.slug.lowercase(java.util.Locale.ROOT)
+        val jarPrefix = item.originalJarName.substringBefore('-').substringBefore('_').lowercase(java.util.Locale.ROOT)
+        return existingMods.firstOrNull { entry ->
+            val b = entry.baseName.lowercase(java.util.Locale.ROOT)
+            b.startsWith(slugPrefix) || b.startsWith(jarPrefix) || b.contains(slugPrefix)
+        }
+    }
+
     /**
      * Tải tự động trọn bộ ĐỦ 56 MOD CHÍNH XÁC từ 5 ảnh chụp màn hình `.minecraft/mods` của bạn
      * tương thích với phiên bản Minecraft của server hiện tại (hoặc phiên bản tùy chọn) từ Modrinth,
      * đồng thời dọn các mod lạ gây lỗi server.
+     * Mặc định tự động bỏ qua các mod ĐÃ TẢI & CÀI ĐẶT SẴN để không tải lại từ đầu!
      */
-    fun installUserScreenshotModpackFromModrinth(cleanOtherMods: Boolean = false, customMcVersion: String = "") {
+    fun installUserScreenshotModpackFromModrinth(
+        cleanOtherMods: Boolean = false,
+        customMcVersion: String = "",
+        forceReinstallAll: Boolean = false
+    ) {
         if (!requireServerStopped("tải gói 56 mod tự động")) return
         val activeInstalled = config.value.installedCores.firstOrNull { it.name == config.value.activeCoreName }
         val targetCore = activeInstalled?.core
@@ -3568,52 +3585,84 @@ class McViewModel(
         val items = pluginManager.USER_SCREENSHOT_56_MOD_ITEMS
 
         viewModelScope.launch {
-            _modBatchProgress.value = "Đang chuẩn bị dọn mod lạ & tải đủ ${items.size} mod gốc cho $loader $mcVer..."
+            _modBatchProgress.value = "Đang kiểm tra các mod đã cài sẵn trong thư mục mods/..."
             val installed = java.util.Collections.synchronizedList(mutableListOf<String>())
             val skipped = java.util.Collections.synchronizedList(mutableListOf<String>())
             var cleanedLegacyCount = 0
+            var alreadyInstalledCount = 0
+            var reEnabledCount = 0
             try {
                 withContext(Dispatchers.IO) {
                     cleanedLegacyCount = pluginManager.cleanConflictingModsForUser56Pack(dirName, removeAllNon56 = cleanOtherMods)
-                    val semaphore = kotlinx.coroutines.sync.Semaphore(4)
-                    val doneCounter = java.util.concurrent.atomic.AtomicInteger(0)
-                    kotlinx.coroutines.coroutineScope {
-                        items.map { item ->
-                            launch(Dispatchers.IO) {
-                                semaphore.acquire()
-                                try {
-                                    val resolved = pluginManager.resolveSingleModrinthSlug(item.slug, mcVer, loader)
-                                    if (resolved == null) {
-                                        skipped += "${item.title} (${item.slug})"
-                                    } else {
-                                        val (url, fileName) = resolved
-                                        pluginManager.installModPackJarFromUrl(url, fileName, dirName)
-                                        installed += fileName
-                                    }
-                                } catch (e: Exception) {
-                                    skipped += "${item.title} (${item.slug})"
-                                } finally {
-                                    val done = doneCounter.incrementAndGet()
-                                    _modBatchProgress.value = "Đang tải & cài đặt ($done/${items.size}): ${item.title} ($mcVer)..."
-                                    semaphore.release()
-                                }
+                    val existingMods = pluginManager.listMods(dirName)
+                    val itemsToDownload = mutableListOf<PluginManager.UserScreenshotModItem>()
+
+                    for (item in items) {
+                        val existing = findMatchingInstalledMod(item, existingMods)
+                        if (existing != null && !forceReinstallAll) {
+                            alreadyInstalledCount++
+                            if (!existing.isEnabled) {
+                                pluginManager.toggleMod(dirName, existing.fileName)
+                                reEnabledCount++
                             }
-                        }.forEach { it.join() }
+                        } else {
+                            itemsToDownload += item
+                        }
+                    }
+
+                    if (itemsToDownload.isNotEmpty()) {
+                        val semaphore = kotlinx.coroutines.sync.Semaphore(4)
+                        val doneCounter = java.util.concurrent.atomic.AtomicInteger(0)
+                        kotlinx.coroutines.coroutineScope {
+                            itemsToDownload.map { item ->
+                                launch(Dispatchers.IO) {
+                                    semaphore.acquire()
+                                    try {
+                                        val resolved = pluginManager.resolveSingleModrinthSlug(item.slug, mcVer, loader)
+                                        if (resolved == null) {
+                                            skipped += "${item.title} (${item.slug})"
+                                        } else {
+                                            val (url, fileName) = resolved
+                                            pluginManager.installModPackJarFromUrl(url, fileName, dirName)
+                                            installed += fileName
+                                        }
+                                    } catch (e: Exception) {
+                                        skipped += "${item.title} (${item.slug})"
+                                    } finally {
+                                        val done = doneCounter.incrementAndGet()
+                                        _modBatchProgress.value = "Đang tải bổ sung ($done/${itemsToDownload.size}): ${item.title} ($mcVer)..."
+                                        semaphore.release()
+                                    }
+                                }
+                            }.forEach { it.join() }
+                        }
                     }
                 }
                 refreshMods()
                 refreshWorldModCount()
-                _lastModImportReport.value = buildString {
-                    appendLine("✅ Đã cài đặt hoàn tất Bộ ${installed.size}/${items.size} Mod gốc từ 5 ảnh chụp của bạn ($loader $mcVer)!")
-                    appendLine("• Đã tải & bật đầy đủ: ${installed.size} tệp .jar trong thư mục mods/ (6 nhóm phân loại: Tối ưu, Thư viện Lõi, Macaw's & Xây dựng, Ẩm thực, Tiện ích & Voice, Động vật).")
-                    if (cleanedLegacyCount > 0) {
-                        appendLine("• Đã tự động dọn sạch $cleanedLegacyCount tệp mod lạ/xung đột từ lần cài trước để khắc phục lỗi server.")
-                    }
-                    if (skipped.isNotEmpty()) {
-                        appendLine("• Có ${skipped.size} mod chưa phát hành cho $mcVer: ${skipped.take(6).joinToString(", ")}.")
-                    }
-                }.trim()
-                _messageFlow.tryEmit("🎉 Đã cài xong ${installed.size}/${items.size} mod gốc ($mcVer) vào server!")
+                val totalActiveNow = alreadyInstalledCount + installed.size
+                if (installed.isEmpty() && alreadyInstalledCount >= items.size) {
+                    val cleanNote = if (cleanedLegacyCount > 0) " (Đã dọn $cleanedLegacyCount mod lạ)" else ""
+                    val enableNote = if (reEnabledCount > 0) " (Đã bật lại $reEnabledCount mod đang tắt)" else ""
+                    _messageFlow.tryEmit("✅ Server ĐÃ CÀI ĐỦ ${items.size}/${items.size} Mod gốc từ trước rồi — không cần tải lại!$cleanNote$enableNote")
+                } else {
+                    _lastModImportReport.value = buildString {
+                        appendLine("✅ Hoàn tất kiểm tra & cài đặt Bộ Mod Gốc ($totalActiveNow/${items.size} Mod • $loader $mcVer)!")
+                        if (alreadyInstalledCount > 0) {
+                            appendLine("• Đã giữ nguyên $alreadyInstalledCount mod đã tải sẵn trong máy (không tải lại).")
+                        }
+                        if (installed.isNotEmpty()) {
+                            appendLine("• Đã tải bổ sung thành công: ${installed.size} mod còn thiếu vào thư mục mods/.")
+                        }
+                        if (cleanedLegacyCount > 0) {
+                            appendLine("• Đã tự động dọn sạch $cleanedLegacyCount tệp mod lạ/xung đột từ lần cài trước.")
+                        }
+                        if (skipped.isNotEmpty()) {
+                            appendLine("• Có ${skipped.size} mod chưa phát hành cho $mcVer: ${skipped.take(6).joinToString(", ")}.")
+                        }
+                    }.trim()
+                    _messageFlow.tryEmit("🎉 Đã có đủ $totalActiveNow/${items.size} mod gốc ($mcVer) trong server!")
+                }
             } catch (e: Exception) {
                 _errorFlow.tryEmit("Lỗi khi tải bộ 56 mod: ${e.message}")
             } finally {
@@ -3623,8 +3672,7 @@ class McViewModel(
     }
 
     /**
-     * Cài đặt nhanh theo từng Nhóm Phân Loại trong 56 Mod (ví dụ: chỉ cài Nhóm Tối ưu 14 Mod,
-     * hoặc cài Nhóm Ẩm thực + tự động kèm Thư viện Lõi để không bao giờ thiếu dependency).
+     * Cài đặt nhanh theo từng Nhóm Phân Loại trong 56 Mod (tự động bỏ qua các mod đã tải sẵn).
      */
     fun installUserScreenshotModCategory(
         categoryGroup: String,
@@ -3650,49 +3698,73 @@ class McViewModel(
         }.distinctBy { it.slug }
 
         viewModelScope.launch {
-            _modBatchProgress.value = "Đang tải nhóm '$categoryGroup' (${items.size} mod) cho $loader $mcVer..."
+            _modBatchProgress.value = "Đang kiểm tra các mod thuộc nhóm '$categoryGroup'..."
             val installed = java.util.Collections.synchronizedList(mutableListOf<String>())
             val skipped = java.util.Collections.synchronizedList(mutableListOf<String>())
+            var alreadyCount = 0
             try {
                 withContext(Dispatchers.IO) {
-                    val semaphore = kotlinx.coroutines.sync.Semaphore(4)
-                    val doneCounter = java.util.concurrent.atomic.AtomicInteger(0)
-                    kotlinx.coroutines.coroutineScope {
-                        items.map { item ->
-                            launch(Dispatchers.IO) {
-                                semaphore.acquire()
-                                try {
-                                    val resolved = pluginManager.resolveSingleModrinthSlug(item.slug, mcVer, loader)
-                                    if (resolved == null) {
-                                        skipped += item.title
-                                    } else {
-                                        val (url, fileName) = resolved
-                                        pluginManager.installModPackJarFromUrl(url, fileName, dirName)
-                                        installed += fileName
-                                    }
-                                } catch (e: Exception) {
-                                    skipped += item.title
-                                } finally {
-                                    val done = doneCounter.incrementAndGet()
-                                    _modBatchProgress.value = "Đang cài nhóm $categoryGroup ($done/${items.size}): ${item.title} ($mcVer)..."
-                                    semaphore.release()
-                                }
+                    val existingMods = pluginManager.listMods(dirName)
+                    val itemsToDownload = mutableListOf<PluginManager.UserScreenshotModItem>()
+                    for (item in items) {
+                        val existing = findMatchingInstalledMod(item, existingMods)
+                        if (existing != null) {
+                            alreadyCount++
+                            if (!existing.isEnabled) {
+                                pluginManager.toggleMod(dirName, existing.fileName)
                             }
-                        }.forEach { it.join() }
+                        } else {
+                            itemsToDownload += item
+                        }
+                    }
+
+                    if (itemsToDownload.isNotEmpty()) {
+                        val semaphore = kotlinx.coroutines.sync.Semaphore(4)
+                        val doneCounter = java.util.concurrent.atomic.AtomicInteger(0)
+                        kotlinx.coroutines.coroutineScope {
+                            itemsToDownload.map { item ->
+                                launch(Dispatchers.IO) {
+                                    semaphore.acquire()
+                                    try {
+                                        val resolved = pluginManager.resolveSingleModrinthSlug(item.slug, mcVer, loader)
+                                        if (resolved == null) {
+                                            skipped += item.title
+                                        } else {
+                                            val (url, fileName) = resolved
+                                            pluginManager.installModPackJarFromUrl(url, fileName, dirName)
+                                            installed += fileName
+                                        }
+                                    } catch (e: Exception) {
+                                        skipped += item.title
+                                    } finally {
+                                        val done = doneCounter.incrementAndGet()
+                                        _modBatchProgress.value = "Đang tải bổ sung nhóm $categoryGroup ($done/${itemsToDownload.size}): ${item.title} ($mcVer)..."
+                                        semaphore.release()
+                                    }
+                                }
+                            }.forEach { it.join() }
+                        }
                     }
                 }
                 refreshMods()
                 refreshWorldModCount()
-                _lastModImportReport.value = buildString {
-                    appendLine("✅ Đã cài đặt xong nhóm [$categoryGroup] (${installed.size}/${items.size} mod) cho $loader $mcVer!")
-                    if (includeCoreLibs && categoryGroup != coreGroup) {
-                        appendLine("• Đã tự động kiểm tra và cài kèm bộ Thư viện Lõi (Fabric API, Balm, Architectury, Cloth Config, Puzzles Lib...) để tránh lỗi thiếu thư viện.")
-                    }
-                    if (skipped.isNotEmpty()) {
-                        appendLine("• Chưa có bản phát hành trên $mcVer cho: ${skipped.take(5).joinToString(", ")}.")
-                    }
-                }.trim()
-                _messageFlow.tryEmit("✅ Đã cài ${installed.size}/${items.size} mod thuộc nhóm $categoryGroup ($mcVer)!")
+                if (installed.isEmpty() && alreadyCount >= items.size) {
+                    _messageFlow.tryEmit("✅ Nhóm [$categoryGroup] ĐÃ ĐƯỢC TẢI & CÀI ĐỦ từ trước rồi — không cần tải lại!")
+                } else {
+                    _lastModImportReport.value = buildString {
+                        appendLine("✅ Đã cài đặt xong nhóm [$categoryGroup] (Đã có ${alreadyCount + installed.size}/${items.size} mod) cho $loader $mcVer!")
+                        if (alreadyCount > 0) {
+                            appendLine("• Đã giữ nguyên $alreadyCount mod đã có sẵn trong máy (không tải lại).")
+                        }
+                        if (installed.isNotEmpty()) {
+                            appendLine("• Đã tải mới bổ sung: ${installed.size} mod.")
+                        }
+                        if (skipped.isNotEmpty()) {
+                            appendLine("• Chưa có bản phát hành trên $mcVer cho: ${skipped.take(5).joinToString(", ")}.")
+                        }
+                    }.trim()
+                    _messageFlow.tryEmit("✅ Đã hoàn tất nhóm $categoryGroup (${alreadyCount + installed.size}/${items.size} mod • $mcVer)!")
+                }
             } catch (e: Exception) {
                 _errorFlow.tryEmit("Lỗi khi cài nhóm mod $categoryGroup: ${e.message}")
             } finally {
@@ -3702,7 +3774,7 @@ class McViewModel(
     }
 
     /**
-     * Cài đặt lẻ 1 Mod bất kỳ từ Danh mục 56 Mod Phổ Biến & Nhẹ (tự động tải kèm thư viện phụ thuộc bắt buộc).
+     * Cài đặt lẻ 1 Mod bất kỳ từ Danh mục 56 Mod Phổ Biến & Nhẹ (nếu đã tải rồi sẽ báo Đã cài và tự bật, không tải lại).
      */
     fun installSingleCatalogMod(item: PluginManager.UserScreenshotModItem, customMcVersion: String = "") {
         if (!requireServerStopped("cài mod ${item.title}")) return
@@ -3720,8 +3792,26 @@ class McViewModel(
         val mcVer = customMcVersion.trim().ifBlank { currentServerVersion().ifBlank { "1.21.11" } }
 
         viewModelScope.launch {
-            _modBatchProgress.value = "Đang tìm & tải ${item.title} (kèm thư viện cần thiết) cho $loader $mcVer..."
             try {
+                val existing = withContext(Dispatchers.IO) {
+                    val existingMods = pluginManager.listMods(dirName)
+                    val match = findMatchingInstalledMod(item, existingMods)
+                    if (match != null && !match.isEnabled) {
+                        pluginManager.toggleMod(dirName, match.fileName)
+                    }
+                    match
+                }
+                if (existing != null) {
+                    refreshMods()
+                    refreshWorldModCount()
+                    _messageFlow.tryEmit(
+                        if (!existing.isEnabled) "✅ Mod '${item.title}' đã tải sẵn trong máy — Đã bật lại ngay không cần tải lại!"
+                        else "✅ Mod '${item.title}' đã được tải và bật sẵn trong server rồi!"
+                    )
+                    return@launch
+                }
+
+                _modBatchProgress.value = "Đang tìm & tải ${item.title} (kèm thư viện cần thiết) cho $loader $mcVer..."
                 val installedFiles = withContext(Dispatchers.IO) {
                     val withDeps = pluginManager.resolveModrinthDownloadWithDeps(item.slug, mcVer, loader)
                     val targets = if (withDeps.isNotEmpty()) {
@@ -3742,7 +3832,7 @@ class McViewModel(
                 refreshMods()
                 refreshWorldModCount()
                 val depNote = if (installedFiles.size > 1) " (đã tự cài kèm ${installedFiles.size - 1} thư viện lõi)" else ""
-                _messageFlow.tryEmit("✅ Đã cài đặt ${item.title} cho $mcVer$depNote!")
+                _messageFlow.tryEmit("✅ Đã tải & cài đặt ${item.title} cho $mcVer$depNote!")
             } catch (e: Exception) {
                 _errorFlow.tryEmit("Không thể cài ${item.title}: ${e.message}")
             } finally {

@@ -186,19 +186,28 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    val hasFabric12111 = config.installedCores.any { it.core == ServerCore.Fabric && it.version == "1.21.11" }
+                    val hasPaper12111 = config.installedCores.any { it.core == ServerCore.Paper && it.version == "1.21.11" }
+                    val hasNeoForge1211 = config.installedCores.any { it.core == ServerCore.NeoForge && it.version == "1.21.1" }
+                    val hasBedrockPnx = config.installedCores.any { it.core == ServerCore.PowerNukkitX }
                     OutlinedButton(
                         onClick = {
                             vm.selectCore(ServerCore.Fabric)
                             vm.setMcVersion("1.21.11")
                             customCoreName = "Server-56Mod-Fabric-1.21.11"
                             scope.launch {
-                                snackbarHostState.showSnackbar("📦 Đã chọn mẫu: Fabric 1.21.11 (Chơi trọn bộ 56 Mod của bạn). Hãy kéo xuống bấm Tải Core!")
+                                snackbarHostState.showSnackbar("📦 Đã chọn mẫu: Fabric 1.21.11 (Chơi trọn bộ 56 Mod của bạn).")
                             }
                         },
                         shape = McShape.ControlCompact,
-                        border = BorderStroke(1.5.dp, Indigo)
+                        border = BorderStroke(1.5.dp, if (hasFabric12111) Mint else Indigo)
                     ) {
-                        Text("📦 Bộ 56 Mod Của Bạn (Fabric 1.21.11)", color = Indigo, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            if (hasFabric12111) "✅ Đã tải: Bộ 56 Mod (Fabric 1.21.11)" else "📦 Bộ 56 Mod Của Bạn (Fabric 1.21.11)",
+                            color = if (hasFabric12111) Mint else Indigo,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                     OutlinedButton(
                         onClick = {
@@ -212,7 +221,12 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                         shape = McShape.ControlCompact,
                         border = BorderStroke(1.dp, Mint)
                     ) {
-                        Text("🌱 Sinh tồn mượt nhất (Paper 1.21.11)", color = Mint, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            if (hasPaper12111) "✅ Đã tải: Sinh tồn (Paper 1.21.11)" else "🌱 Sinh tồn mượt nhất (Paper 1.21.11)",
+                            color = Mint,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
                     }
                     OutlinedButton(
                         onClick = {
@@ -225,7 +239,10 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                         },
                         shape = McShape.ControlCompact
                     ) {
-                        Text("🎨 Sáng tạo (Paper 1.21.11)", fontSize = 11.sp)
+                        Text(
+                            if (hasPaper12111) "✅ Đã tải: Sáng tạo (Paper 1.21.11)" else "🎨 Sáng tạo (Paper 1.21.11)",
+                            fontSize = 11.sp
+                        )
                     }
                     OutlinedButton(
                         onClick = {
@@ -238,7 +255,10 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                         },
                         shape = McShape.ControlCompact
                     ) {
-                        Text("⚒️ Mod NeoForge 1.21.1", fontSize = 11.sp)
+                        Text(
+                            if (hasNeoForge1211) "✅ Đã tải: Mod NeoForge 1.21.1" else "⚒️ Mod NeoForge 1.21.1",
+                            fontSize = 11.sp
+                        )
                     }
                     OutlinedButton(
                         onClick = {
@@ -250,7 +270,10 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                         },
                         shape = McShape.ControlCompact
                     ) {
-                        Text("📱 Minecraft PE / Bedrock", fontSize = 11.sp)
+                        Text(
+                            if (hasBedrockPnx) "✅ Đã tải: Minecraft PE / Bedrock" else "📱 Minecraft PE / Bedrock",
+                            fontSize = 11.sp
+                        )
                     }
                 }
 
@@ -302,11 +325,10 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                 )
             }
 
-            // 当前下载状态（已安装核心列表，默认折叠）。折叠状态用 rememberSaveable 保存，
-            // 避免在组合体内同步读 SharedPreferences 造成首帧主线程读盘。
-            var installedExpanded by rememberSaveable { mutableStateOf(false) }
+            // Danh sách máy chủ / core đã tải — mở sẵn để người dùng thấy ngay những gì đã tải
+            var installedExpanded by rememberSaveable { mutableStateOf(true) }
             McCard(
-                title = stringResource(R.string.s451),
+                title = "✅ Máy chủ / Core đã tải & cài đặt (${config.installedCores.size})",
                 compact = true,
                 trailing = {
                     Row(
@@ -437,11 +459,12 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
             ) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     ServerCore.values().forEach { core ->
+                        val countForCore = config.installedCores.count { it.core == core }
                         SegPill(
-                            text = core.displayName,
+                            text = if (countForCore > 0) "✅ ${core.displayName} ($countForCore)" else core.displayName,
                             selected = config.selectedCore == core,
                             compact = true,
-                            unselectedBackground = if (core.isBedrock) Coral.copy(alpha = 0.16f) else com.mineserve.mobile.ui.theme.FieldGray,
+                            unselectedBackground = if (countForCore > 0) MintSoft else if (core.isBedrock) Coral.copy(alpha = 0.16f) else com.mineserve.mobile.ui.theme.FieldGray,
                             onClick = { vm.selectCore(core) }
                         )
                     }
@@ -513,10 +536,12 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                     val shownVersions = if (showAllVersions) availableVersions else availableVersions.take(8)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         shownVersions.forEach { ver ->
+                            val verInstalled = config.installedCores.any { it.core == config.selectedCore && it.version == ver }
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 SegPill(
-                                    text = ver,
+                                    text = if (verInstalled) "✅ $ver (Đã tải)" else ver,
                                     selected = config.mcVersion == ver,
+                                    unselectedBackground = if (verInstalled) MintSoft else com.mineserve.mobile.ui.theme.FieldGray,
                                     onClick = { vm.setMcVersion(ver) }
                                 )
                                 if (usesCoreVersion) {
@@ -673,6 +698,66 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                     // Tự động gợi ý tên server nếu để trống
                     val defaultCoreName = "${config.selectedCore.displayName}-${config.mcVersion}"
                     val effectiveCoreName = customCoreName.trim().ifBlank { defaultCoreName }
+                    val existingSameCoreVer = config.installedCores.filter {
+                        it.core == config.selectedCore && it.version == config.mcVersion
+                    }
+                    val exactNameExists = config.installedCores.any {
+                        it.name.equals(effectiveCoreName, ignoreCase = true)
+                    }
+
+                    if (existingSameCoreVer.isNotEmpty()) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(McShape.Row)
+                                .background(MintSoft)
+                                .padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                "✅ ĐÃ TẢI & CÀI ĐẶT: ${config.selectedCore.displayName} ${config.mcVersion}",
+                                color = Mint,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                            Text(
+                                "Trên máy đã có sẵn máy chủ chạy phiên bản này: ${existingSameCoreVer.joinToString { "「${it.name}」" }}. Bạn không cần tải lại trừ khi muốn tạo thêm 1 server thứ 2!",
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontSize = 11.sp,
+                                lineHeight = 15.sp
+                            )
+                            val firstExisting = existingSameCoreVer.first()
+                            if (firstExisting.name != config.activeCoreName) {
+                                Button(
+                                    onClick = {
+                                        vm.setActiveCore(firstExisting.name)
+                                        scope.launch {
+                                            snackbarHostState.showSnackbar("Đã chuyển sang dùng máy chủ: ${firstExisting.name}")
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Mint),
+                                    shape = McShape.ControlCompact,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        "✅ Dùng ngay「${firstExisting.name}」(Đã tải sẵn)",
+                                        color = Color.White,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            } else {
+                                Text(
+                                    "🟢 Máy chủ「${firstExisting.name}」đang được chọn làm Server chính.",
+                                    color = Mint,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(10.dp))
+                    }
+
                     Text(stringResource(R.string.s483), color = Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(4.dp))
                     OutlinedTextField(
@@ -685,8 +770,11 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                     Spacer(Modifier.height(12.dp))
                     Button(
                         onClick = { vm.downloadCore(effectiveCoreName) },
-                        enabled = !isDownloadingCore && effectiveCoreName.isNotBlank(),
-                        colors = ButtonDefaults.buttonColors(containerColor = Indigo),
+                        enabled = !isDownloadingCore && effectiveCoreName.isNotBlank() && !exactNameExists,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (exactNameExists) Mint else Indigo,
+                            disabledContainerColor = if (exactNameExists) MintSoft else IndigoSoft
+                        ),
                         shape = McShape.Control,
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -699,9 +787,15 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                             Spacer(Modifier.size(8.dp))
                         }
                         Text(
-                            if (isDownloadingCore) stringResource(R.string.s485) else stringResource(R.string.s486),
-                            color = Color.White,
-                            fontWeight = FontWeight.SemiBold
+                            when {
+                                isDownloadingCore -> stringResource(R.string.s485)
+                                exactNameExists -> "✅ Đã tải & cài đặt「$effectiveCoreName」(Đổi tên nếu muốn tạo SV thứ 2)"
+                                existingSameCoreVer.isNotEmpty() -> "➕ Tạo thêm máy chủ mới「$effectiveCoreName」"
+                                else -> stringResource(R.string.s486)
+                            },
+                            color = if (exactNameExists && !isDownloadingCore) Mint else Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
                         )
                     }
 
