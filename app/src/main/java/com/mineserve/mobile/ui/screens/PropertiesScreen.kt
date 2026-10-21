@@ -182,7 +182,7 @@ private fun ViewDistanceBoosterCard(
     val isSecureOff = props["enforce-secure-profile"]?.trim()?.equals("false", ignoreCase = true) == true
     val blocks = currentView * 16
 
-    McCard(title = "🔭 Kết nối & cấu hình nhẹ 6 / 4 chunk") {
+    McCard(title = if (showSimulationDistance) "🔭 Kết nối & cấu hình nhẹ 6 / 4 chunk" else "🔭 Kết nối & tầm nhìn nhẹ 6 chunk") {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -296,7 +296,7 @@ private fun ViewDistanceBoosterCard(
 
         Spacer(Modifier.height(8.dp))
         HintNote(
-            "💡 Cấu hình nhẹ: tầm nhìn 6 chunk, mô phỏng 4 chunk. Nút bên dưới áp dụng 6/4; cấu hình đang lưu chỉ đổi khi bạn xác nhận. CPU, nhiệt độ, người chơi và mod vẫn ảnh hưởng TPS. World nhập từ Paper/Spigot có thể có cấu hình chunk riêng trong spigot.yml."
+            if (showSimulationDistance) "💡 Cấu hình nhẹ: tầm nhìn 6 chunk, mô phỏng 4 chunk. Nút bên dưới áp dụng 6/4; cấu hình đang lưu chỉ đổi khi bạn xác nhận. CPU, nhiệt độ, người chơi và mod vẫn ảnh hưởng TPS. World nhập từ Paper/Spigot có thể có cấu hình chunk riêng trong spigot.yml." else "💡 Áp dụng tầm nhìn 6 chunk. Core này không có mục mô phỏng Java. CPU, nhiệt độ, người chơi và plugin vẫn ảnh hưởng độ mượt."
         )
         Spacer(Modifier.height(10.dp))
         Button(
@@ -308,7 +308,7 @@ private fun ViewDistanceBoosterCard(
             modifier = Modifier.fillMaxWidth()
         ) {
             Text(
-                "⚡ Áp dụng cấu hình nhẹ 6 / 4 chunk",
+                if (showSimulationDistance) "⚡ Áp dụng cấu hình nhẹ 6 / 4 chunk" else "⚡ Áp dụng tầm nhìn 6 chunk",
                 color = Color.White,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 12.sp

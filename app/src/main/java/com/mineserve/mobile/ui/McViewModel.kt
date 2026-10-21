@@ -4647,14 +4647,16 @@ class McViewModel(
             _errorFlow.tryEmit(str(R.string.s249))
             return
         }
+        val targetCore = config.value.installedCores.firstOrNull { it.dirName == dirName }?.core
+            ?: config.value.selectedCore
+        val pnx = targetCore == ServerCore.PowerNukkitX
         viewModelScope.launch {
             try {
-                val pnx = isPowerNukkitXActive()
                 val updated = withContext(Dispatchers.IO) {
                     val current = if (pnx) powerNukkitXConfigManager.read(dirName)
                     else propertiesManager.readProperties(dirName)
                     val map = current.toMutableMap()
-                    val core = activeCoreType() ?: config.value.selectedCore
+                    val core = targetCore
                     if (map["server-port"].isNullOrBlank()) {
                         map["server-port"] = ServerPort.defaultFor(core).toString()
                     }
@@ -4716,6 +4718,8 @@ class McViewModel(
                     }
                     map
                 }
+                // Saving A must never publish into or restart B after a selection change.
+                if (activeDirName() != dirName) return@launch
                 _serverProperties.value = updated
                 _serverPropertiesExist.value = true
                 val vd = updated["view-distance"] ?: JavaServerPerformance.VIEW_DISTANCE.toString()

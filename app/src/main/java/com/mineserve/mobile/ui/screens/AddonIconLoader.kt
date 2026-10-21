@@ -34,6 +34,8 @@ internal object AddonIconLoader {
         return slots.withPermit {
             // Another visible row may have finished the same icon while we waited.
             cache.get(url)?.let { return@withPermit it }
+            val recentFailure = failures.get(url)
+            if (recentFailure != null && SystemClock.elapsedRealtime() - recentFailure < FAILURE_COOLDOWN_MS) return@withPermit null
             val bitmap = withContext(Dispatchers.IO) {
                 var connection: HttpURLConnection? = null
                 try {
