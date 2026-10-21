@@ -83,6 +83,9 @@ fun ServerIconScreen(vm: McViewModel, onBack: () -> Unit) {
     var motdText by remember(props["motd"]) {
         mutableStateOf(props["motd"] ?: "MineHost Server — Chơi cùng bạn bè!")
     }
+    var selectedArtKind by remember { mutableStateOf<MinecraftArtKind?>(null) }
+    val isNameAndMotdSaved = serverDisplayName.trim() == config.activeCoreName.orEmpty().trim() &&
+        motdText == (props["motd"] ?: "MineHost Server — Chơi cùng bạn bè!")
 
     val bitmap by produceState<Bitmap?>(null, version, config.activeCoreName) {
         value = null
@@ -199,11 +202,15 @@ fun ServerIconScreen(vm: McViewModel, onBack: () -> Unit) {
                 Button(
                     onClick = { vm.renameAndDescribeActiveServer(serverDisplayName, motdText) },
                     enabled = activeCore != null && serverDisplayName.isNotBlank(),
-                    colors = ButtonDefaults.buttonColors(containerColor = Mint),
+                    colors = ButtonDefaults.buttonColors(containerColor = if (isNameAndMotdSaved) Mint else Indigo),
                     shape = McShape.ControlCompact,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("💾 Lưu Tên Hiển Thị & Mô Tả MOTD", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(
+                        if (isNameAndMotdSaved) "✅ Đã Lưu Tên Hiển Thị & Mô Tả MOTD" else "💾 Lưu Tên Hiển Thị & Mô Tả MOTD",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
 
@@ -222,20 +229,33 @@ fun ServerIconScreen(vm: McViewModel, onBack: () -> Unit) {
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     MinecraftArtKind.entries.forEach { kind ->
+                        val isChosen = selectedArtKind == kind
                         Row(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(10.dp))
-                                .background(FieldGray)
-                                .border(1.dp, Indigo.copy(alpha = 0.3f), RoundedCornerShape(10.dp))
-                                .clickable { vm.setServerIconFromMinecraftArt(kind) }
+                                .background(if (isChosen) Mint.copy(alpha = 0.16f) else FieldGray)
+                                .border(1.5.dp, if (isChosen) Mint else Indigo.copy(alpha = 0.3f), RoundedCornerShape(10.dp))
+                                .clickable {
+                                    selectedArtKind = kind
+                                    vm.setServerIconFromMinecraftArt(kind)
+                                }
                                 .padding(horizontal = 10.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             MinecraftPixelArtIcon(kind = kind, size = 32.dp)
                             Spacer(Modifier.width(8.dp))
                             Column {
-                                Text(kind.titleVi, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                Text(kind.subtitleVi, fontSize = 9.sp, color = Muted)
+                                Text(
+                                    if (isChosen) "✅ ${kind.titleVi}" else kind.titleVi,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isChosen) Mint else MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    if (isChosen) "Đang dùng Icon này" else kind.subtitleVi,
+                                    fontSize = 9.sp,
+                                    color = if (isChosen) Mint else Muted
+                                )
                             }
                         }
                     }

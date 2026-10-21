@@ -71,6 +71,8 @@ import com.mineserve.mobile.ui.McCard
 import com.mineserve.mobile.ui.McViewModel
 import com.mineserve.mobile.ui.SegPill
 import com.mineserve.mobile.ui.StatusPill
+import com.mineserve.mobile.ui.SwipeableInstantSnackbarHost
+import com.mineserve.mobile.ui.showInstantSnackbar
 import com.mineserve.mobile.ui.theme.Coral
 import com.mineserve.mobile.ui.theme.CoralSoft
 import com.mineserve.mobile.ui.theme.FieldBg
@@ -103,8 +105,11 @@ fun ServerManagementScreen(
     val props by vm.serverProperties.collectAsState()
     val serverPort by vm.serverPort.collectAsState()
     val onlinePlayers by vm.onlinePlayerNames.collectAsState()
+    val serverStorageMap by vm.serverStorageMap.collectAsState()
     val active = config.installedCores.firstOrNull { it.name == config.activeCoreName }
     var showEditDialog by remember { mutableStateOf(false) }
+    var serverToDelete by remember { mutableStateOf<com.mineserve.mobile.data.InstalledCore?>(null) }
+    var expandedStorageServerName by remember { mutableStateOf<String?>(null) }
     var showQuickTuner by remember { mutableStateOf(true) }
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -115,20 +120,22 @@ fun ServerManagementScreen(
     var viewDistDraft by remember(loadedViewDist) { mutableIntStateOf(loadedViewDist) }
     var simDistDraft by remember(loadedSimDist) { mutableIntStateOf(loadedSimDist) }
     var crackedDraft by remember(loadedCracked) { mutableStateOf(loadedCracked) }
+    val isQuickSaved = viewDistDraft == loadedViewDist && simDistDraft == loadedSimDist && crackedDraft == loadedCracked
 
     LaunchedEffect(Unit) {
         vm.scanUnregisteredServers()
         vm.loadServerProperties()
+        vm.refreshServerStorage()
     }
     LaunchedEffect(Unit) {
-        vm.messageFlow.collectLatest { snackbarHostState.showSnackbar(it) }
+        vm.messageFlow.collectLatest { snackbarHostState.showInstantSnackbar(it) }
     }
     LaunchedEffect(Unit) {
-        vm.errorFlow.collectLatest { snackbarHostState.showSnackbar(it) }
+        vm.errorFlow.collectLatest { snackbarHostState.showInstantSnackbar(it) }
     }
 
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        snackbarHost = { SwipeableInstantSnackbarHost(snackbarHostState) },
         contentWindowInsets = WindowInsets(0.dp)
     ) { paddingValues ->
         Column(
@@ -138,22 +145,22 @@ fun ServerManagementScreen(
                 .verticalScroll(rememberScrollState())
         ) {
             if (onBack != null) {
-                com.mineserve.mobile.ui.BackBar(title = "Quản lý & Tạo thêm Server", onBack = onBack)
+                com.mineserve.mobile.ui.BackBar(title = "Quản lý các Server riêng & Cài đặt", onBack = onBack)
             } else {
-                HeaderBlock(eyebrow = "MÁY CHỦ", title = "Quản lý & Điều khiển máy chủ")
+                HeaderBlock(eyebrow = "MÁY CHỦ", title = "Quản lý các Server riêng & Điều khiển")
             }
 
-            // ── 0. Danh sách các Server hiện có & Nút Tạo Thêm Server Mới ──
+            // ── 0. Danh sách các Server riêng hiện có & Dung lượng từng Server / từng File Map ──
             McCard(
-                title = "🖥️ Danh Sách Server Của Bạn (${config.installedCores.size} máy chủ)",
+                title = "🗂️ Quản Lý Các Server Riêng (${config.installedCores.size} máy chủ)",
                 trailing = {
-                    TextButton(onClick = onCreateServer) {
-                        Text("➕ Tạo Server mới", color = Mint, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    TextButton(onClick = { vm.refreshServerStorage() }) {
+                        Text("🔄 Tính dung lượng", color = Mint, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             ) {
                 Text(
-                    "Bạn có thể tạo nhiều server ở nhiều phiên bản Minecraft khác nhau (1.21.11, 1.21.1, 1.20.1, 1.16.5...) và chuyển đổi qua lại chỉ với 1 chạm:",
+                    "Mỗi Server có thư mục riêng, Map riêng, bộ Mod riêng và dung lượng hiển thị chi tiết tới từng tệp trong Map:",
                     color = Muted,
                     fontSize = 11.sp,
                     lineHeight = 15.sp
@@ -168,59 +175,156 @@ fun ServerManagementScreen(
                         fontWeight = FontWeight.SemiBold
                     )
                 } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         config.installedCores.forEach { srv ->
                             val isSelected = srv.name == config.activeCoreName
-                            Row(
+                            val storage = serverStorageMap[srv.name]
+                            val isStorageExpanded = expandedStorageServerName == srv.name
+                            Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(10.dp))
+                                    .clip(RoundedCornerShape(12.dp))
                                     .background(if (isSelected) MintSoft else FieldBg)
-                                    .padding(10.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                                    .padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                com.mineserve.mobile.ui.MinecraftPixelArtIcon(
-                                    kind = if (srv.core.supportsMods) com.mineserve.mobile.ui.MinecraftArtKind.COMMAND_BLOCK else com.mineserve.mobile.ui.MinecraftArtKind.GRASS,
-                                    size = 34.dp
-                                )
-                                Spacer(Modifier.size(10.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(
-                                            srv.name,
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (isSelected) Mint else MaterialTheme.colorScheme.onSurface
-                                        )
-                                        if (isSelected) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    com.mineserve.mobile.ui.MinecraftPixelArtIcon(
+                                        kind = if (srv.core.supportsMods) com.mineserve.mobile.ui.MinecraftArtKind.COMMAND_BLOCK else com.mineserve.mobile.ui.MinecraftArtKind.GRASS,
+                                        size = 38.dp
+                                    )
+                                    Spacer(Modifier.size(10.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                srv.name,
+                                                fontSize = 14.sp,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                color = if (isSelected) Mint else MaterialTheme.colorScheme.onSurface
+                                            )
                                             Spacer(Modifier.size(6.dp))
                                             StatusPill(
-                                                if (state.isRunning) "🟢 Đang chạy" else "✅ Đang chọn",
-                                                Mint
+                                                if (isSelected && state.isRunning) "🟢 Đang chạy"
+                                                else if (isSelected) "✅ Đang chọn"
+                                                else "⚪ Server riêng",
+                                                if (isSelected) Mint else Indigo
+                                            )
+                                        }
+                                        Text(
+                                            "${srv.core.displayName} · MC ${srv.version} · Thư mục: ${srv.dirName}",
+                                            color = Muted,
+                                            fontSize = 11.sp
+                                        )
+                                        if (storage != null) {
+                                            Text(
+                                                "💾 Tổng Server: ${vm.formatStorageBytes(storage.totalBytes)} • 🌍 Map (${storage.activeWorldName}): ${vm.formatStorageBytes(storage.worldBytes)} • 🧩 Mod/Plugin: ${vm.formatStorageBytes(storage.modsBytes + storage.pluginsBytes)}",
+                                                color = Indigo,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold
                                             )
                                         }
                                     }
-                                    Text(
-                                        "${srv.core.displayName} · MC ${srv.version} · Thư mục: ${srv.dirName}",
-                                        color = Muted,
-                                        fontSize = 11.sp
-                                    )
                                 }
-                                if (!isSelected) {
-                                    Button(
-                                        onClick = { vm.setActiveCore(srv.name) },
-                                        enabled = !state.isRunning,
-                                        colors = ButtonDefaults.buttonColors(containerColor = Indigo),
-                                        shape = RoundedCornerShape(8.dp)
-                                    ) {
-                                        Text("Chọn dùng", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+
+                                // Nút điều khiển từng Server riêng
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    if (!isSelected) {
+                                        Button(
+                                            onClick = { vm.setActiveCore(srv.name) },
+                                            enabled = !state.isRunning,
+                                            colors = ButtonDefaults.buttonColors(containerColor = Indigo),
+                                            shape = RoundedCornerShape(8.dp)
+                                        ) {
+                                            Text("▶️ Chọn Server này", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    } else {
+                                        OutlinedButton(
+                                            onClick = { showEditDialog = true },
+                                            shape = RoundedCornerShape(8.dp)
+                                        ) {
+                                            Text("✏️ Đổi tên SV", color = Indigo, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                        }
                                     }
-                                } else {
                                     OutlinedButton(
-                                        onClick = { showEditDialog = true },
+                                        onClick = {
+                                            expandedStorageServerName = if (isStorageExpanded) null else srv.name
+                                        },
                                         shape = RoundedCornerShape(8.dp)
                                     ) {
-                                        Text("✏️ Đổi tên", color = Indigo, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                        Text(
+                                            if (isStorageExpanded) "🔼 Ẩn chi tiết tệp Map" else "📂 Xem dung lượng từng tệp Map",
+                                            color = Mint,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                    if (!isSelected || !state.isRunning) {
+                                        OutlinedButton(
+                                            onClick = { serverToDelete = srv },
+                                            shape = RoundedCornerShape(8.dp)
+                                        ) {
+                                            Text("🗑️ Xóa SV", color = Coral, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                        }
+                                    }
+                                }
+
+                                // Chi tiết dung lượng từng thư mục / file trong Map
+                                if (isStorageExpanded && storage != null) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(TrackBg)
+                                            .padding(10.dp),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Text(
+                                            "📊 Chi tiết dung lượng Server '${srv.name}':",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = Indigo
+                                        )
+                                        Text("• Tệp Core (${srv.jarFile}): ${vm.formatStorageBytes(storage.coreJarBytes)}", fontSize = 11.sp)
+                                        Text("• Thư mục mods/ & plugins/: ${vm.formatStorageBytes(storage.modsBytes + storage.pluginsBytes)}", fontSize = 11.sp)
+                                        Text("• Thư mục logs/ & crash-reports/: ${vm.formatStorageBytes(storage.logsBytes)}", fontSize = 11.sp)
+                                        Text(
+                                            "🌍 Các tệp & thư mục bên trong Map '${storage.activeWorldName}' (Tổng: ${vm.formatStorageBytes(storage.worldBytes)}):",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Mint
+                                        )
+                                        if (storage.worldFileEntries.isEmpty()) {
+                                            Text("  (Chưa tạo Map — hãy khởi động Server lần đầu để sinh thế giới)", fontSize = 10.sp, color = Muted)
+                                        } else {
+                                            storage.worldFileEntries.forEach { entry ->
+                                                val icon = if (entry.isDirectory) "📁" else "📄"
+                                                val countNote = if (entry.isDirectory) " (${entry.fileCount} tệp)" else ""
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceBetween
+                                                ) {
+                                                    Text(
+                                                        "$icon ${entry.name}$countNote",
+                                                        fontSize = 10.sp,
+                                                        color = MaterialTheme.colorScheme.onSurface,
+                                                        modifier = Modifier.weight(1f)
+                                                    )
+                                                    Text(
+                                                        vm.formatStorageBytes(entry.sizeBytes),
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = Indigo
+                                                    )
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -239,7 +343,7 @@ fun ServerManagementScreen(
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("➕ Tạo Thêm Server Mới (Nhiều Phiên Bản)", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text("➕ Tạo Thêm Server Riêng Mới (Nhiều Phiên Bản)", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -474,12 +578,12 @@ fun ServerManagementScreen(
                                         onlineMode = !crackedDraft
                                     )
                                 },
-                                colors = ButtonDefaults.buttonColors(containerColor = Indigo),
+                                colors = ButtonDefaults.buttonColors(containerColor = if (isQuickSaved) Mint else Indigo),
                                 shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Text(
-                                    "💾 Lưu cấu hình nhanh ($viewDistDraft Chunk)",
+                                    if (isQuickSaved) "✅ Đã lưu cấu hình ($viewDistDraft Chunk)" else "💾 Lưu cấu hình nhanh ($viewDistDraft Chunk)",
                                     color = Color.White,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 12.sp
@@ -573,6 +677,32 @@ fun ServerManagementScreen(
             currentVersion = active.version,
             currentCore = active.core,
             onDismiss = { showEditDialog = false }
+        )
+    }
+
+    serverToDelete?.let { targetSrv ->
+        AlertDialog(
+            onDismissRequest = { serverToDelete = null },
+            title = { Text("⚠️ Xóa Server '${targetSrv.name}'?", fontWeight = FontWeight.Bold) },
+            text = {
+                Text("Toàn bộ tệp của Server '${targetSrv.name}' (bao gồm Map và Mod trong thư mục ${targetSrv.dirName}) sẽ bị xóa vĩnh viễn. Bạn có chắc chắn muốn xóa không?")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        vm.deleteCore(targetSrv.name)
+                        serverToDelete = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Coral)
+                ) {
+                    Text("Xóa vĩnh viễn", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { serverToDelete = null }) {
+                    Text("Hủy")
+                }
+            }
         )
     }
 }
@@ -1121,16 +1251,26 @@ private fun ServerCommandAndSettingsGuideCard(
 
                     GameruleExplainBox(
                         title = "👑 Cấp hoặc Thu hồi quyền Admin (OP)",
-                        commandSyntax = "/op $effectiveTarget  |  /deop $effectiveTarget",
-                        explanation = "Cấp quyền Quản trị viên tối cao (Operator) cho nhân vật '$effectiveTarget' để người đó có thể tự gõ mọi lệnh (/gamemode, /tp, /give, /time...) ngay trong ô chat của game.",
-                        enableLabel = "👑 Cấp OP cho $effectiveTarget",
+                        commandSyntax = "/op ${targetPlayer.trim().ifBlank { "<TênNhânVật>" }}  |  /deop ${targetPlayer.trim().ifBlank { "<TênNhânVật>" }}",
+                        explanation = "Cấp quyền Quản trị viên tối cao (Operator) cho nhân vật để người đó có thể tự gõ mọi lệnh (/gamemode, /tp, /give, /time...) ngay trong ô chat của game. (Lưu ý: Lệnh /op cần nhập đúng tên nhân vật ở Bước 1).",
+                        enableLabel = "👑 Cấp OP (${targetPlayer.trim().ifBlank { "Nhập tên ở Bước 1" }})",
                         disableLabel = "🚫 Thu hồi OP",
                         isRunning = isRunning,
                         onEnable = {
-                            if (targetPlayer.isNotBlank()) vm.sendCommand("op ${targetPlayer.trim()}")
+                            if (targetPlayer.isNotBlank()) {
+                                vm.sendCommand("op ${targetPlayer.trim()}")
+                                vm.notifyActionDone("👑 Đã gửi lệnh cấp quyền Admin: /op ${targetPlayer.trim()}")
+                            } else {
+                                vm.notifyActionDone("⚠️ Hãy nhập tên nhân vật ở ô Bước 1 phía trên trước khi cấp OP!")
+                            }
                         },
                         onDisable = {
-                            if (targetPlayer.isNotBlank()) vm.sendCommand("deop ${targetPlayer.trim()}")
+                            if (targetPlayer.isNotBlank()) {
+                                vm.sendCommand("deop ${targetPlayer.trim()}")
+                                vm.notifyActionDone("🚫 Đã gửi lệnh thu hồi OP: /deop ${targetPlayer.trim()}")
+                            } else {
+                                vm.notifyActionDone("⚠️ Hãy nhập tên nhân vật ở ô Bước 1 phía trên trước khi thu hồi OP!")
+                            }
                         }
                     )
 

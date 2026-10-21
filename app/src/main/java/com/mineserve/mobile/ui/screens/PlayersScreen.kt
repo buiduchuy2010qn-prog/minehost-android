@@ -75,6 +75,8 @@ import com.mineserve.mobile.ui.EmptyHint
 import com.mineserve.mobile.ui.McCard
 import com.mineserve.mobile.ui.McViewModel
 import com.mineserve.mobile.ui.SegmentedTabs
+import com.mineserve.mobile.ui.SwipeableInstantSnackbarHost
+import com.mineserve.mobile.ui.showInstantSnackbar
 import com.mineserve.mobile.ui.theme.Coral
 import com.mineserve.mobile.ui.theme.CoralSoft
 import com.mineserve.mobile.ui.theme.Indigo
@@ -189,14 +191,14 @@ fun PlayersScreen(
     LaunchedEffect(activeTab) {
         if (activeTab == PlayerListTab.Online) vm.refreshOnlinePlayers()
     }
-    LaunchedEffect(Unit) { vm.errorFlow.collectLatest { snackbarHostState.showSnackbar(it) } }
-    LaunchedEffect(Unit) { vm.messageFlow.collectLatest { snackbarHostState.showSnackbar(it) } }
+    LaunchedEffect(Unit) { vm.errorFlow.collectLatest { snackbarHostState.showInstantSnackbar(it) } }
+    LaunchedEffect(Unit) { vm.messageFlow.collectLatest { snackbarHostState.showInstantSnackbar(it) } }
 
     val isRunning = serverState.isRunning
     val activeCore = config.installedCores.find { it.name == config.activeCoreName }
 
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        snackbarHost = { SwipeableInstantSnackbarHost(snackbarHostState) },
         contentWindowInsets = WindowInsets(0.dp)
     ) { padding ->
         Column(
@@ -241,7 +243,7 @@ fun PlayersScreen(
                 onRefresh = { vm.refreshPlayers(); vm.refreshOnlinePlayers() }
             )
 
-            // ── 标签切换 ──
+            // ── 标签切换 (Ngắn gọn, không bao giờ bị cắt chữ "...") ──
             val playerTabs = PlayerListTab.values()
             SegmentedTabs(
                 options = playerTabs.map { tab ->
@@ -252,8 +254,14 @@ fun PlayersScreen(
                         PlayerListTab.Whitelist -> whitelist.size
                         PlayerListTab.Banned -> banned.size
                     }
-                    val tabLabel = stringResource(tab.labelRes)
-                    if (count > 0) "$tabLabel $count" else tabLabel
+                    val tabLabel = when (tab) {
+                        PlayerListTab.Online -> "🟢 Online"
+                        PlayerListTab.History -> "📜 Lịch sử"
+                        PlayerListTab.Ops -> "👑 OP"
+                        PlayerListTab.Whitelist -> "🛡️ Trắng"
+                        PlayerListTab.Banned -> "🚫 Cấm"
+                    }
+                    if (count > 0) "$tabLabel ($count)" else tabLabel
                 },
                 selectedIndex = playerTabs.indexOf(activeTab),
                 modifier = Modifier.padding(horizontal = McSpacing.Page, vertical = 4.dp),

@@ -99,6 +99,8 @@ import com.mineserve.mobile.ui.EmptyHint
 import com.mineserve.mobile.ui.McCard
 import com.mineserve.mobile.ui.McViewModel
 import com.mineserve.mobile.ui.SegmentedTabs
+import com.mineserve.mobile.ui.SwipeableInstantSnackbarHost
+import com.mineserve.mobile.ui.showInstantSnackbar
 import com.mineserve.mobile.ui.theme.Coral
 import com.mineserve.mobile.ui.theme.CoralSoft
 import com.mineserve.mobile.ui.theme.FieldGray
@@ -272,10 +274,10 @@ fun PluginsScreen(vm: McViewModel) {
         }
     }
     LaunchedEffect(Unit) {
-        vm.errorFlow.collectLatest { snackbarHostState.showSnackbar(it) }
+        vm.errorFlow.collectLatest { snackbarHostState.showInstantSnackbar(it) }
     }
     LaunchedEffect(Unit) {
-        vm.messageFlow.collectLatest { snackbarHostState.showSnackbar(it) }
+        vm.messageFlow.collectLatest { snackbarHostState.showInstantSnackbar(it) }
     }
 
     val activeCore = config.installedCores.find { it.name == config.activeCoreName }
@@ -341,7 +343,7 @@ fun PluginsScreen(vm: McViewModel) {
     val pluginConflicts = remember(installedPlugins) { vm.detectPluginConflicts(installedPlugins) }
 
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        snackbarHost = { SwipeableInstantSnackbarHost(snackbarHostState) },
         // 嵌套在外层 McApp Scaffold 内：insets 已由外层消费，这里不再重复应用，避免顶部空白/白色遮挡
         contentWindowInsets = WindowInsets(0.dp)
     ) { padding ->
@@ -1291,6 +1293,9 @@ private fun ModsTab(
 ) {
     var detailHit by remember { mutableStateOf<PluginManager.ModrinthHit?>(null) }
     var modrinthQuery by remember { mutableStateOf("") }
+    var installedModSearch by remember { mutableStateOf("") }
+    var installedModFilter by remember { mutableStateOf(InstalledFilter.All) }
+    var pendingModToggle by remember { mutableStateOf<PluginManager.ModEntry?>(null) }
     var selectedLoaders by remember { mutableStateOf(setOf<String>()) }
     var sortIndex by remember { mutableStateOf(0) }
     val sortOptions = listOf("downloads" to stringResource(R.string.s825), "relevance" to stringResource(R.string.s826), "newest" to stringResource(R.string.s827))
@@ -1307,12 +1312,30 @@ private fun ModsTab(
         hasInstalledMods = mods.isNotEmpty()
     )
 
-    // 已安装模组
+    // 已安装模组 (Quản lý Mod trực quan + Lọc Bật/Tắt + Công tắc có cảnh báo)
+    val enabledModsCount = mods.count { it.isEnabled }
+    val disabledModsCount = mods.count { !it.isEnabled }
+    val totalModsBytes = remember(mods) { mods.sumOf { it.sizeBytes } }
+    val filteredInstalledMods = remember(mods, installedModFilter, installedModSearch) {
+        mods.filter { mod ->
+            val matchFilter = when (installedModFilter) {
+                InstalledFilter.All -> true
+                InstalledFilter.Enabled -> mod.isEnabled
+                InstalledFilter.Disabled -> !mod.isEnabled
+                InstalledFilter.Local -> true
+            }
+            val matchQuery = installedModSearch.isBlank() ||
+                mod.baseName.contains(installedModSearch, ignoreCase = true) ||
+                mod.fileName.contains(installedModSearch, ignoreCase = true)
+            matchFilter && matchQuery
+        }
+    }
+
     McCard(
         title = if (mods.isEmpty()) {
             stringResource(R.string.s828)
         } else {
-            "✅ Mod đã tải & cài đặt trong Server (${mods.size} tệp)"
+            "🧩 Quản lý Mod trực quan (${mods.size} Mod • 💾 ${vm.formatStorageBytes(totalModsBytes)})"
         }
     ) {
         if (serverRunning) {
@@ -1328,44 +1351,100 @@ private fun ModsTab(
                 modifier = Modifier.padding(vertical = 8.dp)
             )
         } else {
+            // Thanh tìm kiếm & Bộ lọc Tất cả / Đang bật / Đang tắt
+            OutlinedTextField(
+                value = installedModSearch,
+                onValueChange = { installedModSearch = it },
+                placeholder = { Text("🔍 Tìm Mod đã cài (VD: Lithium, Macaw, Farmer, Fabric API...)", fontSize = 11.sp) },
+                leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                shape = McShape.ControlCompact
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                listOf(
+                    InstalledFilter.All to "📦 Tất cả (${mods.size})",
+                    InstalledFilter.Enabled to "🟢 Đang bật ($enabledModsCount)",
+                    InstalledFilter.Disabled to "⏸ Đang tắt ($disabledModsCount)"
+                ).forEach { (filter, label) ->
+                    val isSelected = installedModFilter == filter
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (isSelected) Indigo else IndigoSoft)
+                            .clickable { installedModFilter = filter }
+                            .padding(horizontal = 10.dp, vertical = 5.dp)
+                    ) {
+                        Text(
+                            label,
+                            color = if (isSelected) Color.White else Indigo,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+
             LazyColumn(
-                modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(max = 460.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                items(mods, key = { it.fileName }) { mod ->
+                items(filteredInstalledMods, key = { it.fileName }) { mod ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(10.dp))
-                            .background(if (mod.isEnabled) MintSoft else IndigoSoft)
+                            .background(if (mod.isEnabled) MintSoft else CoralSoft.copy(alpha = 0.45f))
                             .padding(10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(32.dp)
+                                .size(34.dp)
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(if (mod.isEnabled) Mint else Indigo),
+                                .background(if (mod.isEnabled) Mint else Coral),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(mod.baseName.take(2).uppercase(), color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         }
                         Spacer(Modifier.size(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(mod.baseName, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            val statusText = if (mod.isEnabled) "✅ Đã cài & Đang bật" else "⏸ Đã tải (Đang tắt)"
                             Text(
-                                "$statusText · ${mod.sizeText}",
-                                color = if (mod.isEnabled) Mint else Muted,
+                                mod.baseName,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            val statusText = if (mod.isEnabled) "🟢 Đang bật" else "⏸ Đang tắt (.disabled)"
+                            Text(
+                                "$statusText · 💾 ${mod.sizeText}",
+                                color = if (mod.isEnabled) Mint else Coral,
                                 fontSize = 10.sp,
-                                fontWeight = if (mod.isEnabled) FontWeight.SemiBold else FontWeight.Normal
+                                fontWeight = FontWeight.SemiBold
                             )
                         }
-                        TextButton(onClick = { onToggle(mod.fileName) }, enabled = !serverRunning) {
+                        // Công tắc Bật / Tắt có cảnh báo xác nhận
+                        Switch(
+                            checked = mod.isEnabled,
+                            onCheckedChange = { pendingModToggle = mod },
+                            enabled = !serverRunning,
+                            modifier = Modifier.padding(horizontal = 4.dp)
+                        )
+                        TextButton(
+                            onClick = { pendingModToggle = mod },
+                            enabled = !serverRunning
+                        ) {
                             Text(
-                                if (mod.isEnabled) stringResource(R.string.s749) else stringResource(R.string.s748),
+                                if (mod.isEnabled) "⏸ Tắt Mod" else "🟢 Bật Mod",
                                 color = if (mod.isEnabled) Coral else Mint,
-                                fontSize = 11.sp
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
                             )
                         }
                         IconButton(onClick = { onDelete(mod) }, enabled = !serverRunning, modifier = Modifier.size(McIcon.Touch)) {
@@ -1386,6 +1465,61 @@ private fun ModsTab(
             Spacer(Modifier.size(6.dp))
             Text(stringResource(R.string.s830), color = Indigo, fontSize = 12.sp)
         }
+    }
+
+    // Hộp thoại Cảnh báo xác nhận trước khi Bật / Tắt Mod
+    pendingModToggle?.let { targetMod ->
+        val willEnable = !targetMod.isEnabled
+        AlertDialog(
+            onDismissRequest = { pendingModToggle = null },
+            title = {
+                Text(
+                    if (willEnable) "🟢 Xác nhận BẬT Mod '${targetMod.baseName}'?"
+                    else "⚠️ Cảnh báo trước khi TẮT Mod '${targetMod.baseName}'?",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        if (willEnable) {
+                            "Bạn sắp BẬT lại mod '${targetMod.baseName}' (${targetMod.sizeText}).\n\n" +
+                                "• Hãy đảm bảo máy chủ đã có đủ Thư viện Lõi (Fabric API, Architectury, Cloth Config...) tương thích với phiên bản Minecraft hiện tại.\n" +
+                                "• Nếu mod thêm khối/vật phẩm mới, người chơi (Client) cũng cần có mod này trong máy."
+                        } else {
+                            "Bạn sắp TẮT mod '${targetMod.baseName}' (${targetMod.sizeText} → đổi đuôi thành .jar.disabled).\n\n" +
+                                "⚠️ LƯU Ý QUAN TRỌNG:\n" +
+                                "1️⃣ Nếu đây là Mod Thư viện Lõi (như Fabric API, Architectury, Balm, Puzzles Lib, Cloth Config...), việc tắt nó sẽ làm các Mod phụ thuộc báo lỗi khi bật Server!\n" +
+                                "2️⃣ Nếu đây là Mod thêm Khối / Nội thất / Ẩm thực / Sinh vật, các khối của mod này đã đặt trong Map có thể bị mất nếu bạn mở Map khi mod đang tắt."
+                        },
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val fileName = targetMod.fileName
+                        pendingModToggle = null
+                        onToggle(fileName)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = if (willEnable) Mint else Coral)
+                ) {
+                    Text(
+                        if (willEnable) "🟢 Đồng ý Bật Mod" else "⏸ Đồng ý Tắt Mod",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingModToggle = null }) {
+                    Text("Hủy", color = Muted)
+                }
+            }
+        )
     }
 
 
@@ -1982,6 +2116,7 @@ private fun ModPackDecoderAndTransferCard(
     var showAutoPackConfirmDialog by remember { mutableStateOf(false) }
     var showFull56List by remember(showFull56ListByDefault) { mutableStateOf(showFull56ListByDefault) }
     var copyConfigsToo by remember { mutableStateOf(true) }
+    var pendingCatalogModToggle by remember { mutableStateOf<Pair<PluginManager.UserScreenshotModItem, PluginManager.ModEntry>?>(null) }
 
     // Bộ lọc Nhóm phân loại ("ALL" hoặc 1 trong 6 nhóm) & Phiên bản Minecraft
     var selectedCategoryGroup by remember { mutableStateOf("ALL") }
@@ -2561,29 +2696,28 @@ private fun ModPackDecoderAndTransferCard(
                                 )
                             }
                             Spacer(Modifier.size(6.dp))
-                            if (isInstalled && isEnabledMod) {
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(MintSoft)
-                                        .padding(horizontal = 8.dp, vertical = 5.dp)
-                                ) {
-                                    Text(
-                                        "✅ Đã cài",
-                                        color = Mint,
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold
+                            if (isInstalled && matchedMod != null) {
+                                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(if (isEnabledMod) MintSoft else CoralSoft)
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        Text(
+                                            if (isEnabledMod) "🟢 Đang bật" else "⏸ Đang tắt",
+                                            color = if (isEnabledMod) Mint else Coral,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                    Switch(
+                                        checked = isEnabledMod,
+                                        onCheckedChange = {
+                                            pendingCatalogModToggle = item to matchedMod
+                                        },
+                                        enabled = activeCoreExists && !serverRunning
                                     )
-                                }
-                            } else if (isInstalled && !isEnabledMod) {
-                                OutlinedButton(
-                                    onClick = { vm.toggleModEnabled(matchedMod!!.fileName) },
-                                    enabled = activeCoreExists && !serverRunning,
-                                    shape = RoundedCornerShape(8.dp),
-                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                                    modifier = Modifier.height(30.dp)
-                                ) {
-                                    Text("⏸ Đã tải · Bật", color = Indigo, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                 }
                             } else {
                                 Button(
@@ -2604,6 +2738,71 @@ private fun ModPackDecoderAndTransferCard(
                 }
             }
         }
+    }
+
+    pendingCatalogModToggle?.let { (catalogItem, modEntry) ->
+        val willEnable = !modEntry.isEnabled
+        AlertDialog(
+            onDismissRequest = { pendingCatalogModToggle = null },
+            title = {
+                Text(
+                    if (willEnable) "🟢 Xác nhận BẬT Mod '${catalogItem.title}'?"
+                    else "⚠️ Cảnh báo trước khi TẮT Mod '${catalogItem.title}'?",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        "Nhóm phân loại: ${catalogItem.categoryGroup} • Tệp: ${modEntry.fileName} (${modEntry.sizeText})",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Indigo
+                    )
+                    Text(
+                        if (willEnable) {
+                            "Bạn sắp BẬT lại mod '${catalogItem.title}'.\n" +
+                                "• Chức năng: ${catalogItem.descVi}\n" +
+                                "• Phạm vi: ${catalogItem.scopeVi}\n\n" +
+                                "Hãy đảm bảo Server đang dừng và đã bật các Thư viện Lõi cần thiết trước khi khởi động."
+                        } else {
+                            "Bạn sắp TẮT mod '${catalogItem.title}' (${catalogItem.descVi}).\n\n" +
+                                (if (catalogItem.categoryGroup.contains("Thư viện Lõi")) {
+                                    "🚨 CẢNH BÁO ĐẶC BIỆT: Đây là Mod thuộc nhóm '🧱 Thư viện Lõi'! Nếu bạn tắt mod này, các mod khác phụ thuộc vào nó sẽ bị lỗi không thể khởi động Server!"
+                                } else if (catalogItem.scopeVi.contains("Server + Client")) {
+                                    "⚠️ CẢNH BÁO DỮ LIỆU THẾ GIỚI: Đây là Mod thêm nội dung (${catalogItem.categoryGroup}). Nếu bạn tắt mod này rồi mở Map đã từng đặt các khối/vật phẩm của mod, những khối đó trong Map sẽ biến mất!"
+                                } else {
+                                    "ℹ️ Đây là Mod Tối ưu / Server-side (${catalogItem.categoryGroup}). Bạn có thể tắt/bật an toàn mà không làm mất khối trong Map, nhưng tốc độ TPS/RAM có thể giảm."
+                                })
+                        },
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val targetFile = modEntry.fileName
+                        pendingCatalogModToggle = null
+                        vm.toggleModEnabled(targetFile)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = if (willEnable) Mint else Coral)
+                ) {
+                    Text(
+                        if (willEnable) "🟢 Đồng ý Bật Mod" else "⏸ Đồng ý Tắt Mod",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingCatalogModToggle = null }) {
+                    Text("Hủy", color = Muted)
+                }
+            }
+        )
     }
 
     if (showServerTransferDialog) {

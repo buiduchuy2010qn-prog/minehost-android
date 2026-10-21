@@ -37,6 +37,8 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
     val importStatus by vm.worldImportStatus.collectAsState()
     val healthReport by vm.worldHealthReport.collectAsState()
     val config by vm.config.collectAsState()
+    val serverStorageMap by vm.serverStorageMap.collectAsState()
+    val activeStorage = config.activeCoreName?.let { serverStorageMap[it] }
     val runningFlow = remember(vm) { vm.serverState.map { it.isRunning }.distinctUntilChanged() }
     val running by runningFlow.collectAsState(initial = true)
 
@@ -50,7 +52,10 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
     var folderWorldName by remember { mutableStateOf("") }
 
     LaunchedEffect(ready, config.activeCoreName) {
-        if (ready) vm.loadWorlds()
+        if (ready) {
+            vm.loadWorlds()
+            vm.refreshServerStorage()
+        }
     }
 
     val exporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
@@ -205,6 +210,48 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold
                     )
+                }
+
+                // Hiển thị chi tiết dung lượng từng tệp & thư mục bên trong Map đang chọn
+                if (world.isActive && activeStorage != null && activeStorage.worldFileEntries.isNotEmpty()) {
+                    Spacer(Modifier.height(6.dp))
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+                        shape = McShape.ControlCompact,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            Text(
+                                "📂 Dung lượng từng thư mục / tệp trong Map '${world.name}' (Tổng: ${vm.formatStorageBytes(activeStorage.worldBytes)}):",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Indigo
+                            )
+                            activeStorage.worldFileEntries.forEach { entry ->
+                                val icon = if (entry.isDirectory) "📁" else "📄"
+                                val countNote = if (entry.isDirectory) " (${entry.fileCount} tệp)" else ""
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        "$icon ${entry.name}$countNote",
+                                        fontSize = 10.sp,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(
+                                        vm.formatStorageBytes(entry.sizeBytes),
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Indigo
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
 
                 Spacer(Modifier.height(8.dp))

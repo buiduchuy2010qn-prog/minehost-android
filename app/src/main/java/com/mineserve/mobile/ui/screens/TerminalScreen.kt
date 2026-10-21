@@ -86,12 +86,75 @@ private data class QuickMcCommand(
     val command: String
 )
 
+private fun usesSnakeCaseGamerules(mcVersion: String): Boolean {
+    val clean = mcVersion.trim()
+    if (clean.startsWith("26.") || clean.startsWith("25w")) return true
+    val parts = clean.split(".", "-").mapNotNull { it.toIntOrNull() }
+    if (parts.size >= 2 && parts[0] == 1) {
+        val minor = parts[1]
+        val patch = parts.getOrElse(2) { 0 }
+        if (minor > 21) return true
+        if (minor == 21 && patch >= 11) return true
+    }
+    return false
+}
+
+private fun adaptCommandForServer(
+    rawCommand: String,
+    mcVersion: String,
+    supportsPlugins: Boolean
+): String {
+    val trimmed = rawCommand.trim().removePrefix("/")
+    if (trimmed.equals("tps", ignoreCase = true) && !supportsPlugins) {
+        return "tick query"
+    }
+    val snake = usesSnakeCaseGamerules(mcVersion)
+    if (trimmed.startsWith("gamerule ", ignoreCase = true)) {
+        val tokens = trimmed.split(Regex("\\s+"))
+        if (tokens.size >= 2) {
+            val rule = tokens[1]
+            val rest = tokens.drop(2).joinToString(" ")
+            val mappedRule = if (snake) {
+                when (rule) {
+                    "doDaylightCycle" -> "advance_time"
+                    "doWeatherCycle" -> "advance_weather"
+                    "keepInventory" -> "keep_inventory"
+                    "mobGriefing" -> "mob_griefing"
+                    "doImmediateRespawn" -> "immediate_respawn"
+                    "playersSleepingPercentage" -> "players_sleeping_percentage"
+                    "doMobSpawning" -> "spawn_mobs"
+                    "naturalRegeneration" -> "natural_health_regeneration"
+                    "showDeathMessages" -> "show_death_messages"
+                    "sendCommandFeedback" -> "send_command_feedback"
+                    else -> rule
+                }
+            } else {
+                when (rule) {
+                    "advance_time" -> "doDaylightCycle"
+                    "advance_weather" -> "doWeatherCycle"
+                    "keep_inventory" -> "keepInventory"
+                    "mob_griefing" -> "mobGriefing"
+                    "immediate_respawn" -> "doImmediateRespawn"
+                    "players_sleeping_percentage" -> "playersSleepingPercentage"
+                    "spawn_mobs" -> "doMobSpawning"
+                    "natural_health_regeneration" -> "naturalRegeneration"
+                    "show_death_messages" -> "showDeathMessages"
+                    "send_command_feedback" -> "sendCommandFeedback"
+                    else -> rule
+                }
+            }
+            return if (rest.isNotEmpty()) "gamerule $mappedRule $rest" else "gamerule $mappedRule"
+        }
+    }
+    return trimmed
+}
+
 private val categorizedCommands = listOf(
     // Công cụ Pro
     QuickMcCommand(CmdCategory.ProTools, "🧹", "Dọn vật phẩm rơi (Giảm lag)", "kill @e[type=item]"),
     QuickMcCommand(CmdCategory.ProTools, "✨", "Dọn bóng kinh nghiệm", "kill @e[type=experience_orb]"),
     QuickMcCommand(CmdCategory.ProTools, "💾", "Lưu thế giới ngay", "save-all"),
-    QuickMcCommand(CmdCategory.ProTools, "📊", "Kiểm tra TPS", "tps"),
+    QuickMcCommand(CmdCategory.ProTools, "📊", "Kiểm tra TPS / Tick", "tps"),
     QuickMcCommand(CmdCategory.ProTools, "📋", "Danh sách online", "list"),
     QuickMcCommand(CmdCategory.ProTools, "🛑", "Dừng máy chủ", "stop"),
 
@@ -106,6 +169,7 @@ private val categorizedCommands = listOf(
     QuickMcCommand(CmdCategory.WeatherTime, "🔒", "Khóa ngày đêm", "gamerule doDaylightCycle false"),
     QuickMcCommand(CmdCategory.WeatherTime, "🔓", "Mở chu kỳ ngày đêm", "gamerule doDaylightCycle true"),
     QuickMcCommand(CmdCategory.WeatherTime, "🔒", "Khóa thời tiết", "gamerule doWeatherCycle false"),
+    QuickMcCommand(CmdCategory.WeatherTime, "🔓", "Mở thời tiết", "gamerule doWeatherCycle true"),
 
     // Chế độ & Độ khó
     QuickMcCommand(CmdCategory.ModeDiff, "⚔️", "Sinh tồn (Tất cả)", "gamemode survival @a"),
@@ -122,8 +186,7 @@ private val categorizedCommands = listOf(
     QuickMcCommand(CmdCategory.Gamerules, "💀", "Giữ đồ khi chết: TẮT", "gamerule keepInventory false"),
     QuickMcCommand(CmdCategory.Gamerules, "💥", "Chống Creeper phá block", "gamerule mobGriefing false"),
     QuickMcCommand(CmdCategory.Gamerules, "🔓", "Bật lại Mob Griefing", "gamerule mobGriefing true"),
-    QuickMcCommand(CmdCategory.Gamerules, "🔥", "Tắt lửa cháy lan", "gamerule doFireTick false"),
-    QuickMcCommand(CmdCategory.Gamerules, "⚡", "Hồi sinh tức thì", "gamerule doImmediateRespawn true"),
+    QuickMcCommand(CmdCategory.Gamerules, "⚡", "Hồi sinh tức thì: BẬT", "gamerule doImmediateRespawn true"),
     QuickMcCommand(CmdCategory.Gamerules, "🛌", "1 người ngủ qua đêm", "gamerule playersSleepingPercentage 1"),
     QuickMcCommand(CmdCategory.Gamerules, "📍", "Đặt điểm hồi sinh thế giới", "setworldspawn"),
 
@@ -144,15 +207,20 @@ fun TerminalScreen(vm: McViewModel) {
     val activeId by vm.activeTerminalSessionId.collectAsStateWithLifecycle()
     val active = sessions.firstOrNull { it.id == activeId } ?: sessions.first()
     val mcLines by vm.terminalConsoleLines.collectAsStateWithLifecycle()
+    val config by vm.config.collectAsStateWithLifecycle()
     val serverState by vm.serverState.collectAsStateWithLifecycle()
     val serverProps by vm.serverProperties.collectAsStateWithLifecycle()
     val onlinePlayers by vm.onlinePlayerNames.collectAsStateWithLifecycle()
     val serverPort by vm.serverPort.collectAsStateWithLifecycle()
+    val activeCore = config.installedCores.firstOrNull { it.name == config.activeCoreName }
+    val activeMcVersion = activeCore?.version ?: config.mcVersion
+    val activeSupportsPlugins = activeCore?.core?.supportsPlugins == true
     val context = LocalContext.current
 
     var input by remember(activeId) { mutableStateOf("") }
     var commandHistory by remember { mutableStateOf(listOf<String>()) }
     var historyIndex by remember { mutableIntStateOf(-1) }
+    var lastSentCommandKey by remember { mutableStateOf<String?>(null) }
 
     val logPrefs = remember { context.getSharedPreferences("log_prefs", Context.MODE_PRIVATE) }
     var translateLogs by remember { mutableStateOf(logPrefs.getBoolean("localize", true)) }
@@ -230,10 +298,16 @@ fun TerminalScreen(vm: McViewModel) {
     }
 
     val sendCommand: (String) -> Unit = { command ->
-        val clean = command.trim()
+        val rawClean = command.trim()
+        val clean = if (active.type == TerminalSessionType.Minecraft) {
+            adaptCommandForServer(rawClean, activeMcVersion, activeSupportsPlugins)
+        } else {
+            rawClean
+        }
         if (clean.isNotEmpty()) {
             commandHistory = (listOf(clean) + commandHistory.filter { it != clean }).take(25)
             historyIndex = -1
+            lastSentCommandKey = rawClean
         }
         val dangerous = active.type == TerminalSessionType.Minecraft && clean in setOf(
             "stop",
@@ -246,6 +320,7 @@ fun TerminalScreen(vm: McViewModel) {
             vm.executeTerminalCommand(active.id, clean)
         } else {
             vm.sendCommand(clean)
+            vm.notifyActionDone("⚡ Đã gửi lệnh: /$clean")
         }
     }
 
@@ -334,120 +409,148 @@ fun TerminalScreen(vm: McViewModel) {
                 .statusBarsPadding()
                 .padding(terminalPadding)
         ) {
-            // ── 1. Thanh tiêu đề & Trạng thái trực tiếp ──────────────────
-            Row(
+            // ── 1. Thanh tiêu đề & Trạng thái trực tiếp (Tách 2 hàng chống bó chữ dọc) ──
+            Column(
                 Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Text(
                         "Bảng điều khiển Pro",
                         color = Color(0xFFE8E8E8),
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        maxLines = 1
                     )
-                    Spacer(Modifier.height(4.dp))
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // Trạng thái chạy/dừng
-                        Row(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(if (serverState.isRunning) Color(0xFF1E3A2F) else Color(0xFF282C34))
-                                .padding(horizontal = 6.dp, vertical = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(6.dp)
-                                    .clip(CircleShape)
-                                    .background(if (serverState.isRunning) Color(0xFF57E357) else Color(0xFF888888))
-                            )
-                            Spacer(Modifier.size(4.dp))
-                            Text(
-                                if (serverState.isRunning) "Đang chạy :$serverPort" else "Đang dừng",
-                                color = if (serverState.isRunning) Color(0xFFA6E3A1) else Color(0xFFAAAAAA),
-                                fontSize = 10.sp
+                    Row {
+                        IconButton(onClick = { showFilterBar = !showFilterBar }, modifier = Modifier.size(34.dp)) {
+                            Icon(
+                                Icons.Outlined.Search,
+                                "Tìm & Lọc nhật ký",
+                                tint = if (showFilterBar || searchQuery.isNotBlank() || filterMode != LogFilterMode.All) Color(0xFF89B4FA) else Color.White,
+                                modifier = Modifier.size(19.dp)
                             )
                         }
-                        // Nút nhanh Người chơi online
-                        Row(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(Color(0xFF222B3B))
-                                .clickable { showPlayerToolDialog = true }
-                                .padding(horizontal = 6.dp, vertical = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                "👥 ${onlinePlayers.size} người",
-                                color = Color(0xFF89B4FA),
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.SemiBold
+                        IconButton(onClick = { showViewDistDialog = true }, modifier = Modifier.size(34.dp)) {
+                            Icon(Icons.Outlined.Tune, "Chỉnh tầm nhìn", tint = Color(0xFFA6E3A1), modifier = Modifier.size(19.dp))
+                        }
+                        IconButton(onClick = { autoScrollPaused = !autoScrollPaused }, modifier = Modifier.size(34.dp)) {
+                            Icon(
+                                if (autoScrollPaused) Icons.Outlined.PlayArrow else Icons.Outlined.Pause,
+                                if (autoScrollPaused) "Tiếp tục tự cuộn" else "Tạm dừng tự cuộn",
+                                tint = if (autoScrollPaused) Color(0xFFFFC857) else Color.White,
+                                modifier = Modifier.size(19.dp)
                             )
                         }
-                        // Nút nhanh Tầm nhìn Chunk
-                        Row(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(Color(0xFF2A243B))
-                                .clickable { showViewDistDialog = true }
-                                .padding(horizontal = 6.dp, vertical = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                "🔭 $currentViewDist Chunk",
-                                color = Color(0xFFCBA6F7),
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
+                        IconButton(onClick = {
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                            clipboard.setPrimaryClip(android.content.ClipData.newPlainText(active.name, rawLines.joinToString("\n") { it.text }))
+                            vm.notifyActionDone("📋 Đã sao chép nhật ký hiện tại")
+                        }, modifier = Modifier.size(34.dp)) {
+                            Icon(Icons.Outlined.ContentCopy, "Sao chép nhật ký", tint = Color.White, modifier = Modifier.size(18.dp))
+                        }
+                        IconButton(onClick = {
+                            if (active.type == TerminalSessionType.Minecraft) vm.clearConsole()
+                            else vm.clearTerminalSession(active.id)
+                        }, modifier = Modifier.size(34.dp)) {
+                            Icon(Icons.Outlined.Delete, "Xóa màn hình", tint = Color(0xFFFFA7A7), modifier = Modifier.size(18.dp))
+                        }
+                        IconButton(onClick = { showSettings = true }, modifier = Modifier.size(34.dp)) {
+                            Icon(Icons.Outlined.Settings, "Cài đặt", tint = Color.White, modifier = Modifier.size(18.dp))
+                        }
+                        IconButton(onClick = vm::createTerminalSession, modifier = Modifier.size(34.dp)) {
+                            Icon(Icons.Outlined.Add, "Tạo phiên mới", tint = Color.White, modifier = Modifier.size(19.dp))
                         }
                     }
                 }
 
-                Row {
-                    IconButton(onClick = { showFilterBar = !showFilterBar }, modifier = Modifier.size(36.dp)) {
-                        Icon(
-                            Icons.Outlined.Search,
-                            "Tìm & Lọc nhật ký",
-                            tint = if (showFilterBar || searchQuery.isNotBlank() || filterMode != LogFilterMode.All) Color(0xFF89B4FA) else Color.White,
-                            modifier = Modifier.size(20.dp)
+                // Hàng 2: Các thẻ trạng thái cuộn ngang (không bao giờ bị bó chữ dọc "0 / n / g / ư / ờ / i")
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Trạng thái chạy/dừng
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(if (serverState.isRunning) Color(0xFF1E3A2F) else Color(0xFF282C34))
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(if (serverState.isRunning) Color(0xFF57E357) else Color(0xFF888888))
+                        )
+                        Spacer(Modifier.size(5.dp))
+                        Text(
+                            if (serverState.isRunning) "Đang chạy :$serverPort" else "Đang dừng",
+                            color = if (serverState.isRunning) Color(0xFFA6E3A1) else Color(0xFFAAAAAA),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1
                         )
                     }
-                    IconButton(onClick = { showViewDistDialog = true }, modifier = Modifier.size(36.dp)) {
-                        Icon(Icons.Outlined.Tune, "Chỉnh tầm nhìn", tint = Color(0xFFA6E3A1), modifier = Modifier.size(20.dp))
-                    }
-                    IconButton(onClick = { autoScrollPaused = !autoScrollPaused }, modifier = Modifier.size(36.dp)) {
-                        Icon(
-                            if (autoScrollPaused) Icons.Outlined.PlayArrow else Icons.Outlined.Pause,
-                            if (autoScrollPaused) "Tiếp tục tự cuộn" else "Tạm dừng tự cuộn",
-                            tint = if (autoScrollPaused) Color(0xFFFFC857) else Color.White,
-                            modifier = Modifier.size(20.dp)
+                    // Nút nhanh Người chơi online
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(Color(0xFF222B3B))
+                            .clickable { showPlayerToolDialog = true }
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "👥 ${onlinePlayers.size} người online",
+                            color = Color(0xFF89B4FA),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1
                         )
                     }
-                    IconButton(onClick = {
-                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                        clipboard.setPrimaryClip(android.content.ClipData.newPlainText(active.name, rawLines.joinToString("\n") { it.text }))
-                        Toast.makeText(context, "Đã sao chép nhật ký hiện tại", Toast.LENGTH_SHORT).show()
-                    }, modifier = Modifier.size(36.dp)) {
-                        Icon(Icons.Outlined.ContentCopy, "Sao chép nhật ký", tint = Color.White, modifier = Modifier.size(19.dp))
+                    // Nút nhanh Tầm nhìn Chunk
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(Color(0xFF2A243B))
+                            .clickable { showViewDistDialog = true }
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "🔭 $currentViewDist Chunk",
+                            color = Color(0xFFCBA6F7),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1
+                        )
                     }
-                    IconButton(onClick = {
-                        if (active.type == TerminalSessionType.Minecraft) vm.clearConsole()
-                        else vm.clearTerminalSession(active.id)
-                    }, modifier = Modifier.size(36.dp)) {
-                        Icon(Icons.Outlined.Delete, "Xóa màn hình", tint = Color(0xFFFFA7A7), modifier = Modifier.size(19.dp))
-                    }
-                    IconButton(onClick = { showSettings = true }, modifier = Modifier.size(36.dp)) {
-                        Icon(Icons.Outlined.Settings, "Cài đặt", tint = Color.White, modifier = Modifier.size(19.dp))
-                    }
-                    IconButton(onClick = vm::createTerminalSession, modifier = Modifier.size(36.dp)) {
-                        Icon(Icons.Outlined.Add, "Tạo phiên mới", tint = Color.White, modifier = Modifier.size(20.dp))
+                    // Nút nhanh Dọn RAM
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(Color(0xFF1E3238))
+                            .clickable { vm.cleanRamNow() }
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "🧹 Dọn RAM",
+                            color = Color(0xFF80DEEA),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1
+                        )
                     }
                 }
             }
@@ -622,10 +725,20 @@ fun TerminalScreen(vm: McViewModel) {
                         categorizedCommands
                             .filter { it.category == selectedCategory }
                             .forEach { item ->
+                                val isLastSent = lastSentCommandKey == item.command
                                 AssistChip(
                                     onClick = { sendCommand(item.command) },
-                                    label = { Text("${item.emoji} ${item.label}", fontSize = 11.sp, color = Color(0xFFE8E8E8)) },
-                                    colors = AssistChipDefaults.assistChipColors(containerColor = Color(0xFF232834))
+                                    label = {
+                                        Text(
+                                            if (isLastSent) "✅ Đã gửi: ${item.label}" else "${item.emoji} ${item.label}",
+                                            fontSize = 11.sp,
+                                            color = if (isLastSent) Color(0xFFA6E3A1) else Color(0xFFE8E8E8),
+                                            fontWeight = if (isLastSent) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                    },
+                                    colors = AssistChipDefaults.assistChipColors(
+                                        containerColor = if (isLastSent) Color(0xFF1E3A2F) else Color(0xFF232834)
+                                    )
                                 )
                             }
                     }

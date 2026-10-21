@@ -3734,10 +3734,63 @@ class TermuxRuntime(context: Context) {
      * 这些参数都是「只减不增」的安全项：不改变服务端行为，只压缩 JVM 的预留与开销。
      */
     private fun memoryFootprintArgs(): String = buildString {
-        append("-XX:+UseSerialGC ")
-        append("-XX:MaxMetaspaceSize=256m ")
-        append("-XX:ReservedCodeCacheSize=128m ")
+        append("-XX:+UseG1GC ")
+        append("-XX:+ParallelRefProcEnabled ")
+        append("-XX:MaxGCPauseMillis=100 ")
+        append("-XX:+UnlockExperimentalVMOptions ")
+        append("-XX:+DisableExplicitGC ")
+        append("-XX:G1NewSizePercent=20 ")
+        append("-XX:G1ReservePercent=15 ")
+        append("-XX:G1HeapRegionSize=16M ")
+        append("-XX:MaxMetaspaceSize=384m ")
+        append("-XX:ReservedCodeCacheSize=192m ")
         append("-Xss768k ")
+        append("-Dfml.readTimeout=120 ")
+    }
+
+    /**
+     * Dọn dẹp bộ nhớ đệm tạm thời (.mineserve/tmp, tmp/, .mixin.out, log.gz cũ) và giải phóng RAM
+     * trước khi khởi động máy chủ để tăng tốc khởi chạy.
+     */
+    fun cleanCacheAndRamForStartup(dirName: String?): Long {
+        var freedBytes = 0L
+        runCatching {
+            val globalTmp = File(installer.rootDir, "tmp")
+            if (globalTmp.isDirectory) {
+                globalTmp.listFiles()?.forEach { f ->
+                    val len = f.length()
+                    if (f.deleteRecursively()) freedBytes += len
+                }
+            }
+            if (!dirName.isNullOrBlank()) {
+                val srvDir = serverDirFor(dirName)
+                val srvTmp = serverTmpDirFor(srvDir)
+                if (srvTmp.isDirectory) {
+                    srvTmp.listFiles()?.forEach { f ->
+                        val len = f.length()
+                        if (f.deleteRecursively()) freedBytes += len
+                    }
+                }
+                val mixinOut = File(srvDir, ".mixin.out")
+                if (mixinOut.isDirectory) {
+                    val len = mixinOut.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+                    if (mixinOut.deleteRecursively()) freedBytes += len
+                }
+                val logsDir = File(srvDir, "logs")
+                if (logsDir.isDirectory) {
+                    logsDir.listFiles()?.filter { it.name.endsWith(".log.gz") }?.forEach { gz ->
+                        val len = gz.length()
+                        if (gz.delete()) freedBytes += len
+                    }
+                }
+            }
+            if (!isMcRunning()) {
+                killOrphanMcProcess(null)
+            }
+            System.gc()
+            Runtime.getRuntime().gc()
+        }
+        return freedBytes
     }
 
     /**

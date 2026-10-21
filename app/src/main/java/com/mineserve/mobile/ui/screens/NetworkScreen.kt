@@ -96,8 +96,10 @@ import com.mineserve.mobile.ui.PlayitTunnelController
 import com.mineserve.mobile.ui.PlayitUiState
 import com.mineserve.mobile.ui.StatLine
 import com.mineserve.mobile.ui.StatusPill
+import com.mineserve.mobile.ui.SwipeableInstantSnackbarHost
 import com.mineserve.mobile.ui.VirtualLanEndpoint
 import com.mineserve.mobile.ui.WarnNote
+import com.mineserve.mobile.ui.showInstantSnackbar
 import com.mineserve.mobile.ui.theme.Coral
 import com.mineserve.mobile.ui.theme.FieldBg
 import com.mineserve.mobile.ui.theme.Indigo
@@ -140,14 +142,14 @@ fun NetworkScreen(
     }
     LaunchedEffect(Unit) { vm.loadServerProperties() }
     LaunchedEffect(Unit) {
-        vm.messageFlow.collectLatest { snackbarHostState.showSnackbar(it) }
+        vm.messageFlow.collectLatest { snackbarHostState.showInstantSnackbar(it) }
     }
     LaunchedEffect(Unit) {
-        vm.errorFlow.collectLatest { snackbarHostState.showSnackbar(it) }
+        vm.errorFlow.collectLatest { snackbarHostState.showInstantSnackbar(it) }
     }
 
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        snackbarHost = { SwipeableInstantSnackbarHost(snackbarHostState) },
         contentWindowInsets = WindowInsets(0.dp)
     ) { paddingValues ->
         Column(
@@ -531,7 +533,8 @@ private fun PlayitEverywhereCard(
             WarnNote(playitState.errorMessage)
         }
 
-        // Hiển thị Địa chỉ Công khai để gửi cho bạn bè
+        // Hiển thị Địa chỉ Công khai để gửi cho bạn bè (Cả dạng Chữ và dạng Toàn Số)
+        val playitNumericAddress by vm.playitNumericAddress.collectAsState()
         if (playitState.publicAddress.isNotBlank()) {
             Spacer(Modifier.height(12.dp))
             Text(
@@ -543,7 +546,7 @@ private fun PlayitEverywhereCard(
             )
             Spacer(Modifier.height(6.dp))
             AddressCopyRow(
-                label = "Địa chỉ Internet Đám Mây (Không lộ IP nhà)",
+                label = "Địa chỉ Chữ (Playit.gg Domain)",
                 value = PlayitTunnelController.maskEndpointForDisplay(playitState.publicAddress, maskAddress),
                 onCopy = { vm.copyPublicUrl(context, playitState.publicAddress) },
                 icon = Icons.Outlined.Public,
@@ -551,15 +554,17 @@ private fun PlayitEverywhereCard(
                 containerColor = if (isRunning) MintSoft else IndigoSoft,
                 borderColor = if (isRunning) Mint else Indigo
             )
-            if (playitState.secondaryAddress.isNotBlank() && playitState.secondaryAddress != playitState.publicAddress) {
+            val numericAddr = playitNumericAddress ?: playitState.secondaryAddress.takeIf { it.isNotBlank() && it != playitState.publicAddress }
+            if (!numericAddr.isNullOrBlank()) {
                 Spacer(Modifier.height(6.dp))
                 AddressCopyRow(
-                    label = "Địa chỉ dự phòng (IP:Port của Playit Cloud)",
-                    value = PlayitTunnelController.maskEndpointForDisplay(playitState.secondaryAddress, maskAddress),
-                    onCopy = { vm.copyPublicUrl(context, playitState.secondaryAddress) },
+                    label = "🔢 Địa chỉ IP Toàn Số Playit (Không lộ IP mạng hay máy)",
+                    value = PlayitTunnelController.maskEndpointForDisplay(numericAddr, maskAddress),
+                    onCopy = { vm.copyPublicUrl(context, numericAddr) },
                     icon = Icons.Outlined.Lan,
-                    accent = Indigo,
-                    containerColor = IndigoSoft
+                    accent = Mint,
+                    containerColor = MintSoft,
+                    borderColor = Mint
                 )
             }
         }

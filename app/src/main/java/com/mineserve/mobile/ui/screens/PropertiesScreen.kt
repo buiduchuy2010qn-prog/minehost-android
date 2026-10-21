@@ -441,6 +441,7 @@ fun JavaPropertiesScreen(vm: McViewModel, onBack: () -> Unit, showBackBar: Boole
             Spacer(Modifier.height(16.dp))
         }
 
+        val isSaved = props.isNotEmpty() && props == loaded
         Button(
             onClick = {
                 if (serverState.isRunning) {
@@ -449,13 +450,17 @@ fun JavaPropertiesScreen(vm: McViewModel, onBack: () -> Unit, showBackBar: Boole
                     vm.saveServerProperties(props)
                 }
             },
-            colors = ButtonDefaults.buttonColors(containerColor = Indigo),
+            colors = ButtonDefaults.buttonColors(containerColor = if (isSaved) Mint else Indigo),
             shape = McShape.Control,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = McSpacing.Page, vertical = 12.dp)
         ) {
-            Text(stringResource(R.string.s328), color = Color.White, fontWeight = FontWeight.Bold)
+            Text(
+                if (isSaved) "✅ Đã lưu cấu hình (Chạm để lưu lại)" else "💾 " + stringResource(R.string.s328),
+                color = Color.White,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 

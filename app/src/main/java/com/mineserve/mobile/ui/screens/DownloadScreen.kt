@@ -100,11 +100,13 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val usesCoreVersion = config.selectedCore.isBedrock
+    val storageMap by vm.serverStorageMap.collectAsState()
 
     // 自定义版本输入框
     var customVersion by remember { mutableStateOf("") }
     // 自定义核心名称
     var customCoreName by remember { mutableStateOf("") }
+    var wantsAdditionalServer by remember(config.selectedCore, config.mcVersion) { mutableStateOf(false) }
     var showImportDialog by remember { mutableStateOf(false) }
     var pendingImport by remember { mutableStateOf<DownloadImport?>(null) }
     var importName by remember { mutableStateOf("") }
@@ -144,14 +146,20 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
 
     // 收集消息
     LaunchedEffect(Unit) {
-        vm.messageFlow.collectLatest { snackbarHostState.showSnackbar(it) }
+        vm.refreshServerStorage()
+        vm.messageFlow.collectLatest { snackbarHostState.showInstantSnackbar(it) }
     }
     LaunchedEffect(Unit) {
-        vm.errorFlow.collectLatest { snackbarHostState.showSnackbar(it) }
+        vm.errorFlow.collectLatest { snackbarHostState.showInstantSnackbar(it) }
+    }
+    LaunchedEffect(Unit) {
+        vm.coreDownloadCompletedFlow.collectLatest {
+            onBack?.invoke()
+        }
     }
 
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        snackbarHost = { com.mineserve.mobile.ui.SwipeableInstantSnackbarHost(snackbarHostState) },
         // 嵌套在外层 McApp Scaffold 内：insets 已由外层消费，这里不再重复应用，避免顶部空白/白色遮挡
         contentWindowInsets = WindowInsets(0.dp)
     ) { paddingValues ->
@@ -366,10 +374,11 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                             )
                         } else {
                             installed.forEach { core ->
+                        val srvSizeMb = (storageMap[core.dirName]?.totalBytes ?: 0L) / (1024L * 1024L)
                         val versionText = "${core.core.displayName} ${core.version}" +
                             (if (core.core == ServerCore.PowerNukkitX) {
                                 stringResource(R.string.dl_supported_game, versionHints[core.version] ?: stringResource(R.string.dl_official_unknown))
-                            } else "") + stringResource(R.string.dl_folder, core.dirName)
+                            } else "") + " • 💾 ${srvSizeMb} MB • " + stringResource(R.string.dl_folder, core.dirName)
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -386,7 +395,7 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                                     if (core.name == config.activeCoreName) {
                                         Spacer(Modifier.size(6.dp))
                                         Text(
-                                            stringResource(R.string.s453),
+                                            "✅ Đang chọn",
                                             color = Mint,
                                             fontSize = 10.sp,
                                             fontWeight = FontWeight.Bold
@@ -402,13 +411,19 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                             OutlinedButton(
                                 onClick = {
                                     vm.setActiveCore(core.name)
-                                    scope.launch { snackbarHostState.showSnackbar(context.getString(R.string.s376, core.name)) }
+                                    scope.launch { snackbarHostState.showInstantSnackbar("✅ Đã chọn máy chủ: ${core.name}") }
                                 },
                                 enabled = core.name != config.activeCoreName,
                                 shape = McShape.Control,
-                                border = BorderStroke(1.dp, Indigo),
+                                border = BorderStroke(1.dp, if (core.name == config.activeCoreName) Mint else Indigo),
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                            ) { Text(stringResource(R.string.s455), color = Indigo, fontSize = 11.sp) }
+                            ) {
+                                Text(
+                                    if (core.name == config.activeCoreName) "✅ Đã chọn" else stringResource(R.string.s455),
+                                    color = if (core.name == config.activeCoreName) Mint else Indigo,
+                                    fontSize = 11.sp
+                                )
+                            }
                             Spacer(Modifier.size(6.dp))
                             OutlinedButton(
                                 onClick = { vm.verifyOrRepairCore(core.dirName) },
@@ -465,7 +480,13 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                             selected = config.selectedCore == core,
                             compact = true,
                             unselectedBackground = if (countForCore > 0) Mint.copy(alpha = 0.16f) else if (core.isBedrock) Coral.copy(alpha = 0.16f) else com.mineserve.mobile.ui.theme.FieldGray,
-                            onClick = { vm.selectCore(core) }
+                            onClick = {
+                                customCoreName = ""
+                                vm.selectCore(core)
+                                scope.launch {
+                                    snackbarHostState.showInstantSnackbar("✅ Đã chọn phần mềm Core: ${core.displayName}")
+                                }
+                            }
                         )
                     }
                 }
@@ -582,18 +603,33 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                     )
                     Button(
                         onClick = {
-                            if (customVersion.isNotBlank()) {
-                                vm.setMcVersion(customVersion.trim())
-                                scope.launch {
-                                    snackbarHostState.showSnackbar(context.getString(R.string.s476, customVersion.trim()))
+                            val trimmedVer = customVersion.trim()
+                            if (trimmedVer.isNotBlank()) {
+                                val looksValid = Regex("^\\d+(\\.\\d+)+.*$").matches(trimmedVer) || trimmedVer in availableVersions
+                                if (!looksValid) {
+                                    scope.launch {
+                                        snackbarHostState.showInstantSnackbar("⚠️ Phiên bản '$trimmedVer' không hợp lệ! Ví dụ hợp lệ: 1.21.11, 1.20.1, 1.16.5")
+                                    }
+                                } else {
+                                    vm.setMcVersion(trimmedVer)
+                                    scope.launch {
+                                        snackbarHostState.showInstantSnackbar("✅ Đã chọn phiên bản Minecraft: $trimmedVer")
+                                    }
                                 }
                             }
                         },
                         enabled = customVersion.isNotBlank(),
-                        colors = ButtonDefaults.buttonColors(containerColor = Indigo),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (customVersion.trim() == config.mcVersion && customVersion.isNotBlank()) Mint else Indigo
+                        ),
                         shape = McShape.Control
                     ) {
-                        Text(stringResource(R.string.s477), color = Color.White, fontSize = 12.sp)
+                        Text(
+                            if (customVersion.trim() == config.mcVersion && customVersion.isNotBlank()) "✅ Đã chọn" else stringResource(R.string.s477),
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
                 Spacer(Modifier.height(8.dp))
@@ -705,103 +741,145 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                         it.name.equals(effectiveCoreName, ignoreCase = true)
                     }
 
-                    if (existingSameCoreVer.isNotEmpty()) {
+                    if (existingSameCoreVer.isNotEmpty() && !wantsAdditionalServer) {
+                        val firstExisting = existingSameCoreVer.first()
+                        val existingSizeMb = (storageMap[firstExisting.dirName]?.totalBytes ?: 0L) / (1024L * 1024L)
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(McShape.Row)
                                 .background(Mint.copy(alpha = 0.16f))
-                                .padding(10.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Text(
-                                "✅ ĐÃ TẢI & CÀI ĐẶT: ${config.selectedCore.displayName} ${config.mcVersion}",
+                                "✅ ĐÃ TẢI & CÀI ĐẶT SẴN SÀNG: ${firstExisting.name}",
                                 color = Mint,
-                                fontSize = 12.sp,
+                                fontSize = 13.sp,
                                 fontWeight = FontWeight.ExtraBold
                             )
                             Text(
-                                "Trên máy đã có sẵn máy chủ chạy phiên bản này: ${existingSameCoreVer.joinToString { "「${it.name}」" }}. Bạn không cần tải lại trừ khi muốn tạo thêm 1 server thứ 2!",
+                                "Máy chủ ${config.selectedCore.displayName} ${config.mcVersion} (💾 ${existingSizeMb} MB) đã có sẵn trên máy! Bạn có thể khởi động ngay mà không cần tải lại:",
                                 color = MaterialTheme.colorScheme.onSurface,
                                 fontSize = 11.sp,
                                 lineHeight = 15.sp
                             )
-                            val firstExisting = existingSameCoreVer.first()
-                            if (firstExisting.name != config.activeCoreName) {
+                            Button(
+                                onClick = {
+                                    vm.setActiveCore(firstExisting.name)
+                                    onBack?.invoke()
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Mint),
+                                shape = McShape.Control,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    "🚀 VÀO MỤC KHỞI ĐỘNG SERVER「${firstExisting.name}」NGAY",
+                                    color = Color.White,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                            }
+                            if (!serverState.isRunning) {
                                 Button(
                                     onClick = {
                                         vm.setActiveCore(firstExisting.name)
-                                        scope.launch {
-                                            snackbarHostState.showSnackbar("Đã chuyển sang dùng máy chủ: ${firstExisting.name}")
-                                        }
+                                        vm.startServer()
+                                        onBack?.invoke()
                                     },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Mint),
-                                    shape = McShape.ControlCompact,
+                                    colors = ButtonDefaults.buttonColors(containerColor = Indigo),
+                                    shape = McShape.Control,
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Text(
-                                        "✅ Dùng ngay「${firstExisting.name}」(Đã tải sẵn)",
+                                        "▶️ CHỌN & BẬT SERVER「${firstExisting.name}」LUÔN",
                                         color = Color.White,
-                                        fontSize = 11.sp,
+                                        fontSize = 12.sp,
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
-                            } else {
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    wantsAdditionalServer = true
+                                    customCoreName = "${config.selectedCore.displayName}-${config.mcVersion}-SV${existingSameCoreVer.size + 1}"
+                                },
+                                shape = McShape.ControlCompact,
+                                border = BorderStroke(1.dp, Indigo),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
                                 Text(
-                                    "🟢 Máy chủ「${firstExisting.name}」đang được chọn làm Server chính.",
-                                    color = Mint,
+                                    "➕ Tôi muốn tạo thêm 1 Server thứ ${existingSameCoreVer.size + 1} (Cùng phiên bản ${config.mcVersion})",
+                                    color = Indigo,
                                     fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
+                                    fontWeight = FontWeight.SemiBold
                                 )
                             }
                         }
-                        Spacer(Modifier.height(10.dp))
-                    }
-
-                    Text(stringResource(R.string.s483), color = Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                    Spacer(Modifier.height(4.dp))
-                    OutlinedTextField(
-                        value = customCoreName,
-                        onValueChange = { customCoreName = it },
-                        placeholder = { Text("Mặc định: $defaultCoreName", fontSize = 12.sp) },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    Button(
-                        onClick = { vm.downloadCore(effectiveCoreName) },
-                        enabled = !isDownloadingCore && effectiveCoreName.isNotBlank() && !exactNameExists,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (exactNameExists) Mint else Indigo,
-                            disabledContainerColor = if (exactNameExists) Mint.copy(alpha = 0.16f) else IndigoSoft
-                        ),
-                        shape = McShape.Control,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        if (isDownloadingCore) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp),
-                                color = Color.White,
-                                strokeWidth = 2.dp
-                            )
-                            Spacer(Modifier.size(8.dp))
+                    } else {
+                        if (existingSameCoreVer.isNotEmpty()) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "➕ Đang tạo thêm Server mới chạy ${config.selectedCore.displayName} ${config.mcVersion}",
+                                    color = Mint,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                TextButton(onClick = { wantsAdditionalServer = false; customCoreName = "" }) {
+                                    Text("Dùng SV đã tải", color = Indigo, fontSize = 11.sp)
+                                }
+                            }
                         }
-                        Text(
-                            when {
-                                isDownloadingCore -> stringResource(R.string.s485)
-                                exactNameExists -> "✅ Đã tải & cài đặt「$effectiveCoreName」(Đổi tên nếu muốn tạo SV thứ 2)"
-                                existingSameCoreVer.isNotEmpty() -> "➕ Tạo thêm máy chủ mới「$effectiveCoreName」"
-                                else -> stringResource(R.string.s486)
-                            },
-                            color = if (exactNameExists && !isDownloadingCore) Mint else Color.White,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
+                        Text(stringResource(R.string.s483), color = Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        Spacer(Modifier.height(4.dp))
+                        OutlinedTextField(
+                            value = customCoreName,
+                            onValueChange = { customCoreName = it },
+                            placeholder = { Text("Mặc định: $defaultCoreName", fontSize = 12.sp) },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
                         )
+                        Spacer(Modifier.height(12.dp))
+                        Button(
+                            onClick = { vm.downloadCore(effectiveCoreName) },
+                            enabled = !isDownloadingCore && effectiveCoreName.isNotBlank() && !exactNameExists,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (exactNameExists) Mint else Indigo,
+                                disabledContainerColor = if (exactNameExists) Mint.copy(alpha = 0.16f) else IndigoSoft
+                            ),
+                            shape = McShape.Control,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            if (isDownloadingCore) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    color = Color.White,
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(Modifier.size(8.dp))
+                            }
+                            Text(
+                                when {
+                                    isDownloadingCore -> "⏳ Đang tải (${downloadProgress.percent}% • ${downloadProgress.speedText})..."
+                                    exactNameExists -> "✅ Tên「$effectiveCoreName」đã tồn tại (Hãy nhập tên khác)"
+                                    existingSameCoreVer.isNotEmpty() -> "➕ Tải & Tạo thêm máy chủ mới「$effectiveCoreName」"
+                                    else -> "⬇️ Bắt đầu tải & Tạo Server「$effectiveCoreName」"
+                                },
+                                color = if (exactNameExists && !isDownloadingCore) Mint else Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
 
-                    // Chỉ hiển thị nhật ký liên quan đến tải core
+                    // Chỉ hiển thị nhật ký liên quan đến tải core (đã dịch sang tiếng Việt)
                     val downloadLines = remember(consoleLines, isDownloadingCore) {
-                        val filtered = consoleLines.filter { it.contains("[download]") || it.contains("[installer]") }
+                        val filtered = consoleLines.filter { it.contains("[download]") || it.contains("[installer]") || it.contains("[Tải xuống]") }
                         if (filtered.isNotEmpty()) filtered else if (isDownloadingCore) consoleLines else emptyList()
                     }
                     if (isDownloadingCore || downloadLines.isNotEmpty()) {
@@ -810,8 +888,8 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                         Spacer(Modifier.height(4.dp))
                         downloadLines.takeLast(8).forEach { line ->
                             Text(
-                                line,
-                                color = Muted.copy(alpha = 0.7f),
+                                com.mineserve.mobile.ui.TerminalLogTranslator.translate(line),
+                                color = Muted.copy(alpha = 0.85f),
                                 fontSize = 10.sp
                             )
                         }

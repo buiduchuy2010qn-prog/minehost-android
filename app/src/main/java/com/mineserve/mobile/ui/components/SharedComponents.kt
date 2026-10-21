@@ -17,6 +17,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.abs
+import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -1595,3 +1600,112 @@ fun JavaRuntimeGroupList(
         }
     }
 }
+
+/**
+ * Hiển thị thông báo phản hồi tức thì (0ms trễ khi spam nhiều cài đặt),
+ * tự động hủy thông báo cũ ngay lập tức để hiện thông báo mới nhất.
+ */
+suspend fun androidx.compose.material3.SnackbarHostState.showInstantSnackbar(message: String) {
+    currentSnackbarData?.dismiss()
+    showSnackbar(
+        message = message,
+        duration = androidx.compose.material3.SnackbarDuration.Short
+    )
+}
+
+/**
+ * Thanh thông báo phản hồi nhanh kiểu Minecraft HUD hỗ trợ:
+ * 1) Vuốt ngang qua trái/phải để bỏ thông báo ngay lập tức
+ * 2) Chạm vào thông báo hoặc nút ✕ để đóng ngay
+ * 3) Tự động ẩn nhanh sau 2.2 giây và không bao giờ xếp hàng gây trễ khi bấm liên tục
+ */
+@Composable
+fun SwipeableInstantSnackbarHost(
+    hostState: androidx.compose.material3.SnackbarHostState,
+    modifier: Modifier = Modifier
+) {
+    val currentData = hostState.currentSnackbarData
+    LaunchedEffect(currentData) {
+        if (currentData != null) {
+            delay(2200L)
+            runCatching { currentData.dismiss() }
+        }
+    }
+    androidx.compose.material3.SnackbarHost(
+        hostState = hostState,
+        modifier = modifier
+    ) { data ->
+        var dragOffsetX by remember(data) { androidx.compose.runtime.mutableFloatStateOf(0f) }
+        val isError = data.visuals.message.contains("Lỗi", ignoreCase = true) ||
+            data.visuals.message.contains("thất bại", ignoreCase = true) ||
+            data.visuals.message.contains("⚠️")
+        val accentColor = if (isError) Coral else Mint
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 8.dp)
+                .offset { IntOffset(dragOffsetX.roundToInt(), 0) }
+                .pointerInput(data) {
+                    detectHorizontalDragGestures(
+                        onDragEnd = {
+                            if (abs(dragOffsetX) > 110f) {
+                                data.dismiss()
+                            } else {
+                                dragOffsetX = 0f
+                            }
+                        },
+                        onDragCancel = { dragOffsetX = 0f },
+                        onHorizontalDrag = { change, dragAmount ->
+                            change.consume()
+                            dragOffsetX += dragAmount
+                            if (abs(dragOffsetX) > 220f) {
+                                data.dismiss()
+                            }
+                        }
+                    )
+                }
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color(0xFF141E19).copy(alpha = 0.97f))
+                .border(1.5.dp, accentColor, RoundedCornerShape(12.dp))
+                .clickable { data.dismiss() }
+                .padding(horizontal = 14.dp, vertical = 11.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                MinecraftPixelArtIcon(
+                    kind = if (isError) MinecraftArtKind.REDSTONE else MinecraftArtKind.EMERALD,
+                    size = 22.dp
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = data.visuals.message,
+                        color = Color(0xFFF1F8F3),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        lineHeight = 16.sp
+                    )
+                    Text(
+                        text = "↔ Vuốt ngang hoặc chạm để đóng ngay",
+                        color = Muted,
+                        fontSize = 9.sp
+                    )
+                }
+                Text(
+                    text = "✕",
+                    color = accentColor,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .clickable { data.dismiss() }
+                        .padding(4.dp)
+                )
+            }
+        }
+    }
+}
+

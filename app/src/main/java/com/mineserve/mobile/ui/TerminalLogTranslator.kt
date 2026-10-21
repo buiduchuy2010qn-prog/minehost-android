@@ -31,6 +31,7 @@ object TerminalLogTranslator {
 
     // Các sự kiện quan trọng & lỗi kèm hướng dẫn khắc phục trực tiếp trên Console
     private val majorMappings = listOf(
+        "Couldn't parse data file 'placeable_food:" to "ℹ️ [Cảnh báo nhẹ từ Mod 3D Placeable Food]: Tệp loot_table mẫu (beetrots/bp_5/ms) bị tác giả mod gõ sai tên ID. Lỗi này KHÔNG làm sập server, bạn vẫn chơi bình thường (hoặc có thể tắt mod 3D Placeable Food trong mục Quản lý Mod).",
         "Done (" to "Máy chủ đã khởi động hoàn tất! Bạn đã có thể vào game.",
         "Starting minecraft server" to "Đang khởi động máy chủ Minecraft",
         "Preparing level" to "Đang nạp thế giới (Map)",
@@ -139,10 +140,22 @@ object TerminalLogTranslator {
         "You have been banned" to "Bạn đã bị cấm khỏi máy chủ",
         "Server is full" to "Máy chủ đã đầy",
         "Unknown command" to "Lệnh không tồn tại",
+        "Unknown or incomplete command" to "Lệnh không tồn tại hoặc chưa đầy đủ",
+        "Incorrect argument for command" to "Sai cú pháp tham số lệnh",
         "Incorrect argument" to "Sai cú pháp tham số lệnh",
         "Usage:" to "Cách dùng:",
         "Permission denied" to "Không đủ quyền hạn",
-        "No permission" to "Không đủ quyền hạn"
+        "No permission" to "Không đủ quyền hạn",
+        "开始下载" to "Đang bắt đầu tải",
+        "保存路径:" to "Đường dẫn lưu:",
+        "多线程下载:" to "Tải đa luồng tốc độ cao:",
+        "线程，总大小" to "luồng, tổng dung lượng",
+        "下载完成:" to "Đã tải hoàn tất:",
+        "通道 " to "Kênh tải ",
+        "Set the time to" to "Đã chỉnh thời gian thế giới thành",
+        "Set the weather to" to "Đã chỉnh thời tiết thế giới thành",
+        "Gamerule " to "Quy tắc thế giới (Gamerule) ",
+        " is now set to: " to " đã được đặt thành: "
     )
 
     private val regexMappings = listOf(

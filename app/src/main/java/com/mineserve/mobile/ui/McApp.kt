@@ -39,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mineserve.mobile.McApplication
@@ -112,8 +113,16 @@ fun McApp() {
     val snackbars = remember { SnackbarHostState() }
     val eulaRequest by vm.eulaRequest.collectAsState()
     val uri = LocalUriHandler.current
-    LaunchedEffect(vm) { vm.errorFlow.collect { snackbars.showSnackbar(it) } }
-    LaunchedEffect(vm) { vm.messageFlow.collect { snackbars.showSnackbar(it) } }
+    LaunchedEffect(vm) { vm.errorFlow.collectLatest { snackbars.showInstantSnackbar(it) } }
+    LaunchedEffect(vm) { vm.messageFlow.collectLatest { snackbars.showInstantSnackbar(it) } }
+    LaunchedEffect(vm) {
+        vm.coreDownloadCompletedFlow.collectLatest { newServerName ->
+            showLogs = false
+            subPage = null
+            tab = McTab.Dashboard
+            snackbars.showInstantSnackbar("✅ Đã tải xong「$newServerName」! Đã chuyển về mục Khởi động Server.")
+        }
+    }
 
     // 系统返回键：逐级返回上一页面，禁止直接退出应用。
     // 优先级：日志页 → 子页面 → 其他 Tab → 概览（Dashboard）；已在概览时消费返回键不退出。
@@ -136,7 +145,7 @@ fun McApp() {
         // 全屏展示：内容延伸到状态栏，顶部状态栏区域由各页面首个组件（HeaderBlock/返回栏）
         // 以白色背景覆盖，不再显示系统状态栏灰色条
         contentWindowInsets = WindowInsets(0.dp),
-        snackbarHost = { SnackbarHost(snackbars) },
+        snackbarHost = { SwipeableInstantSnackbarHost(snackbars) },
         bottomBar = {
             NavigationBar(
                 modifier = Modifier.navigationBarsPadding(),
@@ -245,7 +254,7 @@ fun McApp() {
                             onNavigateProperties = { subPage = SubPage.Properties },
                             onNavigateOpGuide = { subPage = SubPage.OpLevelGuide })
                         SubPage.AppSettings -> SettingsScreen(vm, onNavigate = { subPage = it })
-                        SubPage.Crossplay -> MineHostCrossplay(onBack = { subPage = null })
+                        SubPage.Crossplay -> MineHostCrossplay(vm = vm, onBack = { subPage = null })
                         null -> {}
                     }
                 }

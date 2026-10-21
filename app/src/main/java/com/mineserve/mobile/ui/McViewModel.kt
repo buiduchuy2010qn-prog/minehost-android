@@ -2735,6 +2735,15 @@ class McViewModel(
                         "[startMc] Cổng trong tệp cấu hình ($detectedPort) khác với bản ghi cục bộ (${current.localPort}), ưu tiên dùng cổng $detectedPort"
                     )
                 }
+                if (_autoCleanRamOnStart.value) {
+                    val freed = withContext(Dispatchers.IO) {
+                        repo.termuxRuntime.cleanCacheAndRamForStartup(active.dirName)
+                    }
+                    val mem = com.mineserve.mobile.data.DeviceMemory.read(app)
+                    repo.termuxRuntime.emitLog(
+                        "[MineHost] 🧹 Đã tự động dọn RAM & bộ nhớ đệm (giải phóng ${freed / 1024} KB rác) — Sẵn sàng ${mem.availableMb} MB RAM trống!"
+                    )
+                }
                 val startConfig = current.copy(localPort = detectedPort)
                 repo.updateServerState {
                     it.copy(
@@ -3004,9 +3013,71 @@ class McViewModel(
         _messageFlow.tryEmit(str(R.string.s210, url))
     }
 
+    private fun adaptCommandForActiveServer(rawCommand: String): String {
+        val trimmed = rawCommand.trim().removePrefix("/")
+        val cfg = config.value
+        val activeCore = cfg.installedCores.firstOrNull { it.name == cfg.activeCoreName }
+        val mcVersion = (activeCore?.version ?: cfg.mcVersion).trim()
+        val supportsPlugins = (activeCore?.core ?: cfg.selectedCore).supportsPlugins
+        if (trimmed.equals("tps", ignoreCase = true) && !supportsPlugins) {
+            return "tick query"
+        }
+        val usesSnakeCase = run {
+            if (mcVersion.startsWith("26.") || mcVersion.startsWith("25w")) return@run true
+            val parts = mcVersion.split(".", "-").mapNotNull { it.toIntOrNull() }
+            if (parts.size >= 2 && parts[0] == 1) {
+                val minor = parts[1]
+                val patch = parts.getOrElse(2) { 0 }
+                if (minor > 21 || (minor == 21 && patch >= 11)) return@run true
+            }
+            false
+        }
+        if (trimmed.startsWith("gamerule ", ignoreCase = true)) {
+            val tokens = trimmed.split(Regex("\\s+"))
+            if (tokens.size >= 2) {
+                val rule = tokens[1]
+                val rest = tokens.drop(2).joinToString(" ")
+                val mappedRule = if (usesSnakeCase) {
+                    when (rule) {
+                        "doDaylightCycle" -> "advance_time"
+                        "doWeatherCycle" -> "advance_weather"
+                        "keepInventory" -> "keep_inventory"
+                        "mobGriefing" -> "mob_griefing"
+                        "doImmediateRespawn" -> "immediate_respawn"
+                        "playersSleepingPercentage" -> "players_sleeping_percentage"
+                        "doMobSpawning" -> "spawn_mobs"
+                        "doInsomnia" -> "spawn_phantoms"
+                        "naturalRegeneration" -> "natural_health_regeneration"
+                        "showDeathMessages" -> "show_death_messages"
+                        "sendCommandFeedback" -> "send_command_feedback"
+                        else -> rule
+                    }
+                } else {
+                    when (rule) {
+                        "advance_time" -> "doDaylightCycle"
+                        "advance_weather" -> "doWeatherCycle"
+                        "keep_inventory" -> "keepInventory"
+                        "mob_griefing" -> "mobGriefing"
+                        "immediate_respawn" -> "doImmediateRespawn"
+                        "players_sleeping_percentage" -> "playersSleepingPercentage"
+                        "spawn_mobs" -> "doMobSpawning"
+                        "spawn_phantoms" -> "doInsomnia"
+                        "natural_health_regeneration" -> "naturalRegeneration"
+                        "show_death_messages" -> "showDeathMessages"
+                        "send_command_feedback" -> "sendCommandFeedback"
+                        else -> rule
+                    }
+                }
+                return if (rest.isNotEmpty()) "gamerule $mappedRule $rest" else "gamerule $mappedRule"
+            }
+        }
+        return trimmed
+    }
+
     fun sendCommand(line: String) {
         try {
-            controller.sendCommand(line)
+            val adapted = adaptCommandForActiveServer(line)
+            controller.sendCommand(adapted)
         } catch (e: Exception) {
             _errorFlow.tryEmit(str(R.string.s211, e.message))
         }
@@ -6627,6 +6698,181 @@ class McViewModel(
     private val _downloadProgress = MutableStateFlow(DownloadProgress())
     val downloadProgress: StateFlow<DownloadProgress> = _downloadProgress.asStateFlow()
 
+    /** Phát sự kiện ngay khi tải xong Core Server để UI tự động chuyển sang mục Khởi động Server */
+    private val _coreDownloadCompletedFlow = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val coreDownloadCompletedFlow: SharedFlow<String> = _coreDownloadCompletedFlow.asSharedFlow()
+
+    /** Thông tin dung lượng chi tiết của từng Server & từng thư mục/file trong Map */
+    data class ServerStorageBreakdown(
+        val dirName: String,
+        val totalBytes: Long = 0L,
+        val worldBytes: Long = 0L,
+        val modsPluginsBytes: Long = 0L,
+        val coreAndLibsBytes: Long = 0L,
+        val logsAndCacheBytes: Long = 0L,
+        val modCount: Int = 0,
+        val enabledModCount: Int = 0,
+        val worldFileEntries: List<Pair<String, Long>> = emptyList()
+    )
+
+    private val _serverStorageMap = MutableStateFlow<Map<String, ServerStorageBreakdown>>(emptyMap())
+    val serverStorageMap: StateFlow<Map<String, ServerStorageBreakdown>> = _serverStorageMap.asStateFlow()
+
+    private val _playitNumericAddress = MutableStateFlow<String?>(null)
+    val playitNumericAddress: StateFlow<String?> = _playitNumericAddress.asStateFlow()
+
+    private val _autoCleanRamOnStart = MutableStateFlow(true)
+    val autoCleanRamOnStart: StateFlow<Boolean> = _autoCleanRamOnStart.asStateFlow()
+
+    fun setAutoCleanRamOnStart(enabled: Boolean) {
+        _autoCleanRamOnStart.value = enabled
+        metaPrefs().edit().putBoolean("auto_clean_ram_on_start", enabled).apply()
+        _messageFlow.tryEmit(
+            if (enabled) "✅ Đã bật Tự động dọn RAM trước khi khởi động Server!"
+            else "⏸ Đã tắt Tự động dọn RAM khi bật Server."
+        )
+    }
+
+    fun cleanRamNow(silent: Boolean = false) {
+        viewModelScope.launch {
+            val dir = activeDirName()
+            val freedBytes = withContext(Dispatchers.IO) {
+                repo.termuxRuntime.cleanCacheAndRamForStartup(dir)
+            }
+            val mem = com.mineserve.mobile.data.DeviceMemory.read(app)
+            refreshServerStorage()
+            if (!silent) {
+                val freedKb = (freedBytes / 1024L).coerceAtLeast(0L)
+                _messageFlow.tryEmit(
+                    "🧹 Đã dọn RAM & xóa ${freedKb} KB bộ nhớ đệm! Hiện có ${mem.availableMb}/${mem.totalMb} MB RAM trống."
+                )
+            }
+        }
+    }
+
+    fun refreshServerStorage() {
+        if (!isBootstrapped.value) return
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                val cores = config.value.installedCores
+                val result = linkedMapOf<String, ServerStorageBreakdown>()
+                for (srv in cores) {
+                    val srvDir = repo.termuxRuntime.serverDirFor(srv.dirName)
+                    if (!srvDir.isDirectory) continue
+                    var total = 0L
+                    var worldSz = 0L
+                    var modsSz = 0L
+                    var coreLibsSz = 0L
+                    var logsSz = 0L
+                    val worldEntries = mutableListOf<Pair<String, Long>>()
+
+                    val activeLvl = _serverProperties.value["level-name"]?.trim()?.takeIf { it.isNotBlank() } ?: "world"
+                    val topChildren = srvDir.listFiles() ?: emptyArray()
+                    for (child in topChildren) {
+                        val sz = child.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+                        total += sz
+                        val n = child.name.lowercase(java.util.Locale.ROOT)
+                        when {
+                            n == activeLvl.lowercase(java.util.Locale.ROOT) ||
+                                n.startsWith("${activeLvl.lowercase(java.util.Locale.ROOT)}_") ||
+                                n == "worlds" || File(child, "level.dat").isFile || File(child, "db").isDirectory -> {
+                                worldSz += sz
+                                if (child.isDirectory && (n == activeLvl.lowercase(java.util.Locale.ROOT) || n == "worlds")) {
+                                    child.listFiles()?.forEach { wf ->
+                                        val wfsz = wf.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+                                        val label = when (wf.name) {
+                                            "region" -> "🗺️ region/ (Dữ liệu vùng đất Chunk)"
+                                            "entities" -> "🐾 entities/ (Sinh vật & Thực thể)"
+                                            "playerdata" -> "👤 playerdata/ (Túi đồ & Vị trí người chơi)"
+                                            "DIM-1" -> "🔥 DIM-1/ (Địa ngục Nether)"
+                                            "DIM1" -> "🐉 DIM1/ (Chiều The End)"
+                                            "datapacks" -> "📦 datapacks/ (Gói dữ liệu thế giới)"
+                                            "poi" -> "🏠 poi/ (Điểm nghề dân làng & Cổng)"
+                                            "stats" -> "📊 stats/ (Thống kê người chơi)"
+                                            "advancements" -> "🏆 advancements/ (Thành tựu)"
+                                            "level.dat" -> "⚙️ level.dat (Hạt giống & Cấu hình Map)"
+                                            else -> (if (wf.isDirectory) "📁 ${wf.name}/" else "📄 ${wf.name}")
+                                        }
+                                        worldEntries.add(label to wfsz)
+                                    }
+                                } else if (child.isDirectory) {
+                                    worldEntries.add("🌌 ${child.name}/ (Chiều không gian phụ)" to sz)
+                                }
+                            }
+                            n == "mods" || n == "plugins" -> modsSz += sz
+                            n == "logs" || n == "crash-reports" || n == ".mineserve" || n == ".fabric" || n == "cache" -> logsSz += sz
+                            else -> coreLibsSz += sz
+                        }
+                    }
+                    val modFiles = (File(srvDir, "mods").listFiles()?.toList().orEmpty() +
+                        File(srvDir, "plugins").listFiles()?.toList().orEmpty())
+                        .filter { it.isFile && (it.name.endsWith(".jar", true) || it.name.endsWith(".jar.disabled", true) || it.name.endsWith(".phar", true)) }
+                    val enabledMods = modFiles.count { !it.name.endsWith(".disabled", true) }
+                    result[srv.dirName] = ServerStorageBreakdown(
+                        dirName = srv.dirName,
+                        totalBytes = total,
+                        worldBytes = worldSz,
+                        modsPluginsBytes = modsSz,
+                        coreAndLibsBytes = coreLibsSz,
+                        logsAndCacheBytes = logsSz,
+                        modCount = modFiles.size,
+                        enabledModCount = enabledMods,
+                        worldFileEntries = worldEntries.sortedByDescending { it.second }
+                    )
+                }
+                _serverStorageMap.value = result
+            }
+        }
+    }
+
+    fun resolvePlayitNumericIp(rawAddress: String?) {
+        val addr = rawAddress?.trim().orEmpty()
+        if (addr.isBlank() || !addr.contains(":")) {
+            _playitNumericAddress.value = null
+            return
+        }
+        val host = addr.substringBeforeLast(":").trim()
+        val port = addr.substringAfterLast(":").trim()
+        if (host.isBlank() || port.isBlank()) {
+            _playitNumericAddress.value = null
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                val resolvedIp = java.net.InetAddress.getByName(host).hostAddress
+                if (!resolvedIp.isNullOrBlank()) {
+                    _playitNumericAddress.value = "$resolvedIp:$port"
+                }
+            }
+        }
+    }
+
+    fun installCrossplayGeyserPack() {
+        val active = config.value.installedCores.firstOrNull { it.name == config.value.activeCoreName }
+        val core = active?.core ?: config.value.selectedCore
+        if (core.supportsMods) {
+            _messageFlow.tryEmit("📱 Đang tải GeyserMC + Floodgate (Fabric) để điện thoại PE vào chơi chung...")
+            downloadPopularPlugin(
+                name = "Geyser-Fabric",
+                url = "https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/fabric"
+            )
+            downloadPopularPlugin(
+                name = "Floodgate-Fabric",
+                url = "https://download.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest/downloads/fabric"
+            )
+        } else {
+            _messageFlow.tryEmit("📱 Đang tải GeyserMC + Floodgate (Paper/Spigot) để điện thoại PE vào chơi chung...")
+            downloadPopularPlugin(
+                name = "Geyser-Spigot",
+                url = "https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot"
+            )
+            downloadPopularPlugin(
+                name = "Floodgate-Spigot",
+                url = "https://download.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest/downloads/spigot"
+            )
+        }
+    }
+
     /** 加载指定核心的可用版本列表 */
     fun loadVersions(core: ServerCore) {
         val token = ++versionsLoadToken
@@ -6637,12 +6883,22 @@ class McViewModel(
             try {
                 val options = controller.fetchVersionOptions(core)
                 if (token != versionsLoadToken) return@launch
-                val versions = options.map { it.version }
+                // Ưu tiên hiển thị các phiên bản chính thức 1.x (1.21.11, 1.21.4, 1.21.1, 1.20.1, 1.16.5...) lên đầu
+                // để người dùng không chọn nhầm bản thử nghiệm 26.x chưa có Mod
+                val rawVersions = options.map { it.version }
+                val versions = rawVersions.sortedWith(compareBy<String> { !it.startsWith("1.") })
                 _availableVersions.value = versions
                 _versionHints.value = options.associate { it.version to it.supportedGameVersion }
+                val currentVer = config.value.mcVersion
                 if (core == ServerCore.PowerNukkitX && config.value.selectedCore == core &&
-                    config.value.mcVersion == "latest" && versions.isNotEmpty()) {
+                    currentVer == "latest" && versions.isNotEmpty()
+                ) {
                     updateConfig { it.copy(mcVersion = versions.first()) }
+                } else if (versions.isNotEmpty() && (currentVer !in versions || currentVer.startsWith("26."))) {
+                    val preferredStable = versions.firstOrNull { it == "1.21.11" }
+                        ?: versions.firstOrNull { it.startsWith("1.") }
+                        ?: versions.first()
+                    updateConfig { it.copy(mcVersion = preferredStable) }
                 }
             } catch (e: Exception) {
                 if (token != versionsLoadToken) return@launch
@@ -6679,7 +6935,9 @@ class McViewModel(
                 controller.downloadCore(config.value, customName.trim()) { downloaded, total, speed ->
                     _downloadProgress.value = DownloadProgress(downloaded, total, speed)
                 }
+                refreshServerStorage()
                 _messageFlow.tryEmit(str(R.string.s296, customName.trim()))
+                _coreDownloadCompletedFlow.tryEmit(customName.trim())
             } catch (e: Exception) {
                 _errorFlow.tryEmit(str(R.string.s297, e.message))
             } finally {
@@ -7046,6 +7304,7 @@ class McViewModel(
      * （historyMutex/playerManager 等），导致启动时 NullPointerException 崩溃。
      */
     init {
+        _autoCleanRamOnStart.value = metaPrefs().getBoolean("auto_clean_ram_on_start", true)
         refreshDeviceProfile()
         refreshLanIp(notifyOnChange = false)
         runCatching {
@@ -7055,7 +7314,20 @@ class McViewModel(
         }
         scanUnregisteredServers()
         viewModelScope.launch {
-            config.map { it.activeCoreName }.distinctUntilChanged().collect { loadPlayerHistory() }
+            config.map { it.activeCoreName }.distinctUntilChanged().collect {
+                loadPlayerHistory()
+                refreshServerStorage()
+            }
+        }
+        viewModelScope.launch {
+            config.map { it.installedCores }.distinctUntilChanged().collect {
+                refreshServerStorage()
+            }
+        }
+        viewModelScope.launch {
+            playitState.map { it.publicAddress }.distinctUntilChanged().collect { pub ->
+                resolvePlayitNumericIp(pub)
+            }
         }
         // 把「当前 Java 来源 + PRoot 发行版」投影到运行时。
         //

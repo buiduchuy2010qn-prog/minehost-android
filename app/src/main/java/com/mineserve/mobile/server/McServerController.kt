@@ -1390,8 +1390,8 @@ class McServerController(
             runCatching { resolvePowerNukkitXDigest(config.mcVersion) }.getOrNull()
         } else null
         Log.i(TAG, "downloadCoreTo: core=${config.selectedCore}, version=${config.mcVersion}, urls=$urls")
-        termux.emitLog("[download] 开始下载 ${config.selectedCore.displayName} ${config.mcVersion}")
-        termux.emitLog("[download] 保存路径: $jarPath")
+        termux.emitLog("[download] Đang bắt đầu tải ${config.selectedCore.displayName} ${config.mcVersion}")
+        termux.emitLog("[download] Đường dẫn lưu: $jarPath")
 
         val outFile = File(jarPath)
         outFile.parentFile?.mkdirs()
@@ -1402,7 +1402,7 @@ class McServerController(
         repeat(maxAttempts) { attempt ->
             val url = urls[attempt % urls.size]
             try {
-                termux.emitLog("[download] 通道 ${attempt + 1}/${urls.size}: $url")
+                termux.emitLog("[download] Kênh tải ${attempt + 1}/${urls.size}: $url")
                 MultiThreadDownloader.download(
                     url = url,
                     target = outFile,
@@ -1415,7 +1415,7 @@ class McServerController(
                 // 校验文件大小
                 val fileSize = outFile.length()
                 if (fileSize < 1024) {
-                    throw RuntimeException("下载文件过小 ($fileSize 字节)，可能下载失败")
+                    throw RuntimeException("Tệp tải về quá nhỏ ($fileSize byte), có thể bị lỗi mạng")
                 }
                 if (config.selectedCore == ServerCore.PowerNukkitX) {
                     JarFile(outFile).use { jar ->
@@ -1424,29 +1424,29 @@ class McServerController(
                                 jar.getEntry("org/powernukkitx/JarStart.class") != null ||
                                 jar.getEntry("cn/nukkit/Server.class") != null
                         ) {
-                            "PowerNukkitX 下载内容不是有效核心 JAR"
+                            "Tệp PowerNukkitX tải về không phải JAR hợp lệ"
                         }
                     }
                     if (expectedDigest != null) {
                         check(sha256(outFile).equals(expectedDigest, ignoreCase = true)) {
-                            "PowerNukkitX SHA-256 校验失败"
+                            "Kiểm tra SHA-256 PowerNukkitX thất bại"
                         }
                     }
                 }
-                termux.emitLog("[download] 下载完成: ${fileSize / 1024 / 1024}MB")
+                termux.emitLog("[download] Đã tải hoàn tất: ${fileSize / 1024 / 1024}MB")
                 Log.i(TAG, "downloadCoreTo: success, saved to $jarPath (${fileSize} bytes)")
                 return@withContext} catch (e: Exception) {
                 Log.w(TAG, "downloadCoreTo attempt ${attempt + 1} failed: ${e.message}")
-                termux.emitLog("[download] 第 ${attempt + 1} 次失败: ${e.message}")
+                termux.emitLog("[download] Lần thử ${attempt + 1} thất bại: ${e.message}")
                 lastError = e
                 outFile.delete()
                 if (attempt < 2) {
-                    termux.emitLog("[download] 等待 ${1500L * (attempt + 1)}ms 后重试...")
+                    termux.emitLog("[download] Đợi ${1500L * (attempt + 1)}ms trước khi thử lại...")
                     delay(1500L * (attempt + 1))
                 }
             }
         }
-        throw RuntimeException("下载失败（已重试3次）: ${lastError?.message}")
+        throw RuntimeException("Tải thất bại (đã thử 3 lần): ${lastError?.message}")
     }
 
     private fun fetchJsonElement(urlStr: String): JsonElement {
