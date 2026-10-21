@@ -1601,7 +1601,7 @@ fun MinecraftPlayerAvatar(
             val bmp = headBitmap
             if (bmp != null) {
                 androidx.compose.foundation.Image(
-                    bitmap = androidx.compose.ui.graphics.asImageBitmap(bmp),
+                    bitmap = bmp.asImageBitmap(),
                     contentDescription = name,
                     modifier = Modifier.fillMaxSize(),
                     contentScale = androidx.compose.ui.layout.ContentScale.Crop,
