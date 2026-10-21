@@ -285,12 +285,12 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                                     if (!playitState.isRunning) {
                                         Button(
-                                            onClick = { vm.startPlayit() },
+                                            onClick = { vm.startPlayitTunnel() },
                                             modifier = Modifier.fillMaxWidth()
                                         ) { Text("🚀 Bật kết nối mọi nơi (Playit.gg)") }
                                     } else {
                                         OutlinedButton(
-                                            onClick = { vm.stopPlayit() },
+                                            onClick = { vm.stopPlayitTunnel() },
                                             modifier = Modifier.weight(1f)
                                         ) { Text("Tắt Playit.gg") }
                                         if (playitState.claimUrl.isNotBlank() && !playitState.isClaimed) {
@@ -368,7 +368,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                 "Người chơi & Lịch sử tham gia",
                 "Xem ai đang trực tuyến, lịch sử từng người chơi đã vào server, cấp OP, Whitelist, Ban.",
                 Icons.Outlined.People
-            ) { navigate(SubPage.Players) }
+            ) { navigate(SubPage.PlayerList) }
         }
         item {
             if (active?.core?.supportsMods == true) {
@@ -376,7 +376,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                     "Quản lý Mod & Giải mã Thư mục Full Mod",
                     "Giải mã thư mục/ZIP full mod, chuyển mod sang server mới hoặc tải tự động từ Modrinth.",
                     Icons.Outlined.Extension
-                ) { navigate(SubPage.Mods) }
+                ) { navigate(SubPage.Plugins) }
             } else if (active != null) {
                 HostAction(
                     "Quản lý Plugin",
