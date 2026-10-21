@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -42,6 +43,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -118,6 +120,24 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
     var importName by remember { mutableStateOf("") }
     var importObservedRunning by remember { mutableStateOf(false) }
     var showAllVersions by remember { mutableStateOf(false) }
+    // Các tùy chọn thiết lập Server linh hoạt (không khóa cứng phiên bản mặc định)
+    var flexibleGamemode by rememberSaveable { mutableStateOf("survival") }
+    var flexibleCrackedMode by rememberSaveable { mutableStateOf(true) }
+    var flexibleCrossplayEnabled by rememberSaveable { mutableStateOf(false) }
+    var flexibleBedrockBranch by rememberSaveable { mutableStateOf("1.21") }
+    val freeStorageMb = remember { (context.filesDir.usableSpace / (1024L * 1024L)).coerceAtLeast(0L) }
+    var showSoftwareComparison by rememberSaveable { mutableStateOf(false) }
+    var installedExpanded by rememberSaveable { mutableStateOf(true) }
+    var showMoreCores by rememberSaveable { mutableStateOf(false) }
+    val installedCoreCounts = remember(config.installedCores) {
+        config.installedCores.groupingBy { it.core }.eachCount()
+    }
+    val installedVersionsForSelectedCore = remember(config.installedCores, config.selectedCore) {
+        config.installedCores.asSequence()
+            .filter { it.core == config.selectedCore }
+            .map { it.version }
+            .toHashSet()
+    }
     // 待删除的已安装核心（二次确认；删除会连同该目录下的世界、插件与配置一起移除）
     var pendingDeleteCore by remember { mutableStateOf<InstalledCore?>(null) }
     val folderImportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
@@ -181,975 +201,1134 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
             } else {
                 HeaderBlock(eyebrow = stringResource(R.string.eyebrow_download), title = stringResource(R.string.s450))
             }
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .verticalScroll(rememberScrollState())
+            val gamemodeLabelVi = when (flexibleGamemode) {
+                "creative" -> "🎨 Sáng tạo"
+                "adventure" -> "🗺️ Phiêu lưu"
+                "hardcore" -> "💀 Siêu khó"
+                else -> "🌱 Sinh tồn"
+            }
+
+            LazyColumn(
+                modifier = Modifier.weight(1f)
             ) {
-
-            val freeStorageMb = remember { (context.filesDir.usableSpace / (1024L * 1024L)).coerceAtLeast(0L) }
-            var showSoftwareComparison by rememberSaveable { mutableStateOf(false) }
-
-            McCard(title = "🚀 Tạo Server Nhanh Theo Mẫu (1 Chạm) — Chuẩn Minecraft") {
-                Text(
-                    "Chưa từng tạo server Minecraft? Hãy chọn ngay 1 trong 5 mẫu cài sẵn bên dưới — MineHost sẽ tự động chọn đúng Phần mềm (Core), Phiên bản Minecraft và đặt sẵn tên server cho bạn:",
-                    color = Muted,
-                    fontSize = 11.sp,
-                    lineHeight = 16.sp
-                )
-                Spacer(Modifier.height(8.dp))
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    val hasFabric12111 = config.installedCores.any { it.core == ServerCore.Fabric && it.version == "1.21.11" }
-                    val hasPaper12111 = config.installedCores.any { it.core == ServerCore.Paper && it.version == "1.21.11" }
-                    val hasNeoForge1211 = config.installedCores.any { it.core == ServerCore.NeoForge && it.version == "1.21.1" }
-                    val hasBedrockPnx = config.installedCores.any { it.core == ServerCore.PowerNukkitX }
-                    OutlinedButton(
-                        onClick = {
-                            vm.selectCore(ServerCore.Fabric)
-                            vm.setMcVersion("1.21.11")
-                            customCoreName = "Server-56Mod-Fabric-1.21.11"
-                            scope.launch {
-                                snackbarHostState.showSnackbar("📦 Đã chọn mẫu: Fabric 1.21.11 (Chơi trọn bộ 56 Mod của bạn).")
-                            }
-                        },
-                        shape = McShape.ControlCompact,
-                        border = BorderStroke(1.5.dp, if (hasFabric12111) Mint else Indigo)
-                    ) {
-                        Text(
-                            if (hasFabric12111) "✅ Đã tải: Bộ 56 Mod (Fabric 1.21.11)" else "📦 Bộ 56 Mod Của Bạn (Fabric 1.21.11)",
-                            color = if (hasFabric12111) Mint else Indigo,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                    OutlinedButton(
-                        onClick = {
-                            vm.selectCore(ServerCore.Paper)
-                            vm.setMcVersion("1.21.11")
-                            customCoreName = "SinhTon-Paper-1.21.11"
-                            scope.launch {
-                                snackbarHostState.showSnackbar("🌱 Đã chọn mẫu: Sinh tồn mượt nhất (Paper 1.21.11 - Hỗ trợ Plugin).")
-                            }
-                        },
-                        shape = McShape.ControlCompact,
-                        border = BorderStroke(1.dp, Mint)
-                    ) {
-                        Text(
-                            if (hasPaper12111) "✅ Đã tải: Sinh tồn (Paper 1.21.11)" else "🌱 Sinh tồn mượt nhất (Paper 1.21.11)",
-                            color = Mint,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                    OutlinedButton(
-                        onClick = {
-                            vm.selectCore(ServerCore.Paper)
-                            vm.setMcVersion("1.21.11")
-                            customCoreName = "SangTao-Paper-1.21.11"
-                            scope.launch {
-                                snackbarHostState.showSnackbar("🎨 Đã chọn mẫu: Sáng tạo xây dựng (Paper 1.21.11).")
-                            }
-                        },
-                        shape = McShape.ControlCompact
-                    ) {
-                        Text(
-                            if (hasPaper12111) "✅ Đã tải: Sáng tạo (Paper 1.21.11)" else "🎨 Sáng tạo (Paper 1.21.11)",
-                            fontSize = 11.sp
-                        )
-                    }
-                    OutlinedButton(
-                        onClick = {
-                            vm.selectCore(ServerCore.NeoForge)
-                            vm.setMcVersion("1.21.1")
-                            customCoreName = "ModPack-NeoForge-1.21.1"
-                            scope.launch {
-                                snackbarHostState.showSnackbar("⚒️ Đã chọn mẫu: Chơi Mod NeoForge 1.21.1.")
-                            }
-                        },
-                        shape = McShape.ControlCompact
-                    ) {
-                        Text(
-                            if (hasNeoForge1211) "✅ Đã tải: Mod NeoForge 1.21.1" else "⚒️ Mod NeoForge 1.21.1",
-                            fontSize = 11.sp
-                        )
-                    }
-                    OutlinedButton(
-                        onClick = {
-                            vm.selectCore(ServerCore.PowerNukkitX)
-                            customCoreName = "Bedrock-PE-Server"
-                            scope.launch {
-                                snackbarHostState.showSnackbar("📱 Đã chọn mẫu: Minecraft PE / Bedrock (PowerNukkitX).")
-                            }
-                        },
-                        shape = McShape.ControlCompact
-                    ) {
-                        Text(
-                            if (hasBedrockPnx) "✅ Đã tải: Minecraft PE / Bedrock" else "📱 Minecraft PE / Bedrock",
-                            fontSize = 11.sp
-                        )
-                    }
-                    OutlinedButton(
-                        onClick = {
-                            vm.createCrossplayServerAndInstallPack(
-                                core = ServerCore.Paper,
-                                mcVersion = "1.21.4",
-                                bedrockBranch = "1.21",
-                                customName = "Crossplay-PC-PE-1.21.4"
-                            )
-                        },
-                        shape = McShape.ControlCompact,
-                        border = BorderStroke(1.5.dp, Mint)
-                    ) {
-                        Text(
-                            "📱💻 Chơi Chung PC + PE 1.21.114 (Paper 1.21.4 + Geyser + ViaVersion)",
-                            color = Mint,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.ExtraBold
-                        )
-                    }
-                }
-
-                Spacer(Modifier.height(10.dp))
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(McShape.Row)
-                        .background(com.mineserve.mobile.ui.theme.FieldGray)
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
+            item(key = "flexible_configurator") {
+                McCard(title = "🛠️ Thiết Lập Server Linh Hoạt (Tự chọn Core • Phiên bản • Chế độ • PC+PE)") {
                     Text(
-                        "💾 Bộ nhớ trống hiện tại: ${freeStorageMb} MB • RAM cấp phát: ${config.maxHeapMb} MB",
-                        color = if (freeStorageMb > 1024) Indigo else Coral,
-                        fontSize = 11.5.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        if (showSoftwareComparison) "▲ Bấm để ẩn bảng so sánh Core" else "▼ Bấm xem so sánh Paper / Fabric / Forge / PE",
-                        color = Mint,
+                        "Tự do kết hợp bất kỳ Phần mềm (Core), bất kỳ Phiên bản Minecraft (1.7.10 → 1.21.11 / 26.x), Chế độ chơi và Chơi chung PC + PE mà không bị gò bó theo mẫu cố định:",
+                        color = Muted,
                         fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.clickable { showSoftwareComparison = !showSoftwareComparison }
+                        lineHeight = 16.sp
                     )
-                }
+                    Spacer(Modifier.height(8.dp))
 
-                androidx.compose.animation.AnimatedVisibility(visible = showSoftwareComparison) {
+                    // Khung tóm tắt cấu hình đang ghép trực tiếp
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = 6.dp)
                             .clip(McShape.Row)
-                            .background(IndigoSoft)
-                            .padding(10.dp),
-                        verticalArrangement = Arrangement.spacedBy(5.dp)
-                    ) {
-                        Text("📊 Bảng So Sánh Phần Mềm Server (Nên chọn loại nào?):", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Indigo)
-                        Text("• 🧩 Fabric (Khuyên dùng cho Mod): Siêu nhẹ, khởi động nhanh, hỗ trợ 100% bộ 56 Mod từ ảnh chụp của bạn (Macaw's, Farmer's Delight, Furnish, Waystones, Voice Chat, Sodium...).", fontSize = 11.sp, color = Muted)
-                        Text("• ⚡ Paper / Purpur (Khuyên dùng cho Sinh tồn & Plugin): Tối ưu TPS cực tốt trên điện thoại, cài được Plugin (SkinRestorer, EssentialsX, AuthMe, Geyser), không chạy Mod .jar.", fontSize = 11.sp, color = Muted)
-                        Text("• ⚒️ Forge / NeoForge: Chuyên trị các gói Modpack nặng cổ điển; tốn RAM hơn Fabric (khuyên dùng RAM ≥ 4GB).", fontSize = 11.sp, color = Muted)
-                        Text("• 🧱 Vanilla: Bản gốc Mojang 100%, không cài được Mod hay Plugin, nặng hơn Paper.", fontSize = 11.sp, color = Muted)
-                        Text("• ⚠️ Lưu ý Modpack lớn (RLCraft, ATM, DawnCraft, Cobblemon lớn): Điện thoại tầm trung dễ quá tải RAM nếu chạy >150 mod nặng — bộ 56 Mod Fabric tối ưu của bạn chạy rất mượt ở mức 3GB–5GB RAM!", fontSize = 11.sp, color = Coral)
-                    }
-                }
-
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    "📌 4 bước sau khi tải Core xong: 1) Vào tab Mod & Plugin -> Gói 56 Mod bấm tải đủ 56/56 mod • 2) Vào Quản lý Thế giới chọn/nhập Map • 3) Đổi Ảnh đại diện 64×64 • 4) Bật Server & gửi IP cho bạn bè!",
-                    color = Muted,
-                    fontSize = 11.sp,
-                    lineHeight = 16.sp
-                )
-            }
-
-            // Danh sách máy chủ / core đã tải — Thiết kế thẻ 2 tầng không bao giờ bị đè chữ
-            var installedExpanded by rememberSaveable { mutableStateOf(true) }
-            McCard(
-                title = "✅ Máy chủ / Core đã tải & cài đặt (${config.installedCores.size})",
-                compact = true,
-                trailing = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .clickable { installedExpanded = !installedExpanded }
-                            .padding(horizontal = 8.dp, vertical = 8.dp)
+                            .background(Indigo.copy(alpha = 0.14f))
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(3.dp)
                     ) {
                         Text(
-                            stringResource(
-                                if (installedExpanded) R.string.dl_installed_collapse
-                                else R.string.dl_installed_expand
-                            ),
-                            color = Muted,
-                            fontSize = 10.sp,
+                            "🎯 Cấu hình đang ghép: ${config.selectedCore.displayName} • Bản ${config.mcVersion} • $gamemodeLabelVi",
+                            color = Indigo,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                        Text(
+                            buildString {
+                                append(if (flexibleCrackedMode) "🔓 Cho phép Cracked/Offline" else "🔐 Chỉ tài khoản bản quyền")
+                                if (config.selectedCore.isBedrock) {
+                                    append(" • 📱 Thuần Bedrock PE (UDP)")
+                                } else if (flexibleCrossplayEnabled && config.selectedCore.supportsPlugins) {
+                                    append(" • 📱💻 Tự cài Geyser + Floodgate + ViaVersion (PE nhánh $flexibleBedrockBranch)")
+                                } else if (config.selectedCore.supportsMods) {
+                                    append(" • 🧩 Hỗ trợ cài Mod .jar")
+                                } else if (config.selectedCore.supportsPlugins) {
+                                    append(" • ⚡ Hỗ trợ cài Plugin .jar")
+                                }
+                            },
+                            color = Mint,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold
                         )
-                        Icon(
-                            if (installedExpanded) Icons.Outlined.KeyboardArrowUp
-                            else Icons.Outlined.KeyboardArrowDown,
-                            contentDescription = null,
-                            tint = Muted,
-                            modifier = Modifier.size(16.dp)
-                        )
                     }
-                }
-            ) {
-                val installed = config.installedCores
-                androidx.compose.animation.AnimatedVisibility(visible = installedExpanded) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (installed.isEmpty()) {
-                            Text(
-                                stringResource(R.string.s452),
-                                color = Muted,
-                                fontSize = 12.sp
-                            )
-                        } else {
-                            installed.forEach { core ->
-                                val isSelectedCore = core.name == config.activeCoreName
-                                val srvSizeMb = (storageMap[core.dirName]?.totalBytes ?: 0L) / (1024L * 1024L)
-                                val versionText = "🧩 ${core.core.displayName} ${core.version}" +
-                                    (if (core.core == ServerCore.PowerNukkitX) {
-                                        " (" + stringResource(R.string.dl_supported_game, versionHints[core.version] ?: stringResource(R.string.dl_official_unknown)) + ")"
-                                    } else "") + " • 💾 ${srvSizeMb} MB\n📂 " + stringResource(R.string.dl_folder, core.dirName)
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(McShape.Row)
-                                        .background(if (isSelectedCore) Mint.copy(alpha = 0.12f) else com.mineserve.mobile.ui.theme.FieldGray)
-                                        .padding(10.dp),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        com.mineserve.mobile.ui.CoreBrandLogo(core = core.core, size = 36.dp)
-                                        Spacer(Modifier.size(10.dp))
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                            ) {
-                                                Text(
-                                                    core.name,
-                                                    fontSize = 13.sp,
-                                                    fontWeight = FontWeight.ExtraBold,
-                                                    modifier = Modifier.weight(1f, fill = false)
-                                                )
-                                                if (isSelectedCore) {
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .clip(McShape.Small)
-                                                            .background(Mint.copy(alpha = 0.22f))
-                                                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                                                    ) {
-                                                        Text(
-                                                            "✅ Đang chọn",
-                                                            color = Mint,
-                                                            fontSize = 10.sp,
-                                                            fontWeight = FontWeight.ExtraBold
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                            Spacer(Modifier.height(2.dp))
-                                            Text(
-                                                versionText,
-                                                color = Muted,
-                                                fontSize = 11.sp,
-                                                lineHeight = 15.sp
-                                            )
-                                        }
-                                    }
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                    ) {
-                                        OutlinedButton(
-                                            onClick = {
-                                                vm.setActiveCore(core.name)
-                                                scope.launch { snackbarHostState.showInstantSnackbar("✅ Đã chọn máy chủ: ${core.name}") }
-                                            },
-                                            enabled = !isSelectedCore,
-                                            shape = McShape.ControlCompact,
-                                            border = BorderStroke(1.dp, if (isSelectedCore) Mint else Indigo),
-                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                                            modifier = Modifier.weight(1f)
-                                        ) {
-                                            Text(
-                                                if (isSelectedCore) "✅ Đang dùng" else "🔄 Chọn SV",
-                                                color = if (isSelectedCore) Mint else Indigo,
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                        }
-                                        OutlinedButton(
-                                            onClick = { vm.verifyOrRepairCore(core.dirName) },
-                                            shape = McShape.ControlCompact,
-                                            border = BorderStroke(1.dp, Mint),
-                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                                            modifier = Modifier.weight(1f)
-                                        ) {
-                                            Text(
-                                                stringResource(R.string.dl_core_verify),
-                                                color = Mint,
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.SemiBold
-                                            )
-                                        }
-                                        OutlinedButton(
-                                            onClick = { pendingDeleteCore = core },
-                                            enabled = !serverState.isRunning,
-                                            shape = McShape.ControlCompact,
-                                            border = BorderStroke(1.dp, Coral),
-                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                                            modifier = Modifier.weight(0.75f)
-                                        ) {
-                                            Text(
-                                                stringResource(R.string.s339),
-                                                color = Coral,
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.SemiBold
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        if (serverState.isRunning) {
-                            Text(stringResource(R.string.dl_core_delete_running), color = Coral, fontSize = 10.sp)
-                        }
-                        Text(
-                            stringResource(R.string.s456),
-                            color = Muted,
-                            fontSize = 11.sp,
-                            lineHeight = 15.sp
-                        )
-                    }
-                }
-            }
 
-            // 1. Chọn loại Core (Có Thẻ Hình Ảnh Trực Quan cho từng loại Core)
-            var showMoreCores by rememberSaveable { mutableStateOf(false) }
-            McCard(
-                title = stringResource(R.string.s457),
-                compact = true,
-                trailing = {
+                    Spacer(Modifier.height(10.dp))
                     Text(
-                        "📥 Nhập server",
-                        color = Indigo,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier
-                            .clickable { showImportDialog = true }
-                            .padding(horizontal = 8.dp, vertical = 8.dp)
+                        "1️⃣ Chọn nhanh định hướng Server (Giữ nguyên phiên bản ${config.mcVersion} hoặc đổi tùy ý ở mục Chọn Phiên Bản bên dưới):",
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
                     )
-                }
-            ) {
-                Text(
-                    "🖼️ Chọn nhanh loại phần mềm Server (Core) có hình ảnh trực quan phù hợp nhu cầu của bạn:",
-                    color = Muted,
-                    fontSize = 11.sp
-                )
-                Spacer(Modifier.height(8.dp))
-                val featuredCores = listOf(
-                    Triple(ServerCore.Fabric, "🧵 Fabric (Chơi Mod Nhẹ Mượt)", "Khuyên dùng cho Bộ 56 Mod • Khởi động nhanh • Đủ 1.16.5–1.21.11"),
-                    Triple(ServerCore.Paper, "📜 Paper (Sinh Tồn & Plugin)", "Siêu mượt 20 TPS • Hỗ trợ Plugin & GeyserMC chơi chung PE"),
-                    Triple(ServerCore.NeoForge, "⚒️ NeoForge (Modpack Hiện Đại)", "Chạy các gói Modpack lớn 1.20.4–1.21+ (Cần RAM ≥ 4GB)"),
-                    Triple(ServerCore.Forge, "🛡️ Forge (Modpack Cổ Điển)", "Hỗ trợ các Modpack lớn kinh điển 1.12.2 / 1.16.5 / 1.20.1"),
-                    Triple(ServerCore.Purpur, "🔮 Purpur (Sinh Tồn Mở Rộng)", "Nhánh nâng cấp của Paper với hàng trăm tùy chỉnh thú vị"),
-                    Triple(ServerCore.PowerNukkitX, "📱 PowerNukkitX (Minecraft PE)", "Máy chủ thuần cho điện thoại Minecraft Bedrock / PE (UDP 19132)")
-                )
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    featuredCores.forEach { (core, titleLabel, subtitleLabel) ->
-                        val isSelected = config.selectedCore == core
-                        val installedCount = config.installedCores.count { it.core == core }
+                    Spacer(Modifier.height(6.dp))
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        SegPill(
+                            text = "🧩 Chơi Mod (Fabric)",
+                            selected = config.selectedCore == ServerCore.Fabric,
+                            compact = true,
+                            onClick = {
+                                flexibleCrossplayEnabled = false
+                                vm.selectCore(ServerCore.Fabric)
+                            }
+                        )
+                        SegPill(
+                            text = "🌱 Sinh tồn & Plugin (Paper)",
+                            selected = config.selectedCore == ServerCore.Paper && !flexibleCrossplayEnabled,
+                            compact = true,
+                            onClick = {
+                                flexibleCrossplayEnabled = false
+                                vm.selectCore(ServerCore.Paper)
+                            }
+                        )
+                        SegPill(
+                            text = "📱💻 Chơi Chung PC + PE (Mọi bản)",
+                            selected = flexibleCrossplayEnabled && config.selectedCore.supportsPlugins,
+                            compact = true,
+                            onClick = {
+                                if (!config.selectedCore.supportsPlugins) {
+                                    vm.selectCore(ServerCore.Paper)
+                                }
+                                flexibleCrossplayEnabled = true
+                                flexibleCrackedMode = true
+                            }
+                        )
+                        SegPill(
+                            text = "⚒️ Modpack (NeoForge)",
+                            selected = config.selectedCore == ServerCore.NeoForge,
+                            compact = true,
+                            onClick = {
+                                flexibleCrossplayEnabled = false
+                                vm.selectCore(ServerCore.NeoForge)
+                            }
+                        )
+                        SegPill(
+                            text = "🛡️ Mod Cổ Điển (Forge)",
+                            selected = config.selectedCore == ServerCore.Forge,
+                            compact = true,
+                            onClick = {
+                                flexibleCrossplayEnabled = false
+                                vm.selectCore(ServerCore.Forge)
+                            }
+                        )
+                        SegPill(
+                            text = "🔮 Purpur (Mở rộng)",
+                            selected = config.selectedCore == ServerCore.Purpur,
+                            compact = true,
+                            onClick = {
+                                vm.selectCore(ServerCore.Purpur)
+                            }
+                        )
+                        SegPill(
+                            text = "📱 Thuần Bedrock PE",
+                            selected = config.selectedCore == ServerCore.PowerNukkitX,
+                            compact = true,
+                            onClick = {
+                                flexibleCrossplayEnabled = false
+                                vm.selectCore(ServerCore.PowerNukkitX)
+                            }
+                        )
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "2️⃣ Chế độ chơi khởi tạo (Tự động thiết lập khi tạo Server):",
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        val gamemodes = listOf(
+                            "survival" to "🌱 Sinh tồn",
+                            "creative" to "🎨 Sáng tạo",
+                            "adventure" to "🗺️ Phiêu lưu",
+                            "hardcore" to "💀 Siêu khó (Hardcore)"
+                        )
+                        gamemodes.forEach { (modeKey, modeLabel) ->
+                            SegPill(
+                                text = modeLabel,
+                                selected = flexibleGamemode == modeKey,
+                                compact = true,
+                                onClick = { flexibleGamemode = modeKey }
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "3️⃣ Tùy chọn Tài khoản & Cầu nối Đa nền tảng (Linh hoạt theo nhu cầu):",
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(McShape.Row)
+                            .background(com.mineserve.mobile.ui.theme.FieldGray)
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
                         Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(McShape.Row)
-                                .background(
-                                    if (isSelected) Indigo.copy(alpha = 0.22f)
-                                    else com.mineserve.mobile.ui.theme.FieldGray
-                                )
-                                .clickable {
-                                    customCoreName = ""
-                                    vm.selectCore(core)
-                                    scope.launch {
-                                        snackbarHostState.showInstantSnackbar("✅ Đã chọn phần mềm Core: ${core.displayName}")
-                                    }
-                                }
-                                .padding(10.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            com.mineserve.mobile.ui.CoreBrandLogo(core = core, size = 36.dp)
-                            Spacer(Modifier.size(10.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Text(
-                                        titleLabel,
-                                        fontSize = 12.5.sp,
-                                        fontWeight = FontWeight.ExtraBold,
-                                        color = if (isSelected) Indigo else MaterialTheme.colorScheme.onSurface,
-                                        modifier = Modifier.weight(1f, fill = false)
-                                    )
-                                    if (installedCount > 0) {
-                                        Text(
-                                            "✅ Đã cài ($installedCount)",
-                                            color = Mint,
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                }
+                            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                                 Text(
-                                    subtitleLabel,
+                                    "🔓 Cho phép tài khoản Cracked / Offline",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    "Tự bật online-mode=false để TLauncher, PojavLauncher, FCL và PE vào được ngay",
                                     color = Muted,
-                                    fontSize = 10.5.sp,
+                                    fontSize = 10.sp,
                                     lineHeight = 14.sp
                                 )
                             }
+                            Switch(
+                                checked = flexibleCrackedMode,
+                                onCheckedChange = { flexibleCrackedMode = it }
+                            )
+                        }
+
+                        if (config.selectedCore.supportsPlugins) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                                    Text(
+                                        "📱💻 Tích hợp Chơi Chung PC + Điện thoại PE",
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (flexibleCrossplayEnabled) Mint else MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        "Tự động cài GeyserMC + Floodgate + ViaVersion + ViaBackwards cho ${config.selectedCore.displayName} ${config.mcVersion}",
+                                        color = Muted,
+                                        fontSize = 10.sp,
+                                        lineHeight = 14.sp
+                                    )
+                                }
+                                Switch(
+                                    checked = flexibleCrossplayEnabled,
+                                    onCheckedChange = { enabled ->
+                                        flexibleCrossplayEnabled = enabled
+                                        if (enabled) flexibleCrackedMode = true
+                                    }
+                                )
+                            }
+
+                            if (flexibleCrossplayEnabled) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 2.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("Nhánh PE:", fontSize = 10.5.sp, color = Muted, fontWeight = FontWeight.SemiBold)
+                                    SegPill(
+                                        text = "📱 PE 1.21.50–1.21.114+",
+                                        selected = flexibleBedrockBranch == "1.21",
+                                        compact = true,
+                                        onClick = { flexibleBedrockBranch = "1.21" }
+                                    )
+                                    SegPill(
+                                        text = "🚀 PE 26.x Mới nhất",
+                                        selected = flexibleBedrockBranch == "26",
+                                        compact = true,
+                                        onClick = { flexibleBedrockBranch = "26" }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(McShape.Row)
+                            .background(com.mineserve.mobile.ui.theme.FieldGray)
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            "💾 Bộ nhớ trống hiện tại: ${freeStorageMb} MB • RAM cấp phát: ${config.maxHeapMb} MB",
+                            color = if (freeStorageMb > 1024) Indigo else Coral,
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            if (showSoftwareComparison) "▲ Bấm để ẩn bảng so sánh Core" else "▼ Bấm xem so sánh Paper / Fabric / Forge / PE",
+                            color = Mint,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.clickable { showSoftwareComparison = !showSoftwareComparison }
+                        )
+                    }
+
+                    if (showSoftwareComparison) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 6.dp)
+                                .clip(McShape.Row)
+                                .background(IndigoSoft)
+                                .padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            Text("📊 Bảng So Sánh Phần Mềm Server (Nên chọn loại nào?):", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Indigo)
+                            Text("• 🧩 Fabric (Khuyên dùng cho Mod): Siêu nhẹ, khởi động nhanh, hỗ trợ mọi phiên bản từ 1.14 → 1.21.11 / 26.x.", fontSize = 11.sp, color = Muted)
+                            Text("• ⚡ Paper / Purpur (Khuyên dùng cho Sinh tồn, Plugin & Chơi chung PC+PE): Tối ưu TPS cực tốt trên điện thoại, ghép được với mọi bản qua ViaVersion + GeyserMC.", fontSize = 11.sp, color = Muted)
+                            Text("• ⚒️ Forge / NeoForge: Chuyên trị các gói Modpack lớn (1.7.10 → 1.21.x); khuyên dùng RAM ≥ 4GB.", fontSize = 11.sp, color = Muted)
+                            Text("• 🧱 Vanilla: Bản gốc Mojang 100%, không cài được Mod hay Plugin.", fontSize = 11.sp, color = Muted)
                         }
                     }
                 }
-                Spacer(Modifier.height(6.dp))
-                TextButton(
-                    onClick = { showMoreCores = !showMoreCores },
-                    modifier = Modifier.fillMaxWidth()
+            }
+
+            item(key = "installed_cores") {
+                McCard(
+                    title = "✅ Máy chủ / Core đã tải & cài đặt (${config.installedCores.size})",
+                    compact = true,
+                    trailing = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clickable { installedExpanded = !installedExpanded }
+                                .padding(horizontal = 8.dp, vertical = 8.dp)
+                        ) {
+                            Text(
+                                stringResource(
+                                    if (installedExpanded) R.string.dl_installed_collapse
+                                    else R.string.dl_installed_expand
+                                ),
+                                color = Muted,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Icon(
+                                if (installedExpanded) Icons.Outlined.KeyboardArrowUp
+                                else Icons.Outlined.KeyboardArrowDown,
+                                contentDescription = null,
+                                tint = Muted,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
                 ) {
-                    Text(
-                        if (showMoreCores) "▲ Thu gọn các loại Core khác"
-                        else "▼ Hiện thêm 10 loại Core khác (Leaves, Leaf, Spigot, Quilt, Vanilla, PocketMine...)",
-                        color = Indigo,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-                androidx.compose.animation.AnimatedVisibility(visible = showMoreCores) {
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier.padding(top = 4.dp)
-                    ) {
-                        ServerCore.values().forEach { core ->
-                            val countForCore = config.installedCores.count { it.core == core }
-                            SegPill(
-                                text = if (countForCore > 0) "✅ ${core.displayName} ($countForCore)" else core.displayName,
-                                selected = config.selectedCore == core,
-                                compact = true,
-                                unselectedBackground = if (countForCore > 0) Mint.copy(alpha = 0.16f) else if (core.isBedrock) Coral.copy(alpha = 0.16f) else com.mineserve.mobile.ui.theme.FieldGray,
-                                onClick = {
-                                    customCoreName = ""
-                                    vm.selectCore(core)
-                                    scope.launch {
-                                        snackbarHostState.showInstantSnackbar("✅ Đã chọn phần mềm Core: ${core.displayName}")
+                    val installed = config.installedCores
+                    if (installedExpanded) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (installed.isEmpty()) {
+                                Text(
+                                    stringResource(R.string.s452),
+                                    color = Muted,
+                                    fontSize = 12.sp
+                                )
+                            } else {
+                                installed.forEach { core ->
+                                    val isSelectedCore = core.name == config.activeCoreName
+                                    val srvSizeMb = (storageMap[core.dirName]?.totalBytes ?: 0L) / (1024L * 1024L)
+                                    val versionText = "🧩 ${core.core.displayName} ${core.version}" +
+                                        (if (core.core == ServerCore.PowerNukkitX) {
+                                            " (" + stringResource(R.string.dl_supported_game, versionHints[core.version] ?: stringResource(R.string.dl_official_unknown)) + ")"
+                                        } else "") + " • 💾 ${srvSizeMb} MB\n📂 " + stringResource(R.string.dl_folder, core.dirName)
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(McShape.Row)
+                                            .background(if (isSelectedCore) Mint.copy(alpha = 0.12f) else com.mineserve.mobile.ui.theme.FieldGray)
+                                            .padding(10.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            com.mineserve.mobile.ui.CoreBrandLogo(core = core.core, size = 36.dp)
+                                            Spacer(Modifier.size(10.dp))
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                                ) {
+                                                    Text(
+                                                        core.name,
+                                                        fontSize = 13.sp,
+                                                        fontWeight = FontWeight.ExtraBold,
+                                                        modifier = Modifier.weight(1f, fill = false)
+                                                    )
+                                                    if (isSelectedCore) {
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .clip(McShape.Small)
+                                                                .background(Mint.copy(alpha = 0.22f))
+                                                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                        ) {
+                                                            Text(
+                                                                "✅ Đang chọn",
+                                                                color = Mint,
+                                                                fontSize = 10.sp,
+                                                                fontWeight = FontWeight.ExtraBold
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                                Spacer(Modifier.height(2.dp))
+                                                Text(
+                                                    versionText,
+                                                    color = Muted,
+                                                    fontSize = 11.sp,
+                                                    lineHeight = 15.sp
+                                                )
+                                            }
+                                        }
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            OutlinedButton(
+                                                onClick = {
+                                                    vm.setActiveCore(core.name)
+                                                    scope.launch { snackbarHostState.showInstantSnackbar("✅ Đã chọn máy chủ: ${core.name}") }
+                                                },
+                                                enabled = !isSelectedCore,
+                                                shape = McShape.ControlCompact,
+                                                border = BorderStroke(1.dp, if (isSelectedCore) Mint else Indigo),
+                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                                modifier = Modifier.weight(1f)
+                                            ) {
+                                                Text(
+                                                    if (isSelectedCore) "✅ Đang dùng" else "🔄 Chọn SV",
+                                                    color = if (isSelectedCore) Mint else Indigo,
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                            OutlinedButton(
+                                                onClick = { vm.verifyOrRepairCore(core.dirName) },
+                                                shape = McShape.ControlCompact,
+                                                border = BorderStroke(1.dp, Mint),
+                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                                modifier = Modifier.weight(1f)
+                                            ) {
+                                                Text(
+                                                    stringResource(R.string.dl_core_verify),
+                                                    color = Mint,
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.SemiBold
+                                                )
+                                            }
+                                            OutlinedButton(
+                                                onClick = { pendingDeleteCore = core },
+                                                enabled = !serverState.isRunning,
+                                                shape = McShape.ControlCompact,
+                                                border = BorderStroke(1.dp, Coral),
+                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                                modifier = Modifier.weight(0.75f)
+                                            ) {
+                                                Text(
+                                                    stringResource(R.string.s339),
+                                                    color = Coral,
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.SemiBold
+                                                )
+                                            }
+                                        }
                                     }
                                 }
+                            }
+                            if (serverState.isRunning) {
+                                Text(stringResource(R.string.dl_core_delete_running), color = Coral, fontSize = 10.sp)
+                            }
+                            Text(
+                                stringResource(R.string.s456),
+                                color = Muted,
+                                fontSize = 11.sp,
+                                lineHeight = 15.sp
                             )
                         }
                     }
                 }
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    when (config.selectedCore) {
-                        ServerCore.Paper -> stringResource(R.string.dl_desc_paper)
-                        ServerCore.Purpur -> stringResource(R.string.dl_desc_purpur)
-                        ServerCore.Leaves -> stringResource(R.string.dl_desc_leaves)
-                        ServerCore.Leaf -> stringResource(R.string.dl_desc_leaf)
-                        ServerCore.Spigot -> stringResource(R.string.dl_desc_spigot)
-                        ServerCore.CraftBukkit -> stringResource(R.string.dl_desc_craftbukkit)
-                        ServerCore.Fabric -> stringResource(R.string.dl_desc_fabric)
-                        ServerCore.Forge -> stringResource(R.string.dl_desc_forge)
-                        ServerCore.NeoForge -> stringResource(R.string.dl_desc_neoforge)
-                        ServerCore.Quilt -> stringResource(R.string.dl_desc_quilt)
-                        ServerCore.Vanilla -> stringResource(R.string.dl_desc_vanilla)
-                        ServerCore.Velocity -> stringResource(R.string.dl_desc_velocity)
-                        ServerCore.BungeeCord -> stringResource(R.string.dl_desc_bungeecord)
-                        ServerCore.PowerNukkitX -> stringResource(R.string.dl_desc_pnx)
-                        ServerCore.PocketMine -> stringResource(R.string.dl_desc_pocketmine)
-                        ServerCore.Allay -> stringResource(R.string.dl_desc_allay)
-                        ServerCore.Unknown -> stringResource(R.string.dl_desc_unknown)
-                    },
-                    color = Muted,
-                    fontSize = 11.sp
-                )
-                // 当前核心插件/模组支持彩色提示
-                Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Text(
-                        if (config.selectedCore.supportsPlugins) stringResource(R.string.dl_supports_plugins) else stringResource(R.string.dl_no_plugins),
-                        color = if (config.selectedCore.supportsPlugins) Mint else Coral,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        if (config.selectedCore.supportsMods) stringResource(R.string.dl_supports_mods) else stringResource(R.string.dl_no_mods),
-                        color = if (config.selectedCore.supportsMods) Mint else Coral,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                Spacer(Modifier.height(8.dp))
-                OutlinedButton(
-                    onClick = { showImportDialog = true },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = McShape.ControlCompact
-                ) { Text("Nhập server có sẵn (ZIP / JAR / Thư mục)", color = Indigo, fontSize = 12.sp) }
             }
 
-            McCard(title = if (usesCoreVersion) stringResource(R.string.dl_select_version) else stringResource(R.string.s471), compact = true) {
-                if (isLoadingVersions) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            color = Indigo,
-                            strokeWidth = 2.dp
-                        )
-                        Text(stringResource(R.string.s472), color = Muted, fontSize = 12.sp)
-                    }
-                } else if (availableVersions.isEmpty()) {
-                    Text(stringResource(R.string.s473), color = Muted, fontSize = 12.sp)
-                } else {
-                    if (!usesCoreVersion) {
+            item(key = "select_core") {
+                McCard(
+                    title = stringResource(R.string.s457),
+                    compact = true,
+                    trailing = {
                         Text(
-                            "🔍 Lọc nhanh theo nhánh phiên bản Minecraft (Đầy đủ từ 1.7.10 → 1.21.11 & 26.x):",
-                            color = Muted,
+                            "📥 Nhập server",
+                            color = Indigo,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier
+                                .clickable { showImportDialog = true }
+                                .padding(horizontal = 8.dp, vertical = 8.dp)
+                        )
+                    }
+                ) {
+                    Text(
+                        "🖼️ Chọn phần mềm Server (Core) — linh hoạt ghép với bất kỳ phiên bản Minecraft nào ở bước tiếp theo:",
+                        color = Muted,
+                        fontSize = 11.sp
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    val featuredCores = remember {
+                        listOf(
+                            Triple(ServerCore.Fabric, "🧵 Fabric (Chơi Mod Nhẹ Mượt)", "Khởi động nhanh • Hỗ trợ mọi bản Mod từ 1.14 → 1.21.11 / 26.x"),
+                            Triple(ServerCore.Paper, "📜 Paper (Sinh Tồn & Plugin)", "Siêu mượt 20 TPS • Hỗ trợ Plugin & GeyserMC chơi chung PC + PE"),
+                            Triple(ServerCore.NeoForge, "⚒️ NeoForge (Modpack Hiện Đại)", "Chạy các gói Modpack lớn 1.20.4–1.21+ (Cần RAM ≥ 4GB)"),
+                            Triple(ServerCore.Forge, "🛡️ Forge (Modpack Cổ Điển)", "Hỗ trợ các Modpack lớn kinh điển 1.7.10 / 1.12.2 / 1.16.5 / 1.20.1"),
+                            Triple(ServerCore.Purpur, "🔮 Purpur (Sinh Tồn Mở Rộng)", "Nhánh nâng cấp của Paper với hàng trăm tùy chỉnh thú vị"),
+                            Triple(ServerCore.PowerNukkitX, "📱 PowerNukkitX (Minecraft PE)", "Máy chủ thuần cho điện thoại Minecraft Bedrock / PE (UDP 19132)")
+                        )
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        featuredCores.forEach { (core, titleLabel, subtitleLabel) ->
+                            val isSelected = config.selectedCore == core
+                            val installedCount = installedCoreCounts[core] ?: 0
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(McShape.Row)
+                                    .background(
+                                        if (isSelected) Indigo.copy(alpha = 0.22f)
+                                        else com.mineserve.mobile.ui.theme.FieldGray
+                                    )
+                                    .clickable {
+                                        customCoreName = ""
+                                        vm.selectCore(core)
+                                        scope.launch {
+                                            snackbarHostState.showInstantSnackbar("✅ Đã chọn phần mềm Core: ${core.displayName}")
+                                        }
+                                    }
+                                    .padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                com.mineserve.mobile.ui.CoreBrandLogo(core = core, size = 36.dp)
+                                Spacer(Modifier.size(10.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Text(
+                                            titleLabel,
+                                            fontSize = 12.5.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = if (isSelected) Indigo else MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.weight(1f, fill = false)
+                                        )
+                                        if (installedCount > 0) {
+                                            Text(
+                                                "✅ Đã cài ($installedCount)",
+                                                color = Mint,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                    Text(
+                                        subtitleLabel,
+                                        color = Muted,
+                                        fontSize = 10.5.sp,
+                                        lineHeight = 14.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    TextButton(
+                        onClick = { showMoreCores = !showMoreCores },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            if (showMoreCores) "▲ Thu gọn các loại Core khác"
+                            else "▼ Hiện thêm 10 loại Core khác (Leaves, Leaf, Spigot, Quilt, Vanilla, PocketMine...)",
+                            color = Indigo,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold
                         )
-                        Spacer(Modifier.height(6.dp))
-                        val branchChips = listOf(
-                            "all" to "Tất cả (${availableVersions.size})",
-                            "1.21" to "🌟 1.21.x",
-                            "26" to "🚀 26.x",
-                            "1.20" to "⚡ 1.20.x",
-                            "1.16_19" to "🛡️ 1.16–1.19",
-                            "legacy" to "🏛️ 1.7–1.15"
-                        )
+                    }
+                    if (showMoreCores) {
                         FlowRow(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.padding(top = 4.dp)
                         ) {
-                            branchChips.forEach { (key, label) ->
+                            ServerCore.values().forEach { core ->
+                                val countForCore = installedCoreCounts[core] ?: 0
                                 SegPill(
-                                    text = label,
-                                    selected = versionBranchFilter == key,
+                                    text = if (countForCore > 0) "✅ ${core.displayName} ($countForCore)" else core.displayName,
+                                    selected = config.selectedCore == core,
                                     compact = true,
+                                    unselectedBackground = if (countForCore > 0) Mint.copy(alpha = 0.16f) else if (core.isBedrock) Coral.copy(alpha = 0.16f) else com.mineserve.mobile.ui.theme.FieldGray,
                                     onClick = {
-                                        versionBranchFilter = key
-                                        if (key != "all") showAllVersions = true
-                                    }
-                                )
-                            }
-                        }
-                        Spacer(Modifier.height(8.dp))
-                    }
-                    val filteredVersions = remember(availableVersions, versionBranchFilter, usesCoreVersion) {
-                        if (usesCoreVersion || versionBranchFilter == "all") {
-                            availableVersions
-                        } else {
-                            availableVersions.filter { v ->
-                                when (versionBranchFilter) {
-                                    "1.21" -> v == "1.21" || v.startsWith("1.21.")
-                                    "26" -> v.startsWith("26.")
-                                    "1.20" -> v == "1.20" || v.startsWith("1.20.")
-                                    "1.16_19" -> v.startsWith("1.19") || v.startsWith("1.18") || v.startsWith("1.17") || v.startsWith("1.16")
-                                    "legacy" -> v.startsWith("1.15") || v.startsWith("1.14") || v.startsWith("1.13") ||
-                                        v.startsWith("1.12") || v.startsWith("1.11") || v.startsWith("1.10") ||
-                                        v.startsWith("1.9") || v.startsWith("1.8") || v.startsWith("1.7")
-                                    else -> true
-                                }
-                            }
-                        }
-                    }
-                    val shownVersions = if (showAllVersions || versionBranchFilter != "all") {
-                        filteredVersions
-                    } else {
-                        filteredVersions.take(18)
-                    }
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        shownVersions.forEach { ver ->
-                            val verInstalled = config.installedCores.any { it.core == config.selectedCore && it.version == ver }
-                            val isVerSelected = config.mcVersion == ver
-                            val verTag = when {
-                                usesCoreVersion -> versionHints[ver]?.let { "📱 PE $it" } ?: "📱 Bedrock"
-                                ver.startsWith("26.") -> "🚀 Thế hệ 26 • Java 25/21"
-                                ver.startsWith("1.21.11") || ver.startsWith("1.21.4") -> "🌟 Mới nhất • Java 21"
-                                ver.startsWith("1.21") -> "🛡️ Ổn định • Java 21"
-                                ver.startsWith("1.20.5") || ver.startsWith("1.20.6") -> "⚡ Nhanh • Java 21"
-                                ver.startsWith("1.20.1") -> "🧩 Nhiều Mod • Java 17"
-                                ver.startsWith("1.20") -> "⚡ Mượt • Java 17/21"
-                                ver.startsWith("1.17") || ver.startsWith("1.18") || ver.startsWith("1.19") -> "☕ Java 17"
-                                ver.startsWith("1.16.5") -> "🪶 Nhẹ máy • Java 17/11/8"
-                                ver.startsWith("1.12.2") || ver.startsWith("1.8") || ver.startsWith("1.7") -> "🏛️ Cổ điển • Java 8/11"
-                                else -> "☕ Minecraft $ver"
-                            }
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier
-                                    .clip(McShape.Row)
-                                    .background(
-                                        when {
-                                            isVerSelected -> Indigo.copy(alpha = 0.22f)
-                                            verInstalled -> Mint.copy(alpha = 0.14f)
-                                            else -> com.mineserve.mobile.ui.theme.FieldGray
+                                        customCoreName = ""
+                                        vm.selectCore(core)
+                                        scope.launch {
+                                            snackbarHostState.showInstantSnackbar("✅ Đã chọn phần mềm Core: ${core.displayName}")
                                         }
-                                    )
-                                    .clickable { vm.setMcVersion(ver) }
-                                    .padding(horizontal = 12.dp, vertical = 8.dp)
-                            ) {
-                                Text(
-                                    if (verInstalled) "✅ $ver (Đã tải)" else "📦 $ver",
-                                    color = if (isVerSelected) Indigo else if (verInstalled) Mint else MaterialTheme.colorScheme.onSurface,
-                                    fontSize = 12.5.sp,
-                                    fontWeight = FontWeight.ExtraBold
-                                )
-                                Text(
-                                    verTag,
-                                    color = if (isVerSelected) Indigo else Muted,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.SemiBold
+                                    }
                                 )
                             }
                         }
                     }
-                    if (filteredVersions.size > shownVersions.size) {
-                        TextButton(onClick = { showAllVersions = true }) {
-                            Text("▼ Hiện tất cả ${filteredVersions.size} phiên bản Minecraft (1.7.10 → 1.21.11 / 26.x)", color = Indigo, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        }
-                    } else if (showAllVersions && versionBranchFilter == "all" && filteredVersions.size > 18) {
-                        TextButton(onClick = { showAllVersions = false }) {
-                            Text("▲ Thu gọn danh sách phiên bản", color = Indigo, fontSize = 12.sp)
-                        }
-                    }
-                }
-
-                Spacer(Modifier.height(12.dp))
-                Text(if (usesCoreVersion) stringResource(R.string.dl_manual_version) else stringResource(R.string.s474), color = Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(6.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedTextField(
-                        value = customVersion,
-                        onValueChange = { customVersion = it },
-                        placeholder = { Text(if (usesCoreVersion) stringResource(R.string.dl_version_example) else stringResource(R.string.s475), fontSize = 12.sp) },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true
-                    )
-                    Button(
-                        onClick = {
-                            val trimmedVer = customVersion.trim()
-                            if (trimmedVer.isNotBlank()) {
-                                val looksValid = Regex("^\\d+(\\.\\d+)+.*$").matches(trimmedVer) || trimmedVer in availableVersions
-                                if (!looksValid) {
-                                    scope.launch {
-                                        snackbarHostState.showInstantSnackbar("⚠️ Phiên bản '$trimmedVer' không hợp lệ! Ví dụ hợp lệ: 1.21.11, 1.20.1, 1.16.5")
-                                    }
-                                } else {
-                                    vm.setMcVersion(trimmedVer)
-                                    scope.launch {
-                                        snackbarHostState.showInstantSnackbar("✅ Đã chọn phiên bản Minecraft: $trimmedVer")
-                                    }
-                                }
-                            }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        when (config.selectedCore) {
+                            ServerCore.Paper -> stringResource(R.string.dl_desc_paper)
+                            ServerCore.Purpur -> stringResource(R.string.dl_desc_purpur)
+                            ServerCore.Leaves -> stringResource(R.string.dl_desc_leaves)
+                            ServerCore.Leaf -> stringResource(R.string.dl_desc_leaf)
+                            ServerCore.Spigot -> stringResource(R.string.dl_desc_spigot)
+                            ServerCore.CraftBukkit -> stringResource(R.string.dl_desc_craftbukkit)
+                            ServerCore.Fabric -> stringResource(R.string.dl_desc_fabric)
+                            ServerCore.Forge -> stringResource(R.string.dl_desc_forge)
+                            ServerCore.NeoForge -> stringResource(R.string.dl_desc_neoforge)
+                            ServerCore.Quilt -> stringResource(R.string.dl_desc_quilt)
+                            ServerCore.Vanilla -> stringResource(R.string.dl_desc_vanilla)
+                            ServerCore.Velocity -> stringResource(R.string.dl_desc_velocity)
+                            ServerCore.BungeeCord -> stringResource(R.string.dl_desc_bungeecord)
+                            ServerCore.PowerNukkitX -> stringResource(R.string.dl_desc_pnx)
+                            ServerCore.PocketMine -> stringResource(R.string.dl_desc_pocketmine)
+                            ServerCore.Allay -> stringResource(R.string.dl_desc_allay)
+                            ServerCore.Unknown -> stringResource(R.string.dl_desc_unknown)
                         },
-                        enabled = customVersion.isNotBlank(),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (customVersion.trim() == config.mcVersion && customVersion.isNotBlank()) Mint else Indigo
-                        ),
-                        shape = McShape.Control
-                    ) {
+                        color = Muted,
+                        fontSize = 11.sp
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                         Text(
-                            if (customVersion.trim() == config.mcVersion && customVersion.isNotBlank()) "✅ Đã chọn" else stringResource(R.string.s477),
-                            color = Color.White,
+                            if (config.selectedCore.supportsPlugins) stringResource(R.string.dl_supports_plugins) else stringResource(R.string.dl_no_plugins),
+                            color = if (config.selectedCore.supportsPlugins) Mint else Coral,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            if (config.selectedCore.supportsMods) stringResource(R.string.dl_supports_mods) else stringResource(R.string.dl_no_mods),
+                            color = if (config.selectedCore.supportsMods) Mint else Coral,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
-                }
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    if (usesCoreVersion) stringResource(R.string.dl_current_version, config.mcVersion) else stringResource(R.string.s478, config.mcVersion),
-                    color = Indigo,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-                if (usesCoreVersion) {
-                    Text(
-                        stringResource(R.string.dl_supported_game_colon, versionHints[config.mcVersion] ?: stringResource(R.string.dl_unknown_official)),
-                        color = if (versionHints[config.mcVersion] == null) Muted else Coral,
-                        fontSize = 10.sp
-                    )
-                }
-                InstallerJavaNotice(
-                    vm = vm,
-                    core = config.selectedCore,
-                    minecraftVersion = config.mcVersion,
-                    installedJava = installedJava,
-                    selectedJavaRuntime = config.selectedJavaRuntime,
-                    javaOperation = javaOperation,
-                    isServerRunning = serverState.isRunning
-                )
-                if (usesCoreVersion) {
-                    Spacer(Modifier.height(10.dp))
-                    Text(
-                        stringResource(R.string.dl_pnx_protocol_hint),
-                        color = Coral, fontSize = 11.sp
-                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = { showImportDialog = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = McShape.ControlCompact
+                    ) { Text("Nhập server có sẵn (ZIP / JAR / Thư mục)", color = Indigo, fontSize = 12.sp) }
                 }
             }
 
-            // 下载服务端
-            McCard(title = stringResource(R.string.s479), compact = true) {
-                // 下载提示行（卡片内顶部，含实时速度）
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (isDownloadingCore) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(14.dp),
-                            color = Indigo,
-                            strokeWidth = 2.dp
-                        )
-                        Spacer(Modifier.size(8.dp))
-                        Text(
-                            "${downloadProgress.speedText} · ${downloadProgress.percent}%  ",
-                            color = Indigo,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.weight(1f)
-                        )
-                    } else {
-                        Box(
-                            modifier = Modifier
-                                .size(14.dp)
-                                .clip(McShape.Small)
-                                .background(Indigo.copy(alpha = 0.15f)),
-                            contentAlignment = Alignment.Center
+            item(key = "select_version") {
+                McCard(title = if (usesCoreVersion) stringResource(R.string.dl_select_version) else stringResource(R.string.s471), compact = true) {
+                    if (isLoadingVersions) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text("↓", color = Indigo, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                color = Indigo,
+                                strokeWidth = 2.dp
+                            )
+                            Text(stringResource(R.string.s472), color = Muted, fontSize = 12.sp)
                         }
-                        Spacer(Modifier.size(8.dp))
-                        Text(
-                            stringResource(R.string.s480),
-                            color = Muted,
-                            fontSize = 11.sp,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                    Text(
-                        stringResource(R.string.s403),
-                        color = Indigo,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.clickable { onShowDownloadHelp() }
-                    )
-                }
-                Spacer(Modifier.height(8.dp))
-
-                if (!isBootstrapped) {
-                    Text(
-                        stringResource(R.string.dl_env_init),
-                        color = Coral,
-                        fontSize = 12.sp
-                    )
-                } else {
-                    Text(
-                        if (usesCoreVersion) {
-                            stringResource(R.string.dl_preparing, config.selectedCore.displayName, config.mcVersion)
-                        } else stringResource(R.string.s482, config.selectedCore.displayName, config.mcVersion),
-                        color = Muted,
-                    fontSize = 11.sp
-                )
-                if (config.selectedCore == ServerCore.PowerNukkitX) {
-                    Text(
-                        stringResource(R.string.dl_pnx_udp_hint),
-                        color = Coral,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-                    Spacer(Modifier.height(10.dp))
-                    // Tự động gợi ý tên server nếu để trống
-                    val defaultCoreName = "${config.selectedCore.displayName}-${config.mcVersion}"
-                    val effectiveCoreName = customCoreName.trim().ifBlank { defaultCoreName }
-                    val existingSameCoreVer = config.installedCores.filter {
-                        it.core == config.selectedCore && it.version == config.mcVersion
-                    }
-                    val exactNameExists = config.installedCores.any {
-                        it.name.equals(effectiveCoreName, ignoreCase = true)
-                    }
-
-                    if (existingSameCoreVer.isNotEmpty() && !wantsAdditionalServer) {
-                        val firstExisting = existingSameCoreVer.first()
-                        val existingSizeMb = (storageMap[firstExisting.dirName]?.totalBytes ?: 0L) / (1024L * 1024L)
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(McShape.Row)
-                                .background(Mint.copy(alpha = 0.16f))
-                                .padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
+                    } else if (availableVersions.isEmpty()) {
+                        Text(stringResource(R.string.s473), color = Muted, fontSize = 12.sp)
+                    } else {
+                        if (!usesCoreVersion) {
                             Text(
-                                "✅ ĐÃ TẢI & CÀI ĐẶT SẴN SÀNG: ${firstExisting.name}",
-                                color = Mint,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.ExtraBold
-                            )
-                            Text(
-                                "Máy chủ ${config.selectedCore.displayName} ${config.mcVersion} (💾 ${existingSizeMb} MB) đã có sẵn trên máy! Bạn có thể khởi động ngay mà không cần tải lại:",
-                                color = MaterialTheme.colorScheme.onSurface,
+                                "🔍 Lọc nhanh theo nhánh phiên bản Minecraft (Đầy đủ từ 1.7.10 → 1.21.11 & 26.x):",
+                                color = Muted,
                                 fontSize = 11.sp,
-                                lineHeight = 15.sp
+                                fontWeight = FontWeight.SemiBold
                             )
-                            Button(
-                                onClick = {
-                                    vm.setActiveCore(firstExisting.name)
-                                    onBack?.invoke()
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = Mint),
-                                shape = McShape.Control,
-                                modifier = Modifier.fillMaxWidth()
+                            Spacer(Modifier.height(6.dp))
+                            val branchChips = listOf(
+                                "all" to "Tất cả (${availableVersions.size})",
+                                "1.21" to "🌟 1.21.x",
+                                "26" to "🚀 26.x",
+                                "1.20" to "⚡ 1.20.x",
+                                "1.16_19" to "🛡️ 1.16–1.19",
+                                "legacy" to "🏛️ 1.7–1.15"
+                            )
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                Text(
-                                    "🚀 VÀO MỤC KHỞI ĐỘNG SERVER「${firstExisting.name}」NGAY",
-                                    color = Color.White,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.ExtraBold
-                                )
-                            }
-                            if (!serverState.isRunning) {
-                                Button(
-                                    onClick = {
-                                        vm.setActiveCore(firstExisting.name)
-                                        vm.startServer()
-                                        onBack?.invoke()
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Indigo),
-                                    shape = McShape.Control,
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text(
-                                        "▶️ CHỌN & BẬT SERVER「${firstExisting.name}」LUÔN",
-                                        color = Color.White,
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold
+                                branchChips.forEach { (key, label) ->
+                                    SegPill(
+                                        text = label,
+                                        selected = versionBranchFilter == key,
+                                        compact = true,
+                                        onClick = {
+                                            versionBranchFilter = key
+                                            if (key != "all") showAllVersions = true
+                                        }
                                     )
                                 }
                             }
-                            OutlinedButton(
-                                onClick = {
-                                    wantsAdditionalServer = true
-                                    customCoreName = "${config.selectedCore.displayName}-${config.mcVersion}-SV${existingSameCoreVer.size + 1}"
-                                },
-                                shape = McShape.ControlCompact,
-                                border = BorderStroke(1.dp, Indigo),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text(
-                                    "➕ Tôi muốn tạo thêm 1 Server thứ ${existingSameCoreVer.size + 1} (Cùng phiên bản ${config.mcVersion})",
-                                    color = Indigo,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            }
+                            Spacer(Modifier.height(8.dp))
                         }
-                    } else {
-                        if (existingSameCoreVer.isNotEmpty()) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    "➕ Đang tạo thêm Server mới chạy ${config.selectedCore.displayName} ${config.mcVersion}",
-                                    color = Mint,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                TextButton(onClick = { wantsAdditionalServer = false; customCoreName = "" }) {
-                                    Text("Dùng SV đã tải", color = Indigo, fontSize = 11.sp)
+                        val filteredVersions = remember(availableVersions, versionBranchFilter, usesCoreVersion) {
+                            if (usesCoreVersion || versionBranchFilter == "all") {
+                                availableVersions
+                            } else {
+                                availableVersions.filter { v ->
+                                    when (versionBranchFilter) {
+                                        "1.21" -> v == "1.21" || v.startsWith("1.21.")
+                                        "26" -> v.startsWith("26.")
+                                        "1.20" -> v == "1.20" || v.startsWith("1.20.")
+                                        "1.16_19" -> v.startsWith("1.19") || v.startsWith("1.18") || v.startsWith("1.17") || v.startsWith("1.16")
+                                        "legacy" -> v.startsWith("1.15") || v.startsWith("1.14") || v.startsWith("1.13") ||
+                                            v.startsWith("1.12") || v.startsWith("1.11") || v.startsWith("1.10") ||
+                                            v.startsWith("1.9") || v.startsWith("1.8") || v.startsWith("1.7")
+                                        else -> true
+                                    }
                                 }
                             }
                         }
-                        Text(stringResource(R.string.s483), color = Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                        Spacer(Modifier.height(4.dp))
+                        val shownVersions = if (showAllVersions || versionBranchFilter != "all") {
+                            filteredVersions
+                        } else {
+                            filteredVersions.take(18)
+                        }
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            shownVersions.forEach { ver ->
+                                val verInstalled = ver in installedVersionsForSelectedCore
+                                val isVerSelected = config.mcVersion == ver
+                                val verTag = when {
+                                    usesCoreVersion -> versionHints[ver]?.let { "📱 PE $it" } ?: "📱 Bedrock"
+                                    ver.startsWith("26.") -> "🚀 Thế hệ 26 • Java 25/21"
+                                    ver.startsWith("1.21.11") || ver.startsWith("1.21.4") -> "🌟 Mới nhất • Java 21"
+                                    ver.startsWith("1.21") -> "🛡️ Ổn định • Java 21"
+                                    ver.startsWith("1.20.5") || ver.startsWith("1.20.6") -> "⚡ Nhanh • Java 21"
+                                    ver.startsWith("1.20.1") -> "🧩 Nhiều Mod • Java 17"
+                                    ver.startsWith("1.20") -> "⚡ Mượt • Java 17/21"
+                                    ver.startsWith("1.17") || ver.startsWith("1.18") || ver.startsWith("1.19") -> "☕ Java 17"
+                                    ver.startsWith("1.16.5") -> "🪶 Nhẹ máy • Java 17/11/8"
+                                    ver.startsWith("1.12.2") || ver.startsWith("1.8") || ver.startsWith("1.7") -> "🏛️ Cổ điển • Java 8/11"
+                                    else -> "☕ Minecraft $ver"
+                                }
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier
+                                        .clip(McShape.Row)
+                                        .background(
+                                            when {
+                                                isVerSelected -> Indigo.copy(alpha = 0.22f)
+                                                verInstalled -> Mint.copy(alpha = 0.14f)
+                                                else -> com.mineserve.mobile.ui.theme.FieldGray
+                                            }
+                                        )
+                                        .clickable { vm.setMcVersion(ver) }
+                                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                                ) {
+                                    Text(
+                                        if (verInstalled) "✅ $ver (Đã tải)" else "📦 $ver",
+                                        color = if (isVerSelected) Indigo else if (verInstalled) Mint else MaterialTheme.colorScheme.onSurface,
+                                        fontSize = 12.5.sp,
+                                        fontWeight = FontWeight.ExtraBold
+                                    )
+                                    Text(
+                                        verTag,
+                                        color = if (isVerSelected) Indigo else Muted,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+                        }
+                        if (filteredVersions.size > shownVersions.size) {
+                            TextButton(onClick = { showAllVersions = true }) {
+                                Text("▼ Hiện tất cả ${filteredVersions.size} phiên bản Minecraft (1.7.10 → 1.21.11 / 26.x)", color = Indigo, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        } else if (showAllVersions && versionBranchFilter == "all" && filteredVersions.size > 18) {
+                            TextButton(onClick = { showAllVersions = false }) {
+                                Text("▲ Thu gọn danh sách phiên bản", color = Indigo, fontSize = 12.sp)
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+                    Text(if (usesCoreVersion) stringResource(R.string.dl_manual_version) else stringResource(R.string.s474), color = Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         OutlinedTextField(
-                            value = customCoreName,
-                            onValueChange = { customCoreName = it },
-                            placeholder = { Text("Mặc định: $defaultCoreName", fontSize = 12.sp) },
-                            modifier = Modifier.fillMaxWidth(),
+                            value = customVersion,
+                            onValueChange = { customVersion = it },
+                            placeholder = { Text(if (usesCoreVersion) stringResource(R.string.dl_version_example) else stringResource(R.string.s475), fontSize = 12.sp) },
+                            modifier = Modifier.weight(1f),
                             singleLine = true
                         )
-                        Spacer(Modifier.height(12.dp))
                         Button(
-                            onClick = { vm.downloadCore(effectiveCoreName) },
-                            enabled = !isDownloadingCore && effectiveCoreName.isNotBlank() && !exactNameExists,
+                            onClick = {
+                                val trimmedVer = customVersion.trim()
+                                if (trimmedVer.isNotBlank()) {
+                                    val looksValid = Regex("^\\d+(\\.\\d+)+.*$").matches(trimmedVer) || trimmedVer in availableVersions
+                                    if (!looksValid) {
+                                        scope.launch {
+                                            snackbarHostState.showInstantSnackbar("⚠️ Phiên bản '$trimmedVer' không hợp lệ! Ví dụ hợp lệ: 1.21.11, 1.20.1, 1.16.5")
+                                        }
+                                    } else {
+                                        vm.setMcVersion(trimmedVer)
+                                        scope.launch {
+                                            snackbarHostState.showInstantSnackbar("✅ Đã chọn phiên bản Minecraft: $trimmedVer")
+                                        }
+                                    }
+                                }
+                            },
+                            enabled = customVersion.isNotBlank(),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (exactNameExists) Mint else Indigo,
-                                disabledContainerColor = if (exactNameExists) Mint.copy(alpha = 0.16f) else IndigoSoft
+                                containerColor = if (customVersion.trim() == config.mcVersion && customVersion.isNotBlank()) Mint else Indigo
                             ),
-                            shape = McShape.Control,
-                            modifier = Modifier.fillMaxWidth()
+                            shape = McShape.Control
                         ) {
-                            if (isDownloadingCore) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(18.dp),
-                                    color = Color.White,
-                                    strokeWidth = 2.dp
-                                )
-                                Spacer(Modifier.size(8.dp))
-                            }
                             Text(
-                                when {
-                                    isDownloadingCore -> "⏳ Đang tải (${downloadProgress.percent}% • ${downloadProgress.speedText})..."
-                                    exactNameExists -> "✅ Tên「$effectiveCoreName」đã tồn tại (Hãy nhập tên khác)"
-                                    existingSameCoreVer.isNotEmpty() -> "➕ Tải & Tạo thêm máy chủ mới「$effectiveCoreName」"
-                                    else -> "⬇️ Bắt đầu tải & Tạo Server「$effectiveCoreName」"
-                                },
-                                color = if (exactNameExists && !isDownloadingCore) Mint else Color.White,
+                                if (customVersion.trim() == config.mcVersion && customVersion.isNotBlank()) "✅ Đã chọn" else stringResource(R.string.s477),
+                                color = Color.White,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold
                             )
                         }
                     }
-
-                    // Chỉ hiển thị nhật ký liên quan đến tải core (đã dịch sang tiếng Việt)
-                    val downloadLines = remember(consoleLines, isDownloadingCore) {
-                        val filtered = consoleLines.filter { it.contains("[download]") || it.contains("[installer]") || it.contains("[Tải xuống]") }
-                        if (filtered.isNotEmpty()) filtered else if (isDownloadingCore) consoleLines else emptyList()
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        if (usesCoreVersion) stringResource(R.string.dl_current_version, config.mcVersion) else stringResource(R.string.s478, config.mcVersion),
+                        color = Indigo,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    if (usesCoreVersion) {
+                        Text(
+                            stringResource(R.string.dl_supported_game_colon, versionHints[config.mcVersion] ?: stringResource(R.string.dl_unknown_official)),
+                            color = if (versionHints[config.mcVersion] == null) Muted else Coral,
+                            fontSize = 10.sp
+                        )
                     }
-                    if (isDownloadingCore || downloadLines.isNotEmpty()) {
-                        Spacer(Modifier.height(12.dp))
-                        Text(stringResource(R.string.s487), color = Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                        Spacer(Modifier.height(4.dp))
-                        downloadLines.takeLast(8).forEach { line ->
-                            Text(
-                                com.mineserve.mobile.ui.TerminalLogTranslator.translate(line),
-                                color = Muted.copy(alpha = 0.85f),
-                                fontSize = 10.sp
+                    InstallerJavaNotice(
+                        vm = vm,
+                        core = config.selectedCore,
+                        minecraftVersion = config.mcVersion,
+                        installedJava = installedJava,
+                        selectedJavaRuntime = config.selectedJavaRuntime,
+                        javaOperation = javaOperation,
+                        isServerRunning = serverState.isRunning
+                    )
+                    if (usesCoreVersion) {
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            stringResource(R.string.dl_pnx_protocol_hint),
+                            color = Coral, fontSize = 11.sp
+                        )
+                    }
+                }
+            }
+
+            item(key = "download_action") {
+                McCard(title = stringResource(R.string.s479), compact = true) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (isDownloadingCore) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(14.dp),
+                                color = Indigo,
+                                strokeWidth = 2.dp
                             )
+                            Spacer(Modifier.size(8.dp))
+                            Text(
+                                "${downloadProgress.speedText} · ${downloadProgress.percent}%  ",
+                                color = Indigo,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.weight(1f)
+                            )
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .size(14.dp)
+                                    .clip(McShape.Small)
+                                    .background(Indigo.copy(alpha = 0.15f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("↓", color = Indigo, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Spacer(Modifier.size(8.dp))
+                            Text(
+                                stringResource(R.string.s480),
+                                color = Muted,
+                                fontSize = 11.sp,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        Text(
+                            stringResource(R.string.s403),
+                            color = Indigo,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.clickable { onShowDownloadHelp() }
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+
+                    if (!isBootstrapped) {
+                        Text(
+                            stringResource(R.string.dl_env_init),
+                            color = Coral,
+                            fontSize = 12.sp
+                        )
+                    } else {
+                        Text(
+                            if (usesCoreVersion) {
+                                stringResource(R.string.dl_preparing, config.selectedCore.displayName, config.mcVersion)
+                            } else stringResource(R.string.s482, config.selectedCore.displayName, config.mcVersion),
+                            color = Muted,
+                            fontSize = 11.sp
+                        )
+                        if (config.selectedCore == ServerCore.PowerNukkitX) {
+                            Text(
+                                stringResource(R.string.dl_pnx_udp_hint),
+                                color = Coral,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        // Tóm tắt cấu hình linh hoạt sẽ được áp dụng khi tạo server
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(McShape.Row)
+                                .background(com.mineserve.mobile.ui.theme.FieldGray)
+                                .padding(horizontal = 10.dp, vertical = 7.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Text(
+                                "⚙️ Cấu hình tự động áp dụng: $gamemodeLabelVi • ${if (flexibleCrackedMode) "Cracked/Offline: BẬT" else "Chỉ Bản quyền"}",
+                                color = Indigo,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            if (flexibleCrossplayEnabled && config.selectedCore.supportsPlugins) {
+                                Text(
+                                    "📱💻 Tự động tải kèm bộ 4 Plugin Chơi chung PC + PE (GeyserMC + Floodgate + ViaVersion + ViaBackwards • Nhánh PE $flexibleBedrockBranch)",
+                                    color = Mint,
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(10.dp))
+                        val defaultCoreName = when {
+                            flexibleCrossplayEnabled && config.selectedCore.supportsPlugins -> "Crossplay-${config.selectedCore.displayName}-${config.mcVersion}"
+                            flexibleGamemode == "creative" -> "SangTao-${config.selectedCore.displayName}-${config.mcVersion}"
+                            flexibleGamemode == "hardcore" -> "Hardcore-${config.selectedCore.displayName}-${config.mcVersion}"
+                            else -> "${config.selectedCore.displayName}-${config.mcVersion}"
+                        }
+                        val effectiveCoreName = customCoreName.trim().ifBlank { defaultCoreName }
+                        val existingSameCoreVer = config.installedCores.filter {
+                            it.core == config.selectedCore && it.version == config.mcVersion
+                        }
+                        val exactNameExists = config.installedCores.any {
+                            it.name.equals(effectiveCoreName, ignoreCase = true)
+                        }
+
+                        if (existingSameCoreVer.isNotEmpty() && !wantsAdditionalServer) {
+                            val firstExisting = existingSameCoreVer.first()
+                            val existingSizeMb = (storageMap[firstExisting.dirName]?.totalBytes ?: 0L) / (1024L * 1024L)
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(McShape.Row)
+                                    .background(Mint.copy(alpha = 0.16f))
+                                    .padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    "✅ ĐÃ TẢI & CÀI ĐẶT SẴN SÀNG: ${firstExisting.name}",
+                                    color = Mint,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                                Text(
+                                    "Máy chủ ${config.selectedCore.displayName} ${config.mcVersion} (💾 ${existingSizeMb} MB) đã có sẵn trên máy! Bạn có thể khởi động ngay mà không cần tải lại:",
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontSize = 11.sp,
+                                    lineHeight = 15.sp
+                                )
+                                Button(
+                                    onClick = {
+                                        vm.setActiveCore(firstExisting.name)
+                                        onBack?.invoke()
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Mint),
+                                    shape = McShape.Control,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        "🚀 VÀO MỤC KHỞI ĐỘNG SERVER「${firstExisting.name}」NGAY",
+                                        color = Color.White,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.ExtraBold
+                                    )
+                                }
+                                if (!serverState.isRunning) {
+                                    Button(
+                                        onClick = {
+                                            vm.setActiveCore(firstExisting.name)
+                                            vm.startServer()
+                                            onBack?.invoke()
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Indigo),
+                                        shape = McShape.Control,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(
+                                            "▶️ CHỌN & BẬT SERVER「${firstExisting.name}」LUÔN",
+                                            color = Color.White,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                                OutlinedButton(
+                                    onClick = {
+                                        wantsAdditionalServer = true
+                                        customCoreName = "${defaultCoreName}-SV${existingSameCoreVer.size + 1}"
+                                    },
+                                    shape = McShape.ControlCompact,
+                                    border = BorderStroke(1.dp, Indigo),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        "➕ Tôi muốn tạo thêm 1 Server thứ ${existingSameCoreVer.size + 1} (Cùng phiên bản ${config.mcVersion})",
+                                        color = Indigo,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+                        } else {
+                            if (existingSameCoreVer.isNotEmpty()) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        "➕ Đang tạo thêm Server mới chạy ${config.selectedCore.displayName} ${config.mcVersion}",
+                                        color = Mint,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    TextButton(onClick = { wantsAdditionalServer = false; customCoreName = "" }) {
+                                        Text("Dùng SV đã tải", color = Indigo, fontSize = 11.sp)
+                                    }
+                                }
+                            }
+                            Text(stringResource(R.string.s483), color = Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            Spacer(Modifier.height(4.dp))
+                            OutlinedTextField(
+                                value = customCoreName,
+                                onValueChange = { customCoreName = it },
+                                placeholder = { Text("Mặc định: $defaultCoreName", fontSize = 12.sp) },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                            )
+                            Spacer(Modifier.height(12.dp))
+                            Button(
+                                onClick = {
+                                    vm.downloadCore(
+                                        customName = effectiveCoreName,
+                                        initialGamemode = flexibleGamemode,
+                                        crackedOfflineMode = flexibleCrackedMode,
+                                        installCrossplayPack = flexibleCrossplayEnabled && config.selectedCore.supportsPlugins,
+                                        crossplayBedrockBranch = flexibleBedrockBranch
+                                    )
+                                },
+                                enabled = !isDownloadingCore && effectiveCoreName.isNotBlank() && !exactNameExists,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (exactNameExists) Mint else Indigo,
+                                    disabledContainerColor = if (exactNameExists) Mint.copy(alpha = 0.16f) else IndigoSoft
+                                ),
+                                shape = McShape.Control,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                if (isDownloadingCore) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(18.dp),
+                                        color = Color.White,
+                                        strokeWidth = 2.dp
+                                    )
+                                    Spacer(Modifier.size(8.dp))
+                                }
+                                Text(
+                                    when {
+                                        isDownloadingCore -> "⏳ Đang tải (${downloadProgress.percent}% • ${downloadProgress.speedText})..."
+                                        exactNameExists -> "✅ Tên「$effectiveCoreName」đã tồn tại (Hãy nhập tên khác)"
+                                        existingSameCoreVer.isNotEmpty() -> "➕ Tải & Tạo thêm máy chủ mới「$effectiveCoreName」"
+                                        else -> "⬇️ Bắt đầu tải & Tạo Server「$effectiveCoreName」"
+                                    },
+                                    color = if (exactNameExists && !isDownloadingCore) Mint else Color.White,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
+                        val downloadLines = remember(consoleLines, isDownloadingCore) {
+                            val filtered = consoleLines.filter { it.contains("[download]") || it.contains("[installer]") || it.contains("[Tải xuống]") }
+                            if (filtered.isNotEmpty()) filtered else if (isDownloadingCore) consoleLines else emptyList()
+                        }
+                        if (isDownloadingCore || downloadLines.isNotEmpty()) {
+                            Spacer(Modifier.height(12.dp))
+                            Text(stringResource(R.string.s487), color = Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            Spacer(Modifier.height(4.dp))
+                            downloadLines.takeLast(8).forEach { line ->
+                                Text(
+                                    com.mineserve.mobile.ui.TerminalLogTranslator.translate(line),
+                                    color = Muted.copy(alpha = 0.85f),
+                                    fontSize = 10.sp
+                                )
+                            }
                         }
                     }
                 }
             }
-            // 删除核心二次确认：VM 内是整目录 deleteRecursively，会连同世界存档、插件与配置一起永久删除
+
+            item(key = "bottom_spacer") {
+                Spacer(Modifier.height(16.dp))
+            }
+            }
+
             pendingDeleteCore?.let { core ->
                 AlertDialog(
                     onDismissRequest = { pendingDeleteCore = null },
@@ -1214,8 +1393,6 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                     },
                     dismissButton = { TextButton(enabled = !importingServer, onClick = { showImportDialog = false; pendingImport = null }) { Text("Hủy", color = Muted) } }
                 )
-            }
-            Spacer(Modifier.height(16.dp))
             }
         }
     }

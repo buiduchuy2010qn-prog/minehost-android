@@ -81,6 +81,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -667,31 +668,34 @@ private fun pixelGridFor(kind: MinecraftArtKind): Array<IntArray> = when (kind) 
     )
 }
 
+private val pixelArtBitmapCache =
+    java.util.EnumMap<MinecraftArtKind, androidx.compose.ui.graphics.ImageBitmap>(MinecraftArtKind::class.java)
+
+private fun cachedPixelArtBitmap(kind: MinecraftArtKind): androidx.compose.ui.graphics.ImageBitmap {
+    synchronized(pixelArtBitmapCache) {
+        return pixelArtBitmapCache.getOrPut(kind) {
+            createMinecraftPixelArtBitmap(kind, sizePx = 64).asImageBitmap()
+        }
+    }
+}
+
 @Composable
 fun MinecraftPixelArtIcon(
     kind: MinecraftArtKind,
     size: androidx.compose.ui.unit.Dp = 32.dp,
     modifier: Modifier = Modifier
 ) {
-    val grid = remember(kind) { pixelGridFor(kind) }
-    androidx.compose.foundation.Canvas(
+    val bitmap = remember(kind) { cachedPixelArtBitmap(kind) }
+    androidx.compose.foundation.Image(
+        bitmap = bitmap,
+        contentDescription = null,
+        filterQuality = androidx.compose.ui.graphics.FilterQuality.None,
+        contentScale = androidx.compose.ui.layout.ContentScale.FillBounds,
         modifier = modifier
             .size(size)
             .clip(RoundedCornerShape(6.dp))
             .border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(6.dp))
-    ) {
-        val cellW = this.size.width / 8f
-        val cellH = this.size.height / 8f
-        for (r in 0 until 8) {
-            for (c in 0 until 8) {
-                drawRect(
-                    color = Color(grid[r][c]),
-                    topLeft = androidx.compose.ui.geometry.Offset(c * cellW, r * cellH),
-                    size = androidx.compose.ui.geometry.Size(cellW + 0.5f, cellH + 0.5f)
-                )
-            }
-        }
-    }
+    )
 }
 
 /**
@@ -700,7 +704,7 @@ fun MinecraftPixelArtIcon(
  * Forge (Đe rèn sắt), NeoForge (Đầu cáo cam), Spigot (Vòi nước vàng),
  * Vanilla (Khối cỏ 3D), Quilt (Chăn ghép 4 thoi), PowerNukkitX (Nguyên tử hạt nhân),
  * Velocity / BungeeCord / PocketMine-MP / Allay / Leaves / Leaf.
- * Vẽ trực tiếp bằng Vector Canvas siêu nhẹ (60–120 FPS, 0 tốn RAM Bitmap).
+ * Sử dụng drawWithCache để khởi tạo Path 1 lần duy nhất, cuộn mượt 60–120 FPS (0 cấp phát bộ nhớ khi cuộn).
  */
 @Composable
 fun CoreBrandLogo(
@@ -750,293 +754,311 @@ fun CoreBrandLogo(
             com.mineserve.mobile.data.ServerCore.Unknown -> Color(0xFF64748B)
         }
     }
-    androidx.compose.foundation.Canvas(
+    Spacer(
         modifier = modifier
             .size(size)
             .clip(RoundedCornerShape(9.dp))
             .background(bgBrush)
             .border(1.2.dp, borderColor.copy(alpha = 0.7f), RoundedCornerShape(9.dp))
-    ) {
-        val w = this.size.width
-        val h = this.size.height
-        when (core) {
-            com.mineserve.mobile.data.ServerCore.Paper -> {
-                // Official PaperMC Origami Paper Airplane
-                val mainWing = androidx.compose.ui.graphics.Path().apply {
-                    moveTo(w * 0.84f, h * 0.16f)
-                    lineTo(w * 0.14f, h * 0.48f)
-                    lineTo(w * 0.42f, h * 0.58f)
-                    lineTo(w * 0.84f, h * 0.16f)
-                    close()
+            .then(
+                androidx.compose.ui.draw.drawWithCache {
+                    val w = this.size.width
+                    val h = this.size.height
+                    // Khởi tạo trước tất cả Path theo kích thước 1 lần duy nhất (0 tốn CPU khi cuộn)
+                    val path1 = androidx.compose.ui.graphics.Path()
+                    val path2 = androidx.compose.ui.graphics.Path()
+                    val path3 = androidx.compose.ui.graphics.Path()
+                    val path4 = androidx.compose.ui.graphics.Path()
+                    when (core) {
+                        com.mineserve.mobile.data.ServerCore.Paper -> {
+                            path1.apply {
+                                moveTo(w * 0.84f, h * 0.16f)
+                                lineTo(w * 0.14f, h * 0.48f)
+                                lineTo(w * 0.42f, h * 0.58f)
+                                lineTo(w * 0.84f, h * 0.16f)
+                                close()
+                            }
+                            path2.apply {
+                                moveTo(w * 0.84f, h * 0.16f)
+                                lineTo(w * 0.42f, h * 0.58f)
+                                lineTo(w * 0.47f, h * 0.82f)
+                                lineTo(w * 0.84f, h * 0.16f)
+                                close()
+                            }
+                            path3.apply {
+                                moveTo(w * 0.84f, h * 0.16f)
+                                lineTo(w * 0.52f, h * 0.64f)
+                                lineTo(w * 0.72f, h * 0.84f)
+                                lineTo(w * 0.84f, h * 0.16f)
+                                close()
+                            }
+                        }
+                        com.mineserve.mobile.data.ServerCore.Purpur -> {
+                            path1.apply {
+                                moveTo(w * 0.50f, h * 0.16f)
+                                lineTo(w * 0.82f, h * 0.34f)
+                                lineTo(w * 0.50f, h * 0.52f)
+                                lineTo(w * 0.18f, h * 0.34f)
+                                close()
+                            }
+                            path2.apply {
+                                moveTo(w * 0.18f, h * 0.34f)
+                                lineTo(w * 0.50f, h * 0.52f)
+                                lineTo(w * 0.50f, h * 0.84f)
+                                lineTo(w * 0.18f, h * 0.66f)
+                                close()
+                            }
+                            path3.apply {
+                                moveTo(w * 0.50f, h * 0.52f)
+                                lineTo(w * 0.82f, h * 0.34f)
+                                lineTo(w * 0.82f, h * 0.66f)
+                                lineTo(w * 0.50f, h * 0.84f)
+                                close()
+                            }
+                        }
+                        com.mineserve.mobile.data.ServerCore.Forge -> {
+                            path1.apply {
+                                moveTo(w * 0.14f, h * 0.34f)
+                                lineTo(w * 0.84f, h * 0.34f)
+                                lineTo(w * 0.74f, h * 0.48f)
+                                lineTo(w * 0.28f, h * 0.48f)
+                                close()
+                            }
+                        }
+                        com.mineserve.mobile.data.ServerCore.NeoForge -> {
+                            path1.apply {
+                                moveTo(w * 0.20f, h * 0.16f)
+                                lineTo(w * 0.42f, h * 0.34f)
+                                lineTo(w * 0.22f, h * 0.48f)
+                                close()
+                            }
+                            path2.apply {
+                                moveTo(w * 0.80f, h * 0.16f)
+                                lineTo(w * 0.58f, h * 0.34f)
+                                lineTo(w * 0.78f, h * 0.48f)
+                                close()
+                            }
+                            path3.apply {
+                                moveTo(w * 0.20f, h * 0.44f)
+                                lineTo(w * 0.50f, h * 0.30f)
+                                lineTo(w * 0.80f, h * 0.44f)
+                                lineTo(w * 0.50f, h * 0.84f)
+                                close()
+                            }
+                            path4.apply {
+                                moveTo(w * 0.36f, h * 0.56f)
+                                lineTo(w * 0.50f, h * 0.84f)
+                                lineTo(w * 0.64f, h * 0.56f)
+                                close()
+                            }
+                        }
+                        com.mineserve.mobile.data.ServerCore.Vanilla -> {
+                            path1.apply {
+                                moveTo(w * 0.50f, h * 0.15f)
+                                lineTo(w * 0.82f, h * 0.33f)
+                                lineTo(w * 0.50f, h * 0.50f)
+                                lineTo(w * 0.18f, h * 0.33f)
+                                close()
+                            }
+                            path2.apply {
+                                moveTo(w * 0.18f, h * 0.33f)
+                                lineTo(w * 0.50f, h * 0.50f)
+                                lineTo(w * 0.50f, h * 0.84f)
+                                lineTo(w * 0.18f, h * 0.66f)
+                                close()
+                            }
+                            path3.apply {
+                                moveTo(w * 0.50f, h * 0.50f)
+                                lineTo(w * 0.82f, h * 0.33f)
+                                lineTo(w * 0.82f, h * 0.66f)
+                                lineTo(w * 0.50f, h * 0.84f)
+                                close()
+                            }
+                        }
+                        com.mineserve.mobile.data.ServerCore.Velocity -> {
+                            path1.apply {
+                                moveTo(w * 0.20f, h * 0.24f)
+                                lineTo(w * 0.38f, h * 0.24f)
+                                lineTo(w * 0.52f, h * 0.62f)
+                                lineTo(w * 0.68f, h * 0.24f)
+                                lineTo(w * 0.84f, h * 0.24f)
+                                lineTo(w * 0.56f, h * 0.80f)
+                                lineTo(w * 0.44f, h * 0.80f)
+                                close()
+                            }
+                        }
+                        com.mineserve.mobile.data.ServerCore.Leaves,
+                        com.mineserve.mobile.data.ServerCore.Leaf -> {
+                            path1.apply {
+                                moveTo(w * 0.78f, h * 0.20f)
+                                lineTo(w * 0.34f, h * 0.30f)
+                                lineTo(w * 0.22f, h * 0.76f)
+                                lineTo(w * 0.68f, h * 0.64f)
+                                close()
+                            }
+                        }
+                        else -> {
+                            path1.apply {
+                                moveTo(w * 0.50f, h * 0.18f)
+                                lineTo(w * 0.80f, h * 0.35f)
+                                lineTo(w * 0.80f, h * 0.65f)
+                                lineTo(w * 0.50f, h * 0.82f)
+                                lineTo(w * 0.20f, h * 0.65f)
+                                lineTo(w * 0.20f, h * 0.35f)
+                                close()
+                            }
+                        }
+                    }
+                    val pnxStroke = androidx.compose.ui.graphics.drawscope.Stroke(width = w * 0.06f)
+                    onDrawBehind {
+                        when (core) {
+                            com.mineserve.mobile.data.ServerCore.Paper -> {
+                                drawPath(path2, Color(0xFFBAE6FD))
+                                drawPath(path1, Color.White)
+                                drawPath(path3, Color(0xFFE0F2FE))
+                            }
+                            com.mineserve.mobile.data.ServerCore.Purpur -> {
+                                drawPath(path1, Color(0xFFF3E8FF))
+                                drawPath(path2, Color(0xFFD8B4FE))
+                                drawPath(path3, Color(0xFFA855F7))
+                            }
+                            com.mineserve.mobile.data.ServerCore.Fabric -> {
+                                drawRoundRect(
+                                    color = Color(0xFF78350F),
+                                    topLeft = androidx.compose.ui.geometry.Offset(w * 0.18f, h * 0.20f),
+                                    size = androidx.compose.ui.geometry.Size(w * 0.64f, h * 0.60f),
+                                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(w * 0.08f, w * 0.08f)
+                                )
+                                drawRoundRect(
+                                    color = Color(0xFFD97706),
+                                    topLeft = androidx.compose.ui.geometry.Offset(w * 0.24f, h * 0.26f),
+                                    size = androidx.compose.ui.geometry.Size(w * 0.52f, h * 0.48f),
+                                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(w * 0.05f, w * 0.05f)
+                                )
+                                drawRect(
+                                    color = Color(0xFFFEF3C7),
+                                    topLeft = androidx.compose.ui.geometry.Offset(w * 0.34f, h * 0.33f),
+                                    size = androidx.compose.ui.geometry.Size(w * 0.10f, h * 0.34f)
+                                )
+                                drawRect(
+                                    color = Color(0xFFFEF3C7),
+                                    topLeft = androidx.compose.ui.geometry.Offset(w * 0.34f, h * 0.33f),
+                                    size = androidx.compose.ui.geometry.Size(w * 0.32f, h * 0.09f)
+                                )
+                                drawRect(
+                                    color = Color(0xFFFDE68A),
+                                    topLeft = androidx.compose.ui.geometry.Offset(w * 0.34f, h * 0.47f),
+                                    size = androidx.compose.ui.geometry.Size(w * 0.24f, h * 0.08f)
+                                )
+                            }
+                            com.mineserve.mobile.data.ServerCore.Forge -> {
+                                drawPath(path1, Color(0xFFFBBF24))
+                                drawRect(
+                                    color = Color(0xFFD97706),
+                                    topLeft = androidx.compose.ui.geometry.Offset(w * 0.38f, h * 0.48f),
+                                    size = androidx.compose.ui.geometry.Size(w * 0.26f, h * 0.20f)
+                                )
+                                drawRoundRect(
+                                    color = Color(0xFFF59E0B),
+                                    topLeft = androidx.compose.ui.geometry.Offset(w * 0.22f, h * 0.66f),
+                                    size = androidx.compose.ui.geometry.Size(w * 0.58f, h * 0.14f),
+                                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(w * 0.04f, w * 0.04f)
+                                )
+                            }
+                            com.mineserve.mobile.data.ServerCore.NeoForge -> {
+                                drawPath(path1, Color(0xFFFDE047))
+                                drawPath(path2, Color(0xFFFDE047))
+                                drawPath(path3, Color(0xFFFB923C))
+                                drawPath(path4, Color(0xFFFFF7ED))
+                                drawCircle(Color(0xFF1E293B), radius = w * 0.045f, center = androidx.compose.ui.geometry.Offset(w * 0.50f, h * 0.80f))
+                            }
+                            com.mineserve.mobile.data.ServerCore.Spigot -> {
+                                drawRoundRect(
+                                    color = Color(0xFFFBBF24),
+                                    topLeft = androidx.compose.ui.geometry.Offset(w * 0.36f, h * 0.18f),
+                                    size = androidx.compose.ui.geometry.Size(w * 0.28f, h * 0.09f),
+                                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(4f, 4f)
+                                )
+                                drawRect(
+                                    color = Color(0xFFD97706),
+                                    topLeft = androidx.compose.ui.geometry.Offset(w * 0.45f, h * 0.27f),
+                                    size = androidx.compose.ui.geometry.Size(w * 0.10f, h * 0.15f)
+                                )
+                                drawRoundRect(
+                                    color = Color(0xFFF59E0B),
+                                    topLeft = androidx.compose.ui.geometry.Offset(w * 0.22f, h * 0.40f),
+                                    size = androidx.compose.ui.geometry.Size(w * 0.56f, h * 0.16f),
+                                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(6f, 6f)
+                                )
+                                drawRect(
+                                    color = Color(0xFFF59E0B),
+                                    topLeft = androidx.compose.ui.geometry.Offset(w * 0.62f, h * 0.52f),
+                                    size = androidx.compose.ui.geometry.Size(w * 0.16f, h * 0.14f)
+                                )
+                                drawCircle(
+                                    color = Color(0xFF38BDF8),
+                                    radius = w * 0.08f,
+                                    center = androidx.compose.ui.geometry.Offset(w * 0.70f, h * 0.78f)
+                                )
+                            }
+                            com.mineserve.mobile.data.ServerCore.Vanilla -> {
+                                drawPath(path2, Color(0xFF92400E))
+                                drawPath(path3, Color(0xFF78350F))
+                                drawPath(path1, Color(0xFF4ADE80))
+                            }
+                            com.mineserve.mobile.data.ServerCore.Quilt -> {
+                                drawRect(Color(0xFFF472B6), topLeft = androidx.compose.ui.geometry.Offset(w * 0.22f, h * 0.22f), size = androidx.compose.ui.geometry.Size(w * 0.26f, h * 0.26f))
+                                drawRect(Color(0xFF38BDF8), topLeft = androidx.compose.ui.geometry.Offset(w * 0.52f, h * 0.22f), size = androidx.compose.ui.geometry.Size(w * 0.26f, h * 0.26f))
+                                drawRect(Color(0xFFFBBF24), topLeft = androidx.compose.ui.geometry.Offset(w * 0.22f, h * 0.52f), size = androidx.compose.ui.geometry.Size(w * 0.26f, h * 0.26f))
+                                drawRect(Color(0xFFA855F7), topLeft = androidx.compose.ui.geometry.Offset(w * 0.52f, h * 0.52f), size = androidx.compose.ui.geometry.Size(w * 0.26f, h * 0.26f))
+                            }
+                            com.mineserve.mobile.data.ServerCore.PowerNukkitX -> {
+                                drawCircle(
+                                    color = Color(0xFF5EEAD4),
+                                    radius = w * 0.30f,
+                                    center = androidx.compose.ui.geometry.Offset(w * 0.50f, h * 0.50f),
+                                    style = pnxStroke
+                                )
+                                drawLine(
+                                    color = Color(0xFF99F6E4),
+                                    start = androidx.compose.ui.geometry.Offset(w * 0.22f, h * 0.22f),
+                                    end = androidx.compose.ui.geometry.Offset(w * 0.78f, h * 0.78f),
+                                    strokeWidth = w * 0.06f
+                                )
+                                drawLine(
+                                    color = Color(0xFF99F6E4),
+                                    start = androidx.compose.ui.geometry.Offset(w * 0.78f, h * 0.22f),
+                                    end = androidx.compose.ui.geometry.Offset(w * 0.22f, h * 0.78f),
+                                    strokeWidth = w * 0.06f
+                                )
+                                drawCircle(
+                                    color = Color(0xFFFACC15),
+                                    radius = w * 0.13f,
+                                    center = androidx.compose.ui.geometry.Offset(w * 0.50f, h * 0.50f)
+                                )
+                            }
+                            com.mineserve.mobile.data.ServerCore.Velocity -> {
+                                drawPath(path1, Color(0xFF67E8F9))
+                            }
+                            com.mineserve.mobile.data.ServerCore.Leaves,
+                            com.mineserve.mobile.data.ServerCore.Leaf -> {
+                                drawPath(path1, Color(0xFF6EE7B7))
+                                drawLine(
+                                    color = Color(0xFF064E3B),
+                                    start = androidx.compose.ui.geometry.Offset(w * 0.24f, h * 0.74f),
+                                    end = androidx.compose.ui.geometry.Offset(w * 0.72f, h * 0.26f),
+                                    strokeWidth = w * 0.06f
+                                )
+                            }
+                            else -> {
+                                drawPath(path1, borderColor.copy(alpha = 0.35f))
+                                drawCircle(Color.White, radius = w * 0.16f, center = androidx.compose.ui.geometry.Offset(w * 0.50f, h * 0.50f))
+                            }
+                        }
+                    }
                 }
-                val foldShadow = androidx.compose.ui.graphics.Path().apply {
-                    moveTo(w * 0.84f, h * 0.16f)
-                    lineTo(w * 0.42f, h * 0.58f)
-                    lineTo(w * 0.47f, h * 0.82f)
-                    lineTo(w * 0.84f, h * 0.16f)
-                    close()
-                }
-                val rightWing = androidx.compose.ui.graphics.Path().apply {
-                    moveTo(w * 0.84f, h * 0.16f)
-                    lineTo(w * 0.52f, h * 0.64f)
-                    lineTo(w * 0.72f, h * 0.84f)
-                    lineTo(w * 0.84f, h * 0.16f)
-                    close()
-                }
-                drawPath(foldShadow, Color(0xFFBAE6FD))
-                drawPath(mainWing, Color.White)
-                drawPath(rightWing, Color(0xFFE0F2FE))
-            }
-            com.mineserve.mobile.data.ServerCore.Purpur -> {
-                // Official Purpur Isometric Cube
-                val topFace = androidx.compose.ui.graphics.Path().apply {
-                    moveTo(w * 0.50f, h * 0.16f)
-                    lineTo(w * 0.82f, h * 0.34f)
-                    lineTo(w * 0.50f, h * 0.52f)
-                    lineTo(w * 0.18f, h * 0.34f)
-                    close()
-                }
-                val leftFace = androidx.compose.ui.graphics.Path().apply {
-                    moveTo(w * 0.18f, h * 0.34f)
-                    lineTo(w * 0.50f, h * 0.52f)
-                    lineTo(w * 0.50f, h * 0.84f)
-                    lineTo(w * 0.18f, h * 0.66f)
-                    close()
-                }
-                val rightFace = androidx.compose.ui.graphics.Path().apply {
-                    moveTo(w * 0.50f, h * 0.52f)
-                    lineTo(w * 0.82f, h * 0.34f)
-                    lineTo(w * 0.82f, h * 0.66f)
-                    lineTo(w * 0.50f, h * 0.84f)
-                    close()
-                }
-                drawPath(topFace, Color(0xFFF3E8FF))
-                drawPath(leftFace, Color(0xFFD8B4FE))
-                drawPath(rightFace, Color(0xFFA855F7))
-            }
-            com.mineserve.mobile.data.ServerCore.Fabric -> {
-                // Official Fabric Scroll / Woven Cloth Emblem
-                drawRoundRect(
-                    color = Color(0xFF78350F),
-                    topLeft = androidx.compose.ui.geometry.Offset(w * 0.18f, h * 0.20f),
-                    size = androidx.compose.ui.geometry.Size(w * 0.64f, h * 0.60f),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(w * 0.08f, w * 0.08f)
-                )
-                drawRoundRect(
-                    color = Color(0xFFD97706),
-                    topLeft = androidx.compose.ui.geometry.Offset(w * 0.24f, h * 0.26f),
-                    size = androidx.compose.ui.geometry.Size(w * 0.52f, h * 0.48f),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(w * 0.05f, w * 0.05f)
-                )
-                // Letter 'F' / Weave lines in warm cream
-                drawRect(
-                    color = Color(0xFFFEF3C7),
-                    topLeft = androidx.compose.ui.geometry.Offset(w * 0.34f, h * 0.33f),
-                    size = androidx.compose.ui.geometry.Size(w * 0.10f, h * 0.34f)
-                )
-                drawRect(
-                    color = Color(0xFFFEF3C7),
-                    topLeft = androidx.compose.ui.geometry.Offset(w * 0.34f, h * 0.33f),
-                    size = androidx.compose.ui.geometry.Size(w * 0.32f, h * 0.09f)
-                )
-                drawRect(
-                    color = Color(0xFFFDE68A),
-                    topLeft = androidx.compose.ui.geometry.Offset(w * 0.34f, h * 0.47f),
-                    size = androidx.compose.ui.geometry.Size(w * 0.24f, h * 0.08f)
-                )
-            }
-            com.mineserve.mobile.data.ServerCore.Forge -> {
-                // Official Minecraft Forge Blacksmith Anvil
-                val anvilTop = androidx.compose.ui.graphics.Path().apply {
-                    moveTo(w * 0.14f, h * 0.34f)
-                    lineTo(w * 0.84f, h * 0.34f)
-                    lineTo(w * 0.74f, h * 0.48f)
-                    lineTo(w * 0.28f, h * 0.48f)
-                    close()
-                }
-                drawPath(anvilTop, Color(0xFFFBBF24))
-                drawRect(
-                    color = Color(0xFFD97706),
-                    topLeft = androidx.compose.ui.geometry.Offset(w * 0.38f, h * 0.48f),
-                    size = androidx.compose.ui.geometry.Size(w * 0.26f, h * 0.20f)
-                )
-                drawRoundRect(
-                    color = Color(0xFFF59E0B),
-                    topLeft = androidx.compose.ui.geometry.Offset(w * 0.22f, h * 0.66f),
-                    size = androidx.compose.ui.geometry.Size(w * 0.58f, h * 0.14f),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(w * 0.04f, w * 0.04f)
-                )
-            }
-            com.mineserve.mobile.data.ServerCore.NeoForge -> {
-                // Official NeoForge Fox Head
-                val leftEar = androidx.compose.ui.graphics.Path().apply {
-                    moveTo(w * 0.20f, h * 0.16f)
-                    lineTo(w * 0.42f, h * 0.34f)
-                    lineTo(w * 0.22f, h * 0.48f)
-                    close()
-                }
-                val rightEar = androidx.compose.ui.graphics.Path().apply {
-                    moveTo(w * 0.80f, h * 0.16f)
-                    lineTo(w * 0.58f, h * 0.34f)
-                    lineTo(w * 0.78f, h * 0.48f)
-                    close()
-                }
-                val face = androidx.compose.ui.graphics.Path().apply {
-                    moveTo(w * 0.20f, h * 0.44f)
-                    lineTo(w * 0.50f, h * 0.30f)
-                    lineTo(w * 0.80f, h * 0.44f)
-                    lineTo(w * 0.50f, h * 0.84f)
-                    close()
-                }
-                val snout = androidx.compose.ui.graphics.Path().apply {
-                    moveTo(w * 0.36f, h * 0.56f)
-                    lineTo(w * 0.50f, h * 0.84f)
-                    lineTo(w * 0.64f, h * 0.56f)
-                    close()
-                }
-                drawPath(leftEar, Color(0xFFFDE047))
-                drawPath(rightEar, Color(0xFFFDE047))
-                drawPath(face, Color(0xFFFB923C))
-                drawPath(snout, Color(0xFFFFF7ED))
-                drawCircle(Color(0xFF1E293B), radius = w * 0.045f, center = androidx.compose.ui.geometry.Offset(w * 0.50f, h * 0.80f))
-            }
-            com.mineserve.mobile.data.ServerCore.Spigot -> {
-                // Official Spigot Golden Faucet + Water Drop
-                drawRoundRect(
-                    color = Color(0xFFFBBF24),
-                    topLeft = androidx.compose.ui.geometry.Offset(w * 0.36f, h * 0.18f),
-                    size = androidx.compose.ui.geometry.Size(w * 0.28f, h * 0.09f),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(4f, 4f)
-                )
-                drawRect(
-                    color = Color(0xFFD97706),
-                    topLeft = androidx.compose.ui.geometry.Offset(w * 0.45f, h * 0.27f),
-                    size = androidx.compose.ui.geometry.Size(w * 0.10f, h * 0.15f)
-                )
-                drawRoundRect(
-                    color = Color(0xFFF59E0B),
-                    topLeft = androidx.compose.ui.geometry.Offset(w * 0.22f, h * 0.40f),
-                    size = androidx.compose.ui.geometry.Size(w * 0.56f, h * 0.16f),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(6f, 6f)
-                )
-                drawRect(
-                    color = Color(0xFFF59E0B),
-                    topLeft = androidx.compose.ui.geometry.Offset(w * 0.62f, h * 0.52f),
-                    size = androidx.compose.ui.geometry.Size(w * 0.16f, h * 0.14f)
-                )
-                drawCircle(
-                    color = Color(0xFF38BDF8),
-                    radius = w * 0.08f,
-                    center = androidx.compose.ui.geometry.Offset(w * 0.70f, h * 0.78f)
-                )
-            }
-            com.mineserve.mobile.data.ServerCore.Vanilla -> {
-                // Official 3D Grass Block
-                val top = androidx.compose.ui.graphics.Path().apply {
-                    moveTo(w * 0.50f, h * 0.15f)
-                    lineTo(w * 0.82f, h * 0.33f)
-                    lineTo(w * 0.50f, h * 0.50f)
-                    lineTo(w * 0.18f, h * 0.33f)
-                    close()
-                }
-                val leftDirt = androidx.compose.ui.graphics.Path().apply {
-                    moveTo(w * 0.18f, h * 0.33f)
-                    lineTo(w * 0.50f, h * 0.50f)
-                    lineTo(w * 0.50f, h * 0.84f)
-                    lineTo(w * 0.18f, h * 0.66f)
-                    close()
-                }
-                val rightDirt = androidx.compose.ui.graphics.Path().apply {
-                    moveTo(w * 0.50f, h * 0.50f)
-                    lineTo(w * 0.82f, h * 0.33f)
-                    lineTo(w * 0.82f, h * 0.66f)
-                    lineTo(w * 0.50f, h * 0.84f)
-                    close()
-                }
-                drawPath(leftDirt, Color(0xFF92400E))
-                drawPath(rightDirt, Color(0xFF78350F))
-                drawPath(top, Color(0xFF4ADE80))
-            }
-            com.mineserve.mobile.data.ServerCore.Quilt -> {
-                // Official Quilt 4-Patch Diamond Star
-                drawRect(Color(0xFFF472B6), topLeft = androidx.compose.ui.geometry.Offset(w * 0.22f, h * 0.22f), size = androidx.compose.ui.geometry.Size(w * 0.26f, h * 0.26f))
-                drawRect(Color(0xFF38BDF8), topLeft = androidx.compose.ui.geometry.Offset(w * 0.52f, h * 0.22f), size = androidx.compose.ui.geometry.Size(w * 0.26f, h * 0.26f))
-                drawRect(Color(0xFFFBBF24), topLeft = androidx.compose.ui.geometry.Offset(w * 0.22f, h * 0.52f), size = androidx.compose.ui.geometry.Size(w * 0.26f, h * 0.26f))
-                drawRect(Color(0xFFA855F7), topLeft = androidx.compose.ui.geometry.Offset(w * 0.52f, h * 0.52f), size = androidx.compose.ui.geometry.Size(w * 0.26f, h * 0.26f))
-            }
-            com.mineserve.mobile.data.ServerCore.PowerNukkitX -> {
-                // Official PowerNukkitX Atomic Nucleus + Orbitals
-                drawCircle(
-                    color = Color(0xFF5EEAD4),
-                    radius = w * 0.30f,
-                    center = androidx.compose.ui.geometry.Offset(w * 0.50f, h * 0.50f),
-                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = w * 0.06f)
-                )
-                drawLine(
-                    color = Color(0xFF99F6E4),
-                    start = androidx.compose.ui.geometry.Offset(w * 0.22f, h * 0.22f),
-                    end = androidx.compose.ui.geometry.Offset(w * 0.78f, h * 0.78f),
-                    strokeWidth = w * 0.06f
-                )
-                drawLine(
-                    color = Color(0xFF99F6E4),
-                    start = androidx.compose.ui.geometry.Offset(w * 0.78f, h * 0.22f),
-                    end = androidx.compose.ui.geometry.Offset(w * 0.22f, h * 0.78f),
-                    strokeWidth = w * 0.06f
-                )
-                drawCircle(
-                    color = Color(0xFFFACC15),
-                    radius = w * 0.13f,
-                    center = androidx.compose.ui.geometry.Offset(w * 0.50f, h * 0.50f)
-                )
-            }
-            com.mineserve.mobile.data.ServerCore.Velocity -> {
-                // Official Velocity V-Wing
-                val vPath = androidx.compose.ui.graphics.Path().apply {
-                    moveTo(w * 0.20f, h * 0.24f)
-                    lineTo(w * 0.38f, h * 0.24f)
-                    lineTo(w * 0.52f, h * 0.62f)
-                    lineTo(w * 0.68f, h * 0.24f)
-                    lineTo(w * 0.84f, h * 0.24f)
-                    lineTo(w * 0.56f, h * 0.80f)
-                    lineTo(w * 0.44f, h * 0.80f)
-                    close()
-                }
-                drawPath(vPath, Color(0xFF67E8F9))
-            }
-            com.mineserve.mobile.data.ServerCore.Leaves,
-            com.mineserve.mobile.data.ServerCore.Leaf -> {
-                val leafPath = androidx.compose.ui.graphics.Path().apply {
-                    moveTo(w * 0.78f, h * 0.20f)
-                    lineTo(w * 0.34f, h * 0.30f)
-                    lineTo(w * 0.22f, h * 0.76f)
-                    lineTo(w * 0.68f, h * 0.64f)
-                    close()
-                }
-                drawPath(leafPath, Color(0xFF6EE7B7))
-                drawLine(
-                    color = Color(0xFF064E3B),
-                    start = androidx.compose.ui.geometry.Offset(w * 0.24f, h * 0.74f),
-                    end = androidx.compose.ui.geometry.Offset(w * 0.72f, h * 0.26f),
-                    strokeWidth = w * 0.06f
-                )
-            }
-            else -> {
-                // PocketMine / Allay / CraftBukkit / BungeeCord geometric emblem
-                val hex = androidx.compose.ui.graphics.Path().apply {
-                    moveTo(w * 0.50f, h * 0.18f)
-                    lineTo(w * 0.80f, h * 0.35f)
-                    lineTo(w * 0.80f, h * 0.65f)
-                    lineTo(w * 0.50f, h * 0.82f)
-                    lineTo(w * 0.20f, h * 0.65f)
-                    lineTo(w * 0.20f, h * 0.35f)
-                    close()
-                }
-                drawPath(hex, borderColor.copy(alpha = 0.35f))
-                drawCircle(Color.White, radius = w * 0.16f, center = androidx.compose.ui.geometry.Offset(w * 0.50f, h * 0.50f))
-            }
-        }
-    }
+            )
+    )
 }
 
 fun createMinecraftPixelArtBitmap(kind: MinecraftArtKind, sizePx: Int = 64): android.graphics.Bitmap {
@@ -1066,6 +1088,8 @@ private fun inferCardArtKind(title: String): MinecraftArtKind {
     }
 }
 
+private val McCardTopBarBrush = Brush.horizontalGradient(listOf(Indigo, Mint, IndigoDark))
+
 /**
  * 通用卡片容器：Phong cách Minecraft hiện đại với viền Emerald mỏng + biểu tượng khối Pixel trực quan.
  */
@@ -1087,7 +1111,7 @@ fun McCard(
             ),
         shape = McShape.Card,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         border = androidx.compose.foundation.BorderStroke(1.dp, Line)
     ) {
         Column {
@@ -1095,7 +1119,7 @@ fun McCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(3.dp)
-                    .background(Brush.horizontalGradient(listOf(Indigo, Mint, IndigoDark)))
+                    .background(McCardTopBarBrush)
             )
             Column(
                 Modifier.padding(

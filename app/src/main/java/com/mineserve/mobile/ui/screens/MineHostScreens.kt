@@ -288,7 +288,6 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
     val javaOperation by vm.javaOperation.collectAsStateWithLifecycle()
     val lanIp by vm.lanIp.collectAsStateWithLifecycle()
     val lanInterfaceLabel by vm.lanInterfaceLabel.collectAsStateWithLifecycle()
-    val lanLastUpdated by vm.lanLastUpdatedText.collectAsStateWithLifecycle()
     val vpnActiveWarning by vm.vpnActiveWarning.collectAsStateWithLifecycle()
     val connectionCheckStatus by vm.connectionCheckStatus.collectAsStateWithLifecycle()
     val connectionCheckRunning by vm.connectionCheckRunning.collectAsStateWithLifecycle()
@@ -329,8 +328,17 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
         }
     }
 
-    val downloaded56Count = remember(installedMods, all56Items) {
-        all56Items.count { isCatalogItemInstalled(it) }
+    val (downloaded56Count, groupCountsMap) = remember(installedMods, all56Items, categoryGroups) {
+        val installedSlugs = all56Items.asSequence()
+            .filter { isCatalogItemInstalled(it) }
+            .map { it.slug }
+            .toHashSet()
+        val grpMap = categoryGroups.associateWith { grpName ->
+            val grpTotal = all56Items.count { it.categoryGroup == grpName }
+            val grpInstalled = all56Items.count { it.categoryGroup == grpName && it.slug in installedSlugs }
+            grpInstalled to grpTotal
+        }
+        installedSlugs.size to grpMap
     }
 
     var confirm by remember { mutableStateOf<String?>(null) }
@@ -1196,9 +1204,8 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         categoryGroups.forEach { grpName ->
-                            val grpTotal = all56Items.count { it.categoryGroup == grpName }
-                            val grpInstalled = all56Items.count { it.categoryGroup == grpName && isCatalogItemInstalled(it) }
-                            val grpFull = grpInstalled >= grpTotal
+                            val (grpInstalled, grpTotal) = groupCountsMap[grpName] ?: (0 to 0)
+                            val grpFull = grpTotal > 0 && grpInstalled >= grpTotal
                             Surface(
                                 color = if (grpFull) MaterialTheme.colorScheme.primary.copy(alpha = 0.22f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
                                 shape = RoundedCornerShape(8.dp),

@@ -1438,7 +1438,8 @@ private fun ModsTab(
         vm = vm,
         activeCoreExists = activeCoreExists,
         serverRunning = serverRunning,
-        hasInstalledMods = mods.isNotEmpty()
+        hasInstalledMods = mods.isNotEmpty(),
+        showFull56ListByDefault = false
     )
 
     // 已安装模组 (Quản lý Mod trực quan + Lọc Bật/Tắt + Công tắc có cảnh báo)
@@ -2384,8 +2385,9 @@ private fun ModrinthIcon(url: String, size: Dp = 32.dp) {
     ) {
         val bmp = bitmap
         if (bmp != null) {
+            val imageBitmap = remember(bmp) { bmp.asImageBitmap() }
             Image(
-                bitmap = bmp.asImageBitmap(),
+                bitmap = imageBitmap,
                 contentDescription = null,
                 modifier = Modifier.size(size),
                 contentScale = ContentScale.Crop
@@ -2458,11 +2460,21 @@ private fun ModPackDecoderAndTransferCard(
         }
     }
 
-    val downloaded56Count = remember(installedMods, all56Items) {
-        all56Items.count { findInstalledModFor56(it) != null }
+    val matchedModBySlug = remember(installedMods, all56Items) {
+        all56Items.associate { item -> item.slug to findInstalledModFor56(item) }
     }
-    val enabled56Count = remember(installedMods, all56Items) {
-        all56Items.count { findInstalledModFor56(it)?.isEnabled == true }
+    val downloaded56Count = remember(matchedModBySlug) {
+        matchedModBySlug.values.count { it != null }
+    }
+    val enabled56Count = remember(matchedModBySlug) {
+        matchedModBySlug.values.count { it?.isEnabled == true }
+    }
+    val groupCountsByTitle = remember(all56Items, categoryGroups, matchedModBySlug) {
+        categoryGroups.associateWith { grp ->
+            val total = all56Items.count { it.categoryGroup == grp }
+            val inst = all56Items.count { it.categoryGroup == grp && matchedModBySlug[it.slug] != null }
+            inst to total
+        }
     }
     val matched56Count = downloaded56Count
 
@@ -2794,9 +2806,8 @@ private fun ModPackDecoderAndTransferCard(
                     }
 
                     categoryGroups.forEach { groupName ->
-                        val groupCount = all56Items.count { it.categoryGroup == groupName }
-                        val installedInGroup = all56Items.count { it.categoryGroup == groupName && findInstalledModFor56(it) != null }
-                        val isGroupFull = installedInGroup >= groupCount
+                        val (installedInGroup, groupCount) = groupCountsByTitle[groupName] ?: (0 to 0)
+                        val isGroupFull = groupCount > 0 && installedInGroup >= groupCount
                         val isGroupSelected = selectedCategoryGroup == groupName
                         Box(
                             modifier = Modifier
@@ -2833,10 +2844,7 @@ private fun ModPackDecoderAndTransferCard(
 
                 // Nếu người dùng đang chọn 1 nhóm cụ thể -> Hiện trạng thái Đã cài hoặc nút Cài Nhanh Nguyên Nhóm đó
                 if (selectedCategoryGroup != "ALL") {
-                    val groupOnlyCount = all56Items.count { it.categoryGroup == selectedCategoryGroup }
-                    val installedInSelectedGroup = all56Items.count {
-                        it.categoryGroup == selectedCategoryGroup && findInstalledModFor56(it) != null
-                    }
+                    val (installedInSelectedGroup, groupOnlyCount) = groupCountsByTitle[selectedCategoryGroup] ?: (0 to 0)
                     val missingInSelectedGroup = (groupOnlyCount - installedInSelectedGroup).coerceAtLeast(0)
 
                     if (installedInSelectedGroup >= groupOnlyCount) {
@@ -2894,7 +2902,7 @@ private fun ModPackDecoderAndTransferCard(
                     shape = McShape.ControlCompact
                 )
 
-                // Hiển thị danh sách Mod theo từng nhóm rõ ràng
+                // Hiển thị danh sách Mod theo từng nhóm rõ ràng (LazyColumn mượt 60-120FPS)
                 val groupedDisplay = remember(filteredCatalogItems, selectedCategoryGroup, categoryGroups) {
                     if (selectedCategoryGroup == "ALL") {
                         categoryGroups.mapNotNull { grp ->
@@ -2906,147 +2914,156 @@ private fun ModPackDecoderAndTransferCard(
                     }
                 }
 
-                groupedDisplay.forEach { (grpTitle, grpItems) ->
-                    val grpInstalledCount = grpItems.count { findInstalledModFor56(it) != null }
-                    val grpIsFull = grpInstalledCount >= grpItems.size
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            "$grpTitle (Đã cài $grpInstalledCount/${grpItems.size} mod)",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = if (grpIsFull) Mint else Indigo,
-                            modifier = Modifier.weight(1f)
-                        )
-                        if (selectedCategoryGroup == "ALL") {
-                            if (grpIsFull) {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 520.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    groupedDisplay.forEach { (grpTitle, grpItems) ->
+                        val grpInstalledCount = grpItems.count { matchedModBySlug[it.slug] != null }
+                        val grpIsFull = grpItems.isNotEmpty() && grpInstalledCount >= grpItems.size
+                        item(key = "grp_hdr_$grpTitle") {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 Text(
-                                    "✅ Đã cài đủ (${grpInstalledCount}/${grpItems.size})",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Mint,
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(MintSoft)
-                                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
-                            } else {
-                                Text(
-                                    if (grpInstalledCount > 0) "➕ Tải thiếu (${grpItems.size - grpInstalledCount} mod)" else "⚡ Cài nhóm này",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Mint,
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .clickable(enabled = activeCoreExists && !serverRunning) {
-                                            vm.installUserScreenshotModCategory(
-                                                categoryGroup = grpTitle,
-                                                includeCoreLibs = true,
-                                                customMcVersion = selectedCustomVersion
-                                            )
-                                        }
-                                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
-                            }
-                        }
-                    }
-
-                    grpItems.forEach { item ->
-                        val matchedMod = findInstalledModFor56(item)
-                        val isInstalled = matchedMod != null
-                        val isEnabledMod = matchedMod?.isEnabled == true
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(MaterialTheme.colorScheme.surface)
-                                .padding(horizontal = 10.dp, vertical = 9.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                "#${item.index}",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isInstalled) Mint else Indigo,
-                                modifier = Modifier.size(width = 32.dp, height = 20.dp)
-                            )
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    item.title,
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    item.descVi,
-                                    fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    lineHeight = 16.sp
-                                )
-                                Spacer(Modifier.height(4.dp))
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    BadgeChip(item.weightVi, Mint, MintSoft)
-                                    BadgeChip(item.scopeVi, Indigo, IndigoSoft)
-                                }
-                                Spacer(Modifier.height(2.dp))
-                                Text(
-                                    if (matchedMod != null) {
-                                        "✅ Đã tải tệp: ${matchedMod.fileName} (${matchedMod.sizeText})"
-                                    } else {
-                                        "Chưa tải (${item.originalJarName})"
-                                    },
+                                    "$grpTitle (Đã cài $grpInstalledCount/${grpItems.size} mod)",
                                     fontSize = 11.sp,
-                                    color = if (matchedMod != null) Mint else Muted,
-                                    fontWeight = if (matchedMod != null) FontWeight.SemiBold else FontWeight.Normal,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = if (grpIsFull) Mint else Indigo,
+                                    modifier = Modifier.weight(1f)
                                 )
-                            }
-                            Spacer(Modifier.size(8.dp))
-                            if (isInstalled && matchedMod != null) {
-                                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(6.dp))
-                                            .background(if (isEnabledMod) MintSoft else CoralSoft)
-                                            .padding(horizontal = 7.dp, vertical = 3.dp)
-                                    ) {
+                                if (selectedCategoryGroup == "ALL") {
+                                    if (grpIsFull) {
                                         Text(
-                                            if (isEnabledMod) "🟢 Đang bật" else "⏸ Đang tắt",
-                                            color = if (isEnabledMod) Mint else Coral,
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold
+                                            "✅ Đã cài đủ (${grpInstalledCount}/${grpItems.size})",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Mint,
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(MintSoft)
+                                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    } else {
+                                        Text(
+                                            if (grpInstalledCount > 0) "➕ Tải thiếu (${grpItems.size - grpInstalledCount} mod)" else "⚡ Cài nhóm này",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Mint,
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .clickable(enabled = activeCoreExists && !serverRunning) {
+                                                    vm.installUserScreenshotModCategory(
+                                                        categoryGroup = grpTitle,
+                                                        includeCoreLibs = true,
+                                                        customMcVersion = selectedCustomVersion
+                                                    )
+                                                }
+                                                .padding(horizontal = 6.dp, vertical = 2.dp)
                                         )
                                     }
-                                    Switch(
-                                        checked = isEnabledMod,
-                                        onCheckedChange = {
-                                            pendingCatalogModToggle = item to matchedMod
+                                }
+                            }
+                        }
+
+                        items(grpItems, key = { it.slug }) { item ->
+                            val matchedMod = matchedModBySlug[item.slug]
+                            val isInstalled = matchedMod != null
+                            val isEnabledMod = matchedMod?.isEnabled == true
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(MaterialTheme.colorScheme.surface)
+                                    .padding(horizontal = 10.dp, vertical = 9.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "#${item.index}",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isInstalled) Mint else Indigo,
+                                    modifier = Modifier.size(width = 32.dp, height = 20.dp)
+                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        item.title,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        item.descVi,
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        lineHeight = 16.sp
+                                    )
+                                    Spacer(Modifier.height(4.dp))
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        BadgeChip(item.weightVi, Mint, MintSoft)
+                                        BadgeChip(item.scopeVi, Indigo, IndigoSoft)
+                                    }
+                                    Spacer(Modifier.height(2.dp))
+                                    Text(
+                                        if (matchedMod != null) {
+                                            "✅ Đã tải tệp: ${matchedMod.fileName} (${matchedMod.sizeText})"
+                                        } else {
+                                            "Chưa tải (${item.originalJarName})"
                                         },
-                                        enabled = activeCoreExists && !serverRunning
+                                        fontSize = 11.sp,
+                                        color = if (matchedMod != null) Mint else Muted,
+                                        fontWeight = if (matchedMod != null) FontWeight.SemiBold else FontWeight.Normal,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
-                            } else {
-                                Button(
-                                    onClick = {
-                                        vm.installSingleCatalogMod(item, customMcVersion = selectedCustomVersion)
-                                    },
-                                    enabled = activeCoreExists && !serverRunning,
-                                    colors = ButtonDefaults.buttonColors(containerColor = Indigo),
-                                    shape = RoundedCornerShape(8.dp),
-                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 5.dp),
-                                    modifier = Modifier.height(34.dp)
-                                ) {
-                                    Text("➕ Cài", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Spacer(Modifier.size(8.dp))
+                                if (isInstalled && matchedMod != null) {
+                                    Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(if (isEnabledMod) MintSoft else CoralSoft)
+                                                .padding(horizontal = 7.dp, vertical = 3.dp)
+                                        ) {
+                                            Text(
+                                                if (isEnabledMod) "🟢 Đang bật" else "⏸ Đang tắt",
+                                                color = if (isEnabledMod) Mint else Coral,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                        Switch(
+                                            checked = isEnabledMod,
+                                            onCheckedChange = {
+                                                pendingCatalogModToggle = item to matchedMod
+                                            },
+                                            enabled = activeCoreExists && !serverRunning
+                                        )
+                                    }
+                                } else {
+                                    Button(
+                                        onClick = {
+                                            vm.installSingleCatalogMod(item, customMcVersion = selectedCustomVersion)
+                                        },
+                                        enabled = activeCoreExists && !serverRunning,
+                                        colors = ButtonDefaults.buttonColors(containerColor = Indigo),
+                                        shape = RoundedCornerShape(8.dp),
+                                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 5.dp),
+                                        modifier = Modifier.height(34.dp)
+                                    ) {
+                                        Text("➕ Cài", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
                                 }
                             }
                         }

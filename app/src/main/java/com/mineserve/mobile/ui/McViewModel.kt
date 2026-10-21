@@ -7396,8 +7396,14 @@ class McViewModel(
         }
     }
 
-    /** 下载服务端核心（使用自定义名称，保存到独立目录），成功返回 true */
-    fun downloadCore(customName: String) {
+    /** 下载服务端核心（使用自定义名称，保存到独立目录，支持灵活选择初始游戏模式、离线验证与跨平台插件包） */
+    fun downloadCore(
+        customName: String,
+        initialGamemode: String = "survival",
+        crackedOfflineMode: Boolean = true,
+        installCrossplayPack: Boolean = false,
+        crossplayBedrockBranch: String = "1.21"
+    ) {
         if (!isBootstrapped.value) {
             _errorFlow.tryEmit(str(R.string.s192))
             return
@@ -7413,16 +7419,51 @@ class McViewModel(
             _errorFlow.tryEmit(str(R.string.dl_duplicate_name, existing))
             return
         }
+        val selectedCoreSnap = config.value.selectedCore
+        val selectedVerSnap = config.value.mcVersion
         _isDownloadingCore.value = true
         _downloadProgress.value = DownloadProgress()
         viewModelScope.launch {
             try {
-                controller.downloadCore(config.value, customName.trim()) { downloaded, total, speed ->
+                val trimmedName = customName.trim()
+                controller.downloadCore(config.value, trimmedName) { downloaded, total, speed ->
                     _downloadProgress.value = DownloadProgress(downloaded, total, speed)
                 }
+                val createdCore = repo.currentConfig().installedCores.firstOrNull { it.name == trimmedName }
+                val dirName = createdCore?.dirName ?: activeDirName()
+                if (dirName != null) {
+                    withContext(Dispatchers.IO) {
+                        val props = propertiesManager.readProperties(dirName).toMutableMap()
+                        val normalizedMode = initialGamemode.lowercase(java.util.Locale.ROOT)
+                        if (normalizedMode == "hardcore") {
+                            props["gamemode"] = "survival"
+                            props["hardcore"] = "true"
+                            props["difficulty"] = "hard"
+                        } else {
+                            props["gamemode"] = normalizedMode
+                            props["hardcore"] = "false"
+                        }
+                        props["online-mode"] = if (crackedOfflineMode || installCrossplayPack) "false" else "true"
+                        props["enforce-secure-profile"] = "false"
+                        props["motd"] = "MineHost VN - $trimmedName"
+                        propertiesManager.writeProperties(props, dirName)
+
+                        if (installCrossplayPack && !selectedCoreSnap.isBedrock) {
+                            _messageFlow.tryEmit("📦 Đang tự động cài GeyserMC + Floodgate + ViaVersion + ViaBackwards cho '$trimmedName'...")
+                            pluginManager.installCrossplaySuite(
+                                dirName = dirName,
+                                core = selectedCoreSnap,
+                                mcVersion = selectedVerSnap,
+                                bedrockBranch = crossplayBedrockBranch
+                            )
+                        }
+                    }
+                    refreshServerPropertiesNow()
+                    if (selectedCoreSnap.supportsMods) refreshMods() else refreshInstalledPlugins()
+                }
                 refreshServerStorage()
-                _messageFlow.tryEmit(str(R.string.s296, customName.trim()))
-                _coreDownloadCompletedFlow.tryEmit(customName.trim())
+                _messageFlow.tryEmit(str(R.string.s296, trimmedName))
+                _coreDownloadCompletedFlow.tryEmit(trimmedName)
             } catch (e: Exception) {
                 _errorFlow.tryEmit(str(R.string.s297, e.message))
             } finally {
