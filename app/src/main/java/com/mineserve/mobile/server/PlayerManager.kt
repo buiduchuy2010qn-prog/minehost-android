@@ -45,35 +45,42 @@ class PlayerManager(private val termux: TermuxRuntime) {
         return null
     }
 
-    /**
-     * Trích xuất UUID thực tế của người chơi từ dòng log xác thực của server:
-     * Ví dụ: `[User Authenticator #1/INFO]: UUID of player Steve is 069a79f4-44e9-4726-a5be-fca90e38aaf5`
-     */
-    fun extractPlayerUuid(line: String): Pair<String, String>? {
-        if (!line.contains("UUID of player", ignoreCase = true)) return null
-        val m = playerUuidRegex.find(line) ?: return null
-        val name = m.groupValues.getOrNull(1)?.trim().orEmpty()
-        val rawUuid = m.groupValues.getOrNull(2)?.trim().orEmpty()
-        if (name.isEmpty() || rawUuid.isEmpty()) return null
-        val formattedUuid = if (rawUuid.length == 32 && !rawUuid.contains('-')) {
-            "${rawUuid.substring(0, 8)}-${rawUuid.substring(8, 12)}-${rawUuid.substring(12, 16)}-${rawUuid.substring(16, 20)}-${rawUuid.substring(20, 32)}"
-        } else {
-            rawUuid
-        }
-        return name to formattedUuid
-    }
+    fun extractPlayerUuid(line: String): Pair<String, String>? = Companion.extractPlayerUuid(line)
 
-    /**
-     * Trích xuất lý do ngắt kết nối của người chơi từ dòng log:
-     * Ví dụ: `[Server thread/INFO]: Steve lost connection: Disconnected`
-     */
-    fun extractDisconnectReason(line: String): Pair<String, String>? {
-        if (!line.contains("lost connection:", ignoreCase = true)) return null
-        val m = disconnectReasonRegex.find(line) ?: return null
-        val name = m.groupValues.getOrNull(1)?.trim().orEmpty()
-        val reason = m.groupValues.getOrNull(2)?.trim().orEmpty()
-        if (name.isEmpty() || reason.isEmpty()) return null
-        return name to reason
+    fun extractDisconnectReason(line: String): Pair<String, String>? = Companion.extractDisconnectReason(line)
+
+    companion object {
+        private val staticPlayerUuidRegex = Regex(
+            "UUID of player ([A-Za-z0-9_.]{1,16}) is ([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[0-9a-fA-F]{32})",
+            RegexOption.IGNORE_CASE
+        )
+        private val staticDisconnectReasonRegex = Regex(
+            ":\\s*([A-Za-z0-9_.]{1,16})\\s+lost connection:\\s*(.+)$",
+            RegexOption.IGNORE_CASE
+        )
+
+        fun extractPlayerUuid(line: String): Pair<String, String>? {
+            if (!line.contains("UUID of player", ignoreCase = true)) return null
+            val m = staticPlayerUuidRegex.find(line) ?: return null
+            val name = m.groupValues.getOrNull(1)?.trim().orEmpty()
+            val rawUuid = m.groupValues.getOrNull(2)?.trim().orEmpty()
+            if (name.isEmpty() || rawUuid.isEmpty()) return null
+            val formattedUuid = if (rawUuid.length == 32 && !rawUuid.contains('-')) {
+                "${rawUuid.substring(0, 8)}-${rawUuid.substring(8, 12)}-${rawUuid.substring(12, 16)}-${rawUuid.substring(16, 20)}-${rawUuid.substring(20, 32)}"
+            } else {
+                rawUuid
+            }
+            return name to formattedUuid
+        }
+
+        fun extractDisconnectReason(line: String): Pair<String, String>? {
+            if (!line.contains("lost connection:", ignoreCase = true)) return null
+            val m = staticDisconnectReasonRegex.find(line) ?: return null
+            val name = m.groupValues.getOrNull(1)?.trim().orEmpty()
+            val reason = m.groupValues.getOrNull(2)?.trim().orEmpty()
+            if (name.isEmpty() || reason.isEmpty()) return null
+            return name to reason
+        }
     }
 
     @Serializable

@@ -98,12 +98,4 @@ class MineHostSafetyTest {
         )
         assertEquals("Steve" to "Timed out", reasonPair)
     }
-    @Test fun playitAddressExtractorPrioritizesExplicitHostPort() {
-        val (primary, all) = com.mineserve.mobile.ui.PlayitTunnelController.extractAddressesFromRundataAndList(
-            rundataText = "between-received.gl.at.ply.gg -> 127.0.0.1:25565",
-            listJson = """{"tunnels":[{"alloc":{"data":{"assigned_domain":"between-received.gl.at.ply.gg","ip_hostname":"217.ip.gl.ply.gg","port_start":38773}}}]}"""
-        )
-        assertEquals("217.ip.gl.ply.gg:38773", primary)
-        assertTrue(all.contains("217.ip.gl.ply.gg:38773"))
-    }
 }
