@@ -821,14 +821,14 @@ class PlayitTunnelController(
         return Triple(primary, secondary, bedrockPrimary)
     }
 
-    fun createMinecraftBedrockTunnelOnDemand() {
+    fun createMinecraftBedrockTunnelOnDemand(localBedrockPort: Int = 19132) {
         scope.launch(Dispatchers.IO) {
             val secret = getSavedSecret() ?: return@launch
             runCatching {
                 val rd = postJson("/v1/agents/rundata", "{}", secret).optJSONObject("data") ?: return@launch
                 val agentId = rd.optString("agent_id")
                 if (agentId.isBlank()) return@launch
-                appendLog("Đang tạo cổng UDP Playit.gg cho Minecraft Bedrock (PE 19132)...")
+                appendLog("Đang tạo cổng UDP Playit.gg cho Minecraft Bedrock (PE $localBedrockPort)...")
                 val req = JSONObject()
                     .put("name", "MineHost Bedrock UDP")
                     .put(
@@ -849,7 +849,7 @@ class PlayitTunnelController(
                                         "config",
                                         JSONObject()
                                             .put("local_ip", "127.0.0.1")
-                                            .put("local_port", 19132)
+                                            .put("local_port", localBedrockPort)
                                     )
                             )
                     )
