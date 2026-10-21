@@ -76,32 +76,30 @@ jobs:
         run: |
           set -euo pipefail
           APK=$(find app/build/outputs/apk/release -name '*.apk' -print -quit)
-          cp -f "$APK" app/build/outputs/apk/release/MineHost-1.4-arm64.apk
+          cp -f "$APK" app/build/outputs/apk/release/MineHost-1.5-arm64.apk
           if [ "$APK" != "app/build/outputs/apk/release/MineHost-arm64-v8a-release.apk" ]; then
             cp -f "$APK" app/build/outputs/apk/release/MineHost-arm64-v8a-release.apk
           fi
-          sha256sum app/build/outputs/apk/release/MineHost-1.4-arm64.apk > app/build/outputs/apk/release/SHA256SUMS.txt
-          NOTES='Bản chính thức **MineHost 1.4 (ARM64)**:
-          - **Sửa triệt để lỗi "Không thể đăng nhập: Phiên chơi không hợp lệ" (Invalid Session):** Tự động tắt cả `online-mode=false` và `enforce-secure-profile=false` (dành cho Minecraft 1.19 – 1.21.11) kèm tự động khởi động lại máy chủ chỉ với 1 chạm để người chơi dùng TLauncher, FCL, PojavLauncher, Zalith hay tài khoản Offline đều vào chơi ngay lập tức.
-          - **Mục Riêng: Quản Lý Cài Đặt & Lệnh Máy Chủ (Kèm Giải Thích Tiếng Việt Dễ Hiểu):** Bổ sung trung tâm quản lý 3 nhóm cài đặt và lệnh ngay tại tab Quản lý:
-            1. **🔐 Đăng nhập & Sửa lỗi (server.properties):** Cho phép Cracked, Mở khóa vùng hồi sinh (`spawn-protection=0`), Cho phép bay (`allow-flight=true`), Bật Command Block, PVP, Whitelist, Độ khó & Chế độ chơi.
-            2. **🪄 Luật Thế Giới (/gamerule — Có tác dụng ngay không cần khởi động lại):** Giữ đồ khi chết (`keepInventory`), Chống Creeper nổ vỡ nhà (`mobGriefing`), 1 người ngủ là qua đêm (`playersSleepingPercentage`), Chống lửa cháy lan (`doFireTick`), Hồi sinh ngay lập tức, Tắt quái Phantom, Khóa ban ngày & Khóa tạnh mưa.
-            3. **👑 Lệnh Quản Trị Người Chơi:** Cấp/Thu hồi OP, Đổi chế độ chơi từng người, Bật nhìn đêm vĩnh viễn, Tặng XP, Whitelist/Kick.
-          - Hỗ trợ **cài đè trực tiếp** lên bản 1.3 / 1.2 không mất dữ liệu.'
-          if gh release view v1.4 --repo "${{ github.repository }}" >/dev/null 2>&1; then
-            gh release upload v1.4 \
-              app/build/outputs/apk/release/MineHost-1.4-arm64.apk \
+          sha256sum app/build/outputs/apk/release/MineHost-1.5-arm64.apk > app/build/outputs/apk/release/SHA256SUMS.txt
+          NOTES='Bản chính thức **MineHost 1.5 (ARM64)**:
+          - **Giải mã Thư Mục / Gói Full Mod & Chuyển Mod Sang Server Mới:** Hỗ trợ chọn cả thư mục (`mods/` hoặc gói giải nén), nén `.zip` / `.mrpack`, chọn nhiều file `.jar` cùng lúc, sao chép toàn bộ Mod + Config giữa các máy chủ, tự động tải thư viện phụ thuộc bắt buộc trên Modrinth, nhận diện và tự động tắt (`.jar.disabled`) các mod chỉ chạy trên máy khách (Sodium, Litematica, Iris, EntityCulling...), kèm nút **tải tự động trọn bộ 45+ Mod Server Fabric** từ danh sách của bạn.
+          - **Dọn Sẵn Địa Chỉ Kết Nối Theo Chế Độ & Tự Cập Nhật Khi Đổi Mạng:** Loại bỏ hoàn toàn IP dữ liệu di động 4G/5G (`10.x.x.x` CGNAT) khỏi mục Wi-Fi LAN, ưu tiên địa chỉ `host:port` thực tế của Playit.gg (`217.ip.gl.ply.gg:38773`), tự động làm mới khi đổi mạng Wi-Fi/Hotspot và bổ sung nút **Kiểm tra kết nối thực tế (TCP)**.
+          - **Lưu Lịch Sử Người Chơi Bền Vững Theo Từng Server:** Lưu trữ bền vững danh sách người chơi (kèm UUID thực từ `usercache.json` / Authenticator, thời điểm tham gia đầu tiên/gần nhất, tổng thời gian chơi, trạng thái phiên bị ngắt khi dừng server), tìm kiếm, lọc, sắp xếp và xuất CSV.
+          - Hỗ trợ **cài đè trực tiếp** lên bản 1.4 / 1.3 / 1.2 không mất dữ liệu.'
+          if gh release view v1.5 --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release upload v1.5 \
+              app/build/outputs/apk/release/MineHost-1.5-arm64.apk \
               app/build/outputs/apk/release/MineHost-arm64-v8a-release.apk \
               app/build/outputs/apk/release/SHA256SUMS.txt \
               app/build/outputs/apk/release/SOURCE-COMMIT.txt \
               --clobber --repo "${{ github.repository }}"
           else
-            gh release create v1.4 \
-              app/build/outputs/apk/release/MineHost-1.4-arm64.apk \
+            gh release create v1.5 \
+              app/build/outputs/apk/release/MineHost-1.5-arm64.apk \
               app/build/outputs/apk/release/MineHost-arm64-v8a-release.apk \
               app/build/outputs/apk/release/SHA256SUMS.txt \
               app/build/outputs/apk/release/SOURCE-COMMIT.txt \
-              --title "MineHost 1.4 - Sửa Lỗi Phiên Chơi Không Hợp Lệ (Cracked 1.21.11) & Trung Tâm Lệnh/Cài Đặt Có Giải Thích" \
+              --title "MineHost 1.5 - Giải Mã Full Mod, Dọn Sẵn IP Kết Nối Chính Xác & Lưu Lịch Sử Người Chơi Bền Vững" \
               --notes "$NOTES" \
               --latest \
               --repo "${{ github.repository }}"

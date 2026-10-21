@@ -905,7 +905,13 @@ private fun LocalAddressCard(
     maskAddress: Boolean,
     context: Context
 ) {
-    McCard(title = "🏠 Địa chỉ Chơi Cùng Mạng (Wi-Fi / Phát 4G Hotspot)") {
+    val lanInterfaceLabel by vm.lanInterfaceLabel.collectAsState()
+    val lanLastUpdated by vm.lanLastUpdatedText.collectAsState()
+    val vpnActiveWarning by vm.vpnActiveWarning.collectAsState()
+    val connectionCheckStatus by vm.connectionCheckStatus.collectAsState()
+    val connectionCheckRunning by vm.connectionCheckRunning.collectAsState()
+
+    McCard(title = "🏠 Địa chỉ Chơi Cùng Mạng (Wi-Fi / Phát 4G Hotspot) & Localhost") {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -929,37 +935,53 @@ private fun LocalAddressCard(
         }
         Spacer(Modifier.height(12.dp))
 
-        Text("1️⃣ Dành cho bạn bè bắt chung Wi-Fi hoặc bắt 4G Hotspot của bạn:", color = Mint, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        Text("1️⃣ Địa chỉ LAN dành cho bạn bè bắt chung Wi-Fi hoặc 4G Hotspot của bạn:", color = Mint, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(6.dp))
-        val lanAddress = if (lanIp == "--") "--:$serverPort" else "$lanIp:$serverPort"
+        val hasValidLan = lanIp != "--" && lanIp.isNotBlank()
+        val lanAddressDisplay = if (hasValidLan) {
+            PlayitTunnelController.maskEndpointForDisplay("$lanIp:$serverPort", maskAddress)
+        } else {
+            "Chưa xác định được địa chỉ mạng LAN"
+        }
         AddressCopyRow(
-            label = stringResource(R.string.s592),
-            value = PlayitTunnelController.maskEndpointForDisplay(lanAddress, maskAddress),
+            label = "${stringResource(R.string.s592)} • $lanInterfaceLabel",
+            value = lanAddressDisplay,
             onCopy = { vm.copyServerAddress(context) },
             icon = Icons.Outlined.Lan,
-            accent = Mint,
-            containerColor = MintSoft
+            accent = if (hasValidLan) Mint else Coral,
+            containerColor = if (hasValidLan) MintSoft else FieldBg
         )
         Spacer(Modifier.height(6.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                stringResource(R.string.s594),
-                color = Muted, fontSize = 11.sp,
+                buildString {
+                    append("Giao diện: $lanInterfaceLabel • Cập nhật lúc: $lanLastUpdated\n")
+                    if (!serverRunning && hasValidLan) {
+                        append("⚠️ Đã có IP LAN nhưng Server đang dừng — Hãy bật Server trước khi kết nối.")
+                    } else {
+                        append(stringResource(R.string.s594))
+                    }
+                },
+                color = Muted, fontSize = 10.sp,
                 modifier = Modifier.weight(1f)
             )
-            IconButton(onClick = { vm.refreshLanIp() }, modifier = Modifier.size(McIcon.TouchCompact)) {
+            IconButton(onClick = { vm.refreshLanIp(notifyOnChange = true) }, modifier = Modifier.size(McIcon.TouchCompact)) {
                 Icon(
                     Icons.Outlined.Refresh,
                     contentDescription = stringResource(R.string.s591),
-                    tint = Muted,
+                    tint = Indigo,
                     modifier = Modifier.size(McIcon.Inline)
                 )
             }
         }
+        if (vpnActiveWarning) {
+            Spacer(Modifier.height(6.dp))
+            WarnNote("⚠️ Phát hiện VPN đang bật trên điện thoại: VPN có thể chuyển hướng lưu lượng và làm bạn bè trong cùng Wi-Fi không kết nối được vào địa chỉ LAN.")
+        }
 
         Spacer(Modifier.height(12.dp))
 
-        Text("2️⃣ Dành cho chính điện thoại đang mở server này:", color = Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+        Text("2️⃣ Địa chỉ Localhost dành riêng cho chính chiếc điện thoại này:", color = Indigo, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(6.dp))
         AddressCopyRow(
             label = stringResource(R.string.s588),
@@ -967,7 +989,31 @@ private fun LocalAddressCard(
             onCopy = { copyToClipboard(context, "MC Server", "127.0.0.1:$serverPort") }
         )
         Spacer(Modifier.height(6.dp))
-        Text(stringResource(R.string.s589), color = Muted, fontSize = 10.sp)
+        Text(
+            "Chỉ dùng 127.0.0.1:$serverPort khi bạn mở Minecraft ngay trên chính chiếc điện thoại đang chạy MineHost này. Bạn bè trên máy khác KHÔNG dùng địa chỉ này.",
+            color = Muted,
+            fontSize = 10.sp
+        )
+
+        Spacer(Modifier.height(10.dp))
+        OutlinedButton(
+            onClick = { vm.checkConnectionReachability() },
+            enabled = !connectionCheckRunning,
+            shape = RoundedCornerShape(10.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                if (connectionCheckRunning) "⏳ Đang kiểm tra khả năng kết nối..."
+                else "🩺 Kiểm tra kết nối thực tế (Localhost / LAN / Playit.gg)",
+                color = Indigo,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+        connectionCheckStatus?.let { statusReport ->
+            Spacer(Modifier.height(8.dp))
+            HintNote(statusReport)
+        }
 
         Spacer(Modifier.height(8.dp))
         HintNote("📶 Cách chơi bằng 4G không cần Wi-Fi khi ngồi gần nhau:\n• Bước 1: Mở 'Điểm truy cập cá nhân' (Phát Wi-Fi từ 4G) trên điện thoại cho các máy khác kết nối vào.\n• Bước 2: Bấm nút 🔄 Làm mới ở trên để lấy địa chỉ LAN nội bộ (192.168.x.x) gửi cho bạn bè — tốc độ cực nhanh, không tốn dung lượng trung gian và tuyệt đối không lộ IP ra ngoài!")

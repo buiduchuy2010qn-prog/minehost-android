@@ -814,6 +814,8 @@ class PluginManager(
 
     @Serializable
     private data class ModrinthVersion(
+        val id: String = "",
+        val project_id: String = "",
         val version_type: String = "",
         val files: List<ModrinthFile> = emptyList(),
         val dependencies: List<ModrinthDependency> = emptyList()
@@ -824,7 +826,717 @@ class PluginManager(
     )
 
     @Serializable
-    private data class ModrinthFile(val url: String = "", val primary: Boolean = false)
+    private data class ModrinthFile(val url: String = "", val filename: String = "", val primary: Boolean = false)
+
+    @Serializable
+    private data class MrpackIndex(
+        val files: List<MrpackFileEntry> = emptyList()
+    )
+
+    @Serializable
+    private data class MrpackFileEntry(
+        val path: String = "",
+        val downloads: List<String> = emptyList(),
+        val env: Map<String, String> = emptyMap()
+    )
+
+    data class ModPackImportResult(
+        val installedMods: List<String>,
+        val disabledClientMods: List<String>,
+        val skippedFiles: List<String>,
+        val configFilesCopied: Int
+    ) {
+        val totalProcessed: Int get() = installedMods.size + disabledClientMods.size
+    }
+
+    private val KNOWN_CLIENT_ONLY_MOD_PREFIXES = listOf(
+        "sodium", "iris", "optifine", "litematica", "malilib", "entityculling",
+        "stfu", "modmenu", "reeses-sodium-options", "reeses_sodium_options",
+        "sodium-extra", "sodium_extra", "indium", "continuity", "lambdynamiclights",
+        "immediatelyfast", "moreculling", "notenoughanimations", "3dskinlayers",
+        "skinlayers3d", "visuality", "fallingleaves", "particlerain", "chat_heads",
+        "betterf3", "zoomify", "bobby", "cubes-without-borders", "modelgapfix",
+        "enhancedblockentities", "mousewheelie", "wi-zoom", "xaeros_minimap",
+        "xaeros_world_map", "freecam", "tweakeroo", "minihud", "itemscroller"
+    )
+
+    /**
+     * Kiểm tra xem tệp JAR có phải là mod chỉ chạy ở phía máy khách (Client-only) hay không.
+     * Nếu là Client-only, khi giải mã thư mục/gói mod sẽ tự động lưu thành `.jar.disabled`
+     * để không làm sập (crash) server khi khởi động.
+     */
+    fun isClientOnlyModJar(file: File, fileNameHint: String = file.name): Boolean {
+        val lowerName = fileNameHint.lowercase(Locale.ROOT)
+        if (KNOWN_CLIENT_ONLY_MOD_PREFIXES.any { prefix ->
+                lowerName == "$prefix.jar" ||
+                    lowerName.startsWith("$prefix-") ||
+                    lowerName.startsWith("${prefix}_") ||
+                    lowerName.startsWith("$prefix+") ||
+                    lowerName.startsWith("$prefix.")
+            }
+        ) {
+            return true
+        }
+        return try {
+            JarFile(file).use { jar ->
+                if (jar.entries().asSequence().any {
+                        it.name.startsWith("optifine/", true) || it.name.startsWith("net/optifine/", true)
+                    }
+                ) {
+                    return@use true
+                }
+                val fabricEntry = jar.getJarEntry("fabric.mod.json")
+                if (fabricEntry != null) {
+                    val text = jar.getInputStream(fabricEntry).bufferedReader().use { it.readText() }
+                    val envRegex = Regex(""""environment"\s*:\s*"([^"]+)"""")
+                    val env = envRegex.find(text)?.groupValues?.getOrNull(1)?.lowercase(Locale.ROOT)
+                    if (env == "client") return@use true
+                    val idRegex = Regex(""""id"\s*:\s*"([^"]+)"""")
+                    val modId = idRegex.find(text)?.groupValues?.getOrNull(1)?.lowercase(Locale.ROOT).orEmpty()
+                    if (modId in KNOWN_CLIENT_ONLY_MOD_PREFIXES) return@use true
+                }
+                false
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun isLikelyModJar(file: File): Boolean {
+        if (!file.isFile || file.length() <= 0L || file.length() > AddonSafety.MAX_BYTES) return false
+        return try {
+            JarFile(file).use { jar ->
+                jar.getJarEntry("fabric.mod.json") != null ||
+                    jar.getJarEntry("quilt.mod.json") != null ||
+                    jar.getJarEntry("META-INF/mods.toml") != null ||
+                    jar.getJarEntry("META-INF/neoforge.mods.toml") != null ||
+                    jar.getJarEntry("mcmod.info") != null
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun stageAndInstallModFile(
+        sourceStreamProvider: () -> java.io.InputStream,
+        rawFileName: String,
+        modsDir: File,
+        installed: MutableList<String>,
+        disabledClient: MutableList<String>,
+        skipped: MutableList<String>
+    ) {
+        val cleanName = sanitizeFileName(rawFileName, "")
+        if (cleanName.isEmpty()) return
+        val wasExplicitlyDisabled = cleanName.endsWith(MOD_DISABLED_SUFFIX, ignoreCase = true) ||
+            cleanName.endsWith(LEGACY_DISABLED_SUFFIX, ignoreCase = true) ||
+            cleanName.startsWith(DISABLED_PREFIX)
+        val (baseName, _) = parseModFileName(cleanName)
+        if (baseName.isBlank()) return
+
+        modsDir.mkdirs()
+        val staged = File.createTempFile("minehost-mod-decode-", ".part", modsDir)
+        try {
+            sourceStreamProvider().use { ins ->
+                AddonSafety.copyBounded(ins, staged)
+            }
+            if (!isLikelyModJar(staged)) {
+                skipped += cleanName
+                return
+            }
+            val clientOnly = isClientOnlyModJar(staged, "$baseName.jar")
+            val finalFileName = if (clientOnly || wasExplicitlyDisabled) {
+                "$baseName$MOD_DISABLED_SUFFIX"
+            } else {
+                "$baseName$JAR_EXT"
+            }
+            val target = File(modsDir, finalFileName)
+            // Xóa phiên bản bật/tắt đối lập nếu đã tồn tại để tránh trùng lặp
+            val oppositeFileName = if (finalFileName.endsWith(MOD_DISABLED_SUFFIX)) "$baseName$JAR_EXT" else "$baseName$MOD_DISABLED_SUFFIX"
+            File(modsDir, oppositeFileName).takeIf { it.exists() && it != target }?.delete()
+
+            java.nio.file.Files.move(
+                staged.toPath(),
+                target.toPath(),
+                java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING
+            )
+            if (clientOnly) {
+                disabledClient += baseName
+            } else {
+                installed += finalFileName
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "stageAndInstallModFile skipped $cleanName: ${e.message}")
+            skipped += cleanName
+        } finally {
+            staged.delete()
+        }
+    }
+
+    /**
+     * Giải mã & nhập toàn bộ thư mục mod (SAF DocumentTree):
+     * - Quét đệ quy thư mục người dùng chọn (hỗ trợ cả thư mục `.minecraft/mods`, thư mục giải nén modpack, hoặc thư mục chứa file `.zip`/`.mrpack`).
+     * - Tự động lọc các tệp `.jar` / `.jar.disabled` đưa vào `mods/`.
+     * - Tự động nhận diện mod Client-only (Sodium, Litematica, MaLiLib, EntityCulling, Stfu, Iris...) và chuyển sang `.jar.disabled` để bảo vệ server không bị crash.
+     * - Tự động sao chép cấu hình trong `config/` (nếu có) sang thư mục `config/` của server.
+     */
+    suspend fun importModsFromFolderTree(
+        treeUri: Uri,
+        dirName: String,
+        onProgress: (String) -> Unit = {}
+    ): ModPackImportResult = withContext(Dispatchers.IO) {
+        check(!termux.isMcRunning()) { "Hãy dừng server trước khi giải mã và thêm gói mod." }
+        val serverDir = termux.serverDirFor(dirName)
+        val modsDir = modsDirOf(dirName).apply { mkdirs() }
+        val configDir = File(serverDir, "config")
+
+        val installed = mutableListOf<String>()
+        val disabledClient = mutableListOf<String>()
+        val skipped = mutableListOf<String>()
+        var configCopied = 0
+
+        val rootDocId = android.provider.DocumentsContract.getTreeDocumentId(treeUri)
+
+        fun walkDocumentTree(docId: String, relativePath: String, depth: Int) {
+            if (depth > 6) return
+            val childrenUri = android.provider.DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, docId)
+            val projection = arrayOf(
+                android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                android.provider.DocumentsContract.Document.COLUMN_MIME_TYPE
+            )
+            context.contentResolver.query(childrenUri, projection, null, null, null)?.use { cursor ->
+                val idIdx = cursor.getColumnIndex(android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                val nameIdx = cursor.getColumnIndex(android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                val mimeIdx = cursor.getColumnIndex(android.provider.DocumentsContract.Document.COLUMN_MIME_TYPE)
+                while (cursor.moveToNext()) {
+                    val childId = if (idIdx >= 0) cursor.getString(idIdx) else continue
+                    val name = if (nameIdx >= 0) cursor.getString(nameIdx) ?: "" else ""
+                    val mime = if (mimeIdx >= 0) cursor.getString(mimeIdx) ?: "" else ""
+                    if (name.isBlank() || name == "." || name == "..") continue
+                    val childRel = if (relativePath.isEmpty()) name else "$relativePath/$name"
+                    val isDir = mime == android.provider.DocumentsContract.Document.MIME_TYPE_DIR
+                    val childUri = android.provider.DocumentsContract.buildDocumentUriUsingTree(treeUri, childId)
+
+                    if (isDir) {
+                        walkDocumentTree(childId, childRel, depth + 1)
+                    } else {
+                        val lower = name.lowercase(Locale.ROOT)
+                        val relLower = childRel.replace('\\', '/').lowercase(Locale.ROOT)
+                        when {
+                            lower.endsWith(".jar") || lower.endsWith(".jar.disabled") || lower.endsWith(".disabled") -> {
+                                onProgress("Đang giải mã mod: $name")
+                                stageAndInstallModFile(
+                                    sourceStreamProvider = {
+                                        context.contentResolver.openInputStream(childUri)
+                                            ?: throw IllegalStateException("Không mở được $name")
+                                    },
+                                    rawFileName = name,
+                                    modsDir = modsDir,
+                                    installed = installed,
+                                    disabledClient = disabledClient,
+                                    skipped = skipped
+                                )
+                            }
+                            lower.endsWith(".zip") || lower.endsWith(".mrpack") -> {
+                                if (!relLower.contains("resourcepacks/") && !relLower.contains("shaderpacks/")) {
+                                    onProgress("Đang giải nén gói mod: $name")
+                                    runCatching {
+                                        val sub = importModsFromArchiveStream(
+                                            inputStreamProvider = {
+                                                context.contentResolver.openInputStream(childUri)
+                                                    ?: throw IllegalStateException("Không mở được $name")
+                                            },
+                                            dirName = dirName,
+                                            onProgress = onProgress
+                                        )
+                                        installed += sub.installedMods
+                                        disabledClient += sub.disabledClientMods
+                                        skipped += sub.skippedFiles
+                                        configCopied += sub.configFilesCopied
+                                    }
+                                }
+                            }
+                            relLower.startsWith("config/") || relLower.contains("/config/") -> {
+                                val afterConfig = childRel.replace('\\', '/').substringAfter("config/", "")
+                                if (afterConfig.isNotBlank() && !afterConfig.contains("..")) {
+                                    val destFile = File(configDir, afterConfig)
+                                    if (destFile.canonicalPath.startsWith(configDir.canonicalPath)) {
+                                        destFile.parentFile?.mkdirs()
+                                        runCatching {
+                                            context.contentResolver.openInputStream(childUri)?.use { ins ->
+                                                AddonSafety.copyBounded(ins, destFile)
+                                                configCopied++
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        walkDocumentTree(rootDocId, "", 0)
+        ModPackImportResult(
+            installedMods = installed.distinct(),
+            disabledClientMods = disabledClient.distinct(),
+            skippedFiles = skipped.distinct(),
+            configFilesCopied = configCopied
+        )
+    }
+
+    /**
+     * Giải mã & nhập gói mod từ tệp nén `.zip` hoặc `.mrpack` (Modrinth Modpack).
+     */
+    suspend fun importModsFromArchiveUri(
+        archiveUri: Uri,
+        dirName: String,
+        onProgress: (String) -> Unit = {}
+    ): ModPackImportResult = withContext(Dispatchers.IO) {
+        check(!termux.isMcRunning()) { "Hãy dừng server trước khi giải mã gói mod." }
+        importModsFromArchiveStream(
+            inputStreamProvider = {
+                context.contentResolver.openInputStream(archiveUri)
+                    ?: throw IllegalStateException("Không đọc được tệp nén đã chọn.")
+            },
+            dirName = dirName,
+            onProgress = onProgress
+        )
+    }
+
+    private fun importModsFromArchiveStream(
+        inputStreamProvider: () -> java.io.InputStream,
+        dirName: String,
+        onProgress: (String) -> Unit = {}
+    ): ModPackImportResult {
+        val serverDir = termux.serverDirFor(dirName)
+        val modsDir = modsDirOf(dirName).apply { mkdirs() }
+        val configDir = File(serverDir, "config")
+
+        val installed = mutableListOf<String>()
+        val disabledClient = mutableListOf<String>()
+        val skipped = mutableListOf<String>()
+        var configCopied = 0
+        var mrpackIndexJson: String? = null
+
+        java.util.zip.ZipInputStream(java.io.BufferedInputStream(inputStreamProvider())).use { zis ->
+            var entry = zis.nextEntry
+            while (entry != null) {
+                if (!entry.isDirectory) {
+                    val entryPath = entry.name.replace('\\', '/').trimStart('/')
+                    val entryLower = entryPath.lowercase(Locale.ROOT)
+                    val fileName = entryPath.substringAfterLast('/')
+                    when {
+                        entryLower == "modrinth.index.json" -> {
+                            val out = java.io.ByteArrayOutputStream()
+                            val buf = ByteArray(8192)
+                            while (true) {
+                                val r = zis.read(buf)
+                                if (r < 0 || out.size() > 4 * 1024 * 1024) break
+                                out.write(buf, 0, r)
+                            }
+                            mrpackIndexJson = out.toString("UTF-8")
+                        }
+                        (entryLower.endsWith(".jar") || entryLower.endsWith(".jar.disabled")) &&
+                            !entryLower.contains("shaderpacks/") &&
+                            !entryLower.contains("resourcepacks/") -> {
+                            onProgress("Đang tách mod: $fileName")
+                            stageAndInstallModFile(
+                                sourceStreamProvider = {
+                                    // Không đóng zis khi đọc từng entry
+                                    object : java.io.FilterInputStream(zis) {
+                                        override fun close() {}
+                                    }
+                                },
+                                rawFileName = fileName,
+                                modsDir = modsDir,
+                                installed = installed,
+                                disabledClient = disabledClient,
+                                skipped = skipped
+                            )
+                        }
+                        (entryLower.startsWith("config/") || entryLower.contains("/config/")) &&
+                            !entryPath.contains("..") -> {
+                            val relConfig = entryPath.substringAfter("config/", "")
+                            if (relConfig.isNotBlank()) {
+                                val dest = File(configDir, relConfig)
+                                if (dest.canonicalPath.startsWith(configDir.canonicalPath)) {
+                                    dest.parentFile?.mkdirs()
+                                    runCatching {
+                                        dest.outputStream().use { out ->
+                                            val buf = ByteArray(16384)
+                                            var total = 0L
+                                            while (true) {
+                                                val r = zis.read(buf)
+                                                if (r < 0) break
+                                                total += r
+                                                if (total > 16L * 1024 * 1024) break
+                                                out.write(buf, 0, r)
+                                            }
+                                        }
+                                        configCopied++
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                zis.closeEntry()
+                entry = zis.nextEntry
+            }
+        }
+
+        // Nếu là gói .mrpack có modrinth.index.json, tự động tải các mod server từ danh sách downloads
+        mrpackIndexJson?.let { rawIndex ->
+            runCatching {
+                val index = modrinthJson.decodeFromString<MrpackIndex>(rawIndex)
+                index.files.forEach { mf ->
+                    val cleanPath = mf.path.replace('\\', '/').trimStart('/')
+                    val serverEnv = mf.env["server"]?.lowercase(Locale.ROOT)
+                    if (serverEnv == "unsupported") {
+                        disabledClient += cleanPath.substringAfterLast('/').removeSuffix(".jar")
+                        return@forEach
+                    }
+                    val url = mf.downloads.firstOrNull { it.startsWith("https://") } ?: return@forEach
+                    if (cleanPath.startsWith("mods/", ignoreCase = true) && cleanPath.endsWith(".jar", ignoreCase = true)) {
+                        val modFileName = sanitizeFileName(cleanPath.substringAfterLast('/'), "mod.jar")
+                        onProgress("Đang tải từ gói .mrpack: $modFileName")
+                        val staged = File.createTempFile("minehost-mrpack-", ".part", modsDir)
+                        try {
+                            downloadTo(url, staged) { _, _, _ -> }
+                            if (isLikelyModJar(staged)) {
+                                val clientOnly = isClientOnlyModJar(staged, modFileName)
+                                val baseName = parseModFileName(modFileName).first
+                                val finalName = if (clientOnly) "$baseName$MOD_DISABLED_SUFFIX" else "$baseName$JAR_EXT"
+                                java.nio.file.Files.move(
+                                    staged.toPath(),
+                                    File(modsDir, finalName).toPath(),
+                                    java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                                    java.nio.file.StandardCopyOption.REPLACE_EXISTING
+                                )
+                                if (clientOnly) disabledClient += baseName else installed += finalName
+                            }
+                        } catch (e: Exception) {
+                            skipped += modFileName
+                        } finally {
+                            staged.delete()
+                        }
+                    }
+                }
+            }
+        }
+
+        return ModPackImportResult(
+            installedMods = installed.distinct(),
+            disabledClientMods = disabledClient.distinct(),
+            skippedFiles = skipped.distinct(),
+            configFilesCopied = configCopied
+        )
+    }
+
+    /**
+     * Nhập hàng loạt nhiều tệp `.jar` hoặc `.zip` / `.mrpack` cùng lúc.
+     */
+    suspend fun importMultipleModsFromUris(
+        uris: List<Uri>,
+        dirName: String,
+        onProgress: (String) -> Unit = {}
+    ): ModPackImportResult = withContext(Dispatchers.IO) {
+        check(!termux.isMcRunning()) { "Hãy dừng server trước khi thêm nhiều mod." }
+        val modsDir = modsDirOf(dirName).apply { mkdirs() }
+        val installed = mutableListOf<String>()
+        val disabledClient = mutableListOf<String>()
+        val skipped = mutableListOf<String>()
+        var configCopied = 0
+
+        uris.forEachIndexed { idx, uri ->
+            val rawName = sanitizeFileName(queryFileName(uri), "mod_${idx + 1}.jar")
+            val lower = rawName.lowercase(Locale.ROOT)
+            onProgress("Đang xử lý (${idx + 1}/${uris.size}): $rawName")
+            if (lower.endsWith(".zip") || lower.endsWith(".mrpack")) {
+                runCatching {
+                    val sub = importModsFromArchiveUri(uri, dirName, onProgress)
+                    installed += sub.installedMods
+                    disabledClient += sub.disabledClientMods
+                    skipped += sub.skippedFiles
+                    configCopied += sub.configFilesCopied
+                }.onFailure {
+                    skipped += rawName
+                }
+            } else {
+                stageAndInstallModFile(
+                    sourceStreamProvider = {
+                        context.contentResolver.openInputStream(uri)
+                            ?: throw IllegalStateException("Không đọc được $rawName")
+                    },
+                    rawFileName = rawName,
+                    modsDir = modsDir,
+                    installed = installed,
+                    disabledClient = disabledClient,
+                    skipped = skipped
+                )
+            }
+        }
+        ModPackImportResult(
+            installedMods = installed.distinct(),
+            disabledClientMods = disabledClient.distinct(),
+            skippedFiles = skipped.distinct(),
+            configFilesCopied = configCopied
+        )
+    }
+
+    /**
+     * Chuyển (sao chép) toàn bộ Mod + Config từ một server cũ sang server hiện tại.
+     */
+    suspend fun copyModsFromServer(
+        sourceDirName: String,
+        targetDirName: String,
+        copyConfigs: Boolean = true,
+        onProgress: (String) -> Unit = {}
+    ): ModPackImportResult = withContext(Dispatchers.IO) {
+        check(!termux.isMcRunning()) { "Hãy dừng server trước khi chuyển mod sang server mới." }
+        require(sourceDirName != targetDirName) { "Server nguồn và server đích phải khác nhau." }
+        val srcModsDir = modsDirOf(sourceDirName)
+        val dstModsDir = modsDirOf(targetDirName).apply { mkdirs() }
+        val installed = mutableListOf<String>()
+        val disabledClient = mutableListOf<String>()
+        val skipped = mutableListOf<String>()
+        var configCopied = 0
+
+        val modFiles = srcModsDir.listFiles { f -> f.isFile && isModCandidate(f) }?.toList().orEmpty()
+        modFiles.forEachIndexed { index, file ->
+            onProgress("Đang chuyển mod (${index + 1}/${modFiles.size}): ${file.name}")
+            stageAndInstallModFile(
+                sourceStreamProvider = { file.inputStream() },
+                rawFileName = file.name,
+                modsDir = dstModsDir,
+                installed = installed,
+                disabledClient = disabledClient,
+                skipped = skipped
+            )
+        }
+
+        if (copyConfigs) {
+            val srcConfig = File(termux.serverDirFor(sourceDirName), "config")
+            val dstConfig = File(termux.serverDirFor(targetDirName), "config")
+            if (srcConfig.exists() && srcConfig.isDirectory) {
+                srcConfig.walkTopDown().filter { it.isFile }.forEach { cfgFile ->
+                    val rel = cfgFile.relativeTo(srcConfig).path
+                    val targetCfg = File(dstConfig, rel)
+                    targetCfg.parentFile?.mkdirs()
+                    runCatching {
+                        cfgFile.copyTo(targetCfg, overwrite = true)
+                        configCopied++
+                    }
+                }
+            }
+        }
+
+        ModPackImportResult(
+            installedMods = installed.distinct(),
+            disabledClientMods = disabledClient.distinct(),
+            skippedFiles = skipped.distinct(),
+            configFilesCopied = configCopied
+        )
+    }
+
+    /**
+     * Xuất toàn bộ thư mục `mods/` (và `config/`) của server hiện tại ra tệp `.zip` để sao lưu hoặc chuyển sang máy/server khác.
+     */
+    suspend fun exportModsToZip(
+        dirName: String,
+        targetUri: Uri,
+        includeConfigs: Boolean = true
+    ): Int = withContext(Dispatchers.IO) {
+        val modsDir = modsDirOf(dirName)
+        val configDir = File(termux.serverDirFor(dirName), "config")
+        val modFiles = modsDir.listFiles { f -> f.isFile && isModCandidate(f) }?.toList().orEmpty()
+        check(modFiles.isNotEmpty()) { "Thư mục mods hiện đang trống, chưa có mod nào để xuất." }
+
+        var exportedCount = 0
+        val outStream = context.contentResolver.openOutputStream(targetUri)
+            ?: throw IllegalStateException("Không thể tạo tệp ZIP tại vị trí đã chọn.")
+        java.util.zip.ZipOutputStream(java.io.BufferedOutputStream(outStream)).use { zos ->
+            val buf = ByteArray(16384)
+            modFiles.forEach { file ->
+                val entry = java.util.zip.ZipEntry("mods/${file.name}")
+                zos.putNextEntry(entry)
+                file.inputStream().use { ins ->
+                    while (true) {
+                        val r = ins.read(buf)
+                        if (r < 0) break
+                        zos.write(buf, 0, r)
+                    }
+                }
+                zos.closeEntry()
+                exportedCount++
+            }
+            if (includeConfigs && configDir.exists() && configDir.isDirectory) {
+                configDir.walkTopDown().filter { it.isFile }.forEach { cfg ->
+                    val rel = cfg.relativeTo(configDir).path.replace('\\', '/')
+                    val entry = java.util.zip.ZipEntry("config/$rel")
+                    zos.putNextEntry(entry)
+                    cfg.inputStream().use { ins ->
+                        while (true) {
+                            val r = ins.read(buf)
+                            if (r < 0) break
+                            zos.write(buf, 0, r)
+                        }
+                    }
+                    zos.closeEntry()
+                }
+            }
+        }
+        exportedCount
+    }
+
+    /**
+     * Danh sách các Mod Server/Universal trong bộ Mod của người dùng (từ 5 ảnh chụp màn hình `.minecraft/mods`)
+     * kèm các thư viện phụ thuộc (Fabric API, Architectury, Cloth Config, Collective, Balm, YUNG's API, Lithostitched, GlitchCore...).
+     * Các mod thuần Client (Sodium, Litematica, MaLiLib, EntityCulling, Stfu) đã được lọc bỏ sẵn để server chạy mượt mà.
+     */
+    val USER_SCREENSHOT_SERVER_MOD_SLUGS = listOf(
+        "fabric-api",
+        "lithium",
+        "ferrite-core",
+        "architectury-api",
+        "cloth-config",
+        "collective",
+        "balm",
+        "yungs-api",
+        "lithostitched",
+        "glitchcore",
+        "forge-config-api-port",
+        "terralith",
+        "tectonic",
+        "biomes-o-plenty",
+        "waystones",
+        "explorers-compass",
+        "natures-compass",
+        "backpacked",
+        "farmers-delight-refabricated",
+        "tree-harvester",
+        "carry-on",
+        "dungeons-and-taverns",
+        "towns-and-towers",
+        "structory",
+        "tidal-towns",
+        "ct-overhauled-village",
+        "villagersplus",
+        "guard-villagers",
+        "trade-cycling",
+        "universal-graves",
+        "yungs-better-dungeons",
+        "yungs-better-mineshafts",
+        "yungs-better-strongholds",
+        "yungs-better-desert-temples",
+        "yungs-better-jungle-temples",
+        "yungs-better-ocean-monuments",
+        "yungs-better-nether-fortresses",
+        "yungs-better-end-island",
+        "yungs-better-witch-huts",
+        "yungs-bridges",
+        "yungs-extras",
+        "hopo-better-ruined-portals",
+        "hopo-better-underwater-ruins",
+        "mes-moogs-end-structures",
+        "mvs-moogs-voyager-structures"
+    )
+
+    private fun candidateMcVersions(mcVersion: String): List<String> {
+        val clean = mcVersion.trim()
+        if (clean.isBlank()) return listOf("1.21.4", "1.21.1", "1.21")
+        val list = mutableListOf(clean)
+        // Nếu server là 1.21.11 / 1.21.5+, fallback sang các bản 1.21.x phổ biến nhất trên Modrinth nếu mod chưa kịp gắn tag phụ
+        if (clean.startsWith("1.21")) {
+            listOf("1.21.5", "1.21.4", "1.21.3", "1.21.1", "1.21").forEach {
+                if (it !in list) list += it
+            }
+        } else if (clean.startsWith("1.20")) {
+            listOf("1.20.6", "1.20.4", "1.20.2", "1.20.1", "1.20").forEach {
+                if (it !in list) list += it
+            }
+        }
+        return list
+    }
+
+    /**
+     * Tự động phân giải Modrinth Mod + toàn bộ Required Dependencies (ví dụ Fabric API, Architectury, Cloth Config, YUNG's API...).
+     * Trả về danh sách `(downloadUrl, targetFileName)` theo thứ tự dependency trước, mod chính sau.
+     */
+    fun resolveModrinthDownloadWithDeps(
+        slugOrId: String,
+        mcVersion: String,
+        loader: String
+    ): List<Pair<String, String>> {
+        require(slugOrId.matches(Regex("[A-Za-z0-9_-]+"))) { "ID Modrinth không hợp lệ." }
+        val loaderList = when (loader) {
+            "paper" -> "[\"paper\",\"spigot\",\"bukkit\"]"
+            "bukkit" -> "[\"spigot\",\"bukkit\"]"
+            else -> "[\"$loader\"]"
+        }
+        val encodedLoaders = java.net.URLEncoder.encode(loaderList, "UTF-8")
+        val visitedProjects = mutableSetOf<String>()
+        val results = mutableListOf<Pair<String, String>>()
+
+        fun fetchBestVersion(projectOrSlug: String): ModrinthVersion? {
+            for (verCandidate in candidateMcVersions(mcVersion)) {
+                val encodedVer = java.net.URLEncoder.encode("[\"$verCandidate\"]", "UTF-8")
+                val body = runCatching {
+                    fetchModrinthText("https://api.modrinth.com/v2/project/$projectOrSlug/version?game_versions=$encodedVer&loaders=$encodedLoaders")
+                }.getOrNull() ?: continue
+                val versions = runCatching { modrinthJson.decodeFromString<List<ModrinthVersion>>(body) }.getOrNull().orEmpty()
+                val found = versions.firstOrNull { it.version_type == "release" } ?: versions.firstOrNull()
+                if (found != null) return found
+            }
+            return null
+        }
+
+        fun resolveRecursive(projectOrSlug: String, depth: Int) {
+            if (depth > 3) return
+            val key = projectOrSlug.lowercase(Locale.ROOT)
+            if (!visitedProjects.add(key)) return
+
+            val version = fetchBestVersion(projectOrSlug) ?: return
+            if (version.project_id.isNotBlank()) {
+                visitedProjects.add(version.project_id.lowercase(Locale.ROOT))
+            }
+
+            // Giải quyết các required dependencies trước
+            val requiredDeps = version.dependencies.filter { it.dependency_type == "required" }
+            for (dep in requiredDeps) {
+                val depProj = dep.project_id
+                if (!depProj.isNullOrBlank()) {
+                    resolveRecursive(depProj, depth + 1)
+                } else if (!dep.version_id.isNullOrBlank()) {
+                    runCatching {
+                        val vBody = fetchModrinthText("https://api.modrinth.com/v2/version/${dep.version_id}")
+                        val depVer = modrinthJson.decodeFromString<ModrinthVersion>(vBody)
+                        if (depVer.project_id.isNotBlank() && visitedProjects.add(depVer.project_id.lowercase(Locale.ROOT))) {
+                            val depFile = depVer.files.firstOrNull { it.primary } ?: depVer.files.firstOrNull()
+                            if (depFile != null && depFile.url.isNotBlank()) {
+                                val fn = depFile.filename.ifBlank { "${depVer.project_id}.jar" }
+                                results += depFile.url to fn
+                            }
+                        }
+                    }
+                }
+            }
+
+            val primaryFile = version.files.firstOrNull { it.primary } ?: version.files.firstOrNull() ?: return
+            if (primaryFile.url.isNotBlank()) {
+                val fileName = primaryFile.filename.ifBlank { "$projectOrSlug-$mcVersion.jar" }
+                if (results.none { it.first == primaryFile.url }) {
+                    results += primaryFile.url to fileName
+                }
+            }
+        }
+
+        resolveRecursive(slugOrId, 0)
+        return results
+    }
 
     private val modrinthJson = Json { ignoreUnknownKeys = true }
 

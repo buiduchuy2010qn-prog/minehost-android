@@ -551,6 +551,25 @@ class McViewModel(
     /** 局域网 IP（IPv4，非 loopback），用于 Network Tab 展示和一键复制 */
     private val _lanIp = MutableStateFlow("--")
     val lanIp: StateFlow<String> = _lanIp.asStateFlow()
+
+    /** Tên giao diện mạng LAN đang dùng (ví dụ: Wi-Fi (wlan0) hoặc Điểm phát sóng / Hotspot (ap0)) */
+    private val _lanInterfaceLabel = MutableStateFlow("Chưa xác định giao diện")
+    val lanInterfaceLabel: StateFlow<String> = _lanInterfaceLabel.asStateFlow()
+
+    /** Thời điểm cập nhật địa chỉ mạng gần nhất */
+    private val _lanLastUpdatedText = MutableStateFlow("--:--:--")
+    val lanLastUpdatedText: StateFlow<String> = _lanLastUpdatedText.asStateFlow()
+
+    /** Cảnh báo khi phát hiện giao diện VPN đang hoạt động (tun/tap/wg/ppp) */
+    private val _vpnActiveWarning = MutableStateFlow(false)
+    val vpnActiveWarning: StateFlow<Boolean> = _vpnActiveWarning.asStateFlow()
+
+    /** Kết quả kiểm tra khả năng kết nối thực tế (Localhost / LAN / Playit.gg) */
+    private val _connectionCheckStatus = MutableStateFlow<String?>(null)
+    val connectionCheckStatus: StateFlow<String?> = _connectionCheckStatus.asStateFlow()
+
+    private val _connectionCheckRunning = MutableStateFlow(false)
+    val connectionCheckRunning: StateFlow<Boolean> = _connectionCheckRunning.asStateFlow()
     /**
      * 聚合隧道状态（两条通道取其一），保留给不区分通道的地方。
      * 网络页**不要**用它 —— 两张卡片各自订阅 [frpState] / [stunState]，
@@ -1275,26 +1294,202 @@ class McViewModel(
         else -> "$bytes B"
     }
 
-    /** 刷新局域网 IP：在 IO 线程遍历网络接口，取第一个非 loopback 的 IPv4 地址 */
-    fun refreshLanIp() {
+    private data class LanNetworkSnapshot(
+        val ip: String,
+        val interfaceLabel: String,
+        val vpnActive: Boolean
+    )
+
+    /** Làm mới địa chỉ mạng LAN: ưu tiên Wi-Fi / Hotspot / USB-Ethernet, tuyệt đối loại bỏ IP 4G CGNAT (rmnet/ccmni). */
+    fun refreshLanIp(notifyOnChange: Boolean = false) {
         viewModelScope.launch(Dispatchers.IO) {
-            _lanIp.value = queryLanIp()
+            val previousIp = _lanIp.value
+            val snap = queryLanNetworkSnapshot()
+            _lanIp.value = snap.ip
+            _lanInterfaceLabel.value = snap.interfaceLabel
+            _vpnActiveWarning.value = snap.vpnActive
+            _lanLastUpdatedText.value = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US)
+                .format(java.util.Date())
+
+            if (notifyOnChange && previousIp != snap.ip && previousIp != "--") {
+                if (snap.ip == "--") {
+                    _messageFlow.tryEmit("Đã ngắt kết nối Wi-Fi / Điểm phát sóng. Địa chỉ LAN cũ ($previousIp) không còn hiệu lực.")
+                } else {
+                    _messageFlow.tryEmit("Địa chỉ mạng đã thay đổi sang ${snap.ip}:${realServerPort()}. Hãy gửi địa chỉ mới cho bạn bè.")
+                }
+            } else if (notifyOnChange && previousIp == "--" && snap.ip != "--") {
+                _messageFlow.tryEmit("Đã nhận diện địa chỉ mạng LAN mới: ${snap.ip}:${realServerPort()}.")
+            }
         }
     }
 
-    private fun queryLanIp(): String {
+    private fun queryLanIp(): String = queryLanNetworkSnapshot().ip
+
+    private fun queryLanNetworkSnapshot(): LanNetworkSnapshot {
         return try {
-            NetworkInterface.getNetworkInterfaces()
-                .asSequence()
-                .filter { it.isUp && !it.isLoopback }
-                .flatMap { it.inetAddresses.asSequence() }
-                .filterIsInstance<Inet4Address>()
-                .filter { !it.isLoopbackAddress }
-                .map { it.hostAddress ?: "" }
-                .firstOrNull { it.isNotEmpty() }
-                ?: "--"
+            val interfaces = NetworkInterface.getNetworkInterfaces()?.toList().orEmpty()
+                .filter { runCatching { it.isUp && !it.isLoopback }.getOrDefault(false) }
+
+            val vpnActive = interfaces.any { iface ->
+                val n = iface.name.lowercase(java.util.Locale.ROOT)
+                n.startsWith("tun") || n.startsWith("tap") || n.startsWith("ppp") ||
+                    n.startsWith("wg") || n.startsWith("tailscale") || n.startsWith("zt")
+            }
+
+            // Các giao diện mạng di động (4G/5G CGNAT) và giao diện ảo không bao giờ dùng làm địa chỉ LAN nội bộ
+            val cellularOrVirtualPrefixes = listOf(
+                "rmnet", "ccmni", "pdp", "clat", "dummy", "ims", "epdg",
+                "tun", "tap", "ppp", "wg", "lo", "sit", "ip6tnl", "v4-rmnet"
+            )
+
+            data class Candidate(
+                val ip: String,
+                val ifaceName: String,
+                val label: String,
+                val priority: Int
+            )
+
+            val candidates = mutableListOf<Candidate>()
+            for (iface in interfaces) {
+                val name = iface.name.lowercase(java.util.Locale.ROOT)
+                if (cellularOrVirtualPrefixes.any { name.startsWith(it) }) continue
+
+                val ipv4List = iface.inetAddresses.asSequence()
+                    .filterIsInstance<Inet4Address>()
+                    .filter { !it.isLoopbackAddress && !it.isLinkLocalAddress && it.isSiteLocalAddress }
+                    .mapNotNull { it.hostAddress?.takeIf(String::isNotBlank) }
+                    .toList()
+
+                for (ip in ipv4List) {
+                    val (priority, label) = when {
+                        name.startsWith("ap") || name.startsWith("softap") || name.startsWith("swlan") || name == "wlan1" ->
+                            1 to "Điểm phát sóng / Hotspot ($name)"
+                        name.startsWith("wlan") || name.startsWith("wifi") ->
+                            2 to "Wi-Fi nội bộ ($name)"
+                        name.startsWith("rndis") || name.startsWith("usb") || name.startsWith("ncm") ->
+                            3 to "Chia sẻ mạng USB ($name)"
+                        name.startsWith("eth") || name.startsWith("en") ->
+                            4 to "Mạng dây Ethernet ($name)"
+                        else ->
+                            5 to "Mạng nội bộ ($name)"
+                    }
+                    candidates += Candidate(ip = ip, ifaceName = name, label = label, priority = priority)
+                }
+            }
+
+            val best = candidates.minByOrNull { it.priority }
+            if (best != null) {
+                LanNetworkSnapshot(
+                    ip = best.ip,
+                    interfaceLabel = best.label,
+                    vpnActive = vpnActive
+                )
+            } else {
+                LanNetworkSnapshot(
+                    ip = "--",
+                    interfaceLabel = "Chưa xác định được địa chỉ mạng LAN (Wi-Fi / Hotspot đang tắt)",
+                    vpnActive = vpnActive
+                )
+            }
         } catch (e: Exception) {
-            "--"
+            LanNetworkSnapshot(
+                ip = "--",
+                interfaceLabel = "Chưa xác định được địa chỉ mạng",
+                vpnActive = false
+            )
+        }
+    }
+
+    /**
+     * Kiểm tra thực tế khả năng kết nối tới cổng Server trên Localhost, LAN và Playit.gg (Mục 16.3).
+     * Thực thi hoàn toàn trên Dispatchers.IO, không chặn luồng UI.
+     */
+    fun checkConnectionReachability() {
+        if (_connectionCheckRunning.value) return
+        viewModelScope.launch(Dispatchers.IO) {
+            _connectionCheckRunning.value = true
+            try {
+                refreshLanIp(notifyOnChange = false)
+                val port = realServerPort()
+                val running = serverState.value.isRunning
+                val lan = _lanIp.value
+                val pState = playitState.value
+                val lines = mutableListOf<String>()
+                val timeStr = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())
+                lines += "⏱ Kiểm tra lúc $timeStr (Cổng server cấu hình: $port)"
+
+                if (!running) {
+                    lines += "• Trạng thái Server: ĐANG DỪNG — Hãy bấm Khởi động Server trước khi vào game."
+                } else {
+                    lines += "• Tiến trình Server: ĐANG CHẠY"
+                }
+
+                // 1. Kiểm tra Localhost
+                val localReachable = if (running) probeTcpAddress("127.0.0.1", port, 1500) else false
+                lines += if (localReachable) {
+                    "• Localhost (127.0.0.1:$port): ✅ Đã kiểm tra cổng nội bộ phản hồi thành công (vào được ngay trên máy này)."
+                } else if (running) {
+                    "• Localhost (127.0.0.1:$port): ⏳ Server đang khởi tạo hoặc chưa mở xong cổng $port."
+                } else {
+                    "• Localhost (127.0.0.1:$port): ⚪ Đã có địa chỉ (cần bật Server để kết nối)."
+                }
+
+                // 2. Kiểm tra LAN
+                if (lan == "--") {
+                    lines += "• Mạng LAN: ⚠️ Chưa xác định được địa chỉ mạng LAN (Hãy bật Wi-Fi hoặc Điểm phát sóng di động)."
+                } else {
+                    val lanReachable = if (running) probeTcpAddress(lan, port, 1500) else false
+                    lines += if (lanReachable) {
+                        "• Mạng LAN ($lan:$port — ${_lanInterfaceLabel.value}): ✅ Cổng LAN đang mở và phản hồi tốt."
+                    } else if (running) {
+                        "• Mạng LAN ($lan:$port — ${_lanInterfaceLabel.value}): ⚠️ Đã có IP LAN nhưng cổng $port chưa phản hồi."
+                    } else {
+                        "• Mạng LAN ($lan:$port — ${_lanInterfaceLabel.value}): ⚪ Đã có địa chỉ LAN (chưa bật Server)."
+                    }
+                }
+                if (_vpnActiveWarning.value) {
+                    lines += "  ⚠️ Cảnh báo: Phát hiện VPN đang bật trên điện thoại, có thể chặn bạn bè kết nối qua Wi-Fi LAN."
+                }
+
+                // 3. Kiểm tra Playit.gg
+                val pubAddr = pState.publicAddress
+                when {
+                    pState.isRunning && !pubAddr.isNullOrBlank() -> {
+                        val host = pubAddr.substringBeforeLast(":", pubAddr)
+                        val pubPort = pubAddr.substringAfterLast(":", "").toIntOrNull() ?: 25565
+                        val tunnelReachable = probeTcpAddress(host, pubPort, 2500)
+                        lines += if (tunnelReachable) {
+                            "• Internet Playit.gg ($pubAddr): ✅ Tunnel đã kết nối và cổng công khai phản hồi thành công!"
+                        } else {
+                            "• Internet Playit.gg ($pubAddr): 🟢 Tunnel đang chạy (đã cấp địa chỉ $pubAddr; nếu bạn bè chưa vào được hãy chắc chắn Server đang chạy ở cổng $port)."
+                        }
+                    }
+                    pState.isRunning && !pState.claimUrl.isNullOrBlank() && !pState.isClaimed -> {
+                        lines += "• Internet Playit.gg: 🔑 Chưa hoàn tất xác nhận (Claim) — Hãy bấm Mở trang xác nhận Playit.gg."
+                    }
+                    pState.isRunning -> {
+                        lines += "• Internet Playit.gg: ⏳ Đang kết nối tới máy chủ Playit.gg và chờ cấp địa chỉ công khai..."
+                    }
+                    else -> {
+                        lines += "• Internet Playit.gg: ⚪ Đang tắt (Chỉ cần bật nếu muốn mời bạn bè khác Wi-Fi / 4G)."
+                    }
+                }
+
+                _connectionCheckStatus.value = lines.joinToString("\n")
+            } finally {
+                _connectionCheckRunning.value = false
+            }
+        }
+    }
+
+    private fun probeTcpAddress(host: String, port: Int, timeoutMs: Int): Boolean {
+        return try {
+            java.net.Socket().use { socket ->
+                socket.connect(java.net.InetSocketAddress(host, port), timeoutMs)
+                true
+            }
+        } catch (_: Exception) {
+            false
         }
     }
 
@@ -1370,6 +1565,15 @@ class McViewModel(
                         _errorFlow.tryEmit(str(R.string.err_java_unsupported, warning))
                     }
                 }
+            }
+            // Trích xuất UUID thực tế từ dòng log xác thực của Server (tuyệt đối không tự bịa UUID)
+            playerManager.extractPlayerUuid(line)?.let { (uName, uuid) ->
+                knownPlayerUuids[uName.lowercase(java.util.Locale.ROOT)] = uuid
+                attachPlayerUuidToHistory(uName, uuid)
+            }
+            // Trích xuất lý do ngắt kết nối (ví dụ: Disconnected / Timed out / Kicked by an operator)
+            playerManager.extractDisconnectReason(line)?.let { (dName, rawReason) ->
+                recentDisconnectReasons[dName.lowercase(java.util.Locale.ROOT)] = translateDisconnectReason(rawReason)
             }
             // 玩家进出服需要副作用（名单、记录、通知），仍在本层处理；
             // 但只在日志确实提到进出服时才做正则，避免每行都跑。
@@ -3029,7 +3233,7 @@ class McViewModel(
     fun detectPluginConflicts(plugins: List<PluginManager.InstalledPlugin>): List<String> =
         pluginManager.detectPluginConflicts(plugins)
 
-    /** 一键安装 Modrinth 模组（解析指定版本 release 直链并下载到 mods/） */
+    /** Cài đặt Modrinth Mod kèm tự động tải toàn bộ Required Dependencies (Fabric API, Architectury, Cloth Config, YUNG's API...) */
     fun installModrinthMod(hit: PluginManager.ModrinthHit, mcVersion: String) {
         if (!requireServerStopped("cài plugin/mod")) return
         val targetCore = config.value.installedCores.firstOrNull { it.name == config.value.activeCoreName }?.core
@@ -3042,10 +3246,6 @@ class McViewModel(
             _errorFlow.tryEmit("Đây là add-on chỉ dành cho máy người chơi, không cài trên server.")
             return
         }
-        if (mcVersion != currentServerVersion()) {
-            _errorFlow.tryEmit("Hãy chọn phiên bản Minecraft trùng với server đang quản lý.")
-            return
-        }
 
         if (!isBootstrapped.value) {
             _errorFlow.tryEmit(str(R.string.s192))
@@ -3056,29 +3256,266 @@ class McViewModel(
             return
         }
         val loader = modrinthLoader(targetCore)
+        val effectiveMcVer = mcVersion.ifBlank { currentServerVersion() }
         viewModelScope.launch {
             try {
-                val url = withContext(Dispatchers.IO) {
-                    pluginManager.resolveModrinthDownload(hit.slug, mcVersion, loader)
-                } ?: throw RuntimeException(str(R.string.err_mod_incompatible))
-                val fileName = "${hit.slug}.jar"
+                val downloads = withContext(Dispatchers.IO) {
+                    pluginManager.resolveModrinthDownloadWithDeps(hit.slug, effectiveMcVer, loader)
+                }
+                if (downloads.isEmpty()) {
+                    throw RuntimeException(str(R.string.err_mod_incompatible))
+                }
                 withContext(Dispatchers.IO) {
-                    // 下载开始前先放占位进度，保证进度弹窗一定显示（下载瞬间完成也不会漏）
-                    _pluginDownloadProgress.update { it + (hit.slug to PluginDownloadProgress(
-                        pluginId = hit.slug, downloadedBytes = 0, totalBytes = 0, speedBytesPerSec = 0
-                    )) }
-                    pluginManager.installModFromUrl(url, fileName, dirName) { d, t, s ->
-                        _pluginDownloadProgress.update { it + (hit.slug to PluginDownloadProgress(
-                            pluginId = hit.slug, downloadedBytes = d, totalBytes = t, speedBytesPerSec = s
-                        )) }
+                    _pluginDownloadProgress.update {
+                        it + (hit.slug to PluginDownloadProgress(
+                            pluginId = hit.slug, downloadedBytes = 0, totalBytes = 0, speedBytesPerSec = 0
+                        ))
+                    }
+                    downloads.forEach { (url, fileName) ->
+                        pluginManager.installModFromUrl(url, fileName, dirName) { d, t, s ->
+                            _pluginDownloadProgress.update {
+                                it + (hit.slug to PluginDownloadProgress(
+                                    pluginId = hit.slug, downloadedBytes = d, totalBytes = t, speedBytesPerSec = s
+                                ))
+                            }
+                        }
                     }
                 }
                 _pluginDownloadProgress.update { it - hit.slug }
-                _messageFlow.tryEmit(str(R.string.s225, hit.title))
+                val depNote = if (downloads.size > 1) " (kèm ${downloads.size - 1} thư viện phụ thuộc)" else ""
+                _messageFlow.tryEmit(str(R.string.s225, hit.title + depNote))
                 refreshMods()
             } catch (e: Exception) {
                 _pluginDownloadProgress.update { it - hit.slug }
                 _errorFlow.tryEmit(str(R.string.s226, hit.title, e.message))
+            }
+        }
+    }
+
+    // ── Giải mã Thư mục / Gói Full Mod & Chuyển Mod sang Server mới ──
+
+    private val _modBatchProgress = MutableStateFlow<String?>(null)
+    val modBatchProgress: StateFlow<String?> = _modBatchProgress.asStateFlow()
+
+    private val _lastModImportReport = MutableStateFlow<String?>(null)
+    val lastModImportReport: StateFlow<String?> = _lastModImportReport.asStateFlow()
+
+    fun clearModImportReport() {
+        _lastModImportReport.value = null
+    }
+
+    private fun formatModImportReport(title: String, result: PluginManager.ModPackImportResult): String {
+        return buildString {
+            appendLine("✅ $title")
+            appendLine("• Đã thêm & bật: ${result.installedMods.size} mod tương thích server")
+            if (result.disabledClientMods.isNotEmpty()) {
+                appendLine(
+                    "• Đã tự động chuyển sang TẮT (.jar.disabled): ${result.disabledClientMods.size} mod chỉ dành cho máy khách (${
+                        result.disabledClientMods.take(8).joinToString(", ")
+                    }${if (result.disabledClientMods.size > 8) "..." else ""}) để bảo vệ server không bị crash khi khởi động."
+                )
+            }
+            if (result.configFilesCopied > 0) {
+                appendLine("• Đã đồng bộ kèm: ${result.configFilesCopied} tệp cấu hình (config/).")
+            }
+            if (result.skippedFiles.isNotEmpty()) {
+                appendLine("• Đã bỏ qua ${result.skippedFiles.size} tệp không phải mod hợp lệ.")
+            }
+        }.trim()
+    }
+
+    /** Giải mã toàn bộ thư mục mod (SAF DocumentTree) vào server hiện tại */
+    fun importModsFromFolderUri(treeUri: Uri) {
+        if (!requireServerStopped("giải mã thư mục mod")) return
+        if (!isBootstrapped.value) {
+            _errorFlow.tryEmit(str(R.string.s192))
+            return
+        }
+        val dirName = activeDirName() ?: run {
+            _errorFlow.tryEmit(str(R.string.s212))
+            return
+        }
+        viewModelScope.launch {
+            _modBatchProgress.value = "Đang quét & giải mã thư mục mod..."
+            try {
+                val res = pluginManager.importModsFromFolderTree(treeUri, dirName) { msg ->
+                    _modBatchProgress.value = msg
+                }
+                refreshMods()
+                val report = formatModImportReport("Giải mã thư mục Full Mod hoàn tất!", res)
+                _lastModImportReport.value = report
+                _messageFlow.tryEmit("Đã giải mã xong: ${res.installedMods.size} mod bật, ${res.disabledClientMods.size} mod client tự tắt.")
+            } catch (e: Exception) {
+                _errorFlow.tryEmit("Lỗi giải mã thư mục mod: ${e.message}")
+            } finally {
+                _modBatchProgress.value = null
+            }
+        }
+    }
+
+    /** Giải mã tệp nén gói mod (.zip / .mrpack) vào server hiện tại */
+    fun importModsFromArchiveUri(archiveUri: Uri) {
+        if (!requireServerStopped("giải mã gói mod nén")) return
+        if (!isBootstrapped.value) {
+            _errorFlow.tryEmit(str(R.string.s192))
+            return
+        }
+        val dirName = activeDirName() ?: run {
+            _errorFlow.tryEmit(str(R.string.s212))
+            return
+        }
+        viewModelScope.launch {
+            _modBatchProgress.value = "Đang giải nén & tách các mod từ tệp gói..."
+            try {
+                val res = pluginManager.importModsFromArchiveUri(archiveUri, dirName) { msg ->
+                    _modBatchProgress.value = msg
+                }
+                refreshMods()
+                val report = formatModImportReport("Giải mã gói Mod (.zip / .mrpack) hoàn tất!", res)
+                _lastModImportReport.value = report
+                _messageFlow.tryEmit("Đã giải mã gói mod: ${res.installedMods.size} mod bật, ${res.disabledClientMods.size} mod client tự tắt.")
+            } catch (e: Exception) {
+                _errorFlow.tryEmit("Lỗi giải mã gói mod: ${e.message}")
+            } finally {
+                _modBatchProgress.value = null
+            }
+        }
+    }
+
+    /** Chọn nhiều tệp .jar / .zip / .mrpack cùng lúc để giải mã và thêm vào server */
+    fun uploadMultipleModFiles(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        if (!requireServerStopped("thêm hàng loạt mod")) return
+        if (!isBootstrapped.value) {
+            _errorFlow.tryEmit(str(R.string.s192))
+            return
+        }
+        val dirName = activeDirName() ?: run {
+            _errorFlow.tryEmit(str(R.string.s212))
+            return
+        }
+        viewModelScope.launch {
+            _modBatchProgress.value = "Đang xử lý ${uris.size} tệp đã chọn..."
+            try {
+                val res = pluginManager.importMultipleModsFromUris(uris, dirName) { msg ->
+                    _modBatchProgress.value = msg
+                }
+                refreshMods()
+                val report = formatModImportReport("Đã nhập hàng loạt ${uris.size} tệp!", res)
+                _lastModImportReport.value = report
+                _messageFlow.tryEmit("Đã thêm ${res.installedMods.size} mod (${res.disabledClientMods.size} mod client tự tắt).")
+            } catch (e: Exception) {
+                _errorFlow.tryEmit("Lỗi nhập nhiều mod: ${e.message}")
+            } finally {
+                _modBatchProgress.value = null
+            }
+        }
+    }
+
+    /** Chuyển toàn bộ Mod + Config từ một server khác trong ứng dụng sang server đang mở */
+    fun copyModsFromAnotherServer(sourceDirName: String, copyConfigs: Boolean = true) {
+        if (!requireServerStopped("chuyển mod từ server cũ")) return
+        val targetDirName = activeDirName() ?: run {
+            _errorFlow.tryEmit(str(R.string.s212))
+            return
+        }
+        viewModelScope.launch {
+            _modBatchProgress.value = "Đang chuyển mod từ server「$sourceDirName」sang「$targetDirName」..."
+            try {
+                val res = pluginManager.copyModsFromServer(sourceDirName, targetDirName, copyConfigs) { msg ->
+                    _modBatchProgress.value = msg
+                }
+                refreshMods()
+                val report = formatModImportReport("Đã chuyển Mod từ「$sourceDirName」sang「$targetDirName」!", res)
+                _lastModImportReport.value = report
+                _messageFlow.tryEmit("Đã chuyển ${res.installedMods.size} mod sang server mới!")
+            } catch (e: Exception) {
+                _errorFlow.tryEmit("Không thể chuyển mod: ${e.message}")
+            } finally {
+                _modBatchProgress.value = null
+            }
+        }
+    }
+
+    /** Xuất toàn bộ thư mục mods/ và config/ của server hiện tại ra tệp .zip */
+    fun exportCurrentModsToZip(targetUri: Uri, includeConfigs: Boolean = true) {
+        val dirName = activeDirName() ?: run {
+            _errorFlow.tryEmit(str(R.string.s212))
+            return
+        }
+        viewModelScope.launch {
+            _modBatchProgress.value = "Đang đóng gói toàn bộ thư mục mods/ ra tệp ZIP..."
+            try {
+                val count = pluginManager.exportModsToZip(dirName, targetUri, includeConfigs)
+                _messageFlow.tryEmit("Đã xuất thành công $count mod (kèm config) ra tệp ZIP!")
+            } catch (e: Exception) {
+                _errorFlow.tryEmit("Lỗi xuất ZIP mod: ${e.message}")
+            } finally {
+                _modBatchProgress.value = null
+            }
+        }
+    }
+
+    /**
+     * Tải tự động trọn bộ Mod Sinh Tồn & Thế Giới Mở (từ danh sách 50+ mod trong ảnh chụp của bạn)
+     * tương thích với phiên bản Minecraft của server hiện tại từ Modrinth.
+     */
+    fun installUserScreenshotModpackFromModrinth() {
+        if (!requireServerStopped("tải gói mod tự động")) return
+        val activeInstalled = config.value.installedCores.firstOrNull { it.name == config.value.activeCoreName }
+        val targetCore = activeInstalled?.core
+        if (targetCore == null || !targetCore.supportsMods || targetCore.isBedrock) {
+            _errorFlow.tryEmit("Hãy chọn server chạy Fabric / Forge / NeoForge / Quilt trước khi cài bộ mod này.")
+            return
+        }
+        val dirName = activeDirName() ?: run {
+            _errorFlow.tryEmit(str(R.string.s212))
+            return
+        }
+        val loader = modrinthLoader(targetCore)
+        val mcVer = currentServerVersion()
+        val slugs = pluginManager.USER_SCREENSHOT_SERVER_MOD_SLUGS
+
+        viewModelScope.launch {
+            _modBatchProgress.value = "Đang chuẩn bị tải bộ ${slugs.size} mod cho $loader $mcVer..."
+            val installed = mutableListOf<String>()
+            val skipped = mutableListOf<String>()
+            val downloadedUrls = mutableSetOf<String>()
+            try {
+                withContext(Dispatchers.IO) {
+                    slugs.forEachIndexed { idx, slug ->
+                        _modBatchProgress.value = "Đang tải (${idx + 1}/${slugs.size}): $slug ($mcVer)..."
+                        runCatching {
+                            val resolved = pluginManager.resolveModrinthDownloadWithDeps(slug, mcVer, loader)
+                            if (resolved.isEmpty()) {
+                                skipped += slug
+                            } else {
+                                for ((url, fileName) in resolved) {
+                                    if (downloadedUrls.add(url)) {
+                                        pluginManager.installModFromUrl(url, fileName, dirName)
+                                        installed += fileName
+                                    }
+                                }
+                            }
+                        }.onFailure {
+                            skipped += slug
+                        }
+                    }
+                }
+                refreshMods()
+                _lastModImportReport.value = buildString {
+                    appendLine("✅ Đã tải & cài tự động Bộ Mod của bạn cho $loader $mcVer!")
+                    appendLine("• Đã cài đặt thành công: ${installed.size} tệp mod & thư viện phụ thuộc.")
+                    appendLine("• Các mod thuần Client (Sodium, Litematica, MaLiLib, EntityCulling, Stfu) đã được tự động loại trừ để server không bị crash.")
+                    if (skipped.isNotEmpty()) {
+                        appendLine("• Có ${skipped.size} mod chưa phát hành bản chính thức cho $mcVer trên Modrinth: ${skipped.take(6).joinToString(", ")}${if (skipped.size > 6) "..." else ""}.")
+                    }
+                }.trim()
+                _messageFlow.tryEmit("Đã cài xong ${installed.size} mod vào server!")
+            } catch (e: Exception) {
+                _errorFlow.tryEmit("Lỗi khi tải bộ mod: ${e.message}")
+            } finally {
+                _modBatchProgress.value = null
             }
         }
     }
@@ -4325,7 +4762,7 @@ class McViewModel(
     private val _onlinePlayerNames: MutableStateFlow<List<String>> by lazy { MutableStateFlow(emptyList()) }
     val onlinePlayerNames: StateFlow<List<String>> by lazy { _onlinePlayerNames.asStateFlow() }
 
-    /** 玩家进服/离服历史记录（最新在前，上限 500 条），持久化到 app 私有目录 */
+    /** Bản ghi lịch sử sự kiện vào/rời server của người chơi (lưu bền vững theo từng server) */
     @Serializable
     data class PlayerHistoryEntry(
         val player: String,
@@ -4333,142 +4770,421 @@ class McViewModel(
         val time: String,
         val sessionStart: Long? = null,
         val sessionEnd: Long? = null,
-        val interrupted: Boolean = false
+        val interrupted: Boolean = false,
+        val uuid: String? = null,
+        val exitReason: String? = null
     )
+
     data class PlayerActivitySummary(
         val player: String,
+        val uuid: String? = null,
         val sessions: Int,
         val totalSeconds: Long,
+        val currentSessionSeconds: Long = 0L,
+        val currentSessionJoinTime: String? = null,
         val active: Boolean,
+        val firstSeenTime: String? = null,
+        val firstSeenMs: Long = 0L,
         val lastJoinTime: String? = null,
+        val lastJoinMs: Long = 0L,
         val lastLeaveTime: String? = null,
-        val lastExitReason: String? = null
+        val lastLeaveMs: Long = 0L,
+        val lastExitReason: String? = null,
+        val lastSessionInterrupted: Boolean = false
     )
 
     private val _playerHistory: MutableStateFlow<List<PlayerHistoryEntry>> by lazy { MutableStateFlow(emptyList()) }
     val playerHistory: StateFlow<List<PlayerHistoryEntry>> by lazy { _playerHistory.asStateFlow() }
 
+    /** Bộ nhớ đệm UUID thực tế của người chơi (từ log xác thực + usercache.json + ops.json + whitelist.json) */
+    private val knownPlayerUuids: java.util.concurrent.ConcurrentHashMap<String, String> by lazy {
+        java.util.concurrent.ConcurrentHashMap()
+    }
+
+    /** Lý do thoát gần nhất từ dòng log `<player> lost connection: <reason>` */
+    private val recentDisconnectReasons: java.util.concurrent.ConcurrentHashMap<String, String> by lazy {
+        java.util.concurrent.ConcurrentHashMap()
+    }
+
     private val legacyPlayerHistoryFile: java.io.File get() = java.io.File(app.filesDir, "player_history.json")
     private fun playerHistoryFile() = java.io.File(app.filesDir, "player-history/${activeDirName() ?: "unselected"}.json")
+    private fun serverLocalHistoryFile(): java.io.File? {
+        val dir = activeDirName() ?: return null
+        return java.io.File(repo.termuxRuntime.serverDirFor(dir), "minehost_player_history.json")
+    }
 
     private val historyJson: Json by lazy { Json { ignoreUnknownKeys = true } }
 
     /** 历史记录文件读写互斥，避免多人进出服时并发写导致 JSON 损坏 */
     private val historyMutex: Mutex by lazy { Mutex() }
 
-    /** 启动时异步加载历史记录文件（文件缺失/损坏时从空历史开始） */
-    private fun loadPlayerHistory() {
-        // Activity data is isolated by active server. Do not merge a previous server's snapshot.
-        _playerHistory.value = emptyList()
-        viewModelScope.launch(Dispatchers.IO) {
-            historyMutex.withLock {
-                try {
-                    val f = playerHistoryFile()
-                    if (!f.exists() && legacyPlayerHistoryFile.exists()) {
-                        f.parentFile?.mkdirs()
-                        legacyPlayerHistoryFile.copyTo(f, overwrite = false)
-                    }
-                    if (f.exists()) {
-                        val fileList = historyJson.decodeFromString<List<PlayerHistoryEntry>>(f.readText())
-                        val merged = fileList.distinct().sortedByDescending { it.time }
-                        _playerHistory.value = merged
-                        // A process restart has no trustworthy leave timestamp. Preserve it as interrupted.
-                        val interrupted = merged.map { if (isJoinEvent(it.event) && it.sessionEnd == null) it.copy(interrupted = true) else it }
-                        _playerHistory.value = interrupted
-                        f.writeText(historyJson.encodeToString(interrupted))
-                    }
-                } catch (e: Exception) {
-                    // 忽略损坏文件
+    private fun translateDisconnectReason(raw: String): String {
+        val r = raw.trim()
+        return when {
+            r.equals("Disconnected", ignoreCase = true) -> "Chủ động thoát khỏi server"
+            r.contains("Timed out", ignoreCase = true) -> "Mất kết nối (Timed out)"
+            r.contains("Kicked", ignoreCase = true) -> "Bị quản trị viên Kick ($r)"
+            r.contains("Banned", ignoreCase = true) -> "Bị cấm tham gia (Ban)"
+            r.contains("Internal Exception", ignoreCase = true) -> "Lỗi kết nối mạng ($r)"
+            r.isNotBlank() -> r
+            else -> "Đã rời server"
+        }
+    }
+
+    private fun persistHistorySnapshotLocked(snapshot: List<PlayerHistoryEntry>) {
+        val encoded = historyJson.encodeToString(snapshot)
+        runCatching {
+            val f = playerHistoryFile()
+            f.parentFile?.mkdirs()
+            f.writeText(encoded)
+        }
+        runCatching {
+            val sf = serverLocalHistoryFile()
+            if (sf != null && sf.parentFile?.exists() == true) {
+                sf.writeText(encoded)
+            }
+        }
+    }
+
+    private fun refreshKnownUuidsFromServerFiles(dirName: String) {
+        runCatching {
+            playerManager.readUserCache(dirName).forEach { entry ->
+                if (entry.name.isNotBlank() && entry.uuid.isNotBlank()) {
+                    knownPlayerUuids[entry.name.lowercase(java.util.Locale.ROOT)] = entry.uuid
+                }
+            }
+            playerManager.readOps(dirName).forEach { entry ->
+                if (entry.name.isNotBlank() && entry.uuid.isNotBlank()) {
+                    knownPlayerUuids[entry.name.lowercase(java.util.Locale.ROOT)] = entry.uuid
+                }
+            }
+            playerManager.readWhitelist(dirName).forEach { entry ->
+                if (entry.name.isNotBlank() && entry.uuid.isNotBlank()) {
+                    knownPlayerUuids[entry.name.lowercase(java.util.Locale.ROOT)] = entry.uuid
                 }
             }
         }
     }
 
-    /** 追加一条进服/离服事件并异步持久化（保留最近 500 条） */
+    private fun attachPlayerUuidToHistory(player: String, uuid: String) {
+        if (uuid.isBlank()) return
+        val current = _playerHistory.value
+        if (current.none { it.player.equals(player, ignoreCase = true) && it.uuid != uuid }) return
+        val updated = current.map {
+            if (it.player.equals(player, ignoreCase = true)) it.copy(uuid = uuid) else it
+        }
+        _playerHistory.value = updated
+        viewModelScope.launch(Dispatchers.IO) {
+            historyMutex.withLock {
+                persistHistorySnapshotLocked(updated)
+            }
+        }
+    }
+
+    /** Tải lịch sử người chơi của server đang chọn (tách biệt theo từng server, đọc kèm usercache.json) */
+    private fun loadPlayerHistory() {
+        _playerHistory.value = emptyList()
+        if (!serverState.value.isRunning) {
+            _onlinePlayerNames.value = emptyList()
+        }
+        val currentDir = activeDirName()
+        viewModelScope.launch(Dispatchers.IO) {
+            historyMutex.withLock {
+                try {
+                    knownPlayerUuids.clear()
+                    if (currentDir != null) {
+                        refreshKnownUuidsFromServerFiles(currentDir)
+                    }
+                    val f = playerHistoryFile()
+                    val sf = serverLocalHistoryFile()
+                    if (!f.exists() && sf != null && sf.exists()) {
+                        f.parentFile?.mkdirs()
+                        sf.copyTo(f, overwrite = false)
+                    } else if (!f.exists() && legacyPlayerHistoryFile.exists()) {
+                        f.parentFile?.mkdirs()
+                        legacyPlayerHistoryFile.copyTo(f, overwrite = false)
+                    }
+                    val rawEntries = if (f.exists()) {
+                        runCatching { historyJson.decodeFromString<List<PlayerHistoryEntry>>(f.readText()) }.getOrDefault(emptyList())
+                    } else emptyList()
+
+                    val isRunningNow = serverState.value.isRunning
+                    val enriched = rawEntries
+                        .distinct()
+                        .sortedByDescending { it.time }
+                        .map { entry ->
+                            val resolvedUuid = entry.uuid?.takeIf { it.isNotBlank() }
+                                ?: knownPlayerUuids[entry.player.lowercase(java.util.Locale.ROOT)]
+                            // Nếu server không chạy mà phiên trước chưa có sessionEnd, đánh dấu là gián đoạn
+                            val markInterrupted = !isRunningNow && isJoinEvent(entry.event) && entry.sessionEnd == null
+                            entry.copy(
+                                uuid = resolvedUuid,
+                                interrupted = entry.interrupted || markInterrupted,
+                                exitReason = if (markInterrupted && entry.exitReason.isNullOrBlank()) {
+                                    "Phiên trước kết thúc khi server dừng hoặc khởi động lại ứng dụng"
+                                } else entry.exitReason
+                            )
+                        }
+
+                    // Nếu server có sẵn usercache.json của người chơi từng vào trước đây nhưng chưa có bản ghi lịch sử,
+                    // tạo bản ghi khởi tạo trung thực từ usercache.json để chủ server không bị mất danh sách người từng tham gia
+                    val existingNamesLower = enriched.map { it.player.lowercase(java.util.Locale.ROOT) }.toSet()
+                    val cacheBootstrapEntries = if (currentDir != null) {
+                        playerManager.readUserCache(currentDir)
+                            .filter { it.name.lowercase(java.util.Locale.ROOT) !in existingNamesLower }
+                            .map { uc ->
+                                PlayerHistoryEntry(
+                                    player = uc.name,
+                                    event = "Ghi nhận từ usercache",
+                                    time = uc.expiresOn.take(19).takeIf { it.matches(Regex("\\d{4}-\\d{2}-\\d{2}.*")) } ?: timeNow(),
+                                    sessionStart = null,
+                                    sessionEnd = null,
+                                    interrupted = false,
+                                    uuid = uc.uuid,
+                                    exitReason = "Đã từng tham gia (đồng bộ từ usercache.json của server)"
+                                )
+                            }
+                    } else emptyList()
+
+                    val finalHistory = (enriched + cacheBootstrapEntries).take(1000)
+                    _playerHistory.value = finalHistory
+                    if (finalHistory.isNotEmpty()) {
+                        persistHistorySnapshotLocked(finalHistory)
+                    }
+                } catch (e: Exception) {
+                    // Bỏ qua file lỗi, không làm crash ứng dụng
+                }
+            }
+        }
+    }
+
+    /** Kiểm tra loại sự kiện vào/rời server */
     private fun isJoinEvent(ev: String): Boolean = ev == "Vào server" || ev == "进服"
     private fun isLeaveEvent(ev: String): Boolean = ev == "Rời server" || ev == "离服"
 
     private fun recordPlayerEvent(player: String, event: String) {
         val now = System.currentTimeMillis()
+        val nowStr = timeNow()
+        val key = player.lowercase(java.util.Locale.ROOT)
+        val currentDir = activeDirName()
+        if (knownPlayerUuids[key] == null && currentDir != null) {
+            refreshKnownUuidsFromServerFiles(currentDir)
+        }
+        val knownUuid = knownPlayerUuids[key]
+        val disconnectReason = if (isLeaveEvent(event)) {
+            recentDisconnectReasons.remove(key) ?: "Chủ động thoát khỏi server"
+        } else null
+
         val previous = _playerHistory.value
-        val open = previous.firstOrNull { it.player.equals(player, true) && isJoinEvent(it.event) && it.sessionEnd == null && !it.interrupted }
+        val open = previous.firstOrNull {
+            it.player.equals(player, true) && isJoinEvent(it.event) && it.sessionEnd == null && !it.interrupted
+        }
         val entry = if (isLeaveEvent(event) && open != null) {
-            PlayerHistoryEntry(player, event, timeNow(), open.sessionStart ?: now, now)
+            PlayerHistoryEntry(
+                player = player,
+                event = event,
+                time = nowStr,
+                sessionStart = open.sessionStart ?: now,
+                sessionEnd = now,
+                interrupted = false,
+                uuid = knownUuid ?: open.uuid,
+                exitReason = disconnectReason
+            )
         } else {
-            PlayerHistoryEntry(player, event, timeNow(), if (isJoinEvent(event)) now else null, null)
+            PlayerHistoryEntry(
+                player = player,
+                event = event,
+                time = nowStr,
+                sessionStart = if (isJoinEvent(event)) now else null,
+                sessionEnd = null,
+                interrupted = false,
+                uuid = knownUuid,
+                exitReason = disconnectReason
+            )
         }
-        _playerHistory.value = listOf(entry) + previous.map {
-            if (isLeaveEvent(event) && it == open) it.copy(sessionEnd = now) else it
-        }
+        _playerHistory.value = (listOf(entry) + previous.map {
+            if (isLeaveEvent(event) && it == open) {
+                it.copy(sessionEnd = now, uuid = knownUuid ?: it.uuid, exitReason = disconnectReason)
+            } else if (it.player.equals(player, ignoreCase = true) && it.uuid.isNullOrBlank() && !knownUuid.isNullOrBlank()) {
+                it.copy(uuid = knownUuid)
+            } else it
+        }).take(1000)
+
         val snapshot = _playerHistory.value
         viewModelScope.launch(Dispatchers.IO) {
             historyMutex.withLock {
                 try {
-                    val file = playerHistoryFile(); file.parentFile?.mkdirs()
-                    file.writeText(historyJson.encodeToString(snapshot))
-                } catch (e: Exception) {
-                    // 写入失败不阻断运行
+                    persistHistorySnapshotLocked(snapshot)
+                } catch (_: Exception) {
                 }
             }
+        }
+    }
+
+    private fun parseTimeMillis(timeStr: String?): Long {
+        if (timeStr.isNullOrBlank()) return 0L
+        return try {
+            java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US)
+                .parse(timeStr)?.time ?: 0L
+        } catch (_: Exception) {
+            0L
         }
     }
 
     fun playerActivitySummaries(): List<PlayerActivitySummary> {
         val entries = _playerHistory.value
-        return entries.groupBy { it.player }.map { (player, rows) ->
-            val seconds = rows.filter { isLeaveEvent(it.event) && !it.interrupted }.sumOf { ((it.sessionEnd ?: 0L) - (it.sessionStart ?: 0L)).coerceAtLeast(0L) / 1000 }
-            val lastJoin = rows.filter { isJoinEvent(it.event) }.maxByOrNull { it.time }
-            val lastLeave = rows.filter { isLeaveEvent(it.event) }.maxByOrNull { it.time }
-            PlayerActivitySummary(
-                player = player,
-                sessions = rows.count { isLeaveEvent(it.event) },
-                totalSeconds = seconds,
-                active = rows.any { isJoinEvent(it.event) && it.sessionEnd == null },
-                lastJoinTime = lastJoin?.time,
-                lastLeaveTime = lastLeave?.time,
-                lastExitReason = lastLeave?.let {
-                    if (it.interrupted) "Gián đoạn do dừng máy chủ hoặc khởi động lại ứng dụng" else "Nhật ký không ghi rõ lý do thoát"
-                }
+        val onlineSet = if (serverState.value.isRunning) {
+            _onlinePlayerNames.value.map { it.lowercase(java.util.Locale.ROOT) }.toSet()
+        } else emptySet()
+        val nowMs = System.currentTimeMillis()
+
+        // Gộp không phân biệt hoa thường theo tên người chơi, lấy tên chuẩn mới nhất
+        return entries.groupBy { it.player.lowercase(java.util.Locale.ROOT) }.map { (lowerKey, rows) ->
+            val displayName = rows.firstOrNull()?.player ?: lowerKey
+            val resolvedUuid = rows.firstNotNullOfOrNull { it.uuid?.takeIf(String::isNotBlank) }
+                ?: knownPlayerUuids[lowerKey]
+
+            val completedSeconds = rows
+                .filter { isLeaveEvent(it.event) && !it.interrupted && it.sessionStart != null && it.sessionEnd != null }
+                .sumOf { ((it.sessionEnd!! - it.sessionStart!!).coerceAtLeast(0L)) / 1000L }
+
+            val openJoin = rows.firstOrNull { isJoinEvent(it.event) && it.sessionEnd == null && !it.interrupted }
+            val isCurrentlyOnline = lowerKey in onlineSet || (serverState.value.isRunning && openJoin != null)
+            val currentSessionSec = if (isCurrentlyOnline && openJoin?.sessionStart != null) {
+                ((nowMs - openJoin.sessionStart).coerceAtLeast(0L)) / 1000L
+            } else 0L
+
+            val joinRows = rows.filter { isJoinEvent(it.event) }
+            val leaveRows = rows.filter { isLeaveEvent(it.event) }
+            val firstRow = rows.minByOrNull { it.sessionStart ?: parseTimeMillis(it.time).takeIf { ms -> ms > 0L } ?: Long.MAX_VALUE }
+            val lastJoin = joinRows.maxByOrNull { it.sessionStart ?: parseTimeMillis(it.time) }
+            val lastLeave = leaveRows.maxByOrNull { it.sessionEnd ?: parseTimeMillis(it.time) }
+            val interruptedJoin = joinRows.filter { it.interrupted }.maxByOrNull { it.sessionStart ?: parseTimeMillis(it.time) }
+
+            val lastJoinMs = lastJoin?.sessionStart ?: parseTimeMillis(lastJoin?.time)
+            val lastLeaveMs = lastLeave?.sessionEnd ?: parseTimeMillis(lastLeave?.time)
+            val firstSeenMs = firstRow?.sessionStart ?: parseTimeMillis(firstRow?.time)
+
+            val lastInterrupted = !isCurrentlyOnline && interruptedJoin != null &&
+                (lastLeave == null || (interruptedJoin.sessionStart ?: 0L) >= (lastLeave.sessionEnd ?: 0L))
+
+            val effectiveLastLeaveTime = when {
+                isCurrentlyOnline -> "Đang trực tuyến trên server"
+                lastInterrupted -> "${interruptedJoin?.time ?: "--"} (Kết thúc khi server dừng)"
+                lastLeave != null -> lastLeave.time
+                else -> "Chưa ghi nhận sự kiện rời"
+            }
+
+            val effectiveExitReason = when {
+                isCurrentlyOnline -> "Đang trực tuyến"
+                lastInterrupted -> interruptedJoin?.exitReason ?: "Phiên kết thúc khi server dừng hoặc khởi động lại ứng dụng"
+                lastLeave != null -> lastLeave.exitReason ?: "Chủ động thoát khỏi server"
+                else -> rows.firstOrNull()?.exitReason ?: "Đã từng tham gia server"
+            }
+
+            val sessionCount = maxOf(
+                joinRows.size,
+                leaveRows.size,
+                if (rows.isNotEmpty()) 1 else 0
             )
-        }.sortedByDescending { it.totalSeconds }
+
+            PlayerActivitySummary(
+                player = displayName,
+                uuid = resolvedUuid,
+                sessions = sessionCount,
+                totalSeconds = completedSeconds + currentSessionSec,
+                currentSessionSeconds = currentSessionSec,
+                currentSessionJoinTime = if (isCurrentlyOnline) openJoin?.time ?: lastJoin?.time else null,
+                active = isCurrentlyOnline,
+                firstSeenTime = firstRow?.time,
+                firstSeenMs = firstSeenMs,
+                lastJoinTime = lastJoin?.time ?: firstRow?.time,
+                lastJoinMs = if (lastJoinMs > 0L) lastJoinMs else firstSeenMs,
+                lastLeaveTime = effectiveLastLeaveTime,
+                lastLeaveMs = lastLeaveMs,
+                lastExitReason = effectiveExitReason,
+                lastSessionInterrupted = lastInterrupted
+            )
+        }.sortedWith(
+            compareByDescending<PlayerActivitySummary> { it.active }
+                .thenByDescending { it.lastJoinMs }
+                .thenByDescending { it.totalSeconds }
+        )
     }
 
     fun interruptPlayerSessions() {
-        val open = _playerHistory.value.filter { isJoinEvent(it.event) && it.sessionEnd == null }
+        // Khi server dừng, xóa ngay danh sách online để không bao giờ giữ người chơi ở trạng thái trực tuyến ảo
+        _onlinePlayerNames.value = emptyList()
+        val open = _playerHistory.value.filter { isJoinEvent(it.event) && it.sessionEnd == null && !it.interrupted }
         if (open.isEmpty()) return
-        val replacements = open.associateWith { it.copy(interrupted = true) }
+        val replacements = open.associateWith {
+            it.copy(
+                interrupted = true,
+                exitReason = it.exitReason ?: "Phiên kết thúc khi server dừng"
+            )
+        }
         _playerHistory.value = _playerHistory.value.map { replacements[it] ?: it }
         val snapshot = _playerHistory.value
-        viewModelScope.launch(Dispatchers.IO) { historyMutex.withLock {
-            try {
-                val file = playerHistoryFile(); file.parentFile?.mkdirs(); file.writeText(historyJson.encodeToString(snapshot))
-            } catch (e: Exception) {
-                // 写入失败不阻断运行（与 recordPlayerEvent 一致）：viewModelScope 无 CoroutineExceptionHandler，
-                // 磁盘满/目录不可写时异常逸出协程会直接崩溃 App。
+        viewModelScope.launch(Dispatchers.IO) {
+            historyMutex.withLock {
+                try {
+                    persistHistorySnapshotLocked(snapshot)
+                } catch (_: Exception) {
+                }
             }
-        } }
+        }
+    }
+
+    /** Xóa lịch sử của một người chơi cụ thể trên server hiện tại (không xóa dữ liệu nhân vật trong world) */
+    fun deletePlayerHistoryForPlayer(playerName: String) {
+        val updated = _playerHistory.value.filterNot { it.player.equals(playerName, ignoreCase = true) }
+        _playerHistory.value = updated
+        viewModelScope.launch(Dispatchers.IO) {
+            historyMutex.withLock {
+                try {
+                    persistHistorySnapshotLocked(updated)
+                } catch (_: Exception) {
+                }
+            }
+        }
+        _messageFlow.tryEmit("Đã xóa lịch sử của người chơi「$playerName」khỏi danh sách ứng dụng (dữ liệu nhân vật trong thế giới vẫn được giữ nguyên).")
     }
 
     fun clearPlayerHistory() {
         _playerHistory.value = emptyList()
-        viewModelScope.launch(Dispatchers.IO) { historyMutex.withLock {
-            try {
-                playerHistoryFile().delete()
-            } catch (e: Exception) {
-                // 删除失败不阻断运行
+        viewModelScope.launch(Dispatchers.IO) {
+            historyMutex.withLock {
+                try {
+                    playerHistoryFile().delete()
+                    serverLocalHistoryFile()?.delete()
+                } catch (_: Exception) {
+                }
             }
-        } }
+        }
+        _messageFlow.tryEmit("Đã xóa toàn bộ lịch sử người chơi trong ứng dụng (dữ liệu thế giới và nhân vật trong server không bị ảnh hưởng).")
     }
 
     fun exportPlayerHistory(uri: android.net.Uri) = viewModelScope.launch {
         try {
             withContext(Dispatchers.IO) {
                 app.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { out ->
-                    out.appendLine("player,event,time,session_start,session_end,duration_seconds,interrupted")
+                    out.appendLine("player,uuid,event,time,session_start,session_end,duration_seconds,interrupted,exit_reason")
                     _playerHistory.value.forEach { row ->
                         fun csv(v: String) = "\"${v.replace("\"", "\"\"")}\""
                         val duration = if (row.sessionStart != null && row.sessionEnd != null && !row.interrupted) ((row.sessionEnd - row.sessionStart) / 1000).toString() else ""
-                        out.appendLine(listOf(csv(row.player), csv(row.event), csv(row.time), row.sessionStart ?: "", row.sessionEnd ?: "", duration, row.interrupted).joinToString(","))
+                        out.appendLine(
+                            listOf(
+                                csv(row.player),
+                                csv(row.uuid.orEmpty()),
+                                csv(row.event),
+                                csv(row.time),
+                                row.sessionStart ?: "",
+                                row.sessionEnd ?: "",
+                                duration,
+                                row.interrupted,
+                                csv(row.exitReason.orEmpty())
+                            ).joinToString(",")
+                        )
                     }
                 } ?: error(str(R.string.err_open_export))
             }
@@ -5779,6 +6495,27 @@ class McViewModel(
         }
     }
 
+    private val networkChangeCallback = object : android.net.ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: android.net.Network) {
+            refreshLanIp(notifyOnChange = true)
+        }
+        override fun onLost(network: android.net.Network) {
+            refreshLanIp(notifyOnChange = true)
+        }
+        override fun onLinkPropertiesChanged(
+            network: android.net.Network,
+            linkProperties: android.net.LinkProperties
+        ) {
+            refreshLanIp(notifyOnChange = true)
+        }
+        override fun onCapabilitiesChanged(
+            network: android.net.Network,
+            networkCapabilities: android.net.NetworkCapabilities
+        ) {
+            refreshLanIp(notifyOnChange = true)
+        }
+    }
+
     /**
      * init 块必须放在类体末尾：这里启动的协程（Dispatchers.IO/Default）会在
      * 构造函数完成前抢先执行，若 init 在类体前部，会读到尚未赋值的字段
@@ -5786,6 +6523,12 @@ class McViewModel(
      */
     init {
         refreshDeviceProfile()
+        refreshLanIp(notifyOnChange = false)
+        runCatching {
+            val cm = app.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+            val req = android.net.NetworkRequest.Builder().build()
+            cm?.registerNetworkCallback(req, networkChangeCallback)
+        }
         scanUnregisteredServers()
         viewModelScope.launch {
             config.map { it.activeCoreName }.distinctUntilChanged().collect { loadPlayerHistory() }

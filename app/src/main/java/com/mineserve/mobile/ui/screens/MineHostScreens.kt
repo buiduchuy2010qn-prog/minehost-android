@@ -19,6 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.mineserve.mobile.data.StartupPhase
 import com.mineserve.mobile.ui.McViewModel
+import com.mineserve.mobile.ui.PlayConnectionMode
 import com.mineserve.mobile.ui.SubPage
 
 @Composable
@@ -87,8 +88,17 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
     val addonBusy by vm.pluginDownloadProgress.collectAsState()
     val javaOperation by vm.javaOperation.collectAsState()
     val lanIp by vm.lanIp.collectAsState()
+    val lanInterfaceLabel by vm.lanInterfaceLabel.collectAsState()
+    val lanLastUpdated by vm.lanLastUpdatedText.collectAsState()
+    val vpnActiveWarning by vm.vpnActiveWarning.collectAsState()
+    val connectionCheckStatus by vm.connectionCheckStatus.collectAsState()
+    val connectionCheckRunning by vm.connectionCheckRunning.collectAsState()
+    val playConnectionMode by vm.playConnectionMode.collectAsState()
+    val playitState by vm.playitState.collectAsState()
     val port by vm.serverPort.collectAsState()
     val clipboard = LocalClipboardManager.current
+    val uriHandler = LocalUriHandler.current
+    val context = androidx.compose.ui.platform.LocalContext.current
     val active = config.installedCores.firstOrNull { it.name == config.activeCoreName }
     var confirm by remember { mutableStateOf<String?>(null) }
     val heapLimit = device?.maxManualHeapMb ?: 2048
@@ -156,13 +166,223 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                 HostAction("1. Tải core server", "Paper: plugin • Fabric: mod. Chọn đúng phiên bản Minecraft.", Icons.Outlined.Download) { navigate(SubPage.Cores) }
                 HostAction("2. Cài Java tương thích", "Paper 1.20–1.21.11: Java 21 • 26.1+: Java 25. Core khác: xem yêu cầu của core.", Icons.Outlined.Memory) { navigate(SubPage.EnvManager) }
             } else {
-                HostCard("Mời bạn bè • cùng Wi-Fi") {
-                    val address = lanIp.takeIf { it.matches(Regex("""\d{1,3}(\.\d{1,3}){3}""")) && it != "0.0.0.0" && !it.startsWith("127.") }?.let { "$it:$port" }
-                    Text(address ?: "Chưa có địa chỉ LAN", style = MaterialTheme.typography.titleLarge)
-                    Text("Java: Multiplayer → Add Server. Địa chỉ này không phải địa chỉ Internet công cộng.", style = MaterialTheme.typography.bodySmall)
-                    OutlinedButton(onClick = { address?.let { clipboard.setText(AnnotatedString(it)) } }, enabled = address != null) { Text("Sao chép địa chỉ") }
-                    TextButton(onClick = { navigate(SubPage.Network) }) { Text("Bạn ở mạng khác? Thiết lập kết nối →") }
+                HostCard("Mời bạn bè & Địa chỉ kết nối (Dọn sẵn)") {
+                    val localhostAddress = "127.0.0.1:$port"
+                    val lanAddress = lanIp.takeIf {
+                        it.matches(Regex("""\d{1,3}(\.\d{1,3}){3}""")) && it != "0.0.0.0" && !it.startsWith("127.")
+                    }?.let { "$it:$port" }
+                    val playitAddress = playitState.publicAddress?.takeIf { it.isNotBlank() }
+
+                    Text(
+                        "Chọn chế độ bạn muốn chơi để MineHost dọn sẵn đúng 1 địa chỉ cần dùng:",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        val isLanMode = playConnectionMode == PlayConnectionMode.SameNetwork
+                        if (isLanMode) {
+                            Button(
+                                onClick = { vm.setPlayConnectionMode(PlayConnectionMode.SameNetwork) },
+                                modifier = Modifier.weight(1f)
+                            ) { Text("🏠 Cùng mạng Wi-Fi") }
+                            OutlinedButton(
+                                onClick = { vm.setPlayConnectionMode(PlayConnectionMode.Everywhere) },
+                                modifier = Modifier.weight(1f)
+                            ) { Text("🌍 Kết nối mọi nơi") }
+                        } else {
+                            OutlinedButton(
+                                onClick = { vm.setPlayConnectionMode(PlayConnectionMode.SameNetwork) },
+                                modifier = Modifier.weight(1f)
+                            ) { Text("🏠 Cùng mạng Wi-Fi") }
+                            Button(
+                                onClick = { vm.setPlayConnectionMode(PlayConnectionMode.Everywhere) },
+                                modifier = Modifier.weight(1f)
+                            ) { Text("🌍 Kết nối mọi nơi") }
+                        }
+                    }
+
+                    // Hộp địa chỉ dọn sẵn theo chế độ đang chọn
+                    val recommendedTitle = if (playConnectionMode == PlayConnectionMode.SameNetwork) {
+                        "👉 ĐỊA CHỈ DÙNG CHO BẠN BÈ CÙNG WI-FI / HOTSPOT:"
+                    } else {
+                        "👉 ĐỊA CHỈ DÙNG CHO BẠN BÈ Ở MỌI NƠI (4G / KHÁC WI-FI):"
+                    }
+                    val recommendedAddr = if (playConnectionMode == PlayConnectionMode.SameNetwork) lanAddress else playitAddress
+                    val recommendedStatusNote = if (playConnectionMode == PlayConnectionMode.SameNetwork) {
+                        if (lanAddress != null) {
+                            "Giao diện: $lanInterfaceLabel • Cập nhật lúc: $lanLastUpdated" +
+                                if (!state.isRunning) "\n⚠️ Đã có địa chỉ LAN nhưng Server đang dừng — Hãy bấm Bật server trước khi vào." else ""
+                        } else {
+                            "Chưa xác định được địa chỉ mạng LAN. Hãy bật Wi-Fi hoặc Điểm phát sóng di động rồi bấm Làm mới."
+                        }
+                    } else {
+                        when {
+                            playitState.isRunning && playitAddress != null ->
+                                "Trạng thái Playit.gg: Đã kết nối (${playitState.lastUpdatedText.ifBlank { "vừa xong" }}). Bạn bè dùng 4G hoặc Wi-Fi khác nhập đúng địa chỉ có cả số cổng này!"
+                            playitState.isRunning && !playitState.claimUrl.isNullOrBlank() && !playitState.isClaimed ->
+                                "Trạng thái Playit.gg: Cần xác nhận liên kết (Claim) lần đầu. Hãy bấm nút Mở trang xác nhận bên dưới."
+                            playitState.isRunning ->
+                                "Trạng thái Playit.gg: Đang kết nối và lấy địa chỉ công khai có cổng từ máy chủ Playit.gg..."
+                            else ->
+                                "Trạng thái Playit.gg: Đang tắt. Hãy bấm nút 'Bật Playit.gg ngay' bên dưới để lấy địa chỉ công khai."
+                        }
+                    }
+
+                    Surface(
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        shape = MaterialTheme.shapes.medium,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                recommendedTitle,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                            Text(
+                                recommendedAddr ?: if (playConnectionMode == PlayConnectionMode.SameNetwork) "Chưa xác định được địa chỉ mạng LAN" else "Chưa có địa chỉ Playit.gg (Hãy bật Playit.gg)",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                            Text(
+                                recommendedStatusNote,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                            if (vpnActiveWarning && playConnectionMode == PlayConnectionMode.SameNetwork) {
+                                Text(
+                                    "⚠️ Phát hiện VPN đang bật trên máy: có thể làm bạn bè cùng Wi-Fi không nhìn thấy server.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                Button(
+                                    onClick = { recommendedAddr?.let { clipboard.setText(AnnotatedString(it)) } },
+                                    enabled = recommendedAddr != null,
+                                    modifier = Modifier.weight(1f)
+                                ) { Text("Sao chép địa chỉ") }
+                                OutlinedButton(
+                                    onClick = {
+                                        recommendedAddr?.let { addr ->
+                                            val sendIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                                type = "text/plain"
+                                                putExtra(
+                                                    android.content.Intent.EXTRA_TEXT,
+                                                    "Vào server Minecraft của mình nhé!\nĐịa chỉ Server: $addr\nPhiên bản: ${active.core.displayName} ${active.version}"
+                                                )
+                                            }
+                                            context.startActivity(android.content.Intent.createChooser(sendIntent, "Chia sẻ địa chỉ Server"))
+                                        }
+                                    },
+                                    enabled = recommendedAddr != null,
+                                    modifier = Modifier.weight(1f)
+                                ) { Text("Gửi bạn bè") }
+                            }
+                            if (playConnectionMode == PlayConnectionMode.Everywhere) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                    if (!playitState.isRunning) {
+                                        Button(
+                                            onClick = { vm.startPlayit() },
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) { Text("🚀 Bật kết nối mọi nơi (Playit.gg)") }
+                                    } else {
+                                        OutlinedButton(
+                                            onClick = { vm.stopPlayit() },
+                                            modifier = Modifier.weight(1f)
+                                        ) { Text("Tắt Playit.gg") }
+                                        if (playitState.claimUrl.isNotBlank() && !playitState.isClaimed) {
+                                            Button(
+                                                onClick = { uriHandler.openUri(playitState.claimUrl) },
+                                                modifier = Modifier.weight(1f)
+                                            ) { Text("🔑 Xác nhận Claim") }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Bảng phân biệt rõ 3 loại địa chỉ (Mục 16.1)
+                    HorizontalDivider()
+                    Text(
+                        "Bảng phân biệt 3 loại địa chỉ kết nối:",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        "1️⃣ Trên chính điện thoại này (Localhost): $localhostAddress\n   → Chỉ dùng khi bạn mở game Minecraft ngay trên chính chiếc điện thoại này.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Text(
+                        "2️⃣ Trong cùng mạng Wi-Fi / Hotspot (LAN): ${lanAddress ?: "Chưa xác định (Wi-Fi/Hotspot tắt)"}\n   → Dùng cho bạn bè bắt chung Wi-Fi hoặc điểm phát sóng ($lanInterfaceLabel).",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Text(
+                        "3️⃣ Kết nối từ Internet mọi nơi (Playit.gg): ${playitAddress ?: if (playitState.isRunning) "Đang lấy địa chỉ..." else "Chưa bật Playit.gg"}\n   → Dùng cho bạn bè ở xa dùng 4G hoặc mạng Wi-Fi khác (không lộ IP mạng nhà; địa chỉ có thể đổi nếu tạo lại tunnel).",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(
+                            onClick = {
+                                clipboard.setText(AnnotatedString(localhostAddress))
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) { Text("Chép 127.0.0.1:$port") }
+                        OutlinedButton(
+                            onClick = { vm.refreshLanIp(notifyOnChange = true) },
+                            modifier = Modifier.weight(1f)
+                        ) { Text("🔄 Làm mới IP") }
+                    }
+                    OutlinedButton(
+                        onClick = { vm.checkConnectionReachability() },
+                        enabled = !connectionCheckRunning,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(if (connectionCheckRunning) "⏳ Đang kiểm tra kết nối..." else "🩺 Kiểm tra kết nối thực tế (Localhost / LAN / Playit)")
+                    }
+                    connectionCheckStatus?.let { checkReport ->
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            shape = MaterialTheme.shapes.small,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                checkReport,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.padding(10.dp)
+                            )
+                        }
+                    }
+                    TextButton(onClick = { navigate(SubPage.Network) }) {
+                        Text("Mở trang Quản lý Mạng & Playit.gg chi tiết →")
+                    }
                 }
+            }
+        }
+        item {
+            HostAction(
+                "Người chơi & Lịch sử tham gia",
+                "Xem ai đang trực tuyến, lịch sử từng người chơi đã vào server, cấp OP, Whitelist, Ban.",
+                Icons.Outlined.People
+            ) { navigate(SubPage.Players) }
+        }
+        item {
+            if (active?.core?.supportsMods == true) {
+                HostAction(
+                    "Quản lý Mod & Giải mã Thư mục Full Mod",
+                    "Giải mã thư mục/ZIP full mod, chuyển mod sang server mới hoặc tải tự động từ Modrinth.",
+                    Icons.Outlined.Extension
+                ) { navigate(SubPage.Mods) }
+            } else if (active != null) {
+                HostAction(
+                    "Quản lý Plugin",
+                    "Cài đặt và bật/tắt plugin cho server.",
+                    Icons.Outlined.Extension
+                ) { navigate(SubPage.Plugins) }
             }
         }
         item {

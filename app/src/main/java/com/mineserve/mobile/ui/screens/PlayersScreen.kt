@@ -88,7 +88,25 @@ import com.mineserve.mobile.ui.theme.Muted
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
-private enum class PlayerListTab(val labelRes: Int) { Online(R.string.s657), Ops(R.string.s658), Whitelist(R.string.s659), Banned(R.string.s660) }
+private enum class PlayerListTab(val labelRes: Int) {
+    Online(R.string.s657),
+    History(R.string.s677),
+    Ops(R.string.s658),
+    Whitelist(R.string.s659),
+    Banned(R.string.s660)
+}
+
+private enum class HistoryFilterMode(val label: String) {
+    ALL("Tất cả"),
+    ONLINE("Đang trực tuyến"),
+    OFFLINE("Đã từng tham gia")
+}
+
+private enum class HistorySortMode(val label: String) {
+    RECENT("Mới tham gia gần đây"),
+    NAME("Tên A → Z"),
+    PLAYTIME("Thời gian chơi nhiều nhất")
+}
 
 private enum class BanDuration(val labelRes: Int, val value: String) {
     FOREVER(R.string.s661, ""),
@@ -147,7 +165,9 @@ fun PlayersScreen(
     val playerHistory by vm.playerHistory.collectAsState()
     val config by vm.config.collectAsState()
     val isBootstrapped by vm.isBootstrapped.collectAsState()
-    val activitySummaries = remember(playerHistory) { vm.playerActivitySummaries() }
+    val activitySummaries = remember(playerHistory, onlinePlayers, serverState.isRunning) {
+        vm.playerActivitySummaries()
+    }
 
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -177,7 +197,6 @@ fun PlayersScreen(
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
-        // 嵌套在外层 McApp Scaffold 内：insets 已由外层消费，这里不再重复应用，避免顶部空白/白色遮挡
         contentWindowInsets = WindowInsets(0.dp)
     ) { padding ->
         Column(
@@ -197,7 +216,6 @@ fun PlayersScreen(
                     title = stringResource(R.string.s672),
                     modifier = Modifier.weight(1f)
                 )
-                // 页面右上角：玩家进服/离服历史记录入口
                 IconButton(
                     onClick = { showHistory = true },
                     modifier = Modifier
@@ -218,9 +236,9 @@ fun PlayersScreen(
                 isRunning = isRunning,
                 isBootstrapped = isBootstrapped,
                 hasActiveCore = activeCore != null,
-                onlineCount = serverState.onlinePlayers,
+                onlineCount = if (isRunning) onlinePlayers.size.coerceAtLeast(serverState.onlinePlayers) else 0,
                 maxPlayers = serverState.maxPlayers,
-                onRefresh = { vm.refreshPlayers() }
+                onRefresh = { vm.refreshPlayers(); vm.refreshOnlinePlayers() }
             )
 
             // ── 标签切换 ──
@@ -228,7 +246,8 @@ fun PlayersScreen(
             SegmentedTabs(
                 options = playerTabs.map { tab ->
                     val count = when (tab) {
-                        PlayerListTab.Online -> onlinePlayers.size
+                        PlayerListTab.Online -> if (isRunning) onlinePlayers.size else 0
+                        PlayerListTab.History -> activitySummaries.size
                         PlayerListTab.Ops -> ops.size
                         PlayerListTab.Whitelist -> whitelist.size
                         PlayerListTab.Banned -> banned.size
@@ -242,19 +261,51 @@ fun PlayersScreen(
             )
 
             when (activeTab) {
-                PlayerListTab.Online -> OnlineTab(
-                    players = onlinePlayers,
-                    isRunning = isRunning,
-                    onRefresh = { vm.refreshOnlinePlayers() },
-                    onShowDetail = { detailPlayer = DetailInfo.Activity(it) },
-                    onCopy = { name ->
-                        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("MC Player", name))
-                        scope.launch { snackbarHostState.showSnackbar(context.getString(R.string.s188, name)) }
-                    },
-                    onKick = { name -> vm.kickPlayer(name) },
-                    onSetGameMode = { name, mode -> vm.setGameMode(name, mode) }
-                )
+                PlayerListTab.Online -> {
+                    OnlineTab(
+                        players = if (isRunning) onlinePlayers else emptyList(),
+                        summaries = activitySummaries,
+                        isRunning = isRunning,
+                        onRefresh = { vm.refreshOnlinePlayers() },
+                        onShowDetail = { detailPlayer = DetailInfo.Activity(it) },
+                        onCopy = { name ->
+                            val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("MC Player", name))
+                            scope.launch { snackbarHostState.showSnackbar(context.getString(R.string.s188, name)) }
+                        },
+                        onKick = { name -> vm.kickPlayer(name) },
+                        onSetGameMode = { name, mode -> vm.setGameMode(name, mode) }
+                    )
+                    // Hiển thị luôn Phần B — Lịch sử người chơi đã từng tham gia ngay bên dưới Phần A
+                    PersistentPlayerHistorySection(
+                        summaries = activitySummaries,
+                        history = playerHistory,
+                        onShowDetail = { detailPlayer = DetailInfo.Activity(it) },
+                        onCopyText = { textToCopy ->
+                            val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("MC Player Info", textToCopy))
+                            scope.launch { snackbarHostState.showSnackbar(context.getString(R.string.s188, textToCopy)) }
+                        },
+                        onDeleteRecord = { playerName -> vm.deletePlayerHistoryForPlayer(playerName) },
+                        onClearAll = { vm.clearPlayerHistory() },
+                        onExportCsv = { historyExportLauncher.launch("player_activity.csv") }
+                    )
+                }
+                PlayerListTab.History -> {
+                    PersistentPlayerHistorySection(
+                        summaries = activitySummaries,
+                        history = playerHistory,
+                        onShowDetail = { detailPlayer = DetailInfo.Activity(it) },
+                        onCopyText = { textToCopy ->
+                            val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("MC Player Info", textToCopy))
+                            scope.launch { snackbarHostState.showSnackbar(context.getString(R.string.s188, textToCopy)) }
+                        },
+                        onDeleteRecord = { playerName -> vm.deletePlayerHistoryForPlayer(playerName) },
+                        onClearAll = { vm.clearPlayerHistory() },
+                        onExportCsv = { historyExportLauncher.launch("player_activity.csv") }
+                    )
+                }
                 PlayerListTab.Ops -> OpsTab(
                     ops = ops,
                     isRunning = isRunning,
@@ -294,6 +345,10 @@ fun PlayersScreen(
             activity = activitySummaries.firstOrNull { it.player.equals(info.playerName(), ignoreCase = true) },
             isRunning = isRunning,
             onDismiss = { detailPlayer = null },
+            onDeleteHistory = { playerName ->
+                vm.deletePlayerHistoryForPlayer(playerName)
+                detailPlayer = null
+            },
             onDeop = { vm.deopPlayer(it); detailPlayer = null },
             onWhitelistRemove = { vm.whitelistRemove(it); detailPlayer = null },
             onPardon = { vm.pardonPlayer(it); detailPlayer = null },
@@ -478,6 +533,7 @@ private fun StatusRow(color: Color, text: String) {
 @Composable
 private fun OnlineTab(
     players: List<String>,
+    summaries: List<McViewModel.PlayerActivitySummary>,
     isRunning: Boolean,
     onRefresh: () -> Unit,
     onShowDetail: (String) -> Unit,
@@ -487,7 +543,7 @@ private fun OnlineTab(
 ) {
     var search by remember { mutableStateOf("") }
     val filteredPlayers = remember(players, search) { players.filter { matchesPlayerQuery(it, search) } }
-    McCard(title = stringResource(R.string.s657)) {
+    McCard(title = "🟢 Phần A — Người chơi đang trực tuyến (${if (isRunning) players.size else 0})") {
         if (isRunning) {
             OutlinedTextField(
                 value = search,
@@ -499,14 +555,16 @@ private fun OnlineTab(
             )
         }
         if (!isRunning) {
-            StatusRow(color = Coral, text = stringResource(R.string.s684))
+            StatusRow(color = Coral, text = "Server đang dừng — hiện không có ai trực tuyến. Xem danh sách người chơi đã từng tham gia ở Phần B bên dưới.")
         } else if (filteredPlayers.isEmpty()) {
             EmptyHint(icon = Icons.Outlined.Person, text = stringResource(R.string.s685))
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 filteredPlayers.forEach { name ->
+                    val summary = summaries.firstOrNull { it.player.equals(name, ignoreCase = true) }
                     OnlinePlayerRow(
                         name = name,
+                        summary = summary,
                         onShowDetail = { onShowDetail(name) },
                         onCopy = { onCopy(name) },
                         onKick = { onKick(name) },
@@ -532,6 +590,7 @@ private fun OnlineTab(
 @Composable
 private fun OnlinePlayerRow(
     name: String,
+    summary: McViewModel.PlayerActivitySummary?,
     onShowDetail: () -> Unit,
     onCopy: () -> Unit,
     onKick: () -> Unit,
@@ -559,7 +618,17 @@ private fun OnlinePlayerRow(
         Spacer(Modifier.size(10.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(name, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(stringResource(R.string.s318), color = Mint, fontSize = 10.sp)
+            val joinText = summary?.currentSessionJoinTime ?: summary?.lastJoinTime
+            val sessionSec = summary?.currentSessionSeconds ?: 0L
+            Text(
+                buildString {
+                    append(stringResource(R.string.s318))
+                    if (!joinText.isNullOrBlank()) append(" • Vào lúc: $joinText")
+                    if (sessionSec > 0L) append(" • Phiên này: ${formatActivitySeconds(sessionSec)}")
+                },
+                color = Mint,
+                fontSize = 10.sp
+            )
         }
         // 复制玩家名
         IconButton(onClick = onCopy, modifier = Modifier.size(McIcon.TouchCompact)) {
@@ -583,6 +652,344 @@ private fun OnlinePlayerRow(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun PersistentPlayerHistorySection(
+    summaries: List<McViewModel.PlayerActivitySummary>,
+    history: List<McViewModel.PlayerHistoryEntry>,
+    onShowDetail: (String) -> Unit,
+    onCopyText: (String) -> Unit,
+    onDeleteRecord: (String) -> Unit,
+    onClearAll: () -> Unit,
+    onExportCsv: () -> Unit
+) {
+    var search by remember { mutableStateOf("") }
+    var filterMode by remember { mutableStateOf(HistoryFilterMode.ALL) }
+    var sortMode by remember { mutableStateOf(HistorySortMode.RECENT) }
+    var sortMenuOpen by remember { mutableStateOf(false) }
+    var pendingDeletePlayer by remember { mutableStateOf<String?>(null) }
+    var confirmClearAll by remember { mutableStateOf(false) }
+
+    val filteredSummaries = remember(summaries, search, filterMode, sortMode) {
+        summaries
+            .filter { item ->
+                val matchQuery = matchesPlayerQuery(item.player, search) ||
+                    (item.uuid?.contains(search.trim(), ignoreCase = true) == true)
+                val matchFilter = when (filterMode) {
+                    HistoryFilterMode.ALL -> true
+                    HistoryFilterMode.ONLINE -> item.active
+                    HistoryFilterMode.OFFLINE -> !item.active
+                }
+                matchQuery && matchFilter
+            }
+            .let { list ->
+                when (sortMode) {
+                    HistorySortMode.RECENT -> list.sortedWith(
+                        compareByDescending<McViewModel.PlayerActivitySummary> { it.active }
+                            .thenByDescending { it.lastJoinMs }
+                    )
+                    HistorySortMode.NAME -> list.sortedBy { it.player.lowercase(java.util.Locale.ROOT) }
+                    HistorySortMode.PLAYTIME -> list.sortedWith(
+                        compareByDescending<McViewModel.PlayerActivitySummary> { it.totalSeconds }
+                            .thenByDescending { it.lastJoinMs }
+                    )
+                }
+            }
+    }
+
+    McCard(
+        title = "📜 Phần B — Lịch sử người chơi đã từng tham gia (${summaries.size})"
+    ) {
+        Text(
+            "Danh sách được lưu bền vững theo từng server trên thiết bị — giữ nguyên ngay cả sau khi dừng server, đóng ứng dụng hoặc khởi động lại điện thoại.",
+            color = Muted,
+            fontSize = 10.sp,
+            lineHeight = 14.sp
+        )
+        Spacer(Modifier.height(8.dp))
+
+        // Thống kê nhanh
+        val onlineCount = summaries.count { it.active }
+        val offlineCount = summaries.size - onlineCount
+        val totalPlaySec = summaries.sumOf { it.totalSeconds }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .background(IndigoSoft)
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "Tổng: ${summaries.size} người (🟢 $onlineCount online • ⚪ $offlineCount ngoại tuyến)",
+                color = Indigo,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                "Tích lũy: ${formatActivitySeconds(totalPlaySec)}",
+                color = Muted,
+                fontSize = 10.sp
+            )
+        }
+
+        Spacer(Modifier.height(10.dp))
+
+        // Ô tìm kiếm + nút Sắp xếp
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            OutlinedTextField(
+                value = search,
+                onValueChange = { search = it },
+                placeholder = { Text("Tìm theo tên người chơi hoặc UUID...", fontSize = 11.sp) },
+                leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null, modifier = Modifier.size(14.dp)) },
+                singleLine = true,
+                modifier = Modifier.weight(1f),
+                shape = McShape.ControlCompact
+            )
+            Box {
+                OutlinedButton(
+                    onClick = { sortMenuOpen = true },
+                    shape = McShape.ControlCompact
+                ) {
+                    Text(sortMode.label, color = Indigo, fontSize = 10.sp)
+                }
+                DropdownMenu(expanded = sortMenuOpen, onDismissRequest = { sortMenuOpen = false }) {
+                    HistorySortMode.values().forEach { mode ->
+                        DropdownMenuItem(
+                            text = { Text(mode.label, fontSize = 11.sp) },
+                            onClick = {
+                                sortMode = mode
+                                sortMenuOpen = false
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        // Bộ lọc trạng thái: Tất cả / Đang trực tuyến / Đã từng tham gia
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            HistoryFilterMode.values().forEach { mode ->
+                val selected = filterMode == mode
+                val count = when (mode) {
+                    HistoryFilterMode.ALL -> summaries.size
+                    HistoryFilterMode.ONLINE -> onlineCount
+                    HistoryFilterMode.OFFLINE -> offlineCount
+                }
+                if (selected) {
+                    Button(
+                        onClick = { filterMode = mode },
+                        colors = ButtonDefaults.buttonColors(containerColor = Indigo),
+                        shape = McShape.ControlCompact,
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        modifier = Modifier.weight(1f).height(32.dp)
+                    ) {
+                        Text("${mode.label} ($count)", color = Color.White, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                } else {
+                    OutlinedButton(
+                        onClick = { filterMode = mode },
+                        shape = McShape.ControlCompact,
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        modifier = Modifier.weight(1f).height(32.dp)
+                    ) {
+                        Text("${mode.label} ($count)", color = Indigo, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(10.dp))
+
+        if (summaries.isEmpty()) {
+            EmptyHint(
+                icon = Icons.Outlined.History,
+                text = "Chưa có lịch sử người chơi nào trên server này. Khi bạn bè tham gia server, tên, UUID, thời điểm vào/rời và thời gian chơi sẽ tự động lưu lại tại đây."
+            )
+        } else if (filteredSummaries.isEmpty()) {
+            EmptyHint(
+                icon = Icons.Outlined.Search,
+                text = "Không tìm thấy người chơi nào khớp với bộ lọc hiện tại."
+            )
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                filteredSummaries.forEach { item ->
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (item.active) MintSoft else IndigoSoft)
+                            .clickable { onShowDetail(item.player) }
+                            .padding(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (item.active) Mint else Indigo),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(item.player.take(2).uppercase(), color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Spacer(Modifier.size(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text(
+                                        item.player,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background((if (item.active) Mint else Muted).copy(alpha = 0.18f))
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        Text(
+                                            if (item.active) "Đang trực tuyến" else "Ngoại tuyến",
+                                            color = if (item.active) Mint else Muted,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                                Text(
+                                    "UUID: ${item.uuid ?: "Chưa ghi nhận UUID"}",
+                                    color = Muted,
+                                    fontSize = 9.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            IconButton(
+                                onClick = { onCopyText(item.uuid ?: item.player) },
+                                modifier = Modifier.size(McIcon.TouchCompact)
+                            ) {
+                                Icon(Icons.Outlined.ContentCopy, contentDescription = "Sao chép", tint = Indigo, modifier = Modifier.size(15.dp))
+                            }
+                            IconButton(
+                                onClick = { pendingDeletePlayer = item.player },
+                                modifier = Modifier.size(McIcon.TouchCompact)
+                            ) {
+                                Icon(Icons.Outlined.Delete, contentDescription = "Xóa bản ghi", tint = Coral, modifier = Modifier.size(15.dp))
+                            }
+                        }
+
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            buildString {
+                                append("• Lần đầu vào: ${item.firstSeenTime ?: "Chưa rõ"}\n")
+                                append("• Vào gần nhất: ${item.lastJoinTime ?: "Chưa rõ"}\n")
+                                append("• Rời gần nhất: ${item.lastLeaveTime ?: "Chưa rõ"}\n")
+                                append("• Số lần tham gia: ${item.sessions} phiên • Tổng thời gian chơi: ${formatActivitySeconds(item.totalSeconds)}")
+                            },
+                            color = Muted,
+                            fontSize = 10.sp,
+                            lineHeight = 14.sp
+                        )
+                    }
+                }
+            }
+        }
+
+        if (summaries.isNotEmpty() || history.isNotEmpty()) {
+            Spacer(Modifier.height(10.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onExportCsv,
+                    shape = McShape.ControlCompact,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(stringResource(R.string.player_export_csv), color = Indigo, fontSize = 11.sp)
+                }
+                OutlinedButton(
+                    onClick = { confirmClearAll = true },
+                    shape = McShape.ControlCompact,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("🗑️ Xóa toàn bộ lịch sử", color = Coral, fontSize = 11.sp)
+                }
+            }
+        }
+    }
+
+    pendingDeletePlayer?.let { targetPlayer ->
+        AlertDialog(
+            onDismissRequest = { pendingDeletePlayer = null },
+            title = { Text("Xóa lịch sử của「$targetPlayer」?", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "Bản ghi lịch sử tham gia của「$targetPlayer」trong ứng dụng sẽ bị xóa.\n\n" +
+                        "🛡️ An toàn dữ liệu: Thao tác này KHÔNG xóa nhân vật, túi đồ hay dữ liệu thế giới (world/playerdata) trong server.",
+                    fontSize = 12.sp
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onDeleteRecord(targetPlayer)
+                        pendingDeletePlayer = null
+                    }
+                ) {
+                    Text("Xóa bản ghi", color = Coral, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDeletePlayer = null }) {
+                    Text(stringResource(R.string.props_cancel))
+                }
+            }
+        )
+    }
+
+    if (confirmClearAll) {
+        AlertDialog(
+            onDismissRequest = { confirmClearAll = false },
+            title = { Text("Xóa toàn bộ lịch sử người chơi?", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "Toàn bộ danh sách lịch sử người chơi của server này trong ứng dụng sẽ được làm trống.\n\n" +
+                        "🛡️ An toàn dữ liệu: Thao tác này KHÔNG xóa thế giới, túi đồ (playerdata), danh sách OP, Whitelist hay Ban của server.",
+                    fontSize = 12.sp
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onClearAll()
+                        confirmClearAll = false
+                    }
+                ) {
+                    Text("Xóa toàn bộ lịch sử", color = Coral, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmClearAll = false }) {
+                    Text(stringResource(R.string.props_cancel))
+                }
+            }
+        )
     }
 }
 
@@ -1013,6 +1420,7 @@ private fun PlayerDetailDialog(
     activity: McViewModel.PlayerActivitySummary?,
     isRunning: Boolean,
     onDismiss: () -> Unit,
+    onDeleteHistory: (String) -> Unit,
     onDeop: (String) -> Unit,
     onWhitelistRemove: (String) -> Unit,
     onPardon: (String) -> Unit,
@@ -1021,6 +1429,7 @@ private fun PlayerDetailDialog(
     onSetGameMode: (String, Int) -> Unit,
     onGiveXp: (String, Int) -> Unit
 ) {
+    var confirmDeleteThisPlayer by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
@@ -1033,22 +1442,25 @@ private fun PlayerDetailDialog(
         text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 when (info) {
-                    is DetailInfo.Activity -> DetailRow(stringResource(R.string.s697), info.player)
+                    is DetailInfo.Activity -> {
+                        DetailRow(stringResource(R.string.s697), info.player)
+                        DetailRow("UUID", activity?.uuid ?: "Chưa ghi nhận UUID")
+                    }
                     is DetailInfo.Op -> {
                         val op = info.entry
                         DetailRow(stringResource(R.string.s697), op.name)
-                        DetailRow("UUID", op.uuid)
+                        DetailRow("UUID", op.uuid.ifBlank { activity?.uuid ?: "Chưa ghi nhận UUID" })
                         DetailRow(stringResource(R.string.s721), "${op.level} / 4")
                     }
                     is DetailInfo.Whitelist -> {
                         val w = info.entry
                         DetailRow(stringResource(R.string.s697), w.name)
-                        DetailRow("UUID", w.uuid)
+                        DetailRow("UUID", w.uuid.ifBlank { activity?.uuid ?: "Chưa ghi nhận UUID" })
                     }
                     is DetailInfo.Banned -> {
                         val b = info.entry
                         DetailRow(stringResource(R.string.s697), b.name)
-                        DetailRow("UUID", b.uuid)
+                        DetailRow("UUID", b.uuid.ifBlank { activity?.uuid ?: "Chưa ghi nhận UUID" })
                         DetailRow(stringResource(R.string.s722), b.reason.ifBlank { stringResource(R.string.s723) })
                         DetailRow(stringResource(R.string.s724), b.expires.ifBlank { stringResource(R.string.s661) })
                         if (b.source.isNotBlank()) DetailRow(stringResource(R.string.s725), b.source)
@@ -1057,11 +1469,18 @@ private fun PlayerDetailDialog(
 
                 activity?.let { summary ->
                     Spacer(Modifier.height(8.dp))
-                    Text("Lịch sử hoạt động", color = Indigo, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Lịch sử tham gia bền vững", color = Indigo, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    DetailRow("Trạng thái hiện tại", if (summary.active) "🟢 Đang trực tuyến" else "⚪ Ngoại tuyến")
+                    DetailRow("Lần đầu tham gia", summary.firstSeenTime ?: "Chưa có dữ liệu")
                     DetailRow("Lần vào gần nhất", summary.lastJoinTime ?: "Chưa có dữ liệu")
-                    DetailRow("Lần rời gần nhất", summary.lastLeaveTime ?: if (summary.active) "Đang online" else "Chưa có dữ liệu")
-                    DetailRow("Tổng thời gian online", formatActivitySeconds(summary.totalSeconds))
-                    DetailRow("Lý do thoát cuối", summary.lastExitReason ?: if (summary.active) "Đang online" else "Chưa có dữ liệu")
+                    DetailRow("Lần rời gần nhất", summary.lastLeaveTime ?: if (summary.active) "Đang trực tuyến" else "Chưa có dữ liệu")
+                    DetailRow("Tổng số lần tham gia", "${summary.sessions} phiên")
+                    DetailRow("Tổng thời gian đã chơi", formatActivitySeconds(summary.totalSeconds))
+                    DetailRow("Ghi chú phiên gần nhất", summary.lastExitReason ?: if (summary.active) "Đang trực tuyến" else "Chưa có dữ liệu")
+                    Spacer(Modifier.height(6.dp))
+                    TextButton(onClick = { confirmDeleteThisPlayer = true }) {
+                        Text("🗑️ Xóa bản ghi lịch sử của người chơi này", color = Coral, fontSize = 11.sp)
+                    }
                 }
 
                 Spacer(Modifier.height(12.dp))
@@ -1129,6 +1548,34 @@ private fun PlayerDetailDialog(
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.s620)) }
         }
     )
+    if (confirmDeleteThisPlayer) {
+        val targetName = info.playerName()
+        AlertDialog(
+            onDismissRequest = { confirmDeleteThisPlayer = false },
+            title = { Text("Xóa lịch sử của「$targetName」?", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "Bản ghi lịch sử tham gia của「$targetName」trong ứng dụng sẽ bị xóa. Dữ liệu nhân vật và túi đồ trong thế giới (world/playerdata) KHÔNG bị ảnh hưởng.",
+                    fontSize = 12.sp
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmDeleteThisPlayer = false
+                        onDeleteHistory(targetName)
+                    }
+                ) {
+                    Text("Xóa bản ghi", color = Coral, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDeleteThisPlayer = false }) {
+                    Text(stringResource(R.string.props_cancel))
+                }
+            }
+        )
+    }
 }
 
 // ── 通用组件 ──────────────────────────────────────────────────────

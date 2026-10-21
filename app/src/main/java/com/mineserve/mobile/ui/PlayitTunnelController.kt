@@ -58,8 +58,19 @@ data class PlayitUiState(
     val activeConnections: Int = 0,
     val hasSavedSecret: Boolean = false,
     val errorMessage: String = "",
-    val recentLogs: List<String> = emptyList()
-)
+    val recentLogs: List<String> = emptyList(),
+    val lastUpdatedText: String = ""
+) {
+    val isRunning: Boolean
+        get() = stage == PlayitStage.Running ||
+            stage == PlayitStage.WaitingForClaim ||
+            stage == PlayitStage.VerifyingSecret ||
+            stage == PlayitStage.CreatingTunnel ||
+            stage == PlayitStage.ConnectingControl
+
+    val isClaimed: Boolean
+        get() = hasSavedSecret && stage != PlayitStage.WaitingForClaim
+}
 
 data class VirtualLanEndpoint(
     val interfaceName: String,
@@ -321,6 +332,7 @@ class PlayitTunnelController(
                 val (controlAddr, pong) = findReachableControlServer(udpSocket, routingTargets)
                 val registered = authenticateControlChannel(udpSocket, controlAddr, pong, secret)
 
+                val nowTimeStr = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
                 appendLog("Đường hầm Playit.gg ĐÃ HOẠT ĐỘNG! Người chơi dùng 4G hoặc Wi-Fi khác đã có thể vào server.")
                 updateState {
                     it.copy(
@@ -328,7 +340,8 @@ class PlayitTunnelController(
                         statusText = "Đang hoạt động (Chơi mọi nơi 4G / Wi-Fi)",
                         publicAddress = addressPair.first.ifBlank { it.publicAddress },
                         secondaryAddress = addressPair.second,
-                        errorMessage = ""
+                        errorMessage = "",
+                        lastUpdatedText = nowTimeStr
                     )
                 }
 
@@ -599,9 +612,26 @@ class PlayitTunnelController(
             }
         }
 
-        val list = found.toList()
-        val primary = list.firstOrNull().orEmpty()
-        val secondary = list.drop(1).firstOrNull().orEmpty()
+        // Ưu tiên số 1 cho địa chỉ có sẵn :PORT (ví dụ: 217.ip.gl.ply.gg:38773) vì hoạt động 100%
+        // trên mọi trình khởi chạy Minecraft (Pojav, FCL, Zalith, TLauncher, PC) và mọi mạng 4G
+        // mà không phụ thuộc vào bản ghi DNS SRV.
+        val assignedPort = found.firstNotNullOfOrNull { item ->
+            item.substringAfterLast(':', "").toIntOrNull()?.takeIf { it in 1..65535 && it != 25565 }
+        }
+        val normalized = found.map { item ->
+            if (!item.contains(":") && assignedPort != null && item.endsWith(".tun.ply.gg", ignoreCase = true)) {
+                "$item:$assignedPort"
+            } else {
+                item
+            }
+        }.distinct()
+        val sorted = normalized.sortedWith(
+            compareByDescending<String> { it.contains(":") && !it.endsWith(".tun.ply.gg:$assignedPort", ignoreCase = true) }
+                .thenByDescending { it.contains(":") }
+                .thenByDescending { it.contains(".joinmc.link", ignoreCase = true) }
+        )
+        val primary = sorted.firstOrNull().orEmpty()
+        val secondary = sorted.drop(1).firstOrNull().orEmpty()
         return primary to secondary
     }
 

@@ -175,9 +175,42 @@ fun PluginsScreen(vm: McViewModel) {
     val isLoadingMoreMods by vm.isLoadingMoreMods.collectAsState()
     val isLoadingMorePlugins by vm.isLoadingMorePlugins.collectAsState()
     val downloadProgress by vm.pluginDownloadProgress.collectAsState()
+    val modBatchProgress by vm.modBatchProgress.collectAsState()
+    val lastModImportReport by vm.lastModImportReport.collectAsState()
     val serverState by vm.serverState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+
+    if (modBatchProgress != null) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("📦 Đang xử lý & giải mã gói Mod...", fontSize = 15.sp, fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = Indigo)
+                    Text(modBatchProgress ?: "", fontSize = 12.sp, color = Muted)
+                }
+            },
+            confirmButton = {}
+        )
+    }
+
+    if (lastModImportReport != null) {
+        AlertDialog(
+            onDismissRequest = { vm.clearModImportReport() },
+            title = { Text("🎉 Kết quả Giải mã & Cài đặt Mod", fontSize = 15.sp, fontWeight = FontWeight.Bold) },
+            text = {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    Text(lastModImportReport ?: "", fontSize = 12.sp, lineHeight = 18.sp)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { vm.clearModImportReport() }) {
+                    Text("Đã hiểu", color = Indigo, fontWeight = FontWeight.Bold)
+                }
+            }
+        )
+    }
 
     // 全局安装/下载进度对话框（精选插件、Modrinth、自定义 URL 统一反馈）
     val installingEntry = downloadProgress.entries.firstOrNull()
@@ -422,6 +455,7 @@ fun PluginsScreen(vm: McViewModel) {
             }
             } else {
                 ModsTab(
+                    vm = vm,
                     mods = mods,
                     curatedMods = vm.curatedMods,
                     activeCoreExists = activeCore != null,
@@ -1124,6 +1158,7 @@ private fun BadgeChip(text: String, color: Color, bg: Color) {
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
 private fun ModsTab(
+    vm: McViewModel,
     mods: List<PluginManager.ModEntry>,
     curatedMods: List<PluginManager.CuratedMod>,
     activeCoreExists: Boolean,
@@ -1153,6 +1188,14 @@ private fun ModsTab(
     val filePickerLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri -> uri?.let(onUpload) }
+
+    // ── Thẻ Giải mã Thư mục / Gói Full Mod & Chuyển Mod sang Server Mới ──
+    ModPackDecoderAndTransferCard(
+        vm = vm,
+        activeCoreExists = activeCoreExists,
+        serverRunning = serverRunning,
+        hasInstalledMods = mods.isNotEmpty()
+    )
 
     // 已安装模组
     McCard(title = stringResource(R.string.s828)) {
@@ -1763,4 +1806,241 @@ private fun formatBytes(bytes: Long): String {
     if (mb < 1024) return String.format(java.util.Locale.US, "%.1f MB", mb)
     val gb = mb / 1024.0
     return String.format(java.util.Locale.US, "%.2f GB", gb)
+}
+
+@Composable
+private fun ModPackDecoderAndTransferCard(
+    vm: McViewModel,
+    activeCoreExists: Boolean,
+    serverRunning: Boolean,
+    hasInstalledMods: Boolean
+) {
+    val config by vm.config.collectAsState()
+    val otherServers = remember(config.installedCores, config.activeCoreName) {
+        config.installedCores.filter { it.name != config.activeCoreName }
+    }
+    var showServerTransferDialog by remember { mutableStateOf(false) }
+    var showAutoPackConfirmDialog by remember { mutableStateOf(false) }
+    var copyConfigsToo by remember { mutableStateOf(true) }
+
+    // 1. Chọn nguyên Thư mục Full Mod (SAF OpenDocumentTree)
+    val folderTreeLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { treeUri ->
+        if (treeUri != null) {
+            vm.importModsFromFolderUri(treeUri)
+        }
+    }
+
+    // 2. Chọn gói nén .zip / .mrpack
+    val archiveLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { archiveUri ->
+        if (archiveUri != null) {
+            vm.importModsFromArchiveUri(archiveUri)
+        }
+    }
+
+    // 3. Chọn nhiều tệp .jar cùng lúc
+    val multiJarLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            vm.uploadMultipleModFiles(uris)
+        }
+    }
+
+    // 4. Xuất toàn bộ mods/ ra .zip
+    val exportZipLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/zip")
+    ) { targetUri ->
+        if (targetUri != null) {
+            vm.exportCurrentModsToZip(targetUri, includeConfigs = true)
+        }
+    }
+
+    McCard(title = "📦 Giải Mã Thư Mục Full Mod & Chuyển Mod Sang Server Mới") {
+        Text(
+            "Bạn có thư mục chứa nhiều mod (.minecraft/mods), gói nén (.zip / .mrpack) hoặc muốn chuyển toàn bộ mod sang server mới? " +
+                "Hệ thống sẽ tự động giải mã, đưa mod vào thư mục mods/, chép kèm config/ và tự động tắt (.jar.disabled) các mod chỉ dành cho máy khách (Sodium, Litematica, MaLiLib, EntityCulling, Stfu...) để server không bị sập!",
+            color = Muted,
+            fontSize = 11.sp,
+            lineHeight = 16.sp
+        )
+        Spacer(Modifier.height(10.dp))
+
+        // Hàng 1: Giải mã Thư mục Full Mod & Giải mã Gói ZIP/MRPACK
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Button(
+                onClick = { folderTreeLauncher.launch(null) },
+                enabled = activeCoreExists && !serverRunning,
+                colors = ButtonDefaults.buttonColors(containerColor = Indigo),
+                shape = McShape.ControlCompact,
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("📂 Tải Thư Mục Full Mod", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
+            Button(
+                onClick = { archiveLauncher.launch(arrayOf("application/zip", "application/x-modrinth-modpack+zip", "*/*")) },
+                enabled = activeCoreExists && !serverRunning,
+                colors = ButtonDefaults.buttonColors(containerColor = Mint),
+                shape = McShape.ControlCompact,
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("🗜️ Giải Mã ZIP / .mrpack", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        // Hàng 2: Chọn nhiều file .jar cùng lúc & Chuyển từ Server cũ
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedButton(
+                onClick = { multiJarLauncher.launch(arrayOf("application/java-archive", "*/*")) },
+                enabled = activeCoreExists && !serverRunning,
+                shape = McShape.ControlCompact,
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("📑 Chọn Nhiều Tệp .jar", color = Indigo, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+            }
+            OutlinedButton(
+                onClick = { showServerTransferDialog = true },
+                enabled = activeCoreExists && !serverRunning,
+                shape = McShape.ControlCompact,
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("🔄 Chuyển Từ Server Cũ", color = Indigo, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        // Hàng 3: Xuất toàn bộ Mod ra ZIP & Tải tự động bộ 50+ Mod từ Modrinth
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedButton(
+                onClick = {
+                    val safeCore = (config.activeCoreName ?: "server").replace(Regex("[^A-Za-z0-9_-]"), "_")
+                    exportZipLauncher.launch("full_mods_${safeCore}.zip")
+                },
+                enabled = activeCoreExists && hasInstalledMods,
+                shape = McShape.ControlCompact,
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("📤 Xuất Full Mod ra ZIP", color = Indigo, fontSize = 11.sp)
+            }
+            OutlinedButton(
+                onClick = { showAutoPackConfirmDialog = true },
+                enabled = activeCoreExists && !serverRunning,
+                shape = McShape.ControlCompact,
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("⚡ Tải Bộ Mod Của Bạn", color = Mint, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+
+    if (showServerTransferDialog) {
+        AlertDialog(
+            onDismissRequest = { showServerTransferDialog = false },
+            title = { Text("🔄 Chuyển Mod & Config Từ Server Khác", fontSize = 15.sp, fontWeight = FontWeight.Bold) },
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (otherServers.isEmpty()) {
+                        Text(
+                            "Hiện chỉ có 1 server trong ứng dụng. Nếu bộ mod cũ của bạn nằm trong thư mục điện thoại hoặc từ launcher khác (Pojav/Zalith/FCL), hãy bấm nút '📂 Tải Thư Mục Full Mod' hoặc '⚡ Tải Bộ Mod Của Bạn' nhé!",
+                            color = Muted,
+                            fontSize = 12.sp
+                        )
+                    } else {
+                        Text(
+                            "Chọn server cũ mà bạn muốn lấy toàn bộ Mod chuyển sang server「${config.activeCoreName ?: ""}」:",
+                            fontSize = 12.sp,
+                            color = Muted
+                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = copyConfigsToo, onCheckedChange = { copyConfigsToo = it })
+                            Text("Sao chép kèm cả thư mục cấu hình (config/)", fontSize = 12.sp)
+                        }
+                        otherServers.forEach { srv ->
+                            OutlinedButton(
+                                onClick = {
+                                    showServerTransferDialog = false
+                                    vm.copyModsFromAnotherServer(srv.dirName, copyConfigsToo)
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = McShape.ControlCompact
+                            ) {
+                                Text(
+                                    "Chuyển từ: ${srv.name} (${srv.core.displayName} ${srv.version})",
+                                    color = Indigo,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showServerTransferDialog = false }) {
+                    Text("Đóng")
+                }
+            }
+        )
+    }
+
+    if (showAutoPackConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showAutoPackConfirmDialog = false },
+            title = { Text("⚡ Cài Tự Động Bộ Mod Sinh Tồn & Thế Giới Mở", fontSize = 15.sp, fontWeight = FontWeight.Bold) },
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        "Tính năng này sẽ tự động tải trực tiếp từ Modrinth trọn bộ 45+ Mod Server & Thư viện phụ thuộc (trong bộ mod bạn đã gửi ảnh chụp) phù hợp với phiên bản server hiện tại:",
+                        fontSize = 12.sp
+                    )
+                    Text(
+                        "• Thư viện lõi: Fabric API, Lithium, FerriteCore, Architectury API, Cloth Config, Collective, Balm, YUNG's API, Lithostitched, GlitchCore, Forge Config API Port.\n" +
+                            "• Thế giới & Công trình: Terralith, Tectonic, Biomes O' Plenty, YUNG's Better (Dungeons, Mineshafts, Strongholds, Desert/Jungle Temples, Ocean Monuments, Nether Fortresses, End Island, Witch Huts, Bridges, Extras), Dungeons & Taverns, Towns & Towers, Structory, Tidal Towns, ChoiceTheorem's Overhauled Village, Hopo Better Ruins/Portals, Moog's End/Voyager Structures.\n" +
+                            "• Tiện ích Sinh tồn: Waystones, Explorer's Compass, Nature's Compass, Backpacked, Farmer's Delight, Tree Harvester, Carry On, VillagersPlus, Guard Villagers, Trade Cycling, Universal Graves.\n" +
+                            "• Lưu ý bảo vệ Server: Các mod thuần đồ họa/giao diện máy khách (Sodium, Litematica, MaLiLib, EntityCulling, Stfu) đã được tự động loại trừ để server không bị sập.",
+                        fontSize = 11.sp,
+                        color = Muted,
+                        lineHeight = 16.sp
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showAutoPackConfirmDialog = false
+                        vm.installUserScreenshotModpackFromModrinth()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Mint)
+                ) {
+                    Text("Bắt đầu tải & cài đặt", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAutoPackConfirmDialog = false }) {
+                    Text("Hủy")
+                }
+            }
+        )
+    }
 }

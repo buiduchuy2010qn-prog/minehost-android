@@ -24,17 +24,56 @@ class PlayerManager(private val termux: TermuxRuntime) {
 
     /** 进服/离服日志解析：日志前缀(]: 结尾) + 玩家名(1-16位字母数字下划线) + 可选[IP]后缀 + (has) joined/left the game。
      * 以 ": " 锚定日志前缀结尾，过滤聊天消息（如 "<Steve> I joined the game"）误提取。 */
-    private val joinLeaveStrictRegex = Regex(":\\s*([A-Za-z0-9_]{1,16})(?:\\[[^\\]]*\\])?\\s+(?:has\\s+)?(?:joined|left) the game")
+    private val joinLeaveStrictRegex = Regex(":\\s*([A-Za-z0-9_.]{1,16})(?:\\[[^\\]]*\\])?\\s+(?:has\\s+)?(?:joined|left) the game")
 
     /** 宽松回退：兼容无日志前缀冒号的极端格式（如直接输出 "Steve joined the game"） */
-    private val joinLeaveLooseRegex = Regex("([A-Za-z0-9_]{1,16})(?:\\[[^\\]]*\\])?\\s+(?:has\\s+)?(?:joined|left) the game")
-    private val powerNukkitJoinRegex = Regex("(?:^|[: ]\\s*)([A-Za-z0-9_]{1,16})(?:\\[[^]]*])?\\s+logged in with entity id", RegexOption.IGNORE_CASE)
-    private val powerNukkitLeaveRegex = Regex("(?:^|[: ]\\s*)([A-Za-z0-9_]{1,16})(?:\\[[^]]*])?\\s+disconnected(?:[: ]|$)", RegexOption.IGNORE_CASE)
+    private val joinLeaveLooseRegex = Regex("([A-Za-z0-9_.]{1,16})(?:\\[[^\\]]*\\])?\\s+(?:has\\s+)?(?:joined|left) the game")
+    private val powerNukkitJoinRegex = Regex("(?:^|[: ]\\s*)([A-Za-z0-9_.]{1,16})(?:\\[[^]]*])?\\s+logged in with entity id", RegexOption.IGNORE_CASE)
+    private val powerNukkitLeaveRegex = Regex("(?:^|[: ]\\s*)([A-Za-z0-9_.]{1,16})(?:\\[[^]]*])?\\s+disconnected(?:[: ]|$)", RegexOption.IGNORE_CASE)
+    private val playerUuidRegex = Regex(
+        "UUID of player ([A-Za-z0-9_.]{1,16}) is ([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[0-9a-fA-F]{32})",
+        RegexOption.IGNORE_CASE
+    )
+    private val disconnectReasonRegex = Regex(
+        ":\\s*([A-Za-z0-9_.]{1,16})\\s+lost connection:\\s*(.+)$",
+        RegexOption.IGNORE_CASE
+    )
 
     fun extractPowerNukkitPlayerEvent(line: String): Pair<String, Boolean>? {
         powerNukkitJoinRegex.find(line)?.groupValues?.getOrNull(1)?.let { return it to true }
         powerNukkitLeaveRegex.find(line)?.groupValues?.getOrNull(1)?.let { return it to false }
         return null
+    }
+
+    /**
+     * Trích xuất UUID thực tế của người chơi từ dòng log xác thực của server:
+     * Ví dụ: `[User Authenticator #1/INFO]: UUID of player Steve is 069a79f4-44e9-4726-a5be-fca90e38aaf5`
+     */
+    fun extractPlayerUuid(line: String): Pair<String, String>? {
+        if (!line.contains("UUID of player", ignoreCase = true)) return null
+        val m = playerUuidRegex.find(line) ?: return null
+        val name = m.groupValues.getOrNull(1)?.trim().orEmpty()
+        val rawUuid = m.groupValues.getOrNull(2)?.trim().orEmpty()
+        if (name.isEmpty() || rawUuid.isEmpty()) return null
+        val formattedUuid = if (rawUuid.length == 32 && !rawUuid.contains('-')) {
+            "${rawUuid.substring(0, 8)}-${rawUuid.substring(8, 12)}-${rawUuid.substring(12, 16)}-${rawUuid.substring(16, 20)}-${rawUuid.substring(20, 32)}"
+        } else {
+            rawUuid
+        }
+        return name to formattedUuid
+    }
+
+    /**
+     * Trích xuất lý do ngắt kết nối của người chơi từ dòng log:
+     * Ví dụ: `[Server thread/INFO]: Steve lost connection: Disconnected`
+     */
+    fun extractDisconnectReason(line: String): Pair<String, String>? {
+        if (!line.contains("lost connection:", ignoreCase = true)) return null
+        val m = disconnectReasonRegex.find(line) ?: return null
+        val name = m.groupValues.getOrNull(1)?.trim().orEmpty()
+        val reason = m.groupValues.getOrNull(2)?.trim().orEmpty()
+        if (name.isEmpty() || reason.isEmpty()) return null
+        return name to reason
     }
 
     @Serializable
@@ -52,12 +91,24 @@ class PlayerManager(private val termux: TermuxRuntime) {
         val source: String = ""
     )
 
+    @Serializable
+    data class UserCacheEntry(
+        val name: String = "",
+        val uuid: String = "",
+        val expiresOn: String = ""
+    )
+
     /** 宽松解析：MC 的 JSON 可能含额外字段（bypassesPlayerLimit 等），全部忽略 */
     private val json = Json { ignoreUnknownKeys = true }
 
     /** MC 服务端工作目录（home/servers/{dirName}） */
     fun serverDir(dirName: String): File =
         File(termux.installer.rootDir, "home/servers/$dirName")
+
+    /** Đọc `usercache.json` của server để lấy UUID chính xác (tuyệt đối không tự bịa UUID) */
+    fun readUserCache(dirName: String): List<UserCacheEntry> =
+        readJsonList<UserCacheEntry>(File(serverDir(dirName), "usercache.json"))
+            .filter { it.name.isNotBlank() && it.uuid.isNotBlank() }
 
     /** 读取 ops.json；文件不存在或解析失败时返回空列表 */
     fun readOps(dirName: String): List<OpEntry> {
