@@ -261,7 +261,7 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        "💾 Bộ nhớ trống hiện tại: ${freeStorageMb} MB • RAM cấp phát: ${config.memoryMb} MB",
+                        "💾 Bộ nhớ trống hiện tại: ${freeStorageMb} MB • RAM cấp phát: ${config.maxHeapMb} MB",
                         color = if (freeStorageMb > 1024) Indigo else Coral,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold

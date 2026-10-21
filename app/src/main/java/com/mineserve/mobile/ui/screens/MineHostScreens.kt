@@ -28,12 +28,12 @@ import androidx.compose.foundation.BorderStroke
 
 @Composable
 internal fun HostPage(title: String, subtitle: String, content: LazyListScope.() -> Unit) {
-    val artKind = remember(title) {
+    val artKind: MinecraftArtKind = remember(title) {
         when {
-            title.contains("Thế giới", ignoreCase = true) || title.contains("Map", ignoreCase = true) -> MinecraftArtKind.GrassBlock
-            title.contains("Người chơi", ignoreCase = true) -> MinecraftArtKind.DiamondSword
-            title.contains("Kho", ignoreCase = true) || title.contains("Quản lý", ignoreCase = true) -> MinecraftArtKind.CommandBlock
-            else -> MinecraftArtKind.CreeperFace
+            title.contains("Thế giới", ignoreCase = true) || title.contains("Map", ignoreCase = true) -> MinecraftArtKind.GRASS
+            title.contains("Người chơi", ignoreCase = true) -> MinecraftArtKind.DIAMOND_SWORD
+            title.contains("Kho", ignoreCase = true) || title.contains("Quản lý", ignoreCase = true) -> MinecraftArtKind.COMMAND_BLOCK
+            else -> MinecraftArtKind.CREEPER
         }
     }
     LazyColumn(
@@ -561,10 +561,7 @@ fun MineHostManage(navigate: (SubPage) -> Unit) {
             HostAction("Nhập thế giới (ZIP / Thư mục / Map Mod)", "Nhập từ ZIP hoặc thư mục giải nén kèm tự động cài mod.", Icons.Outlined.FileUpload) { navigate(SubPage.WorldImport) }
         }
         item {
-            HostAction("Quản lý Thế giới (World)", "Kiểm tra thế giới, đổi tên, xuất ZIP, chọn và đặt lại world.", Icons.Outlined.Public) { navigate(SubPage.WorldManage) }
-        }
-        item {
-            HostAction("Quản lý Tệp tin & Trình sửa cấu hình", "Duyệt thư mục server, sửa tệp văn bản (.properties, .yml, .json).", Icons.Outlined.Folder) { navigate(SubPage.Files) }
+            HostAction("Thế giới (World)", "Kiểm tra thế giới, đổi tên, xuất ZIP, chọn và đặt lại world.", Icons.Outlined.Public) { navigate(SubPage.WorldManage) }
         }
         item {
             HostAction("Sao lưu & khôi phục", "Bảo vệ world trước khi nâng cấp.", Icons.Outlined.Backup) { navigate(SubPage.Backup) }

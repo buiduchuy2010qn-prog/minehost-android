@@ -93,7 +93,7 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    MinecraftPixelArtIcon(kind = MinecraftArtKind.GrassBlock, size = 34.dp)
+                    MinecraftPixelArtIcon(kind = MinecraftArtKind.GRASS, size = 34.dp)
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             "Nhập từ ZIP hoặc Thư mục • Xuất ZIP • Đổi tên • Kiểm tra lỗi",
@@ -183,7 +183,7 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
                     if (world.isActive) {
                         Surface(
                             color = Mint.copy(alpha = 0.18f),
-                            shape = McShape.Pill,
+                            shape = McShape.Chip,
                             border = BorderStroke(1.dp, Mint.copy(alpha = 0.55f))
                         ) {
                             Text(
