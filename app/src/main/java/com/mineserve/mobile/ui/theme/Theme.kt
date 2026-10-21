@@ -1,7 +1,7 @@
 package com.mineserve.mobile.ui.theme
 
+import android.content.Context
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.LocalOverscrollConfiguration
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
@@ -9,16 +9,71 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
-/**
- * 全局形状：让走默认形状的组件（Card / OutlinedTextField / AlertDialog / Chip）
- * 自动落在项目的圆角体系上，而不是 Material3 的内置默认值。
- * - extraSmall 是 OutlinedTextField 的默认形状：原先 4dp 的尖角输入框与 12dp 的按钮
- *   明显不是一套语言，统一到 10dp；
- * - medium 是 Card 的默认形状，与 McCard 的 12dp 保持一致；
- * - large 是 AlertDialog 的默认形状，统一到 20dp（原先 28dp 偏大）。
- */
+enum class EyeCareColorPreset(val id: String, val labelVi: String) {
+    SoftSlate("soft_slate", "🌙 Xanh Đá Dịu Mắt"),
+    WarmMocha("warm_mocha", "☕ Đêm Ấm Bảo Vệ Mắt"),
+    WarmPaperLight("warm_light", "🌤️ Sáng Giấy Ấm")
+}
+
+object AppUiSettings {
+    private const val PREFS_NAME = "minehost_ui_appearance"
+    private const val KEY_FONT_SCALE = "font_scale_multiplier"
+    private const val KEY_COLOR_PRESET = "eye_care_color_preset"
+
+    // Mặc định phóng chữ 1.18x để toàn bộ chữ trong app to, rõ ràng ngay từ đầu
+    private val _fontScale = MutableStateFlow(1.18f)
+    val fontScale: StateFlow<Float> = _fontScale.asStateFlow()
+
+    private val _colorPreset = MutableStateFlow(EyeCareColorPreset.SoftSlate)
+    val colorPreset: StateFlow<EyeCareColorPreset> = _colorPreset.asStateFlow()
+
+    @Volatile
+    private var initialized = false
+
+    fun ensureLoaded(context: Context) {
+        if (initialized) return
+        synchronized(this) {
+            if (initialized) return
+            val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            _fontScale.value = prefs.getFloat(KEY_FONT_SCALE, 1.18f).coerceIn(1.0f, 1.55f)
+            val savedPresetId = prefs.getString(KEY_COLOR_PRESET, EyeCareColorPreset.SoftSlate.id)
+            _colorPreset.value = EyeCareColorPreset.entries.firstOrNull { it.id == savedPresetId }
+                ?: EyeCareColorPreset.SoftSlate
+            initialized = true
+        }
+    }
+
+    fun setFontScale(context: Context, scale: Float) {
+        val clamped = scale.coerceIn(1.0f, 1.55f)
+        _fontScale.value = clamped
+        context.applicationContext
+            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putFloat(KEY_FONT_SCALE, clamped)
+            .apply()
+    }
+
+    fun setColorPreset(context: Context, preset: EyeCareColorPreset) {
+        _colorPreset.value = preset
+        context.applicationContext
+            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_COLOR_PRESET, preset.id)
+            .apply()
+    }
+}
+
 private val McShapes = Shapes(
     extraSmall = McShape.Row,
     small = McShape.Row,
@@ -29,15 +84,15 @@ private val McShapes = Shapes(
 
 private val McColorScheme = lightColorScheme(
     primary = Indigo,
-    onPrimary = LightCard,
+    onPrimary = Color.White,
     primaryContainer = LightIndigoSoft,
-    onPrimaryContainer = Indigo,
+    onPrimaryContainer = IndigoDark,
     secondary = Mint,
-    onSecondary = LightCard,
+    onSecondary = Color.White,
     secondaryContainer = LightMintSoft,
     onSecondaryContainer = Mint,
     tertiary = Coral,
-    onTertiary = LightCard,
+    onTertiary = Color.White,
     tertiaryContainer = LightCoralSoft,
     onTertiaryContainer = Coral,
     background = LightBg,
@@ -47,8 +102,6 @@ private val McColorScheme = lightColorScheme(
     surfaceVariant = LightFieldGray,
     onSurfaceVariant = LightMuted,
     outline = LightLine,
-    // 显式给出描边与容器色阶：Line 令牌读的是 outlineVariant，
-    // 不覆盖会落到 M3 默认的 #CAC4D0（明显偏灰），卡片边框会比设计稿重。
     outlineVariant = LightLine,
     surfaceTint = Indigo,
     surfaceContainerLowest = LightContainerLowest,
@@ -60,23 +113,23 @@ private val McColorScheme = lightColorScheme(
     surfaceBright = LightSurfaceBright,
     inverseSurface = LightInk,
     inverseOnSurface = LightBg,
-    inversePrimary = Color(0xFF8BD9AC),
+    inversePrimary = Color(0xFF7AA8F8),
     scrim = Color(0xFF000000)
 )
 
-private val McDarkColorScheme = darkColorScheme(
-    primary = Color(0xFF8BD9AC),
-    onPrimary = Color(0xFF06301F),
+private val McSoftSlateDarkScheme = darkColorScheme(
+    primary = Color(0xFF7AA8F8),
+    onPrimary = Color(0xFF102347),
     primaryContainer = DarkIndigoSoft,
-    onPrimaryContainer = Color(0xFFB9F2CE),
+    onPrimaryContainer = Color(0xFFD6E4FF),
     secondary = MintBright,
-    onSecondary = Color(0xFF06301F),
+    onSecondary = Color(0xFF0E2F20),
     secondaryContainer = DarkMintSoft,
-    onSecondaryContainer = MintBright,
-    tertiary = Color(0xFFFFB4A8),
-    onTertiary = Color(0xFF561E1A),
+    onSecondaryContainer = Color(0xFFB8EBCD),
+    tertiary = Color(0xFFF08C84),
+    onTertiary = Color(0xFF4A1815),
     tertiaryContainer = DarkCoralSoft,
-    onTertiaryContainer = Color(0xFFFFB4A8),
+    onTertiaryContainer = Color(0xFFFFD9D6),
     background = DarkBg,
     onBackground = DarkInk,
     surface = DarkCard,
@@ -85,7 +138,7 @@ private val McDarkColorScheme = darkColorScheme(
     onSurfaceVariant = DarkMuted,
     outline = DarkLine,
     outlineVariant = DarkLine,
-    surfaceTint = Color(0xFF8BD9AC),
+    surfaceTint = Color(0xFF7AA8F8),
     surfaceContainerLowest = DarkContainerLowest,
     surfaceContainerLow = DarkContainerLow,
     surfaceContainer = DarkContainer,
@@ -99,18 +152,74 @@ private val McDarkColorScheme = darkColorScheme(
     scrim = Color(0xFF000000)
 )
 
+private val McWarmMochaDarkScheme = darkColorScheme(
+    primary = Color(0xFFE5A965),
+    onPrimary = Color(0xFF382207),
+    primaryContainer = Color(0xFF3D2E1E),
+    onPrimaryContainer = Color(0xFFFFDFBE),
+    secondary = Color(0xFF81C79B),
+    onSecondary = Color(0xFF12301E),
+    secondaryContainer = Color(0xFF21382A),
+    onSecondaryContainer = Color(0xFFC4F0D3),
+    tertiary = Color(0xFFE88D7D),
+    onTertiary = Color(0xFF451912),
+    tertiaryContainer = Color(0xFF3F2520),
+    onTertiaryContainer = Color(0xFFFFDAD4),
+    background = WarmDarkBg,
+    onBackground = WarmDarkInk,
+    surface = WarmDarkCard,
+    onSurface = WarmDarkInk,
+    surfaceVariant = WarmDarkFieldGray,
+    onSurfaceVariant = WarmDarkMuted,
+    outline = WarmDarkLine,
+    outlineVariant = WarmDarkLine,
+    surfaceTint = Color(0xFFE5A965),
+    surfaceContainerLowest = Color(0xFF161311),
+    surfaceContainerLow = Color(0xFF201C1A),
+    surfaceContainer = WarmDarkCard,
+    surfaceContainerHigh = WarmDarkFieldGray,
+    surfaceContainerHighest = WarmDarkLine,
+    surfaceDim = WarmDarkBg,
+    surfaceBright = Color(0xFF3E3833),
+    inverseSurface = WarmDarkInk,
+    inverseOnSurface = WarmDarkBg,
+    inversePrimary = Color(0xFFB87D3B),
+    scrim = Color(0xFF000000)
+)
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MineServeMobileTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    darkTheme: Boolean = true,
     content: @Composable () -> Unit
 ) {
+    val context = LocalContext.current
+    LaunchedEffect(context) {
+        AppUiSettings.ensureLoaded(context)
+    }
+    val fontScaleMultiplier by AppUiSettings.fontScale.collectAsState()
+    val colorPreset by AppUiSettings.colorPreset.collectAsState()
+    val baseDensity = LocalDensity.current
+    val scaledDensity = Density(
+        density = baseDensity.density,
+        fontScale = (baseDensity.fontScale * fontScaleMultiplier).coerceIn(1.0f, 1.75f)
+    )
+
+    val activeColorScheme = when (colorPreset) {
+        EyeCareColorPreset.SoftSlate -> McSoftSlateDarkScheme
+        EyeCareColorPreset.WarmMocha -> McWarmMochaDarkScheme
+        EyeCareColorPreset.WarmPaperLight -> McColorScheme
+    }
+
     MaterialTheme(
-        colorScheme = if (darkTheme) McDarkColorScheme else McColorScheme,
+        colorScheme = activeColorScheme,
         typography = McTypography,
         shapes = McShapes
     ) {
-        CompositionLocalProvider(LocalOverscrollConfiguration provides null) {
+        CompositionLocalProvider(
+            LocalOverscrollConfiguration provides null,
+            LocalDensity provides scaledDensity
+        ) {
             content()
         }
     }

@@ -484,6 +484,134 @@ fun PluginsScreen(vm: McViewModel) {
                 }
             }
 
+            // ── Thẻ Sao lưu & Khôi phục Bộ Mod cho Map / Server hiện tại (Hỗ trợ Google Drive) ──
+            if (activeCore != null) {
+                val activeWorld by vm.activeWorldName.collectAsStateWithLifecycle()
+                val currentMapLabel = activeWorld.ifBlank { "world" }
+                var modBackupsRefreshTick by remember { mutableStateOf(0) }
+                val modBackups = remember(modBackupsRefreshTick, config.activeCoreName, mods.size) {
+                    runCatching {
+                        vm.externalBackups()
+                            .map { it to vm.externalBackupInfo(it) }
+                            .filter { (_, info) -> info.kind == com.mineserve.mobile.server.BackupManager.BackupKind.Mods }
+                            .sortedByDescending { (file, _) -> file.lastModified() }
+                    }.getOrDefault(emptyList())
+                }
+                McCard(
+                    title = "💾 Sao lưu & Khôi phục Mod cho Map / Server này",
+                    trailing = {
+                        Text(
+                            "Làm mới",
+                            color = Indigo,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.clickable { modBackupsRefreshTick++ }
+                        )
+                    }
+                ) {
+                    Text(
+                        "🗺️ Map đang chọn: $currentMapLabel  ·  🖥️ Server: ${activeCore.name} (${mods.size} Mod / ${installedPlugins.size} Plugin)",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Indigo
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Sao lưu trọn bộ thư mục mods/ + config/ gắn với Map '$currentMapLabel' và Server '${activeCore.name}' thành tệp ZIP riêng hoặc lưu thẳng lên Google Drive.",
+                        color = Muted,
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                vm.backupModsForCurrentServer(shareToDrive = false)
+                                modBackupsRefreshTick++
+                            },
+                            enabled = mods.isNotEmpty() || installedPlugins.isNotEmpty(),
+                            colors = ButtonDefaults.buttonColors(containerColor = Indigo),
+                            shape = McShape.ControlCompact,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(
+                                "📦 Sao lưu Mod cho Map này",
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Button(
+                            onClick = {
+                                vm.backupModsForCurrentServer(shareToDrive = true)
+                                modBackupsRefreshTick++
+                            },
+                            enabled = mods.isNotEmpty() || installedPlugins.isNotEmpty(),
+                            colors = ButtonDefaults.buttonColors(containerColor = Mint),
+                            shape = McShape.ControlCompact,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(
+                                "☁️ Sao lưu & Lưu Google Drive",
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                    if (modBackups.isNotEmpty()) {
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            "📂 Bản sao lưu Mod gần đây (${modBackups.size} bản):",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        modBackups.take(3).forEach { (file, info) ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 3.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(FieldGray)
+                                    .padding(horizontal = 10.dp, vertical = 7.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        file.name,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        "SV: ${info.dirName ?: "--"} · ${info.coreTag ?: "mods"} · 💾 ${vm.formatStorageBytes(file.length())}",
+                                        color = Muted,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                                TextButton(
+                                    onClick = { vm.requestShareBackupToGoogleDrive(file.absolutePath) }
+                                ) {
+                                    Text("☁️ Drive", color = Mint, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                                }
+                                TextButton(
+                                    onClick = { vm.restoreModsFromExternal(file.name) },
+                                    enabled = !isServerRunning
+                                ) {
+                                    Text("Khôi phục", color = Indigo, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // ── 4 Phân mục Tài nguyên: Plugin / Mod / Gói 56 Mod / Gói Tài Nguyên ──
             if (availableTypes.isEmpty()) {
                 Text(
@@ -1257,11 +1385,11 @@ private fun DetailRow(label: String, value: String) {
 private fun BadgeChip(text: String, color: Color, bg: Color) {
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(4.dp))
+            .clip(RoundedCornerShape(6.dp))
             .background(bg)
-            .padding(horizontal = 6.dp, vertical = 2.dp)
+            .padding(horizontal = 7.dp, vertical = 3.dp)
     ) {
-        Text(text, color = color, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+        Text(text, color = color, fontSize = 11.sp, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -2648,33 +2776,33 @@ private fun ModPackDecoderAndTransferCard(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
+                                .clip(RoundedCornerShape(10.dp))
                                 .background(MaterialTheme.colorScheme.surface)
-                                .padding(horizontal = 8.dp, vertical = 7.dp),
+                                .padding(horizontal = 10.dp, vertical = 9.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
                                 "#${item.index}",
-                                fontSize = 10.sp,
+                                fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = if (isInstalled) Mint else Indigo,
-                                modifier = Modifier.size(width = 28.dp, height = 18.dp)
+                                modifier = Modifier.size(width = 32.dp, height = 20.dp)
                             )
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     item.title,
-                                    fontSize = 12.sp,
+                                    fontSize = 14.sp,
                                     fontWeight = FontWeight.Bold,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
                                     item.descVi,
-                                    fontSize = 10.sp,
+                                    fontSize = 12.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    lineHeight = 13.sp
+                                    lineHeight = 16.sp
                                 )
-                                Spacer(Modifier.height(3.dp))
+                                Spacer(Modifier.height(4.dp))
                                 Row(
                                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                                     verticalAlignment = Alignment.CenterVertically
@@ -2682,32 +2810,33 @@ private fun ModPackDecoderAndTransferCard(
                                     BadgeChip(item.weightVi, Mint, MintSoft)
                                     BadgeChip(item.scopeVi, Indigo, IndigoSoft)
                                 }
+                                Spacer(Modifier.height(2.dp))
                                 Text(
                                     if (matchedMod != null) {
                                         "✅ Đã tải tệp: ${matchedMod.fileName} (${matchedMod.sizeText})"
                                     } else {
                                         "Chưa tải (${item.originalJarName})"
                                     },
-                                    fontSize = 9.sp,
+                                    fontSize = 11.sp,
                                     color = if (matchedMod != null) Mint else Muted,
                                     fontWeight = if (matchedMod != null) FontWeight.SemiBold else FontWeight.Normal,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
                             }
-                            Spacer(Modifier.size(6.dp))
+                            Spacer(Modifier.size(8.dp))
                             if (isInstalled && matchedMod != null) {
                                 Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                     Box(
                                         modifier = Modifier
                                             .clip(RoundedCornerShape(6.dp))
                                             .background(if (isEnabledMod) MintSoft else CoralSoft)
-                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                            .padding(horizontal = 7.dp, vertical = 3.dp)
                                     ) {
                                         Text(
                                             if (isEnabledMod) "🟢 Đang bật" else "⏸ Đang tắt",
                                             color = if (isEnabledMod) Mint else Coral,
-                                            fontSize = 9.sp,
+                                            fontSize = 11.sp,
                                             fontWeight = FontWeight.Bold
                                         )
                                     }
@@ -2725,12 +2854,12 @@ private fun ModPackDecoderAndTransferCard(
                                         vm.installSingleCatalogMod(item, customMcVersion = selectedCustomVersion)
                                     },
                                     enabled = activeCoreExists && !serverRunning,
-                                    colors = ButtonDefaults.buttonColors(containerColor = Mint),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Indigo),
                                     shape = RoundedCornerShape(8.dp),
-                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                                    modifier = Modifier.height(30.dp)
+                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 5.dp),
+                                    modifier = Modifier.height(34.dp)
                                 ) {
-                                    Text("➕ Cài", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    Text("➕ Cài", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }

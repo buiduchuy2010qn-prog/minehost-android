@@ -113,8 +113,14 @@ fun McApp() {
     val snackbars = remember { SnackbarHostState() }
     val eulaRequest by vm.eulaRequest.collectAsState()
     val uri = LocalUriHandler.current
+    val appContext = androidx.compose.ui.platform.LocalContext.current
     LaunchedEffect(vm) { vm.errorFlow.collectLatest { snackbars.showInstantSnackbar(it) } }
     LaunchedEffect(vm) { vm.messageFlow.collectLatest { snackbars.showInstantSnackbar(it) } }
+    LaunchedEffect(vm) {
+        vm.pendingDriveShareFileFlow.collectLatest { filePath ->
+            vm.shareBackupFileToGoogleDrive(appContext, filePath)
+        }
+    }
     LaunchedEffect(vm) {
         vm.coreDownloadCompletedFlow.collectLatest { newServerName ->
             showLogs = false

@@ -90,8 +90,16 @@ fun BackupScreen(vm: McViewModel, onBack: () -> Unit = {}) {
     val isBootstrapped by vm.isBootstrapped.collectAsState()
     val config by vm.config.collectAsState()
     val snapshots by vm.snapshots.collectAsState()
+    val autoBackupOnStop by vm.autoBackupOnStop.collectAsState()
+    val autoUploadDriveOnStop by vm.autoUploadDriveOnStop.collectAsState()
+    val cloudSyncFolderUri by vm.cloudSyncFolderUri.collectAsState()
     var isSnapshotting by remember { mutableStateOf(false) }
     var showDeleteWorldConfirm by remember { mutableStateOf(false) }
+    val cloudFolderLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri: Uri? ->
+        if (uri != null) vm.setCloudSyncFolderUri(uri)
+    }
     // 外部备份权限（每次进入页面检查）
     val hasStoragePerm = com.mineserve.mobile.server.ExternalBackupStore.hasPermission(context)
     // 外部备份文件列表
@@ -161,6 +169,71 @@ fun BackupScreen(vm: McViewModel, onBack: () -> Unit = {}) {
             modifier = Modifier.fillMaxSize().padding(paddingValues).verticalScroll(rememberScrollState())
         ) {
             HeaderBlock(eyebrow = stringResource(R.string.eyebrow_backup), title = stringResource(R.string.s324))
+
+            McCard(title = "☁️ Tự động sao lưu Map + Mod khi Đóng Server & Google Drive") {
+                Text(
+                    "Mỗi khi bạn tắt/đóng Server, ứng dụng sẽ tự động nén Map hiện tại kèm thư mục mods/ & config/ và hỗ trợ lưu thẳng lên Google Drive.",
+                    color = Muted,
+                    fontSize = 12.sp
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("💾 Tự động sao lưu Map + Mod khi đóng Server", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        Text("Bật mặc định để không bao giờ mất tiến trình chơi", fontSize = 11.5.sp, color = Muted)
+                    }
+                    androidx.compose.material3.Switch(
+                        checked = autoBackupOnStop,
+                        onCheckedChange = { vm.setAutoBackupOnStop(it) }
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("☁️ Tự mở Google Drive để lưu ngay khi đóng Server", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Indigo)
+                        Text("Tự động bật hộp thoại Lưu vào Google Drive sau khi đóng SV", fontSize = 11.5.sp, color = Muted)
+                    }
+                    androidx.compose.material3.Switch(
+                        checked = autoUploadDriveOnStop,
+                        onCheckedChange = { vm.setAutoUploadDriveOnStop(it) }
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    Button(
+                        onClick = {
+                            vm.backupWorldToExternal(shareToDrive = true)
+                            scope.launch { delay(800); refreshExtBackups() }
+                        },
+                        enabled = isBootstrapped,
+                        colors = ButtonDefaults.buttonColors(containerColor = com.mineserve.mobile.ui.theme.Mint),
+                        shape = McShape.ControlCompact,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("☁️ Sao lưu Map + Mod lên Drive", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                    OutlinedButton(
+                        onClick = { cloudFolderLauncher.launch(null) },
+                        shape = McShape.ControlCompact,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            if (cloudSyncFolderUri != null) "📂 Đổi Thư mục Đồng bộ" else "📂 Chọn Thư mục Đồng bộ",
+                            color = Indigo,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
 
             McCard(title = "Tự động sao lưu định kỳ") {
                 Text("Chỉ tạo bản sao lưu khi máy chủ đang chạy và tự động dọn các bản sao lưu tự động cũ cùng loại.", color = Muted, fontSize = 11.sp)
@@ -313,17 +386,44 @@ fun BackupScreen(vm: McViewModel, onBack: () -> Unit = {}) {
                 Spacer(Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
-                        onClick = { vm.backupWorldToExternal() },
+                        onClick = {
+                            vm.backupWorldToExternal()
+                            scope.launch { delay(700); refreshExtBackups() }
+                        },
                         enabled = isBootstrapped && hasStoragePerm,
                         colors = ButtonDefaults.buttonColors(containerColor = Indigo),
                         shape = McShape.ControlCompact, modifier = Modifier.weight(1f)
                     ) { Text(stringResource(R.string.backup_ext_world), color = Color.White, fontSize = 12.sp) }
                     Button(
-                        onClick = { vm.backupServerToExternal() },
+                        onClick = {
+                            vm.backupServerToExternal()
+                            scope.launch { delay(700); refreshExtBackups() }
+                        },
                         enabled = isBootstrapped && hasStoragePerm,
                         colors = ButtonDefaults.buttonColors(containerColor = Coral),
                         shape = McShape.ControlCompact, modifier = Modifier.weight(1f)
                     ) { Text(stringResource(R.string.backup_ext_server), color = Color.White, fontSize = 12.sp) }
+                }
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = {
+                            vm.backupModsForCurrentServer(shareToDrive = false)
+                            scope.launch { delay(700); refreshExtBackups() }
+                        },
+                        enabled = isBootstrapped,
+                        colors = ButtonDefaults.buttonColors(containerColor = Indigo),
+                        shape = McShape.ControlCompact, modifier = Modifier.weight(1f)
+                    ) { Text("📦 Sao lưu riêng Bộ Mod của Map/SV", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+                    Button(
+                        onClick = {
+                            vm.backupModsForCurrentServer(shareToDrive = true)
+                            scope.launch { delay(700); refreshExtBackups() }
+                        },
+                        enabled = isBootstrapped,
+                        colors = ButtonDefaults.buttonColors(containerColor = com.mineserve.mobile.ui.theme.Mint),
+                        shape = McShape.ControlCompact, modifier = Modifier.weight(1f)
+                    ) { Text("☁️ Sao lưu Mod lên Drive", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold) }
                 }
                 Spacer(Modifier.height(6.dp))
                 Text(stringResource(R.string.backup_ext_refresh_hint), color = Muted, fontSize = 10.sp)
@@ -360,8 +460,16 @@ fun BackupScreen(vm: McViewModel, onBack: () -> Unit = {}) {
                     extBackups.forEachIndexed { i, f ->
                         if (i > 0) Spacer(Modifier.height(6.dp))
                         val info = vm.externalBackupInfo(f)
-                        val kindLabel = if (info.kind == BackupManager.BackupKind.World) "Sao lưu thế giới" else "Toàn bộ máy chủ"
-                        val coreLabel = if (info.kind == BackupManager.BackupKind.Server) " · Core: ${info.coreTag ?: "—"}" else ""
+                        val kindLabel = when (info.kind) {
+                            BackupManager.BackupKind.World -> "🗺️ Sao lưu Map + Mod"
+                            BackupManager.BackupKind.Mods -> "📦 Sao lưu Bộ Mod + Config"
+                            BackupManager.BackupKind.Server -> "🖥️ Toàn bộ máy chủ"
+                        }
+                        val coreLabel = when (info.kind) {
+                            BackupManager.BackupKind.Server -> " · Core: ${info.coreTag ?: "—"}"
+                            BackupManager.BackupKind.Mods -> " · ${info.coreTag ?: "mods"}"
+                            BackupManager.BackupKind.World -> ""
+                        }
                         val originLabel = when (info.origin) {
                             BackupManager.BackupOrigin.Manual -> "Thủ công"
                             BackupManager.BackupOrigin.Automatic -> "Tự động"
@@ -371,21 +479,26 @@ fun BackupScreen(vm: McViewModel, onBack: () -> Unit = {}) {
                             "$coreLabel · ${formatBackupTime(info.createdTime, f.lastModified())} · ${formatBytesCompat(f.length())}"
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
-                                Text(f.name, fontSize = 11.sp, fontWeight = FontWeight.Medium, maxLines = 1)
-                                Text(detail, color = Muted, fontSize = 10.sp)
+                                Text(f.name, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                Text(detail, color = Muted, fontSize = 11.sp)
                             }
-                            // 世界备份 → 还原世界；服务器备份 → 还原服务器（含重名检测）
+                            TextButton(
+                                onClick = { vm.requestShareBackupToGoogleDrive(f.absolutePath) }
+                            ) {
+                                Text("☁️ Drive", color = com.mineserve.mobile.ui.theme.Mint, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                            }
+                            // 世界备份 → 还原世界；Mod 备份 → 还原 Mod；服务器备份 → 还原服务器（含重名检测）
                             TextButton(
                                 onClick = {
-                                    if (info.kind == BackupManager.BackupKind.World) {
-                                        vm.restoreWorldFromExternal(f.name)
-                                    } else {
-                                        vm.requestRestoreServer(f.name)
+                                    when (info.kind) {
+                                        BackupManager.BackupKind.World -> vm.restoreWorldFromExternal(f.name)
+                                        BackupManager.BackupKind.Mods -> vm.restoreModsFromExternal(f.name)
+                                        BackupManager.BackupKind.Server -> vm.requestRestoreServer(f.name)
                                     }
                                 },
                                 enabled = isBootstrapped
                             ) {
-                                Text(stringResource(R.string.backup_ext_restore), color = Indigo, fontSize = 11.sp)
+                                Text(stringResource(R.string.backup_ext_restore), color = Indigo, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
                             }
                             // 删除备份（二次确认）
                             IconButton(

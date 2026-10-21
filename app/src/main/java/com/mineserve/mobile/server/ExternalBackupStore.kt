@@ -7,19 +7,26 @@ import android.os.Environment
 import java.io.File
 
 /**
- * 外部备份存储：/storage/emulated/0/世界与服务器的备份/
- *
- * 卸载或覆盖安装应用时该目录保留（位于外部存储，不随 app 数据删除）。
- * Android 11+ 写固定外部路径需「所有文件访问」（MANAGE_EXTERNAL_STORAGE）；
- * 低版本用传统 WRITE_EXTERNAL_STORAGE。
+ * Bộ lưu trữ bản sao lưu bên ngoài:
+ * Ưu tiên `/storage/emulated/0/世界与服务器的备份/` (hoặc `/storage/emulated/0/Download/MineHost_Backups/`)
+ * để dữ liệu Map, Mod và Server luôn an toàn ngay cả khi gỡ cài đặt ứng dụng.
  */
 object ExternalBackupStore {
 
-    /** 外部备份根目录（/storage/emulated/0/世界与服务器的备份/） */
+    /** Thư mục sao lưu chính trên bộ nhớ máy */
     val rootDir: File
-        get() = File(Environment.getExternalStorageDirectory(), "世界与服务器的备份")
+        get() {
+            val primary = File(Environment.getExternalStorageDirectory(), "世界与服务器的备份")
+            if (primary.exists() || primary.mkdirs()) return primary
+            val downloadFallback = File(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                "MineHost_Backups"
+            )
+            downloadFallback.mkdirs()
+            return downloadFallback
+        }
 
-    /** 确保目录存在，返回是否可用 */
+    /** Đảm bảo thư mục tồn tại và có thể ghi */
     fun ensure(): Boolean {
         return try {
             val d = rootDir
@@ -29,7 +36,7 @@ object ExternalBackupStore {
         }
     }
 
-    /** 是否有外部存储写权限（所有文件访问 / 传统存储权限） */
+    /** Kiểm tra quyền truy cập bộ nhớ ngoài */
     fun hasPermission(context: Context): Boolean {
         @Suppress("DEPRECATION")
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -41,11 +48,19 @@ object ExternalBackupStore {
         }
     }
 
-    /** 列出外部目录下所有备份 zip（按名称排序） */
+    /** Liệt kê toàn bộ tệp .zip sao lưu (Map, Mod, Server) mới nhất lên đầu */
     fun listBackups(): List<File> {
-        if (!rootDir.isDirectory) return emptyList()
-        return rootDir.listFiles { f -> f.isFile && f.name.endsWith(".zip") }
-            ?.sortedByDescending { it.name }
-            ?: emptyList()
+        val dirs = listOf(
+            File(Environment.getExternalStorageDirectory(), "世界与服务器的备份"),
+            File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "MineHost_Backups")
+        )
+        val seen = LinkedHashMap<String, File>()
+        for (dir in dirs) {
+            if (!dir.isDirectory) continue
+            dir.listFiles { f -> f.isFile && f.name.endsWith(".zip", ignoreCase = true) }?.forEach { f ->
+                seen.putIfAbsent(f.name, f)
+            }
+        }
+        return seen.values.sortedByDescending { it.lastModified() }
     }
 }

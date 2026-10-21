@@ -123,6 +123,9 @@ class PlayitTunnelController(
     private var tunnelJob: Job? = null
     @Volatile
     private var controlSocket: DatagramSocket? = null
+    @Volatile
+    private var currentPortProvider: () -> Int = { 25565 }
+    private val forceReauthRequested = java.util.concurrent.atomic.AtomicBoolean(false)
     private val activeBridges = ConcurrentHashMap.newKeySet<Socket>()
     private val activeConnectionCount = AtomicInteger(0)
     private val recentClaimKeys = ConcurrentHashMap<String, Long>()
@@ -166,12 +169,24 @@ class PlayitTunnelController(
         appendLog("Đã xóa khóa Playit.gg cũ. Bấm 'Bật kết nối Mọi Nơi' để tạo liên kết mới.")
     }
 
-    fun start(localPortProvider: () -> Int) {
-        if (tunnelJob?.isActive == true) return
-        activeConnectionCount.set(0)
-        tunnelJob = scope.launch(Dispatchers.IO) {
-            runTunnelLoop(localPortProvider)
+    fun start(localPortProvider: () -> Int, forceRefresh: Boolean = false) {
+        currentPortProvider = localPortProvider
+        if (tunnelJob?.isActive == true) {
+            forceReauthRequested.set(true)
+            if (forceRefresh) {
+                appendLog("Đang làm mới phiên Playit.gg và đồng bộ cổng máy chủ hiện tại (${runCatching { localPortProvider() }.getOrDefault(25565)})...")
+            }
+            return
         }
+        activeConnectionCount.set(0)
+        forceReauthRequested.set(false)
+        tunnelJob = scope.launch(Dispatchers.IO) {
+            runTunnelLoop()
+        }
+    }
+
+    fun refreshTunnel(localPortProvider: () -> Int) {
+        start(localPortProvider, forceRefresh = true)
     }
 
     fun stop() {
@@ -194,7 +209,7 @@ class PlayitTunnelController(
         appendLog("Đã dừng đường hầm Playit.gg.")
     }
 
-    private suspend fun runTunnelLoop(localPortProvider: () -> Int) {
+    private suspend fun runTunnelLoop() {
         var secret = getSavedSecret()
         var claimCode = ""
 
@@ -345,14 +360,14 @@ class PlayitTunnelController(
                     )
                 }
 
-                // Bước 4: Vòng lặp giữ kết nối (Ping 1s, KeepAlive) & Nhận kết nối người chơi mới
+                // Bước 4: Vòng lặp giữ kết nối (Ping 1s, tự động gia hạn phiên 2 phút/lần & Nhận kết nối người chơi mới)
                 runActiveControlLoop(
                     udpSocket = udpSocket,
                     controlAddr = controlAddr,
+                    initialPong = pong,
                     initialRegistered = registered,
                     secret = secret,
-                    agentId = agentId,
-                    localPortProvider = localPortProvider
+                    agentId = agentId
                 )
             } catch (e: Exception) {
                 if (!scope.isActive || tunnelJob?.isActive != true) break
@@ -375,14 +390,17 @@ class PlayitTunnelController(
     private suspend fun runActiveControlLoop(
         udpSocket: DatagramSocket,
         controlAddr: InetSocketAddress,
+        initialPong: PongMsg,
         initialRegistered: AgentRegisteredMsg,
         secret: String,
-        agentId: String,
-        localPortProvider: () -> Int
+        agentId: String
     ) {
         var registered = initialRegistered
+        var lastPongMsg = initialPong
         var lastPingMs = 0L
+        var lastPongReceivedMs = System.currentTimeMillis()
         var lastKeepAliveMs = System.currentTimeMillis()
+        var lastReauthMs = System.currentTimeMillis()
         var lastAddressCheckMs = System.currentTimeMillis()
         val sendBuf = ByteBuffer.allocate(2048).order(ByteOrder.BIG_ENDIAN)
         val rxBuf = ByteArray(2048)
@@ -391,6 +409,11 @@ class PlayitTunnelController(
 
         while (scope.isActive && tunnelJob?.isActive == true) {
             val now = System.currentTimeMillis()
+
+            // Nếu quá 12 giây không nhận được Pong từ máy chủ điều khiển Playit -> mở lại kênh UDP mới
+            if (now - lastPongReceivedMs > 12_000L) {
+                throw IOException("Kênh UDP Playit không phản hồi quá 12 giây, đang làm mới đường hầm...")
+            }
 
             // Gửi Ping mỗi 1 giây theo giao thức Playit v2
             if (now - lastPingMs >= 1000L) {
@@ -401,14 +424,34 @@ class PlayitTunnelController(
                 udpSocket.send(pkt)
             }
 
-            // Gửi KeepAlive khi còn dưới 60 giây trước hạn phiên
+            // Chủ động gia hạn phiên mỗi 2 phút hoặc khi người dùng vừa đổi/bật Server mới
             val tillExpire = registered.expiresAt - now
-            if (tillExpire < 60_000L && now - lastKeepAliveMs >= 10_000L) {
+            val wantForceReauth = forceReauthRequested.getAndSet(false)
+            if (wantForceReauth || (now - lastReauthMs >= 120_000L) || (tillExpire < 90_000L && now - lastKeepAliveMs >= 10_000L)) {
                 lastKeepAliveMs = now
                 sendBuf.clear()
                 writeKeepAlivePacket(sendBuf, 100L, registered.sessionId)
                 val pkt = DatagramPacket(sendBuf.array(), 0, sendBuf.position(), controlAddr)
-                udpSocket.send(pkt)
+                runCatching { udpSocket.send(pkt) }
+
+                runCatching {
+                    val refreshed = authenticateControlChannel(udpSocket, controlAddr, lastPongMsg, secret)
+                    registered = refreshed
+                    lastReauthMs = System.currentTimeMillis()
+                    val nowTimeStr = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
+                    updateState {
+                        it.copy(
+                            stage = PlayitStage.Running,
+                            statusText = "Đang hoạt động (Chơi mọi nơi 4G / Wi-Fi)",
+                            errorMessage = "",
+                            lastUpdatedText = nowTimeStr
+                        )
+                    }
+                    if (wantForceReauth) {
+                        val activePort = runCatching { currentPortProvider() }.getOrDefault(25565)
+                        appendLog("Đã đồng bộ đường hầm Playit.gg với máy chủ hiện tại (127.0.0.1:$activePort).")
+                    }
+                }
             }
 
             // Nếu chưa lấy được địa chỉ hiển thị lúc mới tạo xong thì kiểm tra lại định kỳ
@@ -450,19 +493,36 @@ class PlayitTunnelController(
             val msg = runCatching { parseControlFeed(buf) }.getOrNull() ?: continue
             when (msg) {
                 is PongMsg -> {
+                    lastPongReceivedMs = System.currentTimeMillis()
+                    lastPongMsg = msg
                     if (msg.sessionExpireAt > 0L) {
                         registered = registered.copy(expiresAt = msg.sessionExpireAt)
+                    } else {
+                        // Phiên điều khiển trên máy chủ Playit đã hết hạn (sessionExpireAt == 0L) -> Đăng ký lại ngay lập tức!
+                        runCatching {
+                            registered = authenticateControlChannel(udpSocket, controlAddr, msg, secret)
+                            lastReauthMs = System.currentTimeMillis()
+                            val nowTimeStr = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
+                            updateState { it.copy(lastUpdatedText = nowTimeStr) }
+                        }.onFailure {
+                            throw IOException("Phiên Playit hết hạn, đang kết nối lại...")
+                        }
                     }
                 }
                 is AgentRegisteredMsg -> {
                     registered = msg
+                    lastReauthMs = System.currentTimeMillis()
+                    val nowTimeStr = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
+                    updateState { it.copy(lastUpdatedText = nowTimeStr) }
                 }
                 is NewClientMsg -> {
                     val claimKey = "${msg.peerAddr}-${msg.claimAddress}-${msg.claimToken.contentHashCode()}"
                     val prev = recentClaimKeys.putIfAbsent(claimKey, now)
                     if (prev == null || now - prev > 5_000L) {
                         recentClaimKeys[claimKey] = now
-                        val targetPort = localPortProvider()
+                        val targetPort = runCatching { currentPortProvider() }.getOrDefault(25565).let { p ->
+                            if (p in 1..65535) p else 25565
+                        }
                         scope.launch(Dispatchers.IO) {
                             bridgeClientToLocalServer(msg, targetPort)
                         }
@@ -480,6 +540,7 @@ class PlayitTunnelController(
     private fun bridgeClientToLocalServer(client: NewClientMsg, localPort: Int) {
         var tunnelSocket: Socket? = null
         var mcSocket: Socket? = null
+        var connectedPort = localPort
         try {
             tunnelSocket = Socket()
             tunnelSocket.tcpNoDelay = true
@@ -495,14 +556,28 @@ class PlayitTunnelController(
             val confirmBytes = ByteArray(8)
             tunnelIn.readFully(confirmBytes)
 
-            mcSocket = Socket()
-            mcSocket.tcpNoDelay = true
-            mcSocket.connect(InetSocketAddress("127.0.0.1", localPort), 5000)
-            activeBridges.add(mcSocket)
+            val primarySocket = Socket()
+            primarySocket.tcpNoDelay = true
+            try {
+                primarySocket.connect(InetSocketAddress("127.0.0.1", localPort), 4000)
+                mcSocket = primarySocket
+            } catch (primaryErr: Exception) {
+                runCatching { primarySocket.close() }
+                if (localPort != 25565) {
+                    val fallbackSocket = Socket()
+                    fallbackSocket.tcpNoDelay = true
+                    fallbackSocket.connect(InetSocketAddress("127.0.0.1", 25565), 4000)
+                    mcSocket = fallbackSocket
+                    connectedPort = 25565
+                } else {
+                    throw primaryErr
+                }
+            }
+            activeBridges.add(mcSocket!!)
 
             val count = activeConnectionCount.incrementAndGet()
             updateState { it.copy(activeConnections = count) }
-            appendLog("Người chơi kết nối qua Playit.gg (${client.peerAddr.address.hostAddress}) -> 127.0.0.1:$localPort")
+            appendLog("Người chơi kết nối qua Playit.gg (${client.peerAddr.address.hostAddress}) -> 127.0.0.1:$connectedPort")
 
             val mcIn = mcSocket.getInputStream()
             val mcOut = mcSocket.getOutputStream()

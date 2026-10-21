@@ -1734,6 +1734,9 @@ class McViewModel(
         }
         // 启动完成时主动请求一次 list，全量校正在线玩家名单。
         if (becameReady && repo.termuxRuntime.isMcRunning()) playerManager.requestOnlineList()
+        if (becameReady && playConnectionMode.value == PlayConnectionMode.Everywhere) {
+            playitController.refreshTunnel { resolveLiveLocalServerPort() }
+        }
         if (becameReady) {
             ServerEventNotifier.notify(
                 app,
@@ -2791,14 +2794,27 @@ class McViewModel(
                     return@launch
                 }
                 _messageFlow.tryEmit(str(R.string.s198))
-                if (config.value.stopAutoBackup) {
+                if (_autoBackupOnStop.value || config.value.stopAutoBackup) {
                     val dirName = activeDirName() ?: return@launch
                     val path = withContext(Dispatchers.IO) {
                         backupManager.backupWorldToExternal(
-                            dirName, BackupManager.BackupOrigin.Automatic, config.value.maxSnapshots
+                            dirName = dirName,
+                            origin = BackupManager.BackupOrigin.Automatic,
+                            maxAutomaticBackups = config.value.maxSnapshots.coerceAtLeast(5),
+                            includeMods = true
                         )
                     }
-                    if (path != null) _messageFlow.tryEmit(str(R.string.msg_stop_backup_done))
+                    if (path != null) {
+                        _lastBackupFilePath.value = path
+                        val syncedCloud = withContext(Dispatchers.IO) {
+                            copyBackupFileToCloudFolderIfConfigured(java.io.File(path))
+                        }
+                        val cloudNote = if (syncedCloud) " & đồng bộ vào thư mục Google Drive/Cloud" else ""
+                        _messageFlow.tryEmit("✅ Đã tự động sao lưu Map + Mod khi đóng Server (${java.io.File(path).name})$cloudNote!")
+                        if (_autoUploadDriveOnStop.value) {
+                            _pendingDriveShareFileFlow.tryEmit(path)
+                        }
+                    }
                 }
             } catch (e: Exception) {
                 _errorFlow.tryEmit(str(R.string.s199, e.message))
@@ -4372,21 +4388,95 @@ class McViewModel(
         }
     }
 
-    /** 外部备份整个世界（world+nether+end → 外部目录） */
-    fun backupWorldToExternal() {        if (!isBootstrapped.value) { _errorFlow.tryEmit(str(R.string.s192)); return }
+    /** 外部备份整个世界（world+nether+end+mods → 外部目录） */
+    fun backupWorldToExternal(shareToDrive: Boolean = false) {
+        if (!isBootstrapped.value) { _errorFlow.tryEmit(str(R.string.s192)); return }
         val dirName = activeDirName() ?: run { _errorFlow.tryEmit(str(R.string.s212)); return }
         viewModelScope.launch {
             try {
                 val path = withContext(Dispatchers.IO) {
-                    backupManager.backupWorldToExternal(dirName, BackupManager.BackupOrigin.Manual)
+                    backupManager.backupWorldToExternal(
+                        dirName = dirName,
+                        origin = BackupManager.BackupOrigin.Manual,
+                        includeMods = true
+                    )
                 }
                 if (path != null) {
-                    _messageFlow.tryEmit(str(R.string.msg_world_backup_done, java.io.File(path).name))
+                    _lastBackupFilePath.value = path
+                    val synced = withContext(Dispatchers.IO) {
+                        copyBackupFileToCloudFolderIfConfigured(java.io.File(path))
+                    }
+                    val cloudNote = if (synced) " (Đã tự chép vào thư mục Google Drive/Cloud)" else ""
+                    _messageFlow.tryEmit("✅ Đã sao lưu Map + Mod thành công: ${java.io.File(path).name}$cloudNote")
+                    if (shareToDrive) {
+                        _pendingDriveShareFileFlow.tryEmit(path)
+                    }
                 } else {
                     _errorFlow.tryEmit(str(R.string.err_world_backup_empty))
                 }
             } catch (e: Exception) {
                 _errorFlow.tryEmit(str(R.string.err_world_backup_fail, e.message))
+            }
+        }
+    }
+
+    /** Sao lưu riêng bộ Mod + Config cho Map & Server hiện tại */
+    fun backupModsForCurrentServer(shareToDrive: Boolean = false) {
+        if (!isBootstrapped.value) { _errorFlow.tryEmit(str(R.string.s192)); return }
+        val dirName = activeDirName() ?: run { _errorFlow.tryEmit(str(R.string.s212)); return }
+        val mapName = _activeWorldName.value.ifBlank {
+            _serverProperties.value["level-name"]?.trim()?.takeIf { it.isNotBlank() } ?: "world"
+        }
+        viewModelScope.launch {
+            try {
+                val path = withContext(Dispatchers.IO) {
+                    backupManager.backupModsToExternal(
+                        dirName = dirName,
+                        worldName = mapName,
+                        origin = BackupManager.BackupOrigin.Manual
+                    )
+                }
+                if (path != null) {
+                    _lastBackupFilePath.value = path
+                    val synced = withContext(Dispatchers.IO) {
+                        copyBackupFileToCloudFolderIfConfigured(java.io.File(path))
+                    }
+                    val cloudNote = if (synced) " (Đã đồng bộ thư mục Cloud)" else ""
+                    _messageFlow.tryEmit("📦 Đã sao lưu toàn bộ Mod & Config của Map '$mapName' (SV: ${config.value.activeCoreName ?: dirName}) -> ${java.io.File(path).name}$cloudNote!")
+                    if (shareToDrive) {
+                        _pendingDriveShareFileFlow.tryEmit(path)
+                    }
+                } else {
+                    _errorFlow.tryEmit("Chưa có Mod hoặc Plugin nào trong Server này để sao lưu.")
+                }
+            } catch (e: Exception) {
+                _errorFlow.tryEmit("Lỗi khi sao lưu Mod: ${e.message}")
+            }
+        }
+    }
+
+    /** Khôi phục bộ Mod + Config từ bản sao lưu ZIP bên ngoài vào Server hiện tại */
+    fun restoreModsFromExternal(zipName: String) {
+        if (!isBootstrapped.value) { _errorFlow.tryEmit(str(R.string.s192)); return }
+        val dirName = activeDirName() ?: run { _errorFlow.tryEmit(str(R.string.s212)); return }
+        if (!requireServerStopped("khôi phục bản sao lưu Mod")) return
+        val file = java.io.File(com.mineserve.mobile.server.ExternalBackupStore.rootDir, zipName)
+        viewModelScope.launch {
+            try {
+                val ok = withContext(Dispatchers.IO) {
+                    backupManager.restoreModsFromExternal(file, dirName)
+                }
+                if (ok) {
+                    refreshMods()
+                    refreshInstalledPlugins()
+                    refreshWorldModCount()
+                    refreshServerStorage()
+                    _messageFlow.tryEmit("✅ Đã khôi phục bộ Mod & Config từ '$zipName' vào Server hiện tại!")
+                } else {
+                    _errorFlow.tryEmit("Không thể khôi phục bộ Mod từ tệp '$zipName'.")
+                }
+            } catch (e: Exception) {
+                _errorFlow.tryEmit("Lỗi khôi phục Mod: ${e.message}")
             }
         }
     }
@@ -5020,8 +5110,29 @@ class McViewModel(
         startServer()
     }
 
+    fun resolveLiveLocalServerPort(): Int {
+        val fromLoaded = ServerPort.parse(_serverProperties.value["server-port"])
+        if (fromLoaded != null) return fromLoaded
+        val dirName = activeDirName()
+        if (!dirName.isNullOrBlank()) {
+            val fromDisk = runCatching {
+                val pnx = isPowerNukkitXActive()
+                val map = if (pnx) powerNukkitXConfigManager.read(dirName)
+                else propertiesManager.readProperties(dirName)
+                ServerPort.parse(map["server-port"])
+            }.getOrNull()
+            if (fromDisk != null) return fromDisk
+        }
+        return realServerPort()
+    }
+
     fun startPlayitTunnel() {
-        playitController.start { serverPort.value }
+        playitController.start({ resolveLiveLocalServerPort() }, forceRefresh = true)
+    }
+
+    fun refreshPlayitTunnel() {
+        playitController.refreshTunnel { resolveLiveLocalServerPort() }
+        _messageFlow.tryEmit("🔄 Đang làm mới phiên Playit.gg & đồng bộ cổng máy chủ (${resolveLiveLocalServerPort()})...")
     }
 
     fun stopPlayitTunnel() {
@@ -5029,7 +5140,7 @@ class McViewModel(
     }
 
     fun setPlayitSecretKey(secret: String) {
-        playitController.setManualSecretKey(secret) { serverPort.value }
+        playitController.setManualSecretKey(secret) { resolveLiveLocalServerPort() }
     }
 
     fun resetPlayitSecretKey() {
@@ -6740,6 +6851,147 @@ class McViewModel(
     private val _isCleaningRam = MutableStateFlow(false)
     val isCleaningRam: StateFlow<Boolean> = _isCleaningRam.asStateFlow()
 
+    private val _autoBackupOnStop = MutableStateFlow(true)
+    val autoBackupOnStop: StateFlow<Boolean> = _autoBackupOnStop.asStateFlow()
+
+    private val _autoUploadDriveOnStop = MutableStateFlow(false)
+    val autoUploadDriveOnStop: StateFlow<Boolean> = _autoUploadDriveOnStop.asStateFlow()
+
+    private val _cloudSyncFolderUri = MutableStateFlow<String?>(null)
+    val cloudSyncFolderUri: StateFlow<String?> = _cloudSyncFolderUri.asStateFlow()
+
+    private val _lastBackupFilePath = MutableStateFlow<String?>(null)
+    val lastBackupFilePath: StateFlow<String?> = _lastBackupFilePath.asStateFlow()
+
+    private val _pendingDriveShareFileFlow = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val pendingDriveShareFileFlow: kotlinx.coroutines.flow.SharedFlow<String> = _pendingDriveShareFileFlow.asSharedFlow()
+
+    fun setAutoBackupOnStop(enabled: Boolean) {
+        _autoBackupOnStop.value = enabled
+        metaPrefs().edit().putBoolean("auto_backup_on_stop", enabled).apply()
+        updateConfig { it.copy(stopAutoBackup = enabled) }
+        _messageFlow.tryEmit(
+            if (enabled) "✅ Đã BẬT Tự động sao lưu Map + Mod mỗi khi đóng Server!"
+            else "⏸ Đã tắt Tự động sao lưu Map khi đóng Server."
+        )
+    }
+
+    fun setAutoUploadDriveOnStop(enabled: Boolean) {
+        _autoUploadDriveOnStop.value = enabled
+        metaPrefs().edit().putBoolean("auto_upload_drive_on_stop", enabled).apply()
+        if (enabled && !_autoBackupOnStop.value) {
+            setAutoBackupOnStop(true)
+        }
+        _messageFlow.tryEmit(
+            if (enabled) "☁️ Đã BẬT Tự động đẩy bản sao lưu Map lên Google Drive ngay khi đóng Server!"
+            else "⏸ Đã tắt tự mở Google Drive khi đóng Server."
+        )
+    }
+
+    fun setCloudSyncFolderUri(uri: android.net.Uri?) {
+        if (uri == null) {
+            _cloudSyncFolderUri.value = null
+            metaPrefs().edit().remove("cloud_sync_folder_uri").apply()
+            _messageFlow.tryEmit("Đã xóa thư mục đồng bộ tự động.")
+            return
+        }
+        runCatching {
+            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            app.contentResolver.takePersistableUriPermission(uri, flags)
+        }
+        val strUri = uri.toString()
+        _cloudSyncFolderUri.value = strUri
+        metaPrefs().edit().putString("cloud_sync_folder_uri", strUri).apply()
+        _messageFlow.tryEmit("☁️ Đã liên kết thư mục đồng bộ tự động (Google Drive / Cloud)! Mỗi khi đóng Server bản sao lưu sẽ tự động chép vào đây.")
+    }
+
+    private fun copyBackupFileToCloudFolderIfConfigured(file: java.io.File): Boolean {
+        val treeUriStr = _cloudSyncFolderUri.value ?: return false
+        if (!file.isFile) return false
+        return try {
+            val treeUri = android.net.Uri.parse(treeUriStr)
+            val treeDocId = android.provider.DocumentsContract.getTreeDocumentId(treeUri)
+            val parentDocUri = android.provider.DocumentsContract.buildDocumentUriUsingTree(treeUri, treeDocId)
+            val createdUri = android.provider.DocumentsContract.createDocument(
+                app.contentResolver,
+                parentDocUri,
+                "application/zip",
+                file.name
+            ) ?: return false
+            app.contentResolver.openOutputStream(createdUri)?.use { out ->
+                file.inputStream().use { input -> input.copyTo(out) }
+            }
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    fun requestShareBackupToGoogleDrive(filePath: String) {
+        val f = java.io.File(filePath)
+        if (!f.exists()) {
+            _errorFlow.tryEmit("Không tìm thấy tệp sao lưu để tải lên Google Drive: ${f.name}")
+            return
+        }
+        _pendingDriveShareFileFlow.tryEmit(f.absolutePath)
+    }
+
+    fun shareBackupFileToGoogleDrive(context: Context, filePath: String) {
+        val file = java.io.File(filePath)
+        if (!file.exists()) {
+            _errorFlow.tryEmit("Tệp sao lưu không tồn tại: ${file.name}")
+            return
+        }
+        try {
+            val uri = FileProvider.getUriForFile(
+                context,
+                context.packageName + ".fileprovider",
+                file
+            )
+            val drivePackage = "com.google.android.apps.docs"
+            val hasDrive = runCatching {
+                context.packageManager.getPackageInfo(drivePackage, 0)
+                true
+            }.getOrDefault(false)
+
+            val baseIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "application/zip"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_SUBJECT, file.name)
+                putExtra(Intent.EXTRA_TITLE, file.name)
+                clipData = ClipData.newRawUri(file.name, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+
+            if (hasDrive) {
+                val driveIntent = Intent(baseIntent).apply {
+                    setPackage(drivePackage)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.grantUriPermission(drivePackage, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                val chooser = Intent.createChooser(driveIntent, "Lưu bản sao lưu '${file.name}' lên Google Drive").apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                try {
+                    context.startActivity(driveIntent)
+                    _messageFlow.tryEmit("☁️ Đang mở Google Drive để lưu '${file.name}'...")
+                    return
+                } catch (_: Exception) {
+                    context.startActivity(chooser)
+                    return
+                }
+            } else {
+                val chooser = Intent.createChooser(baseIntent, "Lưu / Tải lên Google Drive hoặc Đám mây (${file.name})").apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                context.startActivity(chooser)
+                _messageFlow.tryEmit("☁️ Chọn Google Drive hoặc ứng dụng đám mây để lưu '${file.name}'.")
+            }
+        } catch (e: Exception) {
+            _errorFlow.tryEmit("Không thể mở bảng chia sẻ Google Drive: ${e.message}")
+        }
+    }
+
     fun formatStorageBytes(bytes: Long): String {
         return when {
             bytes >= 1024L * 1024L * 1024L -> String.format(java.util.Locale.US, "%.2f GB", bytes / (1024.0 * 1024.0 * 1024.0))
@@ -7037,6 +7289,16 @@ class McViewModel(
     fun setActiveCore(name: String) {
         // 只切核心，不动运行模式 —— 运行模式由用户在「运行环境」弹窗里决定并完全生效。
         updateConfig { it.copy(activeCoreName = name) }
+        viewModelScope.launch {
+            refreshServerPropertiesNow()
+            loadWorlds()
+            refreshMods()
+            refreshInstalledPlugins()
+            refreshServerStorage()
+            if (playConnectionMode.value == PlayConnectionMode.Everywhere && playitState.value.isRunning) {
+                playitController.refreshTunnel { resolveLiveLocalServerPort() }
+            }
+        }
     }
 
     /** 删除一个已安装的核心（按名称） */
@@ -7391,6 +7653,9 @@ class McViewModel(
      */
     init {
         _autoCleanRamOnStart.value = metaPrefs().getBoolean("auto_clean_ram_on_start", true)
+        _autoBackupOnStop.value = metaPrefs().getBoolean("auto_backup_on_stop", true)
+        _autoUploadDriveOnStop.value = metaPrefs().getBoolean("auto_upload_drive_on_stop", false)
+        _cloudSyncFolderUri.value = metaPrefs().getString("cloud_sync_folder_uri", null)
         refreshDeviceProfile()
         refreshLanIp(notifyOnChange = false)
         runCatching {

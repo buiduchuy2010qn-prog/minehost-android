@@ -25,7 +25,7 @@ import java.util.zip.ZipInputStream
  */
 class BackupManager(private val termux: TermuxRuntime) {
 
-    enum class BackupKind { World, Server }
+    enum class BackupKind { World, Server, Mods }
     enum class BackupOrigin(val label: String) { Manual("手动"), Automatic("自动") }
 
     data class ExternalBackupInfo(
@@ -109,9 +109,15 @@ class BackupManager(private val termux: TermuxRuntime) {
         coreTag: String? = null,
         origin: BackupOrigin
     ): String {
-        val prefix = if (kind == BackupKind.World) "world" else "server"
+        val prefix = when (kind) {
+            BackupKind.World -> "world"
+            BackupKind.Mods -> "mods"
+            BackupKind.Server -> "server"
+        }
         val fields = mutableListOf(prefix, safeSegment(dirName), ts())
-        if (kind == BackupKind.Server) fields += safeSegment(coreTag ?: "Unknown")
+        if (kind == BackupKind.Server || (kind == BackupKind.Mods && !coreTag.isNullOrBlank())) {
+            fields += safeSegment(coreTag ?: "Unknown")
+        }
         fields += origin.label
         return fields.joinToString("_") + ".zip"
     }
@@ -160,25 +166,114 @@ class BackupManager(private val termux: TermuxRuntime) {
         out.exists() && out.length() > 0
     } catch (e: Exception) { out.delete(); false }
 
-    /** 外部备份整个世界（world + world_nether + world_the_end）。 */
+    private fun resolveLevelName(serverDir: File): String {
+        val propFile = File(serverDir, "server.properties")
+        if (propFile.isFile) {
+            runCatching {
+                propFile.readLines().forEach { line ->
+                    val trimmed = line.trim()
+                    if (trimmed.startsWith("level-name=")) {
+                        val value = trimmed.substringAfter("level-name=").trim()
+                        if (value.isNotBlank()) return value
+                    }
+                }
+            }
+        }
+        return "world"
+    }
+
+    /** 外部备份整个世界（包含主世界 + 下界 + 末地 + 当前地图的 mods/config）。 */
     fun backupWorldToExternal(
         dirName: String,
         origin: BackupOrigin = BackupOrigin.Manual,
-        maxAutomaticBackups: Int = 0
+        maxAutomaticBackups: Int = 0,
+        includeMods: Boolean = true
     ): String? {
         if (!ExternalBackupStore.ensure()) return null
         val dir = serverDir(dirName)
+        val levelName = resolveLevelName(dir)
         val worlds = if (PowerNukkitXLayout.isPowerNukkitX(dir)) {
             PowerNukkitXLayout.worldDirectories(dir)
         } else {
-            listOf(File(dir, "world"), File(dir, "world_nether"), File(dir, "world_the_end"))
+            listOf(
+                File(dir, levelName),
+                File(dir, "${levelName}_nether"),
+                File(dir, "${levelName}_the_end"),
+                File(dir, "world"),
+                File(dir, "world_nether"),
+                File(dir, "world_the_end")
+            ).distinctBy { it.absolutePath }
         }
         if (!worlds.any { it.isDirectory }) return null
+        val dirsToZip = mutableListOf<File>().apply {
+            addAll(worlds.filter { it.isDirectory })
+            if (includeMods) {
+                val modsDir = File(dir, "mods")
+                val configDir = File(dir, "config")
+                if (modsDir.isDirectory && (modsDir.listFiles()?.isNotEmpty() == true)) add(modsDir)
+                if (configDir.isDirectory && (configDir.listFiles()?.isNotEmpty() == true)) add(configDir)
+            }
+        }
         val out = File(ExternalBackupStore.rootDir, backupName(BackupKind.World, dirName, origin = origin))
-        return if (zipDirs(worlds, out)) {
+        return if (zipDirs(dirsToZip, out)) {
             cleanupAutomaticBackups(dirName, BackupKind.World, maxAutomaticBackups, origin)
             out.absolutePath
         } else null
+    }
+
+    /** Sao lưu riêng bộ Mod + Config cho Map/Server hiện tại ra bộ nhớ máy */
+    fun backupModsToExternal(
+        dirName: String,
+        worldName: String? = null,
+        origin: BackupOrigin = BackupOrigin.Manual
+    ): String? {
+        if (!ExternalBackupStore.ensure()) return null
+        val dir = serverDir(dirName)
+        if (!dir.isDirectory) return null
+        val mapLabel = worldName?.takeIf { it.isNotBlank() } ?: resolveLevelName(dir)
+        val candidateDirs = listOf(
+            File(dir, "mods"),
+            File(dir, "config"),
+            File(dir, "plugins")
+        ).filter { it.isDirectory && (it.listFiles()?.isNotEmpty() == true) }
+        if (candidateDirs.isEmpty()) return null
+        val out = File(
+            ExternalBackupStore.rootDir,
+            backupName(BackupKind.Mods, dirName, coreTag = "map-$mapLabel", origin = origin)
+        )
+        return if (zipDirs(candidateDirs, out)) {
+            out.absolutePath
+        } else null
+    }
+
+    /** Khôi phục bộ Mod + Config từ file ZIP sao lưu vào Server hiện tại */
+    suspend fun restoreModsFromExternal(file: File, dirName: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            if (!file.exists() || !validateZipFile(file)) return@withContext false
+            stopServerIfRunning()
+            val sDir = serverDir(dirName).apply { mkdirs() }
+            val modsDir = File(sDir, "mods")
+            var bakDir: File? = null
+            if (modsDir.exists()) {
+                val candidateBak = File(sDir, "mods.bak.${ts()}")
+                if (modsDir.renameTo(candidateBak)) {
+                    bakDir = candidateBak
+                }
+            }
+            val res = runCatching { extractZipToDir(file, sDir) }
+            if (res.isFailure) {
+                bakDir?.let {
+                    modsDir.deleteRecursively()
+                    it.renameTo(modsDir)
+                }
+                return@withContext false
+            }
+            bakDir?.deleteRecursively()
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "restoreModsFromExternal: ${e.message}", e)
+            false
+        }
     }
 
     /**
@@ -336,7 +431,11 @@ class BackupManager(private val termux: TermuxRuntime) {
         val base = name.removeSuffix(".zip")
         val newMatch = NEW_BACKUP.matchEntire(base)
         if (newMatch != null) {
-            val kind = if (newMatch.groupValues[1] == "world") BackupKind.World else BackupKind.Server
+            val kind = when (newMatch.groupValues[1]) {
+                "world" -> BackupKind.World
+                "mods" -> BackupKind.Mods
+                else -> BackupKind.Server
+            }
             val timestamp = parseTime(newMatch.groupValues[3], NEW_TIME) ?: modifiedTime
             return ExternalBackupInfo(
                 kind = kind,
@@ -579,7 +678,7 @@ class BackupManager(private val termux: TermuxRuntime) {
         const val TAG = "BackupManager"
         const val NEW_TIME = "yyyy-MM-dd_HH-mm-ss"
         const val LEGACY_TIME = "yyyyMMdd_HHmmss"
-        val NEW_BACKUP = Regex("^(world|server)_(.+)_(\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2})(?:_(.*))?_(手动|自动)$")
+        val NEW_BACKUP = Regex("^(world|server|mods)_(.+)_(\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2})(?:_(.*))?_(手动|自动)$")
         val LEGACY_WORLD = Regex("^world_(?:(.+)_)?(\\d{8}_\\d{6})$")
         val LEGACY_SERVER = Regex("^server_(.+)_(\\d{8}_\\d{6})(?:__(.*))?$")
     }

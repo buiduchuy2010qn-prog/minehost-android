@@ -298,6 +298,10 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
     val serverStorageMap by vm.serverStorageMap.collectAsStateWithLifecycle()
     val autoCleanRamOnStart by vm.autoCleanRamOnStart.collectAsStateWithLifecycle()
     val isCleaningRam by vm.isCleaningRam.collectAsStateWithLifecycle()
+    val autoBackupOnStop by vm.autoBackupOnStop.collectAsStateWithLifecycle()
+    val autoUploadDriveOnStop by vm.autoUploadDriveOnStop.collectAsStateWithLifecycle()
+    val fontScale by com.mineserve.mobile.ui.theme.AppUiSettings.fontScale.collectAsStateWithLifecycle()
+    val colorPreset by com.mineserve.mobile.ui.theme.AppUiSettings.colorPreset.collectAsStateWithLifecycle()
     val port by vm.serverPort.collectAsStateWithLifecycle()
     val installedMods by vm.mods.collectAsStateWithLifecycle()
     val clipboard = LocalClipboardManager.current
@@ -359,10 +363,78 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                 shape = RoundedCornerShape(10.dp)
             ) {
-                Text("➕ Tạo Server", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                Text("➕ Tạo Server", fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
             }
         }
     ) {
+        // ── 0. THANH CHỈNH NHANH CỠ CHỮ TO RÕ & BẢNG MÀU DỊU MẮT (CHỐNG MỎI MẮT) ──
+        item {
+            HostCard(
+                title = "👁️ Cỡ Chữ & Bảng Màu Bảo Vệ Mắt",
+                artKind = MinecraftArtKind.GOLDEN_APPLE,
+                badgeText = "Dịu mắt"
+            ) {
+                Text(
+                    "Tùy chỉnh nhanh cỡ chữ to rõ và tông màu dịu mắt (không chói neon) cho toàn bộ ứng dụng:",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    listOf(
+                        1.08f to "Chữ Vừa",
+                        1.18f to "Chữ To",
+                        1.30f to "Rất To",
+                        1.42f to "Siêu To"
+                    ).forEach { (scaleVal, label) ->
+                        val selected = kotlin.math.abs(fontScale - scaleVal) < 0.04f
+                        FilterChip(
+                            selected = selected,
+                            onClick = {
+                                com.mineserve.mobile.ui.theme.AppUiSettings.setFontScale(context, scaleVal)
+                                vm.notifyActionDone("🔤 Đã đổi cỡ chữ ứng dụng sang: $label")
+                            },
+                            label = {
+                                Text(
+                                    label,
+                                    fontSize = 11.5.sp,
+                                    fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.SemiBold
+                                )
+                            }
+                        )
+                    }
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    listOf(
+                        com.mineserve.mobile.ui.theme.EyeCareColorPreset.SoftSlate to "🌙 Xanh Đá Dịu Mắt",
+                        com.mineserve.mobile.ui.theme.EyeCareColorPreset.WarmMocha to "☕ Đêm Ấm",
+                        com.mineserve.mobile.ui.theme.EyeCareColorPreset.WarmPaperLight to "🌤️ Sáng Giấy Ấm"
+                    ).forEach { (preset, label) ->
+                        val selected = colorPreset == preset
+                        FilterChip(
+                            selected = selected,
+                            onClick = {
+                                com.mineserve.mobile.ui.theme.AppUiSettings.setColorPreset(context, preset)
+                                vm.notifyActionDone("🎨 Đã áp dụng bảng màu bảo vệ mắt: $label")
+                            },
+                            label = {
+                                Text(
+                                    label,
+                                    fontSize = 11.5.sp,
+                                    fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.SemiBold
+                                )
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
         // ── 1. THẺ HERO MÁY CHỦ + CHUYỂN ĐỔI / TẠO THÊM SERVER NGAY TẠI CHỖ ──
         item {
             Card(
@@ -739,7 +811,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                     } else {
                         when {
                             playitState.isRunning && playitAddress != null ->
-                                "Trạng thái Playit.gg: Đã kết nối (${playitState.lastUpdatedText.ifBlank { "vừa xong" }}). Bạn bè dùng 4G hoặc Wi-Fi khác nhập đúng địa chỉ có cả số cổng này!"
+                                "Trạng thái Playit.gg: Đang hoạt động (${playitState.lastUpdatedText.ifBlank { "vừa xong" }}) • Tự động đồng bộ tới cổng cục bộ 127.0.0.1:$port của Server '${active.name}'."
                             playitState.isRunning && !playitState.claimUrl.isNullOrBlank() && !playitState.isClaimed ->
                                 "Trạng thái Playit.gg: Cần xác nhận liên kết (Claim) lần đầu. Hãy bấm nút Mở trang xác nhận bên dưới."
                             playitState.isRunning ->
@@ -878,17 +950,22 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                             modifier = Modifier.fillMaxWidth()
                                         ) { Text("🚀 Bật kết nối mọi nơi (Playit.gg)", fontWeight = FontWeight.ExtraBold) }
                                     } else {
+                                        Button(
+                                            onClick = { vm.refreshPlayitTunnel() },
+                                            shape = RoundedCornerShape(10.dp),
+                                            modifier = Modifier.weight(1f)
+                                        ) { Text("🔄 Làm mới Playit", fontWeight = FontWeight.Bold, fontSize = 12.sp) }
                                         OutlinedButton(
                                             onClick = { vm.stopPlayitTunnel() },
                                             shape = RoundedCornerShape(10.dp),
                                             modifier = Modifier.weight(1f)
-                                        ) { Text("⏹️ Tắt Playit.gg") }
+                                        ) { Text("⏹️ Tắt Playit", fontSize = 12.sp) }
                                         if (playitState.claimUrl.isNotBlank() && !playitState.isClaimed) {
                                             Button(
                                                 onClick = { uriHandler.openUri(playitState.claimUrl) },
                                                 shape = RoundedCornerShape(10.dp),
                                                 modifier = Modifier.weight(1f)
-                                            ) { Text("🔑 Xác nhận Claim") }
+                                            ) { Text("🔑 Claim", fontSize = 12.sp) }
                                         }
                                     }
                                 }
@@ -1037,6 +1114,69 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                     Icons.Outlined.Extension,
                     artKind = MinecraftArtKind.CHEST
                 ) { navigate(SubPage.Plugins) }
+            }
+        }
+
+        // ── 6.5. SAO LƯU MOD CHO MAP/SV & TỰ ĐỘNG LƯU MAP LÊN GOOGLE DRIVE KHI ĐÓNG SERVER ──
+        item {
+            if (active != null) {
+                HostCard(
+                    title = "☁️ Sao lưu Mod cho Map & Tự lưu Google Drive khi Đóng SV",
+                    artKind = MinecraftArtKind.CHEST,
+                    badgeText = if (autoBackupOnStop) "Tự động BẬT" else "Thủ công"
+                ) {
+                    Text(
+                        "Tự động sao lưu Map + Mod của Server '${active.name}' mỗi khi bạn dừng/đóng Server và hỗ trợ đẩy thẳng bản sao lưu lên Google Drive:",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.weight(1f)) {
+                            Text("💾 Tự động sao lưu Map + Mod mỗi khi đóng Server", fontWeight = FontWeight.Bold)
+                            Text(
+                                "Tự nén thế giới hiện tại kèm thư mục mods/ & config/ ngay khi tắt SV",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = autoBackupOnStop,
+                            onCheckedChange = vm::setAutoBackupOnStop
+                        )
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.weight(1f)) {
+                            Text("☁️ Tự mở Google Drive để lưu ngay khi đóng Server", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            Text(
+                                "Khi dừng Server xong sẽ tự bật bảng Lưu bản sao lưu lên Google Drive",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = autoUploadDriveOnStop,
+                            onCheckedChange = vm::setAutoUploadDriveOnStop
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        Button(
+                            onClick = { vm.backupModsForCurrentServer(shareToDrive = false) },
+                            enabled = ready,
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("📦 Sao lưu Mod Map này", fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
+                        }
+                        Button(
+                            onClick = { vm.backupWorldToExternal(shareToDrive = true) },
+                            enabled = ready,
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("☁️ Lưu Map + Mod lên Drive", fontWeight = FontWeight.ExtraBold, fontSize = 12.sp, color = Color.White)
+                        }
+                    }
+                }
             }
         }
 

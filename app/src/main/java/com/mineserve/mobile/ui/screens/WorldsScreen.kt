@@ -39,8 +39,18 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
     val config by vm.config.collectAsState()
     val serverStorageMap by vm.serverStorageMap.collectAsState()
     val activeStorage = config.activeCoreName?.let { serverStorageMap[it] }
+    val autoBackupOnStop by vm.autoBackupOnStop.collectAsState()
+    val autoUploadDriveOnStop by vm.autoUploadDriveOnStop.collectAsState()
+    val cloudSyncFolderUri by vm.cloudSyncFolderUri.collectAsState()
+    val lastBackupFilePath by vm.lastBackupFilePath.collectAsState()
     val runningFlow = remember(vm) { vm.serverState.map { it.isRunning }.distinctUntilChanged() }
     val running by runningFlow.collectAsState(initial = true)
+
+    val cloudFolderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) {
+            vm.setCloudSyncFolderUri(uri)
+        }
+    }
 
     var pendingExport by remember { mutableStateOf<String?>(null) }
     var exportServer by remember { mutableStateOf<String?>(null) }
@@ -163,6 +173,116 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
                         color = Muted,
                         fontSize = 12.sp
                     )
+                }
+            }
+        }
+
+        item {
+            HostCard("☁️ Sao lưu Mod cho Map & Tự động Lưu Map lên Google Drive khi Đóng SV") {
+                Text(
+                    "Bảo vệ tuyệt đối Map '${active.ifBlank { "world" }}' và bộ Mod của Server '${config.activeCoreName ?: "Chưa chọn"}'. Mỗi khi bạn tắt/đóng Server, ứng dụng sẽ tự động nén Map + Mod và hỗ trợ đẩy thẳng lên Google Drive!",
+                    color = Muted,
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "💾 Tự động sao lưu Map + Mod mỗi khi Đóng Server",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            "Tự động tạo bản nén dự phòng ngay khi dừng máy chủ",
+                            fontSize = 11.5.sp,
+                            color = Muted
+                        )
+                    }
+                    Switch(
+                        checked = autoBackupOnStop,
+                        onCheckedChange = { vm.setAutoBackupOnStop(it) }
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "☁️ Tự động mở Google Drive để lưu ngay khi Đóng Server",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Indigo
+                        )
+                        Text(
+                            "Khi đóng Server xong sẽ tự bật bảng Lưu vào Google Drive",
+                            fontSize = 11.5.sp,
+                            color = Muted
+                        )
+                    }
+                    Switch(
+                        checked = autoUploadDriveOnStop,
+                        onCheckedChange = { vm.setAutoUploadDriveOnStop(it) }
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = { vm.backupWorldToExternal(shareToDrive = true) },
+                        enabled = ready,
+                        colors = ButtonDefaults.buttonColors(containerColor = Mint),
+                        shape = McShape.ControlCompact,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("☁️ Sao lưu Map + Mod lên Drive ngay", color = Color.White, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Button(
+                        onClick = { vm.backupModsForCurrentServer(shareToDrive = false) },
+                        enabled = ready,
+                        colors = ButtonDefaults.buttonColors(containerColor = Indigo),
+                        shape = McShape.ControlCompact,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("📦 Sao lưu riêng Mod của Map", color = Color.White, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = { cloudFolderPicker.launch(null) },
+                        shape = McShape.ControlCompact,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            if (cloudSyncFolderUri != null) "📂 Đã liên kết Thư mục Đồng bộ (Đổi)"
+                            else "📂 Chọn Thư mục Đồng bộ Tự động",
+                            color = Indigo,
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    if (!lastBackupFilePath.isNullOrBlank()) {
+                        OutlinedButton(
+                            onClick = { lastBackupFilePath?.let { vm.requestShareBackupToGoogleDrive(it) } },
+                            shape = McShape.ControlCompact,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("☁️ Đẩy bản vừa lưu lên Drive", color = Mint, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
             }
         }
