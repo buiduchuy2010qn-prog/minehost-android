@@ -291,7 +291,7 @@ fun ServerManagementScreen(
                                             fontWeight = FontWeight.ExtraBold,
                                             color = Indigo
                                         )
-                                        Text("• Tệp Core (${srv.jarFile}): ${vm.formatStorageBytes(storage.coreJarBytes)}", fontSize = 11.sp)
+                                        Text("• Tệp Core (${srv.serverFile ?: "server.jar"}): ${vm.formatStorageBytes(storage.coreJarBytes)}", fontSize = 11.sp)
                                         Text("• Thư mục mods/ & plugins/: ${vm.formatStorageBytes(storage.modsBytes + storage.pluginsBytes)}", fontSize = 11.sp)
                                         Text("• Thư mục logs/ & crash-reports/: ${vm.formatStorageBytes(storage.logsBytes)}", fontSize = 11.sp)
                                         Text(

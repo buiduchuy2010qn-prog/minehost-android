@@ -6,6 +6,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import com.mineserve.mobile.R
+import com.mineserve.mobile.ui.showInstantSnackbar
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background

@@ -6700,19 +6700,32 @@ class McViewModel(
 
     /** Phát sự kiện ngay khi tải xong Core Server để UI tự động chuyển sang mục Khởi động Server */
     private val _coreDownloadCompletedFlow = MutableSharedFlow<String>(extraBufferCapacity = 1)
-    val coreDownloadCompletedFlow: SharedFlow<String> = _coreDownloadCompletedFlow.asSharedFlow()
+    val coreDownloadCompletedFlow: kotlinx.coroutines.flow.SharedFlow<String> = _coreDownloadCompletedFlow.asSharedFlow()
+
+    data class WorldFileStorageEntry(
+        val name: String,
+        val sizeBytes: Long,
+        val isDirectory: Boolean,
+        val fileCount: Int = 1
+    )
 
     /** Thông tin dung lượng chi tiết của từng Server & từng thư mục/file trong Map */
     data class ServerStorageBreakdown(
+        val serverName: String = "",
         val dirName: String,
+        val activeWorldName: String = "world",
         val totalBytes: Long = 0L,
         val worldBytes: Long = 0L,
+        val modsBytes: Long = 0L,
+        val pluginsBytes: Long = 0L,
         val modsPluginsBytes: Long = 0L,
+        val coreJarBytes: Long = 0L,
         val coreAndLibsBytes: Long = 0L,
+        val logsBytes: Long = 0L,
         val logsAndCacheBytes: Long = 0L,
         val modCount: Int = 0,
         val enabledModCount: Int = 0,
-        val worldFileEntries: List<Pair<String, Long>> = emptyList()
+        val worldFileEntries: List<WorldFileStorageEntry> = emptyList()
     )
 
     private val _serverStorageMap = MutableStateFlow<Map<String, ServerStorageBreakdown>>(emptyMap())
@@ -6724,6 +6737,22 @@ class McViewModel(
     private val _autoCleanRamOnStart = MutableStateFlow(true)
     val autoCleanRamOnStart: StateFlow<Boolean> = _autoCleanRamOnStart.asStateFlow()
 
+    private val _isCleaningRam = MutableStateFlow(false)
+    val isCleaningRam: StateFlow<Boolean> = _isCleaningRam.asStateFlow()
+
+    fun formatStorageBytes(bytes: Long): String {
+        return when {
+            bytes >= 1024L * 1024L * 1024L -> String.format(java.util.Locale.US, "%.2f GB", bytes / (1024.0 * 1024.0 * 1024.0))
+            bytes >= 1024L * 1024L -> String.format(java.util.Locale.US, "%.1f MB", bytes / (1024.0 * 1024.0))
+            bytes >= 1024L -> String.format(java.util.Locale.US, "%.0f KB", bytes / 1024.0)
+            else -> "$bytes B"
+        }
+    }
+
+    fun notifyActionDone(message: String) {
+        _messageFlow.tryEmit(message)
+    }
+
     fun setAutoCleanRamOnStart(enabled: Boolean) {
         _autoCleanRamOnStart.value = enabled
         metaPrefs().edit().putBoolean("auto_clean_ram_on_start", enabled).apply()
@@ -6734,18 +6763,24 @@ class McViewModel(
     }
 
     fun cleanRamNow(silent: Boolean = false) {
+        if (_isCleaningRam.value) return
         viewModelScope.launch {
-            val dir = activeDirName()
-            val freedBytes = withContext(Dispatchers.IO) {
-                repo.termuxRuntime.cleanCacheAndRamForStartup(dir)
-            }
-            val mem = com.mineserve.mobile.data.DeviceMemory.read(app)
-            refreshServerStorage()
-            if (!silent) {
-                val freedKb = (freedBytes / 1024L).coerceAtLeast(0L)
-                _messageFlow.tryEmit(
-                    "🧹 Đã dọn RAM & xóa ${freedKb} KB bộ nhớ đệm! Hiện có ${mem.availableMb}/${mem.totalMb} MB RAM trống."
-                )
+            _isCleaningRam.value = true
+            try {
+                val dir = activeDirName()
+                val freedBytes = withContext(Dispatchers.IO) {
+                    repo.termuxRuntime.cleanCacheAndRamForStartup(dir)
+                }
+                val mem = com.mineserve.mobile.data.DeviceMemory.read(app)
+                refreshServerStorage()
+                if (!silent) {
+                    val freedKb = (freedBytes / 1024L).coerceAtLeast(0L)
+                    _messageFlow.tryEmit(
+                        "🧹 Đã dọn RAM & xóa ${freedKb} KB bộ nhớ đệm! Hiện có ${mem.availableMb}/${mem.totalMb} MB RAM trống."
+                    )
+                }
+            } finally {
+                _isCleaningRam.value = false
             }
         }
     }
@@ -6762,9 +6797,10 @@ class McViewModel(
                     var total = 0L
                     var worldSz = 0L
                     var modsSz = 0L
+                    var pluginsSz = 0L
                     var coreLibsSz = 0L
                     var logsSz = 0L
-                    val worldEntries = mutableListOf<Pair<String, Long>>()
+                    val worldEntries = mutableListOf<WorldFileStorageEntry>()
 
                     val activeLvl = _serverProperties.value["level-name"]?.trim()?.takeIf { it.isNotBlank() } ?: "world"
                     val topChildren = srvDir.listFiles() ?: emptyArray()
@@ -6779,27 +6815,44 @@ class McViewModel(
                                 worldSz += sz
                                 if (child.isDirectory && (n == activeLvl.lowercase(java.util.Locale.ROOT) || n == "worlds")) {
                                     child.listFiles()?.forEach { wf ->
-                                        val wfsz = wf.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+                                        val wfFiles = wf.walkTopDown().filter { it.isFile }.toList()
+                                        val wfsz = wfFiles.sumOf { it.length() }
                                         val label = when (wf.name) {
-                                            "region" -> "🗺️ region/ (Dữ liệu vùng đất Chunk)"
-                                            "entities" -> "🐾 entities/ (Sinh vật & Thực thể)"
-                                            "playerdata" -> "👤 playerdata/ (Túi đồ & Vị trí người chơi)"
-                                            "DIM-1" -> "🔥 DIM-1/ (Địa ngục Nether)"
-                                            "DIM1" -> "🐉 DIM1/ (Chiều The End)"
-                                            "datapacks" -> "📦 datapacks/ (Gói dữ liệu thế giới)"
-                                            "poi" -> "🏠 poi/ (Điểm nghề dân làng & Cổng)"
-                                            "stats" -> "📊 stats/ (Thống kê người chơi)"
-                                            "advancements" -> "🏆 advancements/ (Thành tựu)"
-                                            "level.dat" -> "⚙️ level.dat (Hạt giống & Cấu hình Map)"
-                                            else -> (if (wf.isDirectory) "📁 ${wf.name}/" else "📄 ${wf.name}")
+                                            "region" -> "region/ (Dữ liệu vùng đất Chunk)"
+                                            "entities" -> "entities/ (Sinh vật & Thực thể)"
+                                            "playerdata" -> "playerdata/ (Túi đồ & Vị trí người chơi)"
+                                            "DIM-1" -> "DIM-1/ (Địa ngục Nether)"
+                                            "DIM1" -> "DIM1/ (Chiều The End)"
+                                            "datapacks" -> "datapacks/ (Gói dữ liệu thế giới)"
+                                            "poi" -> "poi/ (Điểm nghề dân làng & Cổng)"
+                                            "stats" -> "stats/ (Thống kê người chơi)"
+                                            "advancements" -> "advancements/ (Thành tựu)"
+                                            "level.dat" -> "level.dat (Hạt giống & Cấu hình Map)"
+                                            else -> (if (wf.isDirectory) "${wf.name}/" else wf.name)
                                         }
-                                        worldEntries.add(label to wfsz)
+                                        worldEntries.add(
+                                            WorldFileStorageEntry(
+                                                name = label,
+                                                sizeBytes = wfsz,
+                                                isDirectory = wf.isDirectory,
+                                                fileCount = wfFiles.size.coerceAtLeast(1)
+                                            )
+                                        )
                                     }
                                 } else if (child.isDirectory) {
-                                    worldEntries.add("🌌 ${child.name}/ (Chiều không gian phụ)" to sz)
+                                    val subFiles = child.walkTopDown().filter { it.isFile }.count().coerceAtLeast(1)
+                                    worldEntries.add(
+                                        WorldFileStorageEntry(
+                                            name = "${child.name}/ (Chiều không gian phụ)",
+                                            sizeBytes = sz,
+                                            isDirectory = true,
+                                            fileCount = subFiles
+                                        )
+                                    )
                                 }
                             }
-                            n == "mods" || n == "plugins" -> modsSz += sz
+                            n == "mods" -> modsSz += sz
+                            n == "plugins" -> pluginsSz += sz
                             n == "logs" || n == "crash-reports" || n == ".mineserve" || n == ".fabric" || n == "cache" -> logsSz += sz
                             else -> coreLibsSz += sz
                         }
@@ -6808,17 +6861,25 @@ class McViewModel(
                         File(srvDir, "plugins").listFiles()?.toList().orEmpty())
                         .filter { it.isFile && (it.name.endsWith(".jar", true) || it.name.endsWith(".jar.disabled", true) || it.name.endsWith(".phar", true)) }
                     val enabledMods = modFiles.count { !it.name.endsWith(".disabled", true) }
-                    result[srv.dirName] = ServerStorageBreakdown(
+                    val breakdown = ServerStorageBreakdown(
+                        serverName = srv.name,
                         dirName = srv.dirName,
+                        activeWorldName = activeLvl,
                         totalBytes = total,
                         worldBytes = worldSz,
-                        modsPluginsBytes = modsSz,
+                        modsBytes = modsSz,
+                        pluginsBytes = pluginsSz,
+                        modsPluginsBytes = modsSz + pluginsSz,
+                        coreJarBytes = coreLibsSz,
                         coreAndLibsBytes = coreLibsSz,
+                        logsBytes = logsSz,
                         logsAndCacheBytes = logsSz,
                         modCount = modFiles.size,
                         enabledModCount = enabledMods,
-                        worldFileEntries = worldEntries.sortedByDescending { it.second }
+                        worldFileEntries = worldEntries.sortedByDescending { it.sizeBytes }
                     )
+                    result[srv.dirName] = breakdown
+                    result[srv.name] = breakdown
                 }
                 _serverStorageMap.value = result
             }
@@ -6848,28 +6909,53 @@ class McViewModel(
     }
 
     fun installCrossplayGeyserPack() {
+        if (!requireServerStopped("cài gói GeyserMC + Floodgate")) return
+        val dirName = activeDirName() ?: run {
+            _errorFlow.tryEmit("Chưa chọn máy chủ để cài GeyserMC + Floodgate.")
+            return
+        }
         val active = config.value.installedCores.firstOrNull { it.name == config.value.activeCoreName }
         val core = active?.core ?: config.value.selectedCore
-        if (core.supportsMods) {
-            _messageFlow.tryEmit("📱 Đang tải GeyserMC + Floodgate (Fabric) để điện thoại PE vào chơi chung...")
-            downloadPopularPlugin(
-                name = "Geyser-Fabric",
-                url = "https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/fabric"
-            )
-            downloadPopularPlugin(
-                name = "Floodgate-Fabric",
-                url = "https://download.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest/downloads/fabric"
-            )
-        } else {
-            _messageFlow.tryEmit("📱 Đang tải GeyserMC + Floodgate (Paper/Spigot) để điện thoại PE vào chơi chung...")
-            downloadPopularPlugin(
-                name = "Geyser-Spigot",
-                url = "https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot"
-            )
-            downloadPopularPlugin(
-                name = "Floodgate-Spigot",
-                url = "https://download.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest/downloads/spigot"
-            )
+        viewModelScope.launch {
+            try {
+                if (core.supportsMods) {
+                    _messageFlow.tryEmit("📱 Đang tải GeyserMC + Floodgate (Fabric) để điện thoại PE vào chơi chung...")
+                    withContext(Dispatchers.IO) {
+                        pluginManager.installModPackJarFromUrl(
+                            url = "https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/fabric",
+                            targetFileName = "Geyser-Fabric.jar",
+                            dirName = dirName
+                        )
+                        pluginManager.installModPackJarFromUrl(
+                            url = "https://download.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest/downloads/fabric",
+                            targetFileName = "Floodgate-Fabric.jar",
+                            dirName = dirName
+                        )
+                    }
+                    refreshMods()
+                    refreshServerStorage()
+                    _messageFlow.tryEmit("✅ Đã cài xong Geyser-Fabric + Floodgate-Fabric! Hãy bật Server để cả PC và PE chơi chung.")
+                } else {
+                    _messageFlow.tryEmit("📱 Đang tải GeyserMC + Floodgate (Paper/Spigot) để điện thoại PE vào chơi chung...")
+                    withContext(Dispatchers.IO) {
+                        pluginManager.installFromUrl(
+                            url = "https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot",
+                            targetFileName = "Geyser-Spigot.jar",
+                            dirName = dirName
+                        ) { _, _, _ -> }
+                        pluginManager.installFromUrl(
+                            url = "https://download.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest/downloads/spigot",
+                            targetFileName = "Floodgate-Spigot.jar",
+                            dirName = dirName
+                        ) { _, _, _ -> }
+                    }
+                    refreshInstalledPlugins()
+                    refreshServerStorage()
+                    _messageFlow.tryEmit("✅ Đã cài xong Geyser-Spigot + Floodgate-Spigot! Hãy bật Server để cả PC và PE chơi chung.")
+                }
+            } catch (e: Exception) {
+                _errorFlow.tryEmit("⚠️ Không thể tải GeyserMC + Floodgate: ${e.message}")
+            }
         }
     }
 

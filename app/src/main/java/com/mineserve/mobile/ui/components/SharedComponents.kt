@@ -1677,7 +1677,7 @@ fun SwipeableInstantSnackbarHost(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 MinecraftPixelArtIcon(
-                    kind = if (isError) MinecraftArtKind.REDSTONE else MinecraftArtKind.EMERALD,
+                    kind = if (isError) MinecraftArtKind.REDSTONE else MinecraftArtKind.GRASS,
                     size = 22.dp
                 )
                 Column(modifier = Modifier.weight(1f)) {

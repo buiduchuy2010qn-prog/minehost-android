@@ -701,7 +701,8 @@ class PluginManager(
         val fileName: String,
         val baseName: String,
         val sizeText: String,
-        val isEnabled: Boolean
+        val isEnabled: Boolean,
+        val sizeBytes: Long = 0L
     )
 
     /** 读取 mods/ 目录下的模组列表。除标准 .jar/.jar.disabled 外，还识别历史版本
@@ -713,7 +714,7 @@ class PluginManager(
             ?.sortedBy { it.name.lowercase() }
             ?.map { f ->
                 val (baseName, isEnabled) = parseModFileName(f.name)
-                ModEntry(f.name, baseName, formatSize(f.length()), isEnabled)
+                ModEntry(f.name, baseName, formatSize(f.length()), isEnabled, f.length())
             } ?: emptyList()
     }
 
