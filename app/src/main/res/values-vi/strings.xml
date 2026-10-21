@@ -992,10 +992,10 @@
     <string name="update_backup_done">Đã sao lưu thế giới: %1$s</string>
     <string name="update_backup_empty">Không tìm thấy dữ liệu thế giới, đã bỏ qua sao lưu</string>
     <string name="backup_ext_perm_title">Quyền sao lưu bộ nhớ ngoài</string>
-    <string name="backup_ext_perm_content">Bản sao lưu được lưu vào /storage/emulated/0/世界与服务器的备份/ (vẫn được giữ lại sau khi gỡ cài đặt hoặc cập nhật ứng dụng). Cần cấp quyền \"Truy cập tất cả tệp\".</string>
+    <string name="backup_ext_perm_content">Bản sao lưu được lưu vào /storage/emulated/0/MineHost_SaoLuu/ (vẫn được giữ lại sau khi gỡ cài đặt hoặc cập nhật ứng dụng). Cần cấp quyền \"Truy cập tất cả tệp\".</string>
     <string name="backup_ext_perm_action">Cấp quyền</string>
     <string name="backup_ext_title">Sao lưu bộ nhớ ngoài</string>
-    <string name="backup_ext_hint">Được lưu vào /storage/emulated/0/世界与服务器的备份/ (giữ lại sau khi gỡ cài đặt hoặc cập nhật ứng dụng)</string>
+    <string name="backup_ext_hint">Được lưu vào /storage/emulated/0/MineHost_SaoLuu/ (giữ lại sau khi gỡ cài đặt hoặc cập nhật ứng dụng)</string>
     <string name="backup_ext_rename_rule">⚠️ Trường loại nhân trong tên tệp (server_dir_time__core.zip) được dùng để nhận diện nhân máy chủ khi khôi phục. KHÔNG nên đổi tên; nếu đổi tên, hãy giữ nguyên định dạng này, nếu không loại nhân sẽ hiển thị là Không rõ.</string>
     <string name="backup_ext_refresh_hint">Nhấn làm mới (góc trên bên phải) sau khi sao lưu để xem các tệp</string>
     <string name="backup_ext_list_title">Bản sao lưu ngoài (%1$d)</string>

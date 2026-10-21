@@ -345,7 +345,7 @@ fun BackupScreen(vm: McViewModel, onBack: () -> Unit = {}) {
             }
 
             McCard(title = "Sao lưu thế giới thủ công") {
-                Text("Lưu tại bộ nhớ máy: /storage/emulated/0/世界与服务器的备份/ (không bị mất khi gỡ ứng dụng)", color = Muted, fontSize = 11.sp)
+                Text("Lưu tại bộ nhớ máy: /storage/emulated/0/MineHost_SaoLuu/ (không bị mất khi gỡ ứng dụng)", color = Muted, fontSize = 11.sp)
                 Spacer(Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(

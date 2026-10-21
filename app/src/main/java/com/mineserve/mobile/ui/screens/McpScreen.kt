@@ -182,13 +182,13 @@ fun McpScreen(vm: McViewModel, onBack: () -> Unit) {
 
             // 监听地址开关：默认只绑 127.0.0.1（更安全），需要手机以外的 AI 助手接入时才显式开放局域网。
             // 修改后由 McpServerManager 观察到 (mcpAllowLan) 变化自动重启服务生效。
-            McCard(title = "Truy cập qua mạng LAN") {
+            McCard(title = "Truy cập qua mạng nội bộ (LAN)") {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("Cho phép thiết bị cùng mạng LAN kết nối", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Cho phép truy cập qua mạng LAN", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                         Text(
-                            if (config.mcpAllowLan) "Mọi thiết bị trong cùng mạng Wi-Fi/LAN đều có thể kết nối, hãy bảo mật Token"
-                            else "Chỉ truy cập nội bộ trên máy này (127.0.0.1)",
+                            if (config.mcpAllowLan) "Mọi thiết bị trong cùng mạng Wi-Fi/LAN đều có thể kết nối; hãy bảo mật mã khóa (Token)"
+                            else "Chỉ truy cập trên chính thiết bị này (127.0.0.1)",
                             fontSize = 11.sp,
                             color = Muted
                         )
@@ -261,8 +261,8 @@ fun McpScreen(vm: McViewModel, onBack: () -> Unit) {
                 }
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    if (config.mcpAllowLan) "Mọi thiết bị trong mạng LAN đều có thể truy cập, hãy bảo mật Token"
-                    else "Chỉ truy cập trên thiết bị này (mặc định lắng nghe 127.0.0.1)",
+                    if (config.mcpAllowLan) "Mọi thiết bị trong cùng mạng Wi-Fi/LAN đều có thể kết nối; hãy bảo mật mã khóa (Token)"
+                    else "Chỉ truy cập trên chính thiết bị này (mặc định chỉ lắng nghe 127.0.0.1)",
                     fontSize = 11.sp,
                     color = Muted
                 )
@@ -279,7 +279,7 @@ fun McpScreen(vm: McViewModel, onBack: () -> Unit) {
                 Spacer(Modifier.height(2.dp))
                 Text(
                     if (config.mcpAllowLan) stringResource(R.string.mcp_client_config_desc)
-                    else "Thêm đoạn cấu hình sau vào ứng dụng MCP Client (chỉ truy cập nội bộ 127.0.0.1):",
+                    else "Thêm đoạn cấu hình bên dưới vào ứng dụng MCP Client (chỉ truy cập trên máy này, địa chỉ cố định 127.0.0.1)",
                     fontSize = 11.sp,
                     color = Muted
                 )

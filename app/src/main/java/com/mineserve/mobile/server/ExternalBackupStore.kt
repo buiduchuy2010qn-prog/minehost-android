@@ -16,7 +16,7 @@ object ExternalBackupStore {
     /** Thư mục sao lưu chính trên bộ nhớ máy */
     val rootDir: File
         get() {
-            val primary = File(Environment.getExternalStorageDirectory(), "世界与服务器的备份")
+            val primary = File(Environment.getExternalStorageDirectory(), "MineHost_SaoLuu")
             if (primary.exists() || primary.mkdirs()) return primary
             val downloadFallback = File(
                 Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
@@ -51,6 +51,7 @@ object ExternalBackupStore {
     /** Liệt kê toàn bộ tệp .zip sao lưu (Map, Mod, Server) mới nhất lên đầu */
     fun listBackups(): List<File> {
         val dirs = listOf(
+            File(Environment.getExternalStorageDirectory(), "MineHost_SaoLuu"),
             File(Environment.getExternalStorageDirectory(), "世界与服务器的备份"),
             File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "MineHost_Backups")
         )

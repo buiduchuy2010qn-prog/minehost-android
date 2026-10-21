@@ -14,23 +14,23 @@ private val sora = TextStyle(fontWeight = FontWeight.Bold)
 private val manrope = TextStyle(fontWeight = FontWeight.Medium)
 
 val McTypography = Typography(
-    // ── Tiêu đề trang / hộp thoại ──
-    headlineLarge = sora.copy(fontSize = 26.sp, lineHeight = 34.sp),
-    headlineMedium = sora.copy(fontSize = 22.sp, lineHeight = 30.sp),
-    headlineSmall = sora.copy(fontSize = 19.sp, lineHeight = 26.sp),
+    // ── Tiêu đề trang / hộp thoại (Chuẩn hóa tỷ lệ v2.2 cân đối trên mọi dòng máy) ──
+    headlineLarge = sora.copy(fontSize = 22.sp, lineHeight = 29.sp),
+    headlineMedium = sora.copy(fontSize = 19.sp, lineHeight = 26.sp),
+    headlineSmall = sora.copy(fontSize = 17.sp, lineHeight = 23.sp),
 
     // ── Tiêu đề thẻ / mục ──
-    titleLarge = sora.copy(fontSize = 22.sp, lineHeight = 30.sp),
-    titleMedium = sora.copy(fontSize = 16.5.sp, lineHeight = 23.sp),
-    titleSmall = manrope.copy(fontSize = 15.sp, fontWeight = FontWeight.SemiBold, lineHeight = 21.sp),
+    titleLarge = sora.copy(fontSize = 18.5.sp, lineHeight = 25.sp),
+    titleMedium = sora.copy(fontSize = 15.2.sp, lineHeight = 21.sp),
+    titleSmall = manrope.copy(fontSize = 13.8.sp, fontWeight = FontWeight.SemiBold, lineHeight = 19.sp),
 
-    // ── Nội dung chính (Tăng từ 11-13sp lên 13-16sp) ──
-    bodyLarge = manrope.copy(fontSize = 15.5.sp, lineHeight = 22.sp),
-    bodyMedium = manrope.copy(fontSize = 14.sp, lineHeight = 20.sp),
-    bodySmall = manrope.copy(fontSize = 13.sp, lineHeight = 18.sp),
+    // ── Nội dung chính ──
+    bodyLarge = manrope.copy(fontSize = 14.2.sp, lineHeight = 20.sp),
+    bodyMedium = manrope.copy(fontSize = 13.2.sp, lineHeight = 18.5.sp),
+    bodySmall = manrope.copy(fontSize = 12.2.sp, lineHeight = 17.sp),
 
-    // ── Nhãn / nút bấm / chú thích (Tăng từ 10-12sp lên 12-14sp) ──
-    labelLarge = manrope.copy(fontSize = 14.sp, fontWeight = FontWeight.SemiBold, lineHeight = 19.sp),
-    labelMedium = manrope.copy(fontSize = 13.sp, fontWeight = FontWeight.SemiBold, lineHeight = 17.sp),
-    labelSmall = manrope.copy(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, lineHeight = 16.sp)
+    // ── Nhãn / nút bấm / chú thích ──
+    labelLarge = manrope.copy(fontSize = 13.2.sp, fontWeight = FontWeight.SemiBold, lineHeight = 18.sp),
+    labelMedium = manrope.copy(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, lineHeight = 16.sp),
+    labelSmall = manrope.copy(fontSize = 11.2.sp, fontWeight = FontWeight.SemiBold, lineHeight = 15.sp)
 )

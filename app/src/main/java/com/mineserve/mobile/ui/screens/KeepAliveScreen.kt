@@ -164,15 +164,15 @@ fun KeepAliveScreen(vm: McViewModel, onBack: () -> Unit) {
                 )
                 Spacer(Modifier.height(8.dp))
                 KeepAliveToggle(
-                    title = "Giữ màn hình luôn sáng khi máy chủ chạy",
-                    subtitle = "Ngăn điện thoại tự tắt màn hình khi đang mở giao diện chính và máy chủ đang hoạt động.",
+                    title = "Giữ sáng màn hình khi Server đang chạy",
+                    subtitle = "Chỉ có hiệu lực khi đang mở giao diện chính; giữ màn hình luôn sáng trong lúc máy chủ hoạt động.",
                     checked = config.keepScreenOnWhileRunning,
                     onChange = vm::setKeepScreenOnWhileRunning
                 )
                 Spacer(Modifier.height(8.dp))
                 KeepAliveToggle(
-                    title = "Cửa sổ nổi hiển thị trạng thái",
-                    subtitle = "Hiển thị chấm trạng thái có thể kéo thả trên màn hình; cần cấp quyền 'Hiển thị trên ứng dụng khác'.",
+                    title = "Chấm nổi trạng thái máy chủ",
+                    subtitle = "Hiển thị chấm trạng thái có thể kéo thả trên màn hình; cần cấp quyền “Hiển thị trên ứng dụng khác”.",
                     checked = config.keepStatusOverlay,
                     onChange = { enabled ->
                         if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(context)) {

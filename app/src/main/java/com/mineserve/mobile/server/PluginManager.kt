@@ -172,13 +172,13 @@ class PluginManager(
         withMeta.groupBy { it.meta!!.name.lowercase() }
             .filter { it.value.size > 1 }
             .forEach { (_, group) ->
-                conflicts += "插件名称重复「${group.first().meta!!.name}」: ${group.joinToString("、") { it.fileName }}"
+                conflicts += "Trùng tên Plugin「${group.first().meta!!.name}」: ${group.joinToString(", ") { it.fileName }}"
             }
         withMeta.filter { it.meta!!.mainClass.isNotBlank() }
             .groupBy { it.meta!!.mainClass }
             .filter { it.value.size > 1 }
             .forEach { (mainClass, group) ->
-                conflicts += "主类重复「$mainClass」: ${group.joinToString("、") { it.fileName }}"
+                conflicts += "Trùng lớp chính (Main-Class)「$mainClass」: ${group.joinToString(", ") { it.fileName }}"
             }
         return conflicts
     }
@@ -416,8 +416,8 @@ class PluginManager(
         val baseNameNoExt = baseName.removeSuffix(JAR_EXT).removeSuffix(JAR_EXT.uppercase(Locale.ROOT))
 
         val sourceTag = when {
-            curatedPlugins.any { it.targetFileName.equals(baseName, ignoreCase = true) } -> "精选"
-            else -> "本地"
+            curatedPlugins.any { it.targetFileName.equals(baseName, ignoreCase = true) } -> "Tuyển chọn"
+            else -> "Trong máy"
         }
 
         // 解析 plugin.yml（带缓存）
@@ -525,9 +525,9 @@ class PluginManager(
         flush()
 
         val name = topFields["name"] ?: return null
-        val version = topFields["version"] ?: "未知"
+        val version = topFields["version"] ?: "Không rõ"
         val mainClass = topFields["main"] ?: topFields["bootstrap"] ?: ""
-        val author = topFields["author"] ?: topFields["authors"] ?: "未知"
+        val author = topFields["author"] ?: topFields["authors"] ?: "Không rõ"
         val description = topFields["description"] ?: ""
         val apiVersion = topFields["api-version"] ?: ""
         val depends = topFields["depend"]?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList()
@@ -571,7 +571,7 @@ class PluginManager(
                 return conn.inputStream.bufferedReader().use { it.readText() }
             } catch (e: Exception) {
                 last = e
-                Log.w(TAG, "GitHub API 源失败，尝试下一个: $api (${e.message})")
+                Log.w(TAG, "GitHub API source failed, trying next: $api (${e.message})")
             } finally {
                 conn.disconnect()
             }
@@ -589,7 +589,7 @@ class PluginManager(
         val tagRegex = """"tag_name"\s*:\s*"([^"]+)"""".toRegex()
         val urlRegex = """"html_url"\s*:\s*"([^"]+)"""".toRegex()
         val tag = tagRegex.find(body)?.groupValues?.get(1)
-            ?: throw RuntimeException("未找到 tag_name 字段")
+            ?: throw RuntimeException("Không tìm thấy trường tag_name")
         val releaseUrl = urlRegex.find(body)?.groupValues?.get(1) ?: "https://github.com/$repo/releases"
         return tag to releaseUrl
     }
@@ -1936,5 +1936,87 @@ class PluginManager(
         } finally {
             conn.disconnect()
         }
+    }
+
+    /**
+     * Cài đặt trọn bộ Crossplay (PC Java mọi phiên bản + PE Bedrock 1.21.114 / 26.x):
+     * - GeyserMC (Chọn đúng nhánh Bedrock: "1.21" cho PE 1.21.50..1.21.114+, hoặc "26" cho PE 26.30..26.52)
+     * - Floodgate (Cho phép điện thoại PE không cần tài khoản Java bản quyền)
+     * - ViaVersion + ViaBackwards (Cho phép PC Java từ 1.8.x -> 1.21.11+ vào chung 1 server)
+     */
+    suspend fun installCrossplaySuite(
+        dirName: String,
+        core: com.mineserve.mobile.data.ServerCore,
+        mcVersion: String,
+        bedrockBranch: String = "1.21"
+    ): List<String> = withContext(Dispatchers.IO) {
+        val installedNames = mutableListOf<String>()
+        val targetMc = mcVersion.ifBlank { "1.21.4" }
+        val geyserMcLookup = if (bedrockBranch == "1.21") "1.21.4" else targetMc
+
+        if (core.supportsMods) {
+            val modsDir = modsDirOf(dirName).apply { mkdirs() }
+            val hasFabricApi = modsDir.listFiles()?.any {
+                it.name.lowercase(Locale.ROOT).startsWith("fabric-api") && it.name.endsWith(".jar", true)
+            } == true
+            if (!hasFabricApi && (core == com.mineserve.mobile.data.ServerCore.Fabric || core == com.mineserve.mobile.data.ServerCore.Quilt)) {
+                runCatching {
+                    resolveSingleModrinthSlug("fabric-api", targetMc, "fabric")?.let { (url, fn) ->
+                        installModPackJarFromUrl(url, fn, dirName)
+                        installedNames += fn
+                    }
+                }
+            }
+            val geyserResolved = if (bedrockBranch == "1.21") {
+                runCatching { resolveSingleModrinthSlug("geyser", geyserMcLookup, "fabric") }.getOrNull()
+            } else null
+            val geyserUrl = geyserResolved?.first
+                ?: "https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/fabric"
+            installModPackJarFromUrl(geyserUrl, "Geyser-Fabric.jar", dirName)
+            installedNames += "Geyser-Fabric.jar"
+
+            val floodgateUrl = "https://download.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest/downloads/fabric"
+            installModPackJarFromUrl(floodgateUrl, "Floodgate-Fabric.jar", dirName)
+            installedNames += "Floodgate-Fabric.jar"
+
+            for (slug in listOf("viafabric", "viaversion", "viabackwards")) {
+                runCatching {
+                    resolveSingleModrinthSlug(slug, targetMc, "fabric")?.let { (url, fn) ->
+                        installModPackJarFromUrl(url, fn, dirName)
+                        installedNames += fn
+                    }
+                }
+            }
+        } else {
+            val geyserResolved = if (bedrockBranch == "1.21") {
+                runCatching { resolveSingleModrinthSlug("geyser", geyserMcLookup, "paper") }.getOrNull()
+            } else null
+            val geyserUrl = geyserResolved?.first
+                ?: "https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot"
+            installFromUrl(geyserUrl, "Geyser-Spigot.jar", dirName) { _, _, _ -> }
+            installedNames += "Geyser-Spigot.jar"
+
+            val floodgateUrl = "https://download.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest/downloads/spigot"
+            installFromUrl(floodgateUrl, "Floodgate-Spigot.jar", dirName) { _, _, _ -> }
+            installedNames += "Floodgate-Spigot.jar"
+
+            val viaVerUrl = runCatching { resolveSingleModrinthSlug("viaversion", targetMc, "paper")?.first }.getOrNull()
+                ?: runCatching { resolveLatestAsset("ViaVersion/ViaVersion", "ViaVersion") }.getOrNull()
+            if (!viaVerUrl.isNullOrBlank()) {
+                runCatching {
+                    installFromUrl(viaVerUrl, "ViaVersion.jar", dirName) { _, _, _ -> }
+                    installedNames += "ViaVersion.jar"
+                }
+            }
+            val viaBackUrl = runCatching { resolveSingleModrinthSlug("viabackwards", targetMc, "paper")?.first }.getOrNull()
+                ?: runCatching { resolveLatestAsset("ViaVersion/ViaBackwards", "ViaBackwards") }.getOrNull()
+            if (!viaBackUrl.isNullOrBlank()) {
+                runCatching {
+                    installFromUrl(viaBackUrl, "ViaBackwards.jar", dirName) { _, _, _ -> }
+                    installedNames += "ViaBackwards.jar"
+                }
+            }
+        }
+        installedNames
     }
 }

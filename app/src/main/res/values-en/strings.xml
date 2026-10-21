@@ -771,10 +771,10 @@
     <string name="update_backup_done">World backed up: %1$s</string>
     <string name="update_backup_empty">No world save found, skipped backup</string>
     <string name="backup_ext_perm_title">External Backup Permission</string>
-    <string name="backup_ext_perm_content">Backups are saved to /storage/emulated/0/世界与服务器的备份/ (kept after uninstall or app update). Requires "All files access" permission.</string>
+    <string name="backup_ext_perm_content">Backups are saved to /storage/emulated/0/MineHost_SaoLuu/ (kept after uninstall or app update). Requires "All files access" permission.</string>
     <string name="backup_ext_perm_action">Grant</string>
     <string name="backup_ext_title">External Backup</string>
-    <string name="backup_ext_hint">Saved to /storage/emulated/0/世界与服务器的备份/ (kept after uninstall or app update)</string>
+    <string name="backup_ext_hint">Saved to /storage/emulated/0/MineHost_SaoLuu/ (kept after uninstall or app update)</string>
     <string name="backup_ext_rename_rule">⚠️ The core-type field in the filename (server_dir_time__core.zip) is used to identify the server core on restore. It is NOT recommended to modify it; if renamed, keep this format, otherwise the core type will show as Unknown.</string>
     <string name="backup_ext_world">Backup World</string>
     <string name="backup_ext_server">Backup Server</string>

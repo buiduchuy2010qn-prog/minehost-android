@@ -6156,6 +6156,7 @@ class McViewModel(
                 java.io.File("/storage/emulated/0/Download") to "Download",
                 java.io.File("/storage/emulated/0/Downloads") to "Downloads",
                 java.io.File("/storage/emulated/0/Documents") to "Documents",
+                java.io.File("/storage/emulated/0/MineHost_SaoLuu") to "Sao lưu",
                 java.io.File("/storage/emulated/0/世界与服务器的备份") to "Sao lưu",
                 java.io.File("/storage/emulated/0") to "Bộ nhớ máy"
             )
@@ -7230,53 +7231,129 @@ class McViewModel(
         }
     }
 
-    fun installCrossplayGeyserPack() {
-        if (!requireServerStopped("cài gói GeyserMC + Floodgate")) return
+    fun createPlayitBedrockTunnel(localBedrockPort: Int = 19132) {
+        playitController.createMinecraftBedrockTunnelOnDemand(localBedrockPort)
+        _messageFlow.tryEmit("📱 Đang tạo đường hầm UDP Bedrock (cổng $localBedrockPort) trên Playit.gg để điện thoại PE kết nối mọi mạng...")
+    }
+
+    fun installCrossplayGeyserPack(bedrockBranch: String = "1.21") {
+        if (!requireServerStopped("cài gói GeyserMC + Floodgate + ViaVersion")) return
         val dirName = activeDirName() ?: run {
-            _errorFlow.tryEmit("Chưa chọn máy chủ để cài GeyserMC + Floodgate.")
+            _errorFlow.tryEmit("Chưa chọn máy chủ để cài GeyserMC + Floodgate + ViaVersion.")
             return
         }
         val active = config.value.installedCores.firstOrNull { it.name == config.value.activeCoreName }
         val core = active?.core ?: config.value.selectedCore
+        val mcVer = active?.version ?: config.value.mcVersion
         viewModelScope.launch {
+            _isInstalling.value = true
             try {
-                if (core.supportsMods) {
-                    _messageFlow.tryEmit("📱 Đang tải GeyserMC + Floodgate (Fabric) để điện thoại PE vào chơi chung...")
-                    withContext(Dispatchers.IO) {
-                        pluginManager.installModPackJarFromUrl(
-                            url = "https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/fabric",
-                            targetFileName = "Geyser-Fabric.jar",
-                            dirName = dirName
-                        )
-                        pluginManager.installModPackJarFromUrl(
-                            url = "https://download.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest/downloads/fabric",
-                            targetFileName = "Floodgate-Fabric.jar",
-                            dirName = dirName
-                        )
+                val branchLabel = if (bedrockBranch == "1.21") "Bedrock PE 1.21.50 – 1.21.114+" else "Bedrock PE 26.30 – 26.52"
+                _messageFlow.tryEmit("📱 Đang tải GeyserMC + Floodgate + ViaVersion + ViaBackwards ($branchLabel) cho ${core.displayName} $mcVer...")
+                val installedFiles = withContext(Dispatchers.IO) {
+                    val files = pluginManager.installCrossplaySuite(
+                        dirName = dirName,
+                        core = core,
+                        mcVersion = mcVer,
+                        bedrockBranch = bedrockBranch
+                    )
+                    // Tự động bật Cracked (online-mode=false) và cấu hình MOTD chuẩn cho Crossplay
+                    val currentProps = propertiesManager.readProperties(dirName).toMutableMap()
+                    currentProps["online-mode"] = "false"
+                    currentProps["enforce-secure-profile"] = "false"
+                    if (currentProps["motd"].isNullOrBlank() ||
+                        currentProps["motd"]?.contains("powernukkitx", true) == true ||
+                        currentProps["motd"] == "A Minecraft Server"
+                    ) {
+                        currentProps["motd"] = "MineHost VN - Server Choi Chung PE & PC"
                     }
-                    refreshMods()
-                    refreshServerStorage()
-                    _messageFlow.tryEmit("✅ Đã cài xong Geyser-Fabric + Floodgate-Fabric! Hãy bật Server để cả PC và PE chơi chung.")
+                    propertiesManager.writeProperties(currentProps, dirName)
+                    files
+                }
+                refreshServerPropertiesNow()
+                if (core.supportsMods) refreshMods() else refreshInstalledPlugins()
+                refreshServerStorage()
+                _messageFlow.tryEmit(
+                    "✅ Đã cài xong ${installedFiles.joinToString(", ")} (Tương thích $branchLabel + PC Java mọi phiên bản)! Hãy bật Server để chơi chung."
+                )
+            } catch (e: Exception) {
+                _errorFlow.tryEmit("⚠️ Không thể tải gói Crossplay: ${e.message}")
+            } finally {
+                _isInstalling.value = false
+            }
+        }
+    }
+
+    /**
+     * Tạo mới (hoặc chọn) một Server Crossplay theo đúng Phiên bản Java + Nhánh Bedrock PE mà người dùng chọn,
+     * sau đó tự động cài GeyserMC + Floodgate + ViaVersion + ViaBackwards.
+     */
+    fun createCrossplayServerAndInstallPack(
+        core: ServerCore = ServerCore.Paper,
+        mcVersion: String = "1.21.4",
+        bedrockBranch: String = "1.21",
+        customName: String = ""
+    ) {
+        if (!isBootstrapped.value) {
+            _errorFlow.tryEmit(str(R.string.s192))
+            return
+        }
+        if (!requireServerStopped("tạo Server Chơi Chung PE + PC")) return
+        if (_isDownloadingCore.value || _isInstalling.value) return
+
+        val baseName = customName.trim().ifBlank {
+            val peTag = if (bedrockBranch == "1.21") "PE1.21.114" else "PE26.x"
+            "ChoiChung-${core.displayName}-$mcVersion-$peTag"
+        }
+        viewModelScope.launch {
+            _isDownloadingCore.value = true
+            _downloadProgress.value = DownloadProgress()
+            try {
+                // Kiểm tra xem đã có server trùng tên chưa; nếu chưa thì tải Core mới
+                val existing = config.value.installedCores.firstOrNull {
+                    it.name.equals(baseName, ignoreCase = true) ||
+                        (it.core == core && it.version == mcVersion && customName.isBlank())
+                }
+                val targetServerName = if (existing != null) {
+                    setActiveCore(existing.name)
+                    existing.name
                 } else {
-                    _messageFlow.tryEmit("📱 Đang tải GeyserMC + Floodgate (Paper/Spigot) để điện thoại PE vào chơi chung...")
-                    withContext(Dispatchers.IO) {
-                        pluginManager.installFromUrl(
-                            url = "https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot",
-                            targetFileName = "Geyser-Spigot.jar",
-                            dirName = dirName
-                        ) { _, _, _ -> }
-                        pluginManager.installFromUrl(
-                            url = "https://download.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest/downloads/spigot",
-                            targetFileName = "Floodgate-Spigot.jar",
-                            dirName = dirName
-                        ) { _, _, _ -> }
+                    selectCore(core)
+                    setMcVersion(mcVersion)
+                    val dlCfg = repo.currentConfig().copy(selectedCore = core, mcVersion = mcVersion)
+                    controller.downloadCore(dlCfg, baseName) { downloaded, total, speed ->
+                        _downloadProgress.value = DownloadProgress(downloaded, total, speed)
                     }
-                    refreshInstalledPlugins()
+                    baseName
+                }
+                val targetCoreObj = repo.currentConfig().installedCores.firstOrNull { it.name == targetServerName }
+                val dirName = targetCoreObj?.dirName ?: activeDirName()
+                if (dirName != null) {
+                    _messageFlow.tryEmit("📦 Đã chuẩn bị Server '$targetServerName'! Đang cài tiếp GeyserMC + Floodgate + ViaVersion + ViaBackwards...")
+                    withContext(Dispatchers.IO) {
+                        pluginManager.installCrossplaySuite(
+                            dirName = dirName,
+                            core = core,
+                            mcVersion = mcVersion,
+                            bedrockBranch = bedrockBranch
+                        )
+                        val props = propertiesManager.readProperties(dirName).toMutableMap()
+                        props["online-mode"] = "false"
+                        props["enforce-secure-profile"] = "false"
+                        props["motd"] = "MineHost VN - $targetServerName"
+                        propertiesManager.writeProperties(props, dirName)
+                    }
+                    refreshServerPropertiesNow()
+                    if (core.supportsMods) refreshMods() else refreshInstalledPlugins()
                     refreshServerStorage()
-                    _messageFlow.tryEmit("✅ Đã cài xong Geyser-Spigot + Floodgate-Spigot! Hãy bật Server để cả PC và PE chơi chung.")
+                    _messageFlow.tryEmit("🎉 Đã tạo xong Server Chơi Chung '$targetServerName' (Java $mcVersion + PE ${if (bedrockBranch == "1.21") "1.21.114" else "26.x"})!")
+                    _coreDownloadCompletedFlow.tryEmit(targetServerName)
                 }
             } catch (e: Exception) {
-                _errorFlow.tryEmit("⚠️ Không thể tải GeyserMC + Floodgate: ${e.message}")
+                _errorFlow.tryEmit("⚠️ Lỗi tạo Server Chơi Chung: ${e.message}")
+            } finally {
+                _isDownloadingCore.value = false
+                _downloadProgress.value = DownloadProgress()
             }
         }
     }

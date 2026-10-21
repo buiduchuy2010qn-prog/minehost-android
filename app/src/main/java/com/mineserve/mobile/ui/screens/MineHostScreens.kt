@@ -384,10 +384,10 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     listOf(
+                        0.92f to "Nhỏ Gọn",
+                        1.00f to "Chuẩn (100%)",
                         1.08f to "Chữ Vừa",
-                        1.18f to "Chữ To",
-                        1.30f to "Rất To",
-                        1.42f to "Siêu To"
+                        1.16f to "Chữ To"
                     ).forEach { (scaleVal, label) ->
                         val selected = kotlin.math.abs(fontScale - scaleVal) < 0.04f
                         FilterChip(
@@ -471,10 +471,17 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                 .clickable { navigate(SubPage.ServerIcon) },
                             contentAlignment = Alignment.Center
                         ) {
-                            MinecraftPixelArtIcon(
-                                kind = if (active?.core?.supportsMods == true) MinecraftArtKind.COMMAND_BLOCK else MinecraftArtKind.GRASS,
-                                size = 40.dp
-                            )
+                            if (active != null) {
+                                com.mineserve.mobile.ui.CoreBrandLogo(
+                                    core = active.core,
+                                    size = 44.dp
+                                )
+                            } else {
+                                MinecraftPixelArtIcon(
+                                    kind = MinecraftArtKind.GRASS,
+                                    size = 40.dp
+                                )
+                            }
                         }
                         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                             Surface(
@@ -958,6 +965,43 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     }
                                 }
                             }
+                            if (playConnectionMode == PlayConnectionMode.Everywhere && playitState.bedrockAddress.isNotBlank()) {
+                                Surface(
+                                    color = Color(0xFF064E3B).copy(alpha = 0.25f),
+                                    shape = RoundedCornerShape(10.dp),
+                                    border = BorderStroke(1.dp, Color(0xFF2DD4BF)),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        Modifier.padding(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Column(Modifier.weight(1f)) {
+                                            Text(
+                                                "📱 ĐỊA CHỈ PLAYIT UDP CHO ĐIỆN THOẠI PE (BEDROCK):",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                color = Color(0xFF2DD4BF)
+                                            )
+                                            Text(
+                                                playitState.bedrockAddress,
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.ExtraBold
+                                            )
+                                        }
+                                        OutlinedButton(
+                                            onClick = {
+                                                clipboard.setText(AnnotatedString(playitState.bedrockAddress))
+                                                vm.notifyActionDone("📱 Đã chép địa chỉ Playit Bedrock UDP: ${playitState.bedrockAddress}")
+                                            },
+                                            shape = RoundedCornerShape(8.dp)
+                                        ) {
+                                            Text("📋 Chép PE", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
                             Text(
                                 recommendedStatusNote,
                                 style = MaterialTheme.typography.bodySmall,
@@ -1057,6 +1101,15 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                                 modifier = Modifier.weight(1f)
                                             ) { Text("🔑 Claim", fontSize = 12.sp) }
                                         }
+                                    }
+                                }
+                                if (playitState.isRunning && playitState.isClaimed && playitState.bedrockAddress.isBlank()) {
+                                    OutlinedButton(
+                                        onClick = { vm.createPlayitBedrockTunnel(19132) },
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text("📱 Mở thêm cổng Bedrock UDP (19132) cho máy PE khác mạng", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }
@@ -1637,8 +1690,8 @@ fun MineHostManage(navigate: (SubPage) -> Unit) {
             ) { navigate(SubPage.AppSettings) }
         }
         item {
-            HostCard("🇻🇳 MineHost 2.1 • Bản Cộng Đồng Minecraft Việt Nam", artKind = MinecraftArtKind.CREEPER) {
-                Text("Phát triển trên nền tảng mã nguồn mở (GPL-3.0-or-later), tối ưu chuyên sâu cho cộng đồng người chơi Minecraft Việt Nam: Giao diện dịu mắt chữ to rõ, Trợ lý AI thông minh, Kho 56 Mod đa phiên bản, Sao lưu Google Drive và Avatar Skin người chơi.")
+            HostCard("🇻🇳 MineHost 2.2 • Bản Cộng Đồng Minecraft Việt Nam", artKind = MinecraftArtKind.CREEPER) {
+                Text("Phát triển trên nền tảng mã nguồn mở (GPL-3.0-or-later), tối ưu chuyên sâu cho cộng đồng người chơi Minecraft Việt Nam: Giao diện chuẩn hóa chống tràn chữ trên mọi máy, Logo chính thức từng loại Core, Đầy đủ phiên bản 1.7.10 – 1.21.11, Chơi chung PC + PE 1.21.114 & Kết nối mọi mạng Playit.gg.")
                 TextButton(onClick = { uri.openUri("https://github.com/duchilocket-oss/minehost-android") }) {
                     Text("Mã nguồn & bản build trên GitHub")
                 }
@@ -1647,83 +1700,364 @@ fun MineHostManage(navigate: (SubPage) -> Unit) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun MineHostCrossplay(vm: McViewModel, onBack: () -> Unit) {
     val uri = LocalUriHandler.current
+    val clipboard = LocalClipboardManager.current
     val config by vm.config.collectAsStateWithLifecycle()
     val isInstalling by vm.isInstalling.collectAsStateWithLifecycle()
+    val isDownloadingCore by vm.isDownloadingCore.collectAsStateWithLifecycle()
+    val downloadProgress by vm.downloadProgress.collectAsStateWithLifecycle()
     val lanIp by vm.lanIp.collectAsStateWithLifecycle()
     val port by vm.serverPort.collectAsStateWithLifecycle()
+    val playitState by vm.playitState.collectAsStateWithLifecycle()
     val active = config.installedCores.firstOrNull { it.name == config.activeCoreName }
+
+    var selectedCrossCore by remember { mutableStateOf(com.mineserve.mobile.data.ServerCore.Paper) }
+    var selectedCrossVer by remember { mutableStateOf("1.21.4") }
+    var customCrossVerInput by remember { mutableStateOf("") }
+    // "1.21" -> Bedrock 1.21.50..1.21.114+ (Mặc định cho PE 1.21.114 của người dùng)
+    // "26"   -> Bedrock 26.30..26.52
+    var selectedBedrockBranch by remember { mutableStateOf("1.21") }
+    var customServerName by remember { mutableStateOf("") }
     var installedClicked by remember { mutableStateOf(false) }
 
     HostPage(
-        "Chế độ Chơi Chung Java + PE (Bedrock)",
-        "Kết nối cả máy tính (Java) và điện thoại Minecraft PE / Bedrock vào chung 1 Server bằng GeyserMC + Floodgate."
+        "Chơi Chung PC (Java) + Điện Thoại PE (Bedrock)",
+        "Tự chọn phiên bản Server Java & Nhánh Bedrock (1.21.114 hoặc 26.x) — Tự động cài GeyserMC + Floodgate + ViaVersion + ViaBackwards."
     ) {
         item {
             TextButton(onClick = onBack) { Text("← Quay lại Trang chủ") }
         }
+
+        // 1. GIẢI THÍCH DỄ HIỂU VỀ SỰ KHÁC NHAU GIỮA SỐ PHIÊN BẢN BEDROCK (1.21.114) VÀ JAVA (1.21.4 / 1.21.11)
         item {
             HostCard(
-                "⚡ Cài Đặt Tự Động 1 Chạm (GeyserMC + Floodgate)",
-                artKind = MinecraftArtKind.DIAMOND_SWORD,
-                badgeText = active?.let { "${it.core.displayName} ${it.version}" } ?: "Chưa chọn SV"
+                "📖 Giải thích dễ hiểu: Tại sao Bedrock 1.21.114 khác số với Java?",
+                artKind = MinecraftArtKind.ENDER_EYE,
+                badgeText = "Quan trọng"
             ) {
                 Text(
-                    if (active != null) {
-                        "Máy chủ đang chọn: ${active.name} (${active.core.displayName} • MC ${active.version}).\n" +
-                            "Bấm nút bên dưới để tự động tải và cài đặt GeyserMC + Floodgate tương thích từ Modrinth vào đúng thư mục của Server!"
-                    } else {
-                        "Hãy tạo hoặc chọn 1 Server (Paper hoặc Fabric) trước khi cài đặt chế độ chơi chung PE."
-                    },
-                    style = MaterialTheme.typography.bodySmall
+                    "Minecraft trên Điện thoại (Bedrock / PE) và Máy tính (Java Edition) do Mojang đánh số bản vá hoàn toàn khác nhau:",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Bold
                 )
-                Button(
-                    onClick = {
-                        installedClicked = true
-                        vm.installCrossplayGeyserPack()
-                    },
-                    enabled = active != null && !isInstalling,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                ) {
-                    Text(
-                        when {
-                            isInstalling -> "⏳ Đang tải & cài đặt GeyserMC + Floodgate..."
-                            installedClicked -> "✅ Đã gửi lệnh cài GeyserMC + Floodgate!"
-                            else -> "🚀 TỰ ĐỘNG CÀI GEYSERMC + FLOODGATE NGAY"
-                        },
-                        fontWeight = FontWeight.ExtraBold
-                    )
-                }
                 Surface(
                     color = MaterialTheme.colorScheme.secondaryContainer,
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("📱 THÔNG SỐ ĐỂ MÁY ĐIỆN THOẠI (PE / BEDROCK) VÀO SERVER:", fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
-                        Text("• Địa chỉ IP (Cùng Wi-Fi): ${lanIp.ifBlank { "192.168.1.x" }}", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        Text("• Cổng Bedrock (Port PE mặc định): 19132 (UDP)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                        Text("• Cổng Java (PC / PojavLauncher): $port (TCP)", fontSize = 12.sp)
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            "📱 1. Máy điện thoại của bạn chạy Bedrock 1.21.114 (hoặc 1.21.50 – 1.21.114+):\n" +
+                                "   → Tương ứng với máy chủ Java 1.21.4 – 1.21.11.\n" +
+                                "   → Phải chọn nhánh 「Bedrock 1.21.50 – 1.21.114+」 bên dưới để KHÔNG bị báo lỗi 'Outdated Bedrock client! This server supports 26.30..26.52'.",
+                            fontSize = 12.sp,
+                            lineHeight = 17.sp
+                        )
+                        HorizontalDivider()
+                        Text(
+                            "💻 2. Làm sao để PC Java mọi phiên bản (1.8.9, 1.12.2, 1.16.5, 1.20.1, 1.21.4, 1.21.11) VÀ điện thoại PE 1.21.114 chơi chung cùng lúc?\n" +
+                                "   → MineHost tự động cài bộ 4 công cụ: GeyserMC + Floodgate + ViaVersion + ViaBackwards.\n" +
+                                "   → Nhờ ViaVersion + ViaBackwards, dù bạn tạo Server ở 1.21.4 hay 1.21.11 hay 1.20.4, bạn bè dùng PC bản cũ hay mới và điện thoại PE 1.21.114 đều vào chung 1 Map!",
+                            fontSize = 12.sp,
+                            lineHeight = 17.sp,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold
+                        )
                     }
                 }
             }
         }
+
+        // 2. BỘ TÙY CHỈNH TỰ DO PHIÊN BẢN SERVER CHƠI CHUNG (KHÔNG CÒN BỊ ÉP CỐ ĐỊNH 1 BẢN)
         item {
-            HostCard("⚠️ Lưu ý quan trọng khi dùng Mod với PE (Bedrock)", artKind = MinecraftArtKind.COMMAND_BLOCK) {
+            HostCard(
+                "🛠️ Bước 1: Tự chọn Cấu hình & Phiên bản Server Chơi Chung",
+                artKind = MinecraftArtKind.COMMAND_BLOCK,
+                badgeText = "Tùy chỉnh 100%"
+            ) {
                 Text(
-                    "• Server Paper / Purpur / Spigot hoặc Fabric chỉ dùng Mod Server-Side (như Lithium, FerriteCore, C2ME, Ledger...): Điện thoại cài Minecraft PE (Bedrock) vào chơi bình thường 100%!\n" +
-                        "• Nếu Server Fabric có cài các Mod thêm Khối/Vật phẩm 3D mới (như Nội thất Macaw, 3D Placeable Food): Máy khách PE (Bedrock) sẽ không hiển thị được các khối 3D riêng của Java trừ khi dùng gói chuyển đổi Geyser Custom Items, hoặc nên tạo 1 Server riêng (Paper hoặc Fabric Tối Ưu) ở mục 'Tạo Thêm Server' để chơi chung với PE!",
-                    style = MaterialTheme.typography.bodySmall
+                    "1️⃣ Chọn Phần mềm Server (Core):",
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 13.sp
                 )
+                val crossCores = listOf(
+                    Triple(com.mineserve.mobile.data.ServerCore.Paper, "Paper (Khuyên dùng)", "Siêu mượt 20 TPS • Chuẩn nhất cho Geyser + ViaVersion"),
+                    Triple(com.mineserve.mobile.data.ServerCore.Purpur, "Purpur (Mở rộng)", "Nhánh nâng cấp của Paper • Hỗ trợ đầy đủ Plugin"),
+                    Triple(com.mineserve.mobile.data.ServerCore.Fabric, "Fabric (Chơi Mod)", "Dùng khi muốn vừa chạy Mod Server-side vừa cho PE vào")
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    crossCores.forEach { (coreItem, titleTxt, subTxt) ->
+                        val isSel = selectedCrossCore == coreItem
+                        Surface(
+                            color = if (isSel) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(if (isSel) 1.5.dp else 1.dp, if (isSel) MaterialTheme.colorScheme.primary else Color.Transparent),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { selectedCrossCore = coreItem }
+                        ) {
+                            Row(
+                                Modifier.padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                com.mineserve.mobile.ui.CoreBrandLogo(core = coreItem, size = 36.dp)
+                                Column(Modifier.weight(1f)) {
+                                    Text(titleTxt, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp)
+                                    Text(subTxt, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                RadioButton(selected = isSel, onClick = { selectedCrossCore = coreItem })
+                            }
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "2️⃣ Chọn Phiên bản Minecraft Java của Server (hoặc tự nhập):",
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 13.sp
+                )
+                val presetCrossVersions = listOf(
+                    "1.21.4" to "🌟 Chuẩn PE 1.21.114",
+                    "1.21.11" to "Mới nhất 1.21",
+                    "1.21.1" to "Ổn định",
+                    "1.20.4" to "Siêu mượt",
+                    "1.20.1" to "Nhiều Mod/Plugin",
+                    "1.19.4" to "Nhẹ máy",
+                    "1.18.2" to "Cổ điển",
+                    "1.16.5" to "Máy yếu",
+                    "1.12.2" to "Huyền thoại"
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    presetCrossVersions.forEach { (ver, tag) ->
+                        val isSel = selectedCrossVer == ver
+                        FilterChip(
+                            selected = isSel,
+                            onClick = { selectedCrossVer = ver },
+                            label = {
+                                Text(
+                                    "$ver ($tag)",
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSel) FontWeight.ExtraBold else FontWeight.SemiBold
+                                )
+                            }
+                        )
+                    }
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    OutlinedTextField(
+                        value = customCrossVerInput,
+                        onValueChange = { customCrossVerInput = it },
+                        label = { Text("Hoặc tự nhập phiên bản bất kỳ (VD: 1.21.5, 1.17.1, 1.8.8)") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Button(
+                        onClick = {
+                            val v = customCrossVerInput.trim()
+                            if (v.isNotBlank()) selectedCrossVer = v
+                        },
+                        enabled = customCrossVerInput.isNotBlank(),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("Chọn", fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "3️⃣ Chọn Nhánh Minecraft Bedrock (PE) trên điện thoại của bạn:",
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 13.sp
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    val is121Branch = selectedBedrockBranch == "1.21"
+                    Surface(
+                        color = if (is121Branch) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(if (is121Branch) 1.5.dp else 1.dp, if (is121Branch) MaterialTheme.colorScheme.primary else Color.Transparent),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { selectedBedrockBranch = "1.21" }
+                    ) {
+                        Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("📱 Bedrock PE 1.21.50 – 1.21.114+ (Khuyên dùng cho bản 1.21.114 của bạn)", fontWeight = FontWeight.ExtraBold, fontSize = 12.5.sp)
+                                Text("Khắc phục triệt để lỗi 'Outdated Bedrock client! Supports 26.30..26.52'", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                            }
+                            RadioButton(selected = is121Branch, onClick = { selectedBedrockBranch = "1.21" })
+                        }
+                    }
+                    val is26Branch = selectedBedrockBranch == "26"
+                    Surface(
+                        color = if (is26Branch) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(if (is26Branch) 1.5.dp else 1.dp, if (is26Branch) MaterialTheme.colorScheme.primary else Color.Transparent),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { selectedBedrockBranch = "26" }
+                    ) {
+                        Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("🚀 Bedrock PE 26.30 – 26.52 (Dành cho bản PE đánh số 26.x mới)", fontWeight = FontWeight.ExtraBold, fontSize = 12.5.sp)
+                                Text("Chỉ chọn mục này nếu điện thoại PE của bạn đã cập nhật lên bản 26.30+", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            RadioButton(selected = is26Branch, onClick = { selectedBedrockBranch = "26" })
+                        }
+                    }
+                }
+
+                OutlinedTextField(
+                    value = customServerName,
+                    onValueChange = { customServerName = it },
+                    label = { Text("Đặt tên Server Chơi Chung (Để trống sẽ tự đặt)") },
+                    placeholder = { Text("ChoiChung-${selectedCrossCore.displayName}-$selectedCrossVer") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Button(
+                    onClick = {
+                        vm.createCrossplayServerAndInstallPack(
+                            core = selectedCrossCore,
+                            mcVersion = selectedCrossVer,
+                            bedrockBranch = selectedBedrockBranch,
+                            customName = customServerName
+                        )
+                    },
+                    enabled = !isDownloadingCore && !isInstalling,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)
+                ) {
+                    Text(
+                        when {
+                            isDownloadingCore -> "⏳ Đang tạo Server (${downloadProgress.percent}% • ${downloadProgress.speedText})..."
+                            isInstalling -> "⏳ Đang cài Geyser + Floodgate + ViaVersion..."
+                            else -> "🚀 TẠO SERVER CHƠI CHUNG (${selectedCrossCore.displayName.uppercase()} $selectedCrossVer + PE ${if (selectedBedrockBranch == "1.21") "1.21.114" else "26.x"})"
+                        },
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 12.5.sp
+                    )
+                }
+
+                if (active != null) {
+                    OutlinedButton(
+                        onClick = {
+                            installedClicked = true
+                            vm.installCrossplayGeyserPack(selectedBedrockBranch)
+                        },
+                        enabled = !isInstalling && !isDownloadingCore,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 46.dp)
+                    ) {
+                        Text(
+                            when {
+                                isInstalling -> "⏳ Đang cài bộ Crossplay vào '${active.name}'..."
+                                installedClicked -> "✅ Đã cài bộ Crossplay vào '${active.name}'!"
+                                else -> "⚡ Cài Geyser + Floodgate + ViaVersion vào Server đang chọn (${active.name})"
+                            },
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
             }
         }
+
+        // 3. HƯỚNG DẪN ĐỊA CHỈ KẾT NỐI CHO CẢ PC (JAVA) VÀ ĐIỆN THOẠI (PE 1.21.114)
         item {
-            HostCard("🔗 Tài liệu & Trang tải thủ công GeyserMC", artKind = MinecraftArtKind.CHEST) {
+            HostCard(
+                "🌐 Bước 2: Địa chỉ để PC (Java) & Điện thoại (PE 1.21.114) vào Server",
+                artKind = MinecraftArtKind.DIAMOND_SWORD,
+                badgeText = "Cùng mạng & Mọi mạng"
+            ) {
+                Surface(
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("🏠 A. KHI CHƠI CÙNG WI-FI / ĐIỂM PHÁT SÓNG (LAN):", fontWeight = FontWeight.ExtraBold, fontSize = 12.5.sp)
+                        Text("• Máy tính PC / PojavLauncher (Java): ${lanIp.ifBlank { "192.168.1.x" }}:$port (TCP)", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text("• Điện thoại Minecraft PE / Bedrock: IP ${lanIp.ifBlank { "192.168.1.x" }} • Cổng (Port): 19132 (UDP)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        Text("• Trên chính điện thoại đang mở Server này: IP 127.0.0.1 • Cổng: 19132 (PE) hoặc $port (Java)", fontSize = 11.5.sp)
+                    }
+                }
+
+                Surface(
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("🌍 B. KHI CHƠI KHÁC MẠNG / 4G QUA PLAYIT.GG:", fontWeight = FontWeight.ExtraBold, fontSize = 12.5.sp, color = MaterialTheme.colorScheme.primary)
+                        Text(
+                            "• Máy tính PC / PojavLauncher (Java - TCP): ${playitState.publicAddress.ifBlank { "Hãy bật Playit.gg ở Trang chủ" }}",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            "• Điện thoại Minecraft PE / Bedrock (UDP): ${playitState.bedrockAddress.ifBlank { "Bấm nút 'Mở cổng Bedrock UDP Playit' bên dưới" }}",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            "💡 Lưu ý quan trọng: Máy tính Java dùng giao thức TCP, còn Điện thoại Bedrock PE dùng giao thức UDP (19132). Khi chơi khác mạng qua Playit.gg, máy PE phải nhập Địa chỉ + Cổng UDP Bedrock riêng bên dưới!",
+                            fontSize = 11.sp
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                            Button(
+                                onClick = {
+                                    if (!playitState.isRunning) {
+                                        vm.startPlayitTunnel()
+                                    } else {
+                                        vm.createPlayitBedrockTunnel(19132)
+                                    }
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(
+                                    if (!playitState.isRunning) "🚀 Bật Playit.gg ngay"
+                                    else "📱 Mở cổng Bedrock UDP (19132)",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                            }
+                            if (playitState.bedrockAddress.isNotBlank()) {
+                                OutlinedButton(
+                                    onClick = {
+                                        clipboard.setText(AnnotatedString(playitState.bedrockAddress))
+                                        vm.notifyActionDone("📱 Đã sao chép địa chỉ Playit Bedrock UDP: ${playitState.bedrockAddress}")
+                                    },
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Text("📋 Chép IP PE", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            HostCard("🔗 Tài liệu & Trang tải thủ công GeyserMC / ViaVersion", artKind = MinecraftArtKind.CHEST) {
                 Text(
-                    "Nếu bạn muốn tải file .jar mới nhất trực tiếp từ trang chủ GeyserMC rồi nhập vào Kho Mod/Plugin:",
+                    "Nếu bạn muốn tự tải file .jar từ trang chủ GeyserMC hoặc Modrinth rồi nhập thủ công vào Kho Mod/Plugin:",
                     style = MaterialTheme.typography.bodySmall
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
@@ -1732,9 +2066,9 @@ fun MineHostCrossplay(vm: McViewModel, onBack: () -> Unit) {
                         modifier = Modifier.weight(1f)
                     ) { Text("🌐 Tải GeyserMC", fontSize = 12.sp, fontWeight = FontWeight.Bold) }
                     OutlinedButton(
-                        onClick = { uri.openUri("https://geysermc.org/wiki/geyser/setup/") },
+                        onClick = { uri.openUri("https://modrinth.com/plugin/viaversion") },
                         modifier = Modifier.weight(1f)
-                    ) { Text("📖 Hướng dẫn", fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+                    ) { Text("🔄 Tải ViaVersion", fontSize = 12.sp, fontWeight = FontWeight.Bold) }
                 }
             }
         }

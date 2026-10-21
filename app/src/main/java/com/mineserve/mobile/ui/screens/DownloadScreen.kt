@@ -62,6 +62,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mineserve.mobile.data.ServerCore
 import com.mineserve.mobile.data.InstalledCore
+import com.mineserve.mobile.data.JavaRuntime
+import com.mineserve.mobile.data.JavaVendor
 import com.mineserve.mobile.data.JavaVersion
 import com.mineserve.mobile.ui.BackBar
 import com.mineserve.mobile.ui.HeaderBlock
@@ -102,6 +104,9 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
     val scope = rememberCoroutineScope()
     val usesCoreVersion = config.selectedCore.isBedrock
     val storageMap by vm.serverStorageMap.collectAsState()
+    val installedJava by vm.installedJava.collectAsState()
+    val javaOperation by vm.javaOperation.collectAsState()
+    var versionBranchFilter by rememberSaveable { mutableStateOf("all") }
 
     // 自定义版本输入框
     var customVersion by remember { mutableStateOf("") }
@@ -142,12 +147,14 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
     // 切换核心时自动加载版本列表
     LaunchedEffect(config.selectedCore) {
         showAllVersions = false
+        versionBranchFilter = "all"
         vm.loadVersions(config.selectedCore)
     }
 
     // 收集消息
     LaunchedEffect(Unit) {
         vm.refreshServerStorage()
+        vm.refreshJava()
         vm.messageFlow.collectLatest { snackbarHostState.showInstantSnackbar(it) }
     }
     LaunchedEffect(Unit) {
@@ -284,6 +291,25 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                             fontSize = 11.sp
                         )
                     }
+                    OutlinedButton(
+                        onClick = {
+                            vm.createCrossplayServerAndInstallPack(
+                                core = ServerCore.Paper,
+                                mcVersion = "1.21.4",
+                                bedrockBranch = "1.21",
+                                customName = "Crossplay-PC-PE-1.21.4"
+                            )
+                        },
+                        shape = McShape.ControlCompact,
+                        border = BorderStroke(1.5.dp, Mint)
+                    ) {
+                        Text(
+                            "📱💻 Chơi Chung PC + PE 1.21.114 (Paper 1.21.4 + Geyser + ViaVersion)",
+                            color = Mint,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
                 }
 
                 Spacer(Modifier.height(10.dp))
@@ -386,12 +412,6 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                                     (if (core.core == ServerCore.PowerNukkitX) {
                                         " (" + stringResource(R.string.dl_supported_game, versionHints[core.version] ?: stringResource(R.string.dl_official_unknown)) + ")"
                                     } else "") + " • 💾 ${srvSizeMb} MB\n📂 " + stringResource(R.string.dl_folder, core.dirName)
-                                val coreArt = when {
-                                    core.core == ServerCore.Fabric || core.core == ServerCore.Quilt -> com.mineserve.mobile.ui.MinecraftArtKind.COMMAND_BLOCK
-                                    core.core == ServerCore.Forge || core.core == ServerCore.NeoForge -> com.mineserve.mobile.ui.MinecraftArtKind.DIAMOND_SWORD
-                                    core.core.isBedrock -> com.mineserve.mobile.ui.MinecraftArtKind.CREEPER
-                                    else -> com.mineserve.mobile.ui.MinecraftArtKind.GRASS
-                                }
                                 Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -404,7 +424,7 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                                         modifier = Modifier.fillMaxWidth(),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        com.mineserve.mobile.ui.MinecraftPixelArtIcon(kind = coreArt, size = 34.dp)
+                                        com.mineserve.mobile.ui.CoreBrandLogo(core = core.core, size = 36.dp)
                                         Spacer(Modifier.size(10.dp))
                                         Column(modifier = Modifier.weight(1f)) {
                                             Row(
@@ -545,12 +565,6 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                     featuredCores.forEach { (core, titleLabel, subtitleLabel) ->
                         val isSelected = config.selectedCore == core
                         val installedCount = config.installedCores.count { it.core == core }
-                        val artKind = when (core) {
-                            ServerCore.Fabric -> com.mineserve.mobile.ui.MinecraftArtKind.COMMAND_BLOCK
-                            ServerCore.Paper, ServerCore.Purpur -> com.mineserve.mobile.ui.MinecraftArtKind.GRASS
-                            ServerCore.NeoForge, ServerCore.Forge -> com.mineserve.mobile.ui.MinecraftArtKind.DIAMOND_SWORD
-                            else -> com.mineserve.mobile.ui.MinecraftArtKind.CREEPER
-                        }
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -569,7 +583,7 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                                 .padding(10.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            com.mineserve.mobile.ui.MinecraftPixelArtIcon(kind = artKind, size = 34.dp)
+                            com.mineserve.mobile.ui.CoreBrandLogo(core = core, size = 36.dp)
                             Spacer(Modifier.size(10.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Row(
@@ -703,7 +717,63 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                 } else if (availableVersions.isEmpty()) {
                     Text(stringResource(R.string.s473), color = Muted, fontSize = 12.sp)
                 } else {
-                    val shownVersions = if (showAllVersions) availableVersions else availableVersions.take(8)
+                    if (!usesCoreVersion) {
+                        Text(
+                            "🔍 Lọc nhanh theo nhánh phiên bản Minecraft (Đầy đủ từ 1.7.10 → 1.21.11 & 26.x):",
+                            color = Muted,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        val branchChips = listOf(
+                            "all" to "Tất cả (${availableVersions.size})",
+                            "1.21" to "🌟 1.21.x",
+                            "26" to "🚀 26.x",
+                            "1.20" to "⚡ 1.20.x",
+                            "1.16_19" to "🛡️ 1.16–1.19",
+                            "legacy" to "🏛️ 1.7–1.15"
+                        )
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            branchChips.forEach { (key, label) ->
+                                SegPill(
+                                    text = label,
+                                    selected = versionBranchFilter == key,
+                                    compact = true,
+                                    onClick = {
+                                        versionBranchFilter = key
+                                        if (key != "all") showAllVersions = true
+                                    }
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                    }
+                    val filteredVersions = remember(availableVersions, versionBranchFilter, usesCoreVersion) {
+                        if (usesCoreVersion || versionBranchFilter == "all") {
+                            availableVersions
+                        } else {
+                            availableVersions.filter { v ->
+                                when (versionBranchFilter) {
+                                    "1.21" -> v == "1.21" || v.startsWith("1.21.")
+                                    "26" -> v.startsWith("26.")
+                                    "1.20" -> v == "1.20" || v.startsWith("1.20.")
+                                    "1.16_19" -> v.startsWith("1.19") || v.startsWith("1.18") || v.startsWith("1.17") || v.startsWith("1.16")
+                                    "legacy" -> v.startsWith("1.15") || v.startsWith("1.14") || v.startsWith("1.13") ||
+                                        v.startsWith("1.12") || v.startsWith("1.11") || v.startsWith("1.10") ||
+                                        v.startsWith("1.9") || v.startsWith("1.8") || v.startsWith("1.7")
+                                    else -> true
+                                }
+                            }
+                        }
+                    }
+                    val shownVersions = if (showAllVersions || versionBranchFilter != "all") {
+                        filteredVersions
+                    } else {
+                        filteredVersions.take(18)
+                    }
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -713,11 +783,15 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                             val isVerSelected = config.mcVersion == ver
                             val verTag = when {
                                 usesCoreVersion -> versionHints[ver]?.let { "📱 PE $it" } ?: "📱 Bedrock"
+                                ver.startsWith("26.") -> "🚀 Thế hệ 26 • Java 25/21"
                                 ver.startsWith("1.21.11") || ver.startsWith("1.21.4") -> "🌟 Mới nhất • Java 21"
                                 ver.startsWith("1.21") -> "🛡️ Ổn định • Java 21"
+                                ver.startsWith("1.20.5") || ver.startsWith("1.20.6") -> "⚡ Nhanh • Java 21"
                                 ver.startsWith("1.20.1") -> "🧩 Nhiều Mod • Java 17"
                                 ver.startsWith("1.20") -> "⚡ Mượt • Java 17/21"
-                                ver.startsWith("1.16.5") -> "🪶 Nhẹ máy • Java 17/8"
+                                ver.startsWith("1.17") || ver.startsWith("1.18") || ver.startsWith("1.19") -> "☕ Java 17"
+                                ver.startsWith("1.16.5") -> "🪶 Nhẹ máy • Java 17/11/8"
+                                ver.startsWith("1.12.2") || ver.startsWith("1.8") || ver.startsWith("1.7") -> "🏛️ Cổ điển • Java 8/11"
                                 else -> "☕ Minecraft $ver"
                             }
                             Column(
@@ -749,13 +823,13 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                             }
                         }
                     }
-                    if (availableVersions.size > shownVersions.size) {
+                    if (filteredVersions.size > shownVersions.size) {
                         TextButton(onClick = { showAllVersions = true }) {
-                            Text("Hiện tất cả ${availableVersions.size} phiên bản", color = Indigo, fontSize = 12.sp)
+                            Text("▼ Hiện tất cả ${filteredVersions.size} phiên bản Minecraft (1.7.10 → 1.21.11 / 26.x)", color = Indigo, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
-                    } else if (showAllVersions && availableVersions.size > 8) {
+                    } else if (showAllVersions && versionBranchFilter == "all" && filteredVersions.size > 18) {
                         TextButton(onClick = { showAllVersions = false }) {
-                            Text("Thu gọn danh sách phiên bản", color = Indigo, fontSize = 12.sp)
+                            Text("▲ Thu gọn danh sách phiên bản", color = Indigo, fontSize = 12.sp)
                         }
                     }
                 }
@@ -821,8 +895,13 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                     )
                 }
                 InstallerJavaNotice(
+                    vm = vm,
                     core = config.selectedCore,
-                    minecraftVersion = config.mcVersion
+                    minecraftVersion = config.mcVersion,
+                    installedJava = installedJava,
+                    selectedJavaRuntime = config.selectedJavaRuntime,
+                    javaOperation = javaOperation,
+                    isServerRunning = serverState.isRunning
                 )
                 if (usesCoreVersion) {
                     Spacer(Modifier.height(10.dp))
@@ -1143,15 +1222,26 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
 }
 
 private data class InstallerJavaRequirement(
-    val recommendedJava: JavaVersion?,
-    val exactLegacyForgeRequirement: Boolean
+    val recommendedJava: JavaVersion,
+    val preferredVendor: JavaVendor,
+    val exactLegacyForgeRequirement: Boolean,
+    val reasonTextVi: String
 )
 
 private fun installerJavaRequirement(
     core: ServerCore,
     minecraftVersion: String
 ): InstallerJavaRequirement? {
-    if (!core.needsInstaller) return null
+    if (core == ServerCore.PocketMine) return null
+
+    if (core.isBedrock || core == ServerCore.Velocity || core == ServerCore.BungeeCord) {
+        return InstallerJavaRequirement(
+            recommendedJava = JavaVersion.Java21,
+            preferredVendor = JavaVendor.Termux,
+            exactLegacyForgeRequirement = false,
+            reasonTextVi = "Máy chủ ${core.displayName} yêu cầu Java 21 (LTS) để khởi động ổn định."
+        )
+    }
 
     val versionParts = minecraftVersion
         .trim()
@@ -1160,46 +1250,264 @@ private fun installerJavaRequirement(
         .mapNotNull { it.toIntOrNull() }
     val major = versionParts.getOrNull(0)
     val minor = versionParts.getOrNull(1)
-    val patch = versionParts.getOrNull(2)
-    if (major != 1 || minor == null) return InstallerJavaRequirement(null, false)
+    val patch = versionParts.getOrNull(2) ?: 0
 
-    val java = when {
-        minor <= 16 -> JavaVersion.Java11
-        minor > 20 || (minor == 20 && (patch ?: 0) >= 5) -> JavaVersion.Java25
-        else -> JavaVersion.Java17
+    if (major == 26) {
+        return InstallerJavaRequirement(
+            recommendedJava = JavaVersion.Java25,
+            preferredVendor = JavaVendor.Termux,
+            exactLegacyForgeRequirement = false,
+            reasonTextVi = "Minecraft $minecraftVersion (Thế hệ 26.x) khuyên dùng Java 25 (hoặc Java 21)."
+        )
     }
-    return InstallerJavaRequirement(
-        recommendedJava = java,
-        exactLegacyForgeRequirement = core == ServerCore.Forge && minecraftVersion == "1.12.2"
-    )
+
+    if (major != 1 || minor == null) {
+        return InstallerJavaRequirement(
+            recommendedJava = JavaVersion.Java21,
+            preferredVendor = JavaVendor.Termux,
+            exactLegacyForgeRequirement = false,
+            reasonTextVi = "Khuyên dùng Java 21 (LTS) cho các phiên bản Minecraft hiện đại."
+        )
+    }
+
+    if (core == ServerCore.Forge && (minor <= 12)) {
+        return InstallerJavaRequirement(
+            recommendedJava = JavaVersion.Java8,
+            preferredVendor = JavaVendor.Proot,
+            exactLegacyForgeRequirement = true,
+            reasonTextVi = "Forge $minecraftVersion bắt buộc dùng đúng Java 8 (PRoot Ubuntu 20.04)."
+        )
+    }
+
+    return when {
+        minor <= 16 -> InstallerJavaRequirement(
+            recommendedJava = JavaVersion.Java11,
+            preferredVendor = JavaVendor.Termux,
+            exactLegacyForgeRequirement = false,
+            reasonTextVi = "Minecraft $minecraftVersion (1.7.10–1.16.5) tương thích tốt nhất với Java 11 hoặc Java 8."
+        )
+        minor > 20 || (minor == 20 && patch >= 5) -> InstallerJavaRequirement(
+            recommendedJava = if (core.needsInstaller) JavaVersion.Java25 else JavaVersion.Java21,
+            preferredVendor = JavaVendor.Termux,
+            exactLegacyForgeRequirement = false,
+            reasonTextVi = "Minecraft $minecraftVersion (1.20.5–1.21.11) yêu cầu tối thiểu Java 21 (hoặc Java 25 khi chạy trình cài Forge/NeoForge)."
+        )
+        else -> InstallerJavaRequirement(
+            recommendedJava = JavaVersion.Java17,
+            preferredVendor = JavaVendor.Termux,
+            exactLegacyForgeRequirement = false,
+            reasonTextVi = "Minecraft $minecraftVersion (1.17–1.20.4) yêu cầu Java 17 (LTS)."
+        )
+    }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun InstallerJavaNotice(core: ServerCore, minecraftVersion: String) {
+private fun InstallerJavaNotice(
+    vm: McViewModel,
+    core: ServerCore,
+    minecraftVersion: String,
+    installedJava: Set<JavaRuntime>,
+    selectedJavaRuntime: JavaRuntime,
+    javaOperation: String?,
+    isServerRunning: Boolean
+) {
     val requirement = installerJavaRequirement(core, minecraftVersion) ?: return
-    Spacer(Modifier.height(10.dp))
-    Text(
-        if (requirement.exactLegacyForgeRequirement) {
-            stringResource(R.string.dl_forge_java8_hint)
-        } else if (requirement.recommendedJava != null) {
-            stringResource(R.string.dl_java_rec, core.displayName, minecraftVersion, requirement.recommendedJava.displayName)
-        } else {
-            stringResource(R.string.dl_java_need, core.displayName)
-        },
-        color = Coral,
-        fontSize = 12.sp,
-        fontWeight = FontWeight.SemiBold
-    )
-    Spacer(Modifier.height(3.dp))
-    Text(
-        stringResource(R.string.dl_first_install_hint),
-        color = Coral,
-        fontSize = 11.sp
-    )
-    Spacer(Modifier.height(3.dp))
-    Text(
-        stringResource(R.string.dl_java_disclaimer),
-        color = Coral,
-        fontSize = 11.sp
-    )
+    var showJavaGuide by rememberSaveable { mutableStateOf(false) }
+
+    val targetRuntime = JavaRuntime(requirement.preferredVendor, requirement.recommendedJava)
+    // Với MC 1.20.5–1.21.11: cả Java 21 và Java 25 đều chạy tốt
+    val acceptableVersions = remember(requirement.recommendedJava, minecraftVersion) {
+        when (requirement.recommendedJava) {
+            JavaVersion.Java21, JavaVersion.Java25 -> setOf(JavaVersion.Java21, JavaVersion.Java25)
+            JavaVersion.Java11 -> setOf(JavaVersion.Java11, JavaVersion.Java8, JavaVersion.Java17)
+            else -> setOf(requirement.recommendedJava)
+        }
+    }
+    val matchingInstalledRuntime = installedJava.firstOrNull { it.version == requirement.recommendedJava }
+        ?: installedJava.firstOrNull { it.version in acceptableVersions }
+    val isCurrentlyCompatible = selectedJavaRuntime in installedJava && selectedJavaRuntime.version in acceptableVersions
+    val busy = javaOperation != null
+
+    Spacer(Modifier.height(12.dp))
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(McShape.Row)
+            .background(
+                when {
+                    isCurrentlyCompatible -> Mint.copy(alpha = 0.14f)
+                    matchingInstalledRuntime != null -> Indigo.copy(alpha = 0.16f)
+                    else -> Coral.copy(alpha = 0.14f)
+                }
+            )
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                "☕ Môi trường Java cho ${core.displayName} $minecraftVersion",
+                color = when {
+                    isCurrentlyCompatible -> Mint
+                    matchingInstalledRuntime != null -> Indigo
+                    else -> Coral
+                },
+                fontSize = 12.5.sp,
+                fontWeight = FontWeight.ExtraBold,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                when {
+                    isCurrentlyCompatible -> "✅ Đã sẵn sàng (${selectedJavaRuntime.version.displayName})"
+                    matchingInstalledRuntime != null -> "⚠️ Cần chuyển sang ${matchingInstalledRuntime.version.displayName}"
+                    else -> "❌ Chưa cài ${requirement.recommendedJava.displayName}"
+                },
+                color = when {
+                    isCurrentlyCompatible -> Mint
+                    matchingInstalledRuntime != null -> Indigo
+                    else -> Coral
+                },
+                fontSize = 10.5.sp,
+                fontWeight = FontWeight.ExtraBold
+            )
+        }
+
+        Text(
+            requirement.reasonTextVi,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontSize = 11.sp,
+            lineHeight = 15.sp
+        )
+
+        if (javaOperation != null) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(15.dp),
+                    strokeWidth = 2.dp,
+                    color = Indigo
+                )
+                Text(
+                    javaOperation,
+                    color = Indigo,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+
+        if (!isCurrentlyCompatible) {
+            if (matchingInstalledRuntime != null) {
+                Button(
+                    onClick = { vm.setJavaRuntime(matchingInstalledRuntime) },
+                    enabled = !busy && !isServerRunning,
+                    colors = ButtonDefaults.buttonColors(containerColor = Indigo),
+                    shape = McShape.ControlCompact,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        "🔄 Chuyển sang dùng ${matchingInstalledRuntime.displayName} (Đã cài sẵn) ngay",
+                        color = Color.White,
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                }
+            } else {
+                Button(
+                    onClick = { vm.installJava(targetRuntime) },
+                    enabled = !busy && !isServerRunning,
+                    colors = ButtonDefaults.buttonColors(containerColor = Coral),
+                    shape = McShape.ControlCompact,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        "⚡ Tự động tải & cài đặt ${targetRuntime.displayName} ngay (1 chạm)",
+                        color = Color.White,
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                }
+            }
+        }
+
+        Text(
+            if (showJavaGuide) "▲ Ẩn hướng dẫn cài & chọn môi trường Java"
+            else "▼ 📖 Xem hướng dẫn chọn Java (Java 8 / 17 / 21 / 25) & tự cài đặt 1 chạm",
+            color = Indigo,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.clickable { showJavaGuide = !showJavaGuide }
+        )
+
+        androidx.compose.animation.AnimatedVisibility(visible = showJavaGuide) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp)
+                    .clip(McShape.Row)
+                    .background(com.mineserve.mobile.ui.theme.FieldGray)
+                    .padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    "📌 Bảng tra cứu nhanh Phiên bản Minecraft ↔ Môi trường Java:",
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 11.5.sp,
+                    color = Indigo
+                )
+                Text("• 🌟 Minecraft 1.20.5 → 1.21.11: Bắt buộc dùng Java 21 (hoặc Java 25).", fontSize = 10.5.sp, color = Muted)
+                Text("• 🚀 Minecraft 26.1 / 26.2+: Dùng Java 25 (hoặc Java 21).", fontSize = 10.5.sp, color = Muted)
+                Text("• ⚡ Minecraft 1.17 → 1.20.4 (1.20.1, 1.19.4, 1.18.2): Dùng Java 17.", fontSize = 10.5.sp, color = Muted)
+                Text("• 🏛️ Minecraft 1.7.10 → 1.16.5 (1.16.5, 1.12.2, 1.8.8): Dùng Java 11 hoặc Java 8 (Forge 1.12.2 bắt buộc Java 8).", fontSize = 10.5.sp, color = Muted)
+
+                Text(
+                    "🛠️ Cài đặt nhanh các bản Java phổ biến ngay tại đây:",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    listOf(
+                        JavaRuntime(JavaVendor.Termux, JavaVersion.Java21) to "Java 21 (1.20.5–1.21.11)",
+                        JavaRuntime(JavaVendor.Termux, JavaVersion.Java17) to "Java 17 (1.17–1.20.4)",
+                        JavaRuntime(JavaVendor.Termux, JavaVersion.Java11) to "Java 11 (1.8–1.16.5)",
+                        JavaRuntime(JavaVendor.Termux, JavaVersion.Java25) to "Java 25 (Forge/26.x)",
+                        JavaRuntime(JavaVendor.Proot, JavaVersion.Java8) to "Java 8 (Forge 1.12.2)"
+                    ).forEach { (rt, label) ->
+                        val isInst = rt in installedJava
+                        val isSel = selectedJavaRuntime == rt
+                        OutlinedButton(
+                            onClick = {
+                                if (isInst) vm.setJavaRuntime(rt) else vm.installJava(rt)
+                            },
+                            enabled = !busy && !isServerRunning,
+                            shape = McShape.ControlCompact,
+                            border = BorderStroke(1.dp, if (isSel) Mint else if (isInst) Indigo else Coral),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                when {
+                                    isSel -> "✅ Đang dùng: $label"
+                                    isInst -> "🔄 Chọn: $label"
+                                    else -> "⬇️ Tải $label"
+                                },
+                                color = if (isSel) Mint else if (isInst) Indigo else Coral,
+                                fontSize = 10.5.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
