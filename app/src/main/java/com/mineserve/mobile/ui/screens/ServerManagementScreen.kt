@@ -94,7 +94,9 @@ fun ServerManagementScreen(
     onPlugins: () -> Unit,
     onProperties: () -> Unit,
     onIcon: () -> Unit,
-    onWorlds: () -> Unit
+    onWorlds: () -> Unit,
+    onCreateServer: () -> Unit = {},
+    onBack: (() -> Unit)? = null
 ) {
     val config by vm.config.collectAsState()
     val state by vm.serverState.collectAsState()
@@ -135,7 +137,112 @@ fun ServerManagementScreen(
                 .padding(paddingValues)
                 .verticalScroll(rememberScrollState())
         ) {
-            HeaderBlock(eyebrow = "MÁY CHỦ", title = "Quản lý & Điều khiển máy chủ")
+            if (onBack != null) {
+                com.mineserve.mobile.ui.BackBar(title = "Quản lý & Tạo thêm Server", onBack = onBack)
+            } else {
+                HeaderBlock(eyebrow = "MÁY CHỦ", title = "Quản lý & Điều khiển máy chủ")
+            }
+
+            // ── 0. Danh sách các Server hiện có & Nút Tạo Thêm Server Mới ──
+            McCard(
+                title = "🖥️ Danh Sách Server Của Bạn (${config.installedCores.size} máy chủ)",
+                trailing = {
+                    TextButton(onClick = onCreateServer) {
+                        Text("➕ Tạo Server mới", color = Mint, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            ) {
+                Text(
+                    "Bạn có thể tạo nhiều server ở nhiều phiên bản Minecraft khác nhau (1.21.11, 1.21.1, 1.20.1, 1.16.5...) và chuyển đổi qua lại chỉ với 1 chạm:",
+                    color = Muted,
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp
+                )
+                Spacer(Modifier.height(10.dp))
+
+                if (config.installedCores.isEmpty()) {
+                    Text(
+                        "Chưa có server nào. Hãy bấm nút bên dưới để tạo server Minecraft đầu tiên của bạn!",
+                        color = Coral,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        config.installedCores.forEach { srv ->
+                            val isSelected = srv.name == config.activeCoreName
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(if (isSelected) MintSoft else FieldBg)
+                                    .padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                com.mineserve.mobile.ui.MinecraftPixelArtIcon(
+                                    kind = if (srv.core.supportsMods) com.mineserve.mobile.ui.MinecraftArtKind.COMMAND_BLOCK else com.mineserve.mobile.ui.MinecraftArtKind.GRASS,
+                                    size = 34.dp
+                                )
+                                Spacer(Modifier.size(10.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            srv.name,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isSelected) Mint else MaterialTheme.colorScheme.onSurface
+                                        )
+                                        if (isSelected) {
+                                            Spacer(Modifier.size(6.dp))
+                                            StatusPill(
+                                                if (state.isRunning) "🟢 Đang chạy" else "✅ Đang chọn",
+                                                Mint
+                                            )
+                                        }
+                                    }
+                                    Text(
+                                        "${srv.core.displayName} · MC ${srv.version} · Thư mục: ${srv.dirName}",
+                                        color = Muted,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                                if (!isSelected) {
+                                    Button(
+                                        onClick = { vm.setActiveCore(srv.name) },
+                                        enabled = !state.isRunning,
+                                        colors = ButtonDefaults.buttonColors(containerColor = Indigo),
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Text("Chọn dùng", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                } else {
+                                    OutlinedButton(
+                                        onClick = { showEditDialog = true },
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Text("✏️ Đổi tên", color = Indigo, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = onCreateServer,
+                        colors = ButtonDefaults.buttonColors(containerColor = Mint),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("➕ Tạo Thêm Server Mới (Nhiều Phiên Bản)", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
 
             // ── 1. Bảng điều khiển nguồn & trạng thái trực tiếp ─────────────
             McCard(title = "🎛️ Trung tâm Điều khiển Nhanh") {

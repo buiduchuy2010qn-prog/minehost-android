@@ -1,56 +1,116 @@
 package com.mineserve.mobile.ui.screens
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.distinctUntilChanged
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mineserve.mobile.data.StartupPhase
 import com.mineserve.mobile.ui.McViewModel
 import com.mineserve.mobile.ui.MinecraftArtKind
 import com.mineserve.mobile.ui.MinecraftPixelArtIcon
 import com.mineserve.mobile.ui.PlayConnectionMode
 import com.mineserve.mobile.ui.SubPage
-import androidx.compose.foundation.BorderStroke
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 
 @Composable
-internal fun HostPage(title: String, subtitle: String, content: LazyListScope.() -> Unit) {
+internal fun HostPage(
+    title: String,
+    subtitle: String,
+    trailingHeader: (@Composable () -> Unit)? = null,
+    content: LazyListScope.() -> Unit
+) {
     val artKind: MinecraftArtKind = remember(title) {
         when {
             title.contains("Thế giới", ignoreCase = true) || title.contains("Map", ignoreCase = true) -> MinecraftArtKind.GRASS
             title.contains("Người chơi", ignoreCase = true) -> MinecraftArtKind.DIAMOND_SWORD
-            title.contains("Kho", ignoreCase = true) || title.contains("Quản lý", ignoreCase = true) -> MinecraftArtKind.COMMAND_BLOCK
+            title.contains("Kho", ignoreCase = true) -> MinecraftArtKind.CHEST
+            title.contains("Quản lý", ignoreCase = true) -> MinecraftArtKind.COMMAND_BLOCK
             else -> MinecraftArtKind.CREEPER
         }
     }
     LazyColumn(
         Modifier.fillMaxSize().statusBarsPadding(),
-        contentPadding = PaddingValues(20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item(key = "heading") {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f))
             ) {
-                MinecraftPixelArtIcon(kind = artKind, size = 44.dp)
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.weight(1f)) {
-                    Text("MINEHOST / MINECRAFT SERVER", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                    Text(title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
-                    Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            Brush.horizontalGradient(
+                                listOf(
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                                    MaterialTheme.colorScheme.secondary.copy(alpha = 0.08f),
+                                    Color.Transparent
+                                )
+                            )
+                        )
+                        .padding(14.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(54.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
+                                .border(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.55f), RoundedCornerShape(12.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            MinecraftPixelArtIcon(kind = artKind, size = 40.dp)
+                        }
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.weight(1f)) {
+                            Text(
+                                "⛏️ MINEHOST • MINECRAFT SERVER",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                            Text(
+                                title,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                            Text(
+                                subtitle,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        trailingHeader?.invoke()
+                    }
                 }
             }
         }
@@ -59,38 +119,155 @@ internal fun HostPage(title: String, subtitle: String, content: LazyListScope.()
 }
 
 @Composable
-internal fun HostCard(title: String, content: @Composable ColumnScope.() -> Unit) {
+internal fun HostCard(
+    title: String,
+    artKind: MinecraftArtKind? = null,
+    badgeText: String? = null,
+    content: @Composable ColumnScope.() -> Unit
+) {
     Card(
         Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.28f))
+        border = BorderStroke(1.2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.32f))
     ) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (artKind != null) {
+                    MinecraftPixelArtIcon(kind = artKind, size = 24.dp)
+                }
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.weight(1f)
+                )
+                if (!badgeText.isNullOrBlank()) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(
+                            badgeText,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+            }
             content()
         }
     }
 }
 
 @Composable
-private fun HostAction(title: String, detail: String, icon: ImageVector, onClick: () -> Unit) {
-    OutlinedCard(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(title, fontWeight = FontWeight.SemiBold)
+private fun HostAction(
+    title: String,
+    detail: String,
+    icon: ImageVector,
+    artKind: MinecraftArtKind? = null,
+    onClick: () -> Unit
+) {
+    OutlinedCard(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.28f))
+    ) {
+        Row(
+            Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                if (artKind != null) {
+                    MinecraftPixelArtIcon(kind = artKind, size = 28.dp)
+                } else {
+                    Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                }
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(title, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Icon(Icons.Outlined.ChevronRight, contentDescription = null)
+            Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        }
+    }
+}
+
+@Composable
+private fun QuickPixelTile(
+    title: String,
+    subtitle: String,
+    artKind: MinecraftArtKind,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Card(
+        onClick = onClick,
+        modifier = modifier,
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.30f))
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(9.dp))
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
+                contentAlignment = Alignment.Center
+            ) {
+                MinecraftPixelArtIcon(kind = artKind, size = 24.dp)
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    title,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    subtitle,
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
     }
 }
 
 private data class OverviewState(
-    val isRunning: Boolean = false, val startupPhase: StartupPhase = StartupPhase.Idle,
-    val tps: Double = 0.0, val onlinePlayers: Int = 0, val usedMemoryMb: Long = 0
+    val isRunning: Boolean = false,
+    val startupPhase: StartupPhase = StartupPhase.Idle,
+    val tps: Double = 0.0,
+    val onlinePlayers: Int = 0,
+    val usedMemoryMb: Long = 0
 )
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: () -> Unit) {
     val config by vm.config.collectAsStateWithLifecycle()
@@ -128,21 +305,100 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
     var confirmTuning by remember { mutableStateOf(false) }
     val busy = downloading || installing || addonBusy.isNotEmpty() || javaOperation != null || importing || applying
     val status = when {
-        stopping -> "Đang lưu và dừng…"
-        state.startupPhase == StartupPhase.Failed -> "Khởi động thất bại"
-        state.isRunning && state.startupPhase != StartupPhase.Ready -> "Đang khởi động…"
-        state.isRunning -> "Đang hoạt động"
-        else -> "Đã dừng"
+        stopping -> "⏳ ĐANG LƯU & DỪNG…"
+        state.startupPhase == StartupPhase.Failed -> "❌ KHỞI ĐỘNG THẤT BẠI"
+        state.isRunning && state.startupPhase != StartupPhase.Ready -> "⚡ ĐANG KHỞI ĐỘNG…"
+        state.isRunning -> "🟢 ĐANG HOẠT ĐỘNG"
+        else -> "⚪ ĐANG DỪNG (SẴN SÀNG)"
     }
     LaunchedEffect(Unit) { vm.refreshLanIp() }
-    HostPage("Server của bạn", "Điện thoại là máy chủ. Không cần thuê VPS để chơi cùng mạng Wi-Fi.") {
+
+    HostPage(
+        title = "Server của bạn",
+        subtitle = "Biến điện thoại thành máy chủ Minecraft thực thụ — Chơi LAN hoặc Playit.gg.",
+        trailingHeader = {
+            Button(
+                onClick = { navigate(SubPage.Cores) },
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Text("➕ Tạo Server", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+            }
+        }
+    ) {
+        // ── 1. THẺ HERO MÁY CHỦ + CHUYỂN ĐỔI / TẠO THÊM SERVER NGAY TẠI CHỖ ──
         item {
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
-                Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(status.uppercase(), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                    Text(active?.name ?: "Chưa có server", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                    Text(active?.let { it.core.displayName + " · " + it.version } ?: "Tạo thế giới đầu tiên để mời bạn bè.")
-                    if (state.isRunning && state.startupPhase != StartupPhase.Ready) LinearProgressIndicator(Modifier.fillMaxWidth())
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary)
+            ) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.22f),
+                                    Color.Transparent
+                                )
+                            )
+                        )
+                        .padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(58.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f))
+                                .border(1.5.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(14.dp))
+                                .clickable { navigate(SubPage.ServerIcon) },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            MinecraftPixelArtIcon(
+                                kind = if (active?.core?.supportsMods == true) MinecraftArtKind.COMMAND_BLOCK else MinecraftArtKind.GRASS,
+                                size = 40.dp
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text(
+                                    status,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                )
+                            }
+                            Text(
+                                active?.name ?: "Chưa có server",
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                            Text(
+                                active?.let { "🧩 ${it.core.displayName} · MC ${it.version} · Cổng $port" }
+                                    ?: "Hãy bấm '➕ Tạo Thêm Server Mới' bên dưới để bắt đầu!",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+
+                    if (state.isRunning && state.startupPhase != StartupPhase.Ready) {
+                        LinearProgressIndicator(Modifier.fillMaxWidth())
+                    }
+
+                    // Nút Bật / Dừng Server
                     Button(
                         onClick = {
                             if (active == null) navigate(SubPage.Cores)
@@ -150,20 +406,96 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             else vm.startServer()
                         },
                         enabled = ready && !stopping && (state.isRunning || !busy),
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)
                     ) {
                         Icon(if (state.isRunning) Icons.Outlined.Stop else Icons.Outlined.PlayArrow, null)
                         Spacer(Modifier.width(8.dp))
-                        Text(if (active == null) "Tạo server" else if (state.isRunning) "Dừng an toàn" else "Bật server")
+                        Text(
+                            if (active == null) "➕ Tạo Server Đầu Tiên"
+                            else if (state.isRunning) "⏹️ Dừng Server An Toàn"
+                            else "▶️ BẬT SERVER NGAY",
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 14.sp
+                        )
                     }
-                    if (state.isRunning) OutlinedButton(onClick = { confirm = "restart" }, enabled = !stopping && !busy, modifier = Modifier.fillMaxWidth()) {
-                        Text("Lưu và khởi động lại")
+
+                    if (state.isRunning) {
+                        OutlinedButton(
+                            onClick = { confirm = "restart" },
+                            enabled = !stopping && !busy,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("🔄 Lưu Thế Giới & Khởi Động Lại", fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.18f))
+
+                    // ── KHU VỰC QUẢN LÝ / CHUYỂN ĐỔI / TẠO THÊM SERVER MỚI NGAY TRÊN ĐẦU ──
+                    Text(
+                        "🖥️ Quản lý & Chuyển đổi Server (${config.installedCores.size} máy chủ đã tạo):",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+
+                    if (config.installedCores.isNotEmpty()) {
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            config.installedCores.forEach { srv ->
+                                val isCurrent = srv.name == config.activeCoreName
+                                FilterChip(
+                                    selected = isCurrent,
+                                    onClick = {
+                                        if (!isCurrent && !state.isRunning) {
+                                            vm.setActiveCore(srv.name)
+                                        } else if (isCurrent) {
+                                            navigate(SubPage.ServerList)
+                                        }
+                                    },
+                                    label = {
+                                        Text(
+                                            if (isCurrent) "✅ ${srv.name} (${srv.version})"
+                                            else "🔄 ${srv.name} (${srv.version})",
+                                            fontSize = 11.sp,
+                                            fontWeight = if (isCurrent) FontWeight.ExtraBold else FontWeight.SemiBold
+                                        )
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Button(
+                            onClick = { navigate(SubPage.Cores) },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("➕ Tạo Thêm Server Mới", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                        }
+                        OutlinedButton(
+                            onClick = { navigate(SubPage.ServerList) },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("⚙️ Quản Lý / Đổi Tên SV", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
         }
+
+        // ── 2. CHUẨN BỊ LẦN ĐẦU (NẾU CHƯA BOOTSTRAP) ──
         item {
-            if (!ready) HostCard("Chuẩn bị lần đầu") {
+            if (!ready) HostCard("Chuẩn bị môi trường lần đầu", artKind = MinecraftArtKind.REDSTONE) {
                 if (bootstrapRunning) {
                     LinearProgressIndicator(Modifier.fillMaxWidth())
                     Text("Đang cài môi trường chạy vào điện thoại. Giữ ứng dụng mở và kết nối Wi-Fi; bước này có thể mất vài phút.")
@@ -173,22 +505,110 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                 }
             }
         }
+
+        // ── 3. BA Ô THÔNG SỐ PIXEL-ART TRỰC QUAN (TPS / NGƯỜI CHƠI / RAM) ──
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Metric("TPS", if (state.isRunning && state.tps > 0) "%.1f".format(state.tps) else "—", Modifier.weight(1f))
-                Metric("Người chơi", if (state.isRunning && state.startupPhase == StartupPhase.Ready) state.onlinePlayers.toString() else "—", Modifier.weight(1f))
-                Metric("RAM / MB", if (state.isRunning && state.usedMemoryMb > 0) state.usedMemoryMb.toString() else "—", Modifier.weight(1f))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                Metric(
+                    label = "TPS Nhịp Game",
+                    value = if (state.isRunning && state.tps > 0) "%.1f".format(state.tps) else "—",
+                    artKind = MinecraftArtKind.REDSTONE,
+                    modifier = Modifier.weight(1f),
+                    onClick = onConsole
+                )
+                Metric(
+                    label = "Người chơi",
+                    value = if (state.isRunning && state.startupPhase == StartupPhase.Ready) "${state.onlinePlayers}" else "—",
+                    artKind = MinecraftArtKind.DIAMOND_SWORD,
+                    modifier = Modifier.weight(1f),
+                    onClick = { navigate(SubPage.PlayerList) }
+                )
+                Metric(
+                    label = "RAM / ${config.maxHeapMb}MB",
+                    value = if (state.isRunning && state.usedMemoryMb > 0) "${state.usedMemoryMb}" else "—",
+                    artKind = MinecraftArtKind.COMMAND_BLOCK,
+                    modifier = Modifier.weight(1f),
+                    onClick = { navigate(SubPage.ServerList) }
+                )
             }
         }
+
+        // ── 4. BẢNG ĐIỀU KHIỂN NHANH 6 Ô PIXEL-ART MINECRAFT (2×3) ──
         item {
-            Text("“—” là chưa có số đo, không phải 0. TPS có thể không được core này hỗ trợ.", style = MaterialTheme.typography.bodySmall)
+            HostCard(
+                title = "Bảng điều khiển nhanh Minecraft",
+                artKind = MinecraftArtKind.COMMAND_BLOCK,
+                badgeText = "1 Chạm"
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    QuickPixelTile(
+                        title = "Tạo / Đổi Server",
+                        subtitle = "${config.installedCores.size} SV • Đa phiên bản",
+                        artKind = MinecraftArtKind.COMMAND_BLOCK,
+                        modifier = Modifier.weight(1f)
+                    ) { navigate(SubPage.Cores) }
+
+                    QuickPixelTile(
+                        title = "Kho 56 Mod",
+                        subtitle = "Đã chia 6 nhóm",
+                        artKind = MinecraftArtKind.CHEST,
+                        modifier = Modifier.weight(1f)
+                    ) { navigate(SubPage.Plugins) }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    QuickPixelTile(
+                        title = "Thế Giới (Map)",
+                        subtitle = "Nhập ZIP / Sao lưu",
+                        artKind = MinecraftArtKind.GRASS,
+                        modifier = Modifier.weight(1f)
+                    ) { navigate(SubPage.WorldManage) }
+
+                    QuickPixelTile(
+                        title = "Người Chơi & OP",
+                        subtitle = "Online & Lịch sử",
+                        artKind = MinecraftArtKind.DIAMOND_SWORD,
+                        modifier = Modifier.weight(1f)
+                    ) { navigate(SubPage.PlayerList) }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    QuickPixelTile(
+                        title = "Tên & Icon 64×64",
+                        subtitle = "Ảnh Pixel & MOTD",
+                        artKind = MinecraftArtKind.GOLDEN_APPLE,
+                        modifier = Modifier.weight(1f)
+                    ) { navigate(SubPage.ServerIcon) }
+
+                    QuickPixelTile(
+                        title = "Luật & Cracked",
+                        subtitle = "Sửa lỗi phiên chơi",
+                        artKind = MinecraftArtKind.ENDER_EYE,
+                        modifier = Modifier.weight(1f)
+                    ) { navigate(SubPage.ServerList) }
+                }
+            }
         }
+
+        // ── 5. MỜI BẠN BÈ & ĐỊA CHỈ KẾT NỐI (DỌN SẴN) ──
         item {
             if (active == null) {
-                HostAction("1. Tải core server", "Paper: plugin • Fabric: mod. Chọn đúng phiên bản Minecraft.", Icons.Outlined.Download) { navigate(SubPage.Cores) }
-                HostAction("2. Cài Java tương thích", "Paper 1.20–1.21.11: Java 21 • 26.1+: Java 25. Core khác: xem yêu cầu của core.", Icons.Outlined.Memory) { navigate(SubPage.EnvManager) }
+                HostAction(
+                    "1. Tạo Server Mới (Chọn Core & Phiên bản)",
+                    "Paper: plugin • Fabric/Forge/NeoForge: mod. Hỗ trợ nhiều phiên bản Minecraft.",
+                    Icons.Outlined.Download,
+                    artKind = MinecraftArtKind.COMMAND_BLOCK
+                ) { navigate(SubPage.Cores) }
+                HostAction(
+                    "2. Cài Java tương thích",
+                    "MC 1.20.5–1.21.11: Java 21 • MC 1.18–1.20.4: Java 17 • MC 1.16.5: Java 8/17.",
+                    Icons.Outlined.Memory,
+                    artKind = MinecraftArtKind.REDSTONE
+                ) { navigate(SubPage.EnvManager) }
             } else {
-                HostCard("Mời bạn bè & Địa chỉ kết nối (Dọn sẵn)") {
+                HostCard(
+                    title = "Mời bạn bè & Địa chỉ kết nối (Dọn sẵn)",
+                    artKind = MinecraftArtKind.ENDER_EYE,
+                    badgeText = if (playConnectionMode == PlayConnectionMode.SameNetwork) "Cùng Wi-Fi" else "Playit.gg"
+                ) {
                     val localhostAddress = "127.0.0.1:$port"
                     val lanAddress = lanIp.takeIf {
                         it.matches(Regex("""\d{1,3}(\.\d{1,3}){3}""")) && it != "0.0.0.0" && !it.startsWith("127.")
@@ -205,25 +625,28 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                         if (isLanMode) {
                             Button(
                                 onClick = { vm.setPlayConnectionMode(PlayConnectionMode.SameNetwork) },
-                                modifier = Modifier.weight(1f)
-                            ) { Text("🏠 Cùng mạng Wi-Fi") }
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp)
+                            ) { Text("🏠 Cùng mạng Wi-Fi", fontWeight = FontWeight.Bold) }
                             OutlinedButton(
                                 onClick = { vm.setPlayConnectionMode(PlayConnectionMode.Everywhere) },
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp)
                             ) { Text("🌍 Kết nối mọi nơi") }
                         } else {
                             OutlinedButton(
                                 onClick = { vm.setPlayConnectionMode(PlayConnectionMode.SameNetwork) },
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp)
                             ) { Text("🏠 Cùng mạng Wi-Fi") }
                             Button(
                                 onClick = { vm.setPlayConnectionMode(PlayConnectionMode.Everywhere) },
-                                modifier = Modifier.weight(1f)
-                            ) { Text("🌍 Kết nối mọi nơi") }
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp)
+                            ) { Text("🌍 Kết nối mọi nơi", fontWeight = FontWeight.Bold) }
                         }
                     }
 
-                    // Hộp địa chỉ dọn sẵn theo chế độ đang chọn
                     val recommendedTitle = if (playConnectionMode == PlayConnectionMode.SameNetwork) {
                         "👉 ĐỊA CHỈ DÙNG CHO BẠN BÈ CÙNG WI-FI / HOTSPOT:"
                     } else {
@@ -246,13 +669,14 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             playitState.isRunning ->
                                 "Trạng thái Playit.gg: Đang kết nối và lấy địa chỉ công khai có cổng từ máy chủ Playit.gg..."
                             else ->
-                                "Trạng thái Playit.gg: Đang tắt. Hãy bấm nút 'Bật Playit.gg ngay' bên dưới để lấy địa chỉ công khai."
+                                "Trạng thái Playit.gg: Đang tắt. Hãy bấm nút 'Bật kết nối mọi nơi (Playit.gg)' bên dưới để lấy địa chỉ công khai."
                         }
                     }
 
                     Surface(
                         color = MaterialTheme.colorScheme.secondaryContainer,
-                        shape = MaterialTheme.shapes.medium,
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -264,9 +688,9 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             )
                             Text(
                                 recommendedAddr ?: if (playConnectionMode == PlayConnectionMode.SameNetwork) "Chưa xác định được địa chỉ mạng LAN" else "Chưa có địa chỉ Playit.gg (Hãy bật Playit.gg)",
-                                style = MaterialTheme.typography.titleLarge,
+                                style = MaterialTheme.typography.headlineSmall,
                                 fontWeight = FontWeight.ExtraBold,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                                color = MaterialTheme.colorScheme.primary
                             )
                             Text(
                                 recommendedStatusNote,
@@ -284,8 +708,9 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                 Button(
                                     onClick = { recommendedAddr?.let { clipboard.setText(AnnotatedString(it)) } },
                                     enabled = recommendedAddr != null,
+                                    shape = RoundedCornerShape(10.dp),
                                     modifier = Modifier.weight(1f)
-                                ) { Text("Sao chép địa chỉ") }
+                                ) { Text("📋 Sao chép địa chỉ", fontWeight = FontWeight.Bold) }
                                 OutlinedButton(
                                     onClick = {
                                         recommendedAddr?.let { addr ->
@@ -300,24 +725,28 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                         }
                                     },
                                     enabled = recommendedAddr != null,
+                                    shape = RoundedCornerShape(10.dp),
                                     modifier = Modifier.weight(1f)
-                                ) { Text("Gửi bạn bè") }
+                                ) { Text("📤 Gửi bạn bè", fontWeight = FontWeight.Bold) }
                             }
                             if (playConnectionMode == PlayConnectionMode.Everywhere) {
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                                     if (!playitState.isRunning) {
                                         Button(
                                             onClick = { vm.startPlayitTunnel() },
+                                            shape = RoundedCornerShape(10.dp),
                                             modifier = Modifier.fillMaxWidth()
-                                        ) { Text("🚀 Bật kết nối mọi nơi (Playit.gg)") }
+                                        ) { Text("🚀 Bật kết nối mọi nơi (Playit.gg)", fontWeight = FontWeight.ExtraBold) }
                                     } else {
                                         OutlinedButton(
                                             onClick = { vm.stopPlayitTunnel() },
+                                            shape = RoundedCornerShape(10.dp),
                                             modifier = Modifier.weight(1f)
-                                        ) { Text("Tắt Playit.gg") }
+                                        ) { Text("⏹️ Tắt Playit.gg") }
                                         if (playitState.claimUrl.isNotBlank() && !playitState.isClaimed) {
                                             Button(
                                                 onClick = { uriHandler.openUri(playitState.claimUrl) },
+                                                shape = RoundedCornerShape(10.dp),
                                                 modifier = Modifier.weight(1f)
                                             ) { Text("🔑 Xác nhận Claim") }
                                         }
@@ -327,7 +756,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                         }
                     }
 
-                    // Bảng phân biệt rõ 3 loại địa chỉ (Mục 16.1)
+                    // Bảng phân biệt rõ 3 loại địa chỉ
                     HorizontalDivider()
                     Text(
                         "Bảng phân biệt 3 loại địa chỉ kết nối:",
@@ -343,25 +772,26 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                         style = MaterialTheme.typography.bodySmall
                     )
                     Text(
-                        "3️⃣ Kết nối từ Internet mọi nơi (Playit.gg): ${playitAddress ?: if (playitState.isRunning) "Đang lấy địa chỉ..." else "Chưa bật Playit.gg"}\n   → Dùng cho bạn bè ở xa dùng 4G hoặc mạng Wi-Fi khác (không lộ IP mạng nhà; địa chỉ có thể đổi nếu tạo lại tunnel).",
+                        "3️⃣ Kết nối từ Internet mọi nơi (Playit.gg): ${playitAddress ?: if (playitState.isRunning) "Đang lấy địa chỉ..." else "Chưa bật Playit.gg"}\n   → Dùng cho bạn bè ở xa dùng 4G hoặc mạng Wi-Fi khác (không lộ IP mạng nhà).",
                         style = MaterialTheme.typography.bodySmall
                     )
 
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                         OutlinedButton(
-                            onClick = {
-                                clipboard.setText(AnnotatedString(localhostAddress))
-                            },
+                            onClick = { clipboard.setText(AnnotatedString(localhostAddress)) },
+                            shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.weight(1f)
                         ) { Text("Chép 127.0.0.1:$port") }
                         OutlinedButton(
                             onClick = { vm.refreshLanIp(notifyOnChange = true) },
+                            shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.weight(1f)
                         ) { Text("🔄 Làm mới IP") }
                     }
                     OutlinedButton(
                         onClick = { vm.checkConnectionReachability() },
                         enabled = !connectionCheckRunning,
+                        shape = RoundedCornerShape(10.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(if (connectionCheckRunning) "⏳ Đang kiểm tra kết nối..." else "🩺 Kiểm tra kết nối thực tế (Localhost / LAN / Playit)")
@@ -369,7 +799,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                     connectionCheckStatus?.let { checkReport ->
                         Surface(
                             color = MaterialTheme.colorScheme.surfaceVariant,
-                            shape = MaterialTheme.shapes.small,
+                            shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(
@@ -379,39 +809,64 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             )
                         }
                     }
-                    TextButton(onClick = { navigate(SubPage.Network) }) {
-                        Text("Mở trang Quản lý Mạng & Playit.gg chi tiết →")
-                    }
                 }
             }
         }
-        item {
-            HostAction(
-                "Người chơi & Lịch sử tham gia",
-                "Xem ai đang trực tuyến, lịch sử từng người chơi đã vào server, cấp OP, Whitelist, Ban.",
-                Icons.Outlined.People
-            ) { navigate(SubPage.PlayerList) }
-        }
+
+        // ── 6. KHO 56 MOD GỐC (ĐÃ PHÂN 6 NHÓM & HỖ TRỢ ĐA PHIÊN BẢN) ──
         item {
             if (active?.core?.supportsMods == true) {
-                HostCard("📦 Bộ 56 Mod Gốc Của Bạn & Sửa Lỗi Server") {
+                HostCard(
+                    title = "Kho 56 Mod Gốc (Đã Phân 6 Nhóm & Đa Phiên Bản)",
+                    artKind = MinecraftArtKind.CHEST,
+                    badgeText = "56 Mod"
+                ) {
                     Text(
-                        "Đã tích hợp danh sách ĐỦ 56/56 Mod chính xác từ 5 ảnh chụp màn hình của bạn (Macaw's 12 bộ, Farmer's Delight + 5 addon, Furnish, 3D Placeable Food, Animal Garden, Tom's Mobs, Waystones, Simple Voice Chat, Lithium, C2ME, ServerCore, Sodium, Litematica...).",
+                        "Tích hợp đủ 56/56 Mod từ 5 ảnh chụp của bạn, đã phân loại thành 6 nhóm chức năng rõ ràng (hỗ trợ tải theo từng nhóm, tải lẻ từng mod hoặc tải đủ 56 mod cho nhiều phiên bản Minecraft):",
                         style = MaterialTheme.typography.bodySmall
                     )
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf(
+                            "⚡ Tối ưu & Chống Lag (14)",
+                            "🧱 Thư viện Lõi (11)",
+                            "🏠 Nội thất Macaw's & Xây dựng (14)",
+                            "🍳 Ẩm thực & Nông trại (8)",
+                            "🌿 Tiện ích & Voice Chat (6)",
+                            "🐾 Động vật & Sinh vật (3)"
+                        ).forEach { badge ->
+                            Surface(
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.clickable { navigate(SubPage.Plugins) }
+                            ) {
+                                Text(
+                                    badge,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                         Button(
                             onClick = { vm.installUserScreenshotModpackFromModrinth(cleanOtherMods = true) },
                             enabled = ready && !state.isRunning && !busy,
+                            shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text("⚡ Dọn Mod Lạ & Tải Đủ 56/56 Mod")
+                            Text("⚡ Dọn Lạ & Tải Đủ 56 Mod", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
                         }
                         OutlinedButton(
                             onClick = { navigate(SubPage.Plugins) },
+                            shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text("📦 Xem 56 Mod")
+                            Text("📦 Xem 6 Nhóm Mod", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -419,26 +874,15 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                 HostAction(
                     "Quản lý Plugin & Gói tài nguyên",
                     "Cài đặt, bật/tắt plugin và cấu hình Resource Pack cho server.",
-                    Icons.Outlined.Extension
+                    Icons.Outlined.Extension,
+                    artKind = MinecraftArtKind.CHEST
                 ) { navigate(SubPage.Plugins) }
             }
         }
+
+        // ── 7. TỐI ƯU RAM & HIỆU NĂNG THEO ĐIỆN THOẠI ──
         item {
-            HostAction(
-                "Đổi Tên, Ảnh đại diện (64×64) & Mô tả Server",
-                "Chọn biểu tượng Pixel-Art Minecraft hoặc ảnh trong máy làm server-icon.png.",
-                Icons.Outlined.Image
-            ) { navigate(SubPage.ServerIcon) }
-        }
-        item {
-            HostAction(
-                "Quản lý Thế giới (Nhập ZIP/Thư mục, Kiểm tra lỗi, Đổi tên)",
-                "Chuyển đổi, kiểm tra level.dat/region, nhập từ thư mục hoặc ZIP.",
-                Icons.Outlined.Public
-            ) { navigate(SubPage.WorldManage) }
-        }
-        item {
-            HostCard("Tối ưu theo điện thoại") {
+            HostCard("Tối ưu RAM & Hiệu năng theo điện thoại", artKind = MinecraftArtKind.REDSTONE) {
                 Text(device?.let { "RAM hệ thống: %.1f GB • %d luồng CPU".format(it.totalMb / 1024.0, it.processors) } ?: "Đang đọc cấu hình máy…")
                 Text(device?.let { "Gợi ý RAM server: " + it.recommendedHeapMb + " MB" } ?: "")
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -446,36 +890,34 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                     Switch(checked = config.autoHeap, onCheckedChange = vm::setAutoHeap, enabled = !state.isRunning && !busy)
                 }
                 if (!config.autoHeap) {
-                    Text("Đã lưu: " + config.maxHeapMb + " MB")
-                    Slider(value = heap, onValueChange = { heap = it },
-                        valueRange = 512f..heapLimit.toFloat(), steps = (heapLimit - 512) / 256 - 1,
+                    Text("Đã lưu: " + config.maxHeapMb + " MB", fontWeight = FontWeight.Bold)
+                    Slider(
+                        value = heap,
+                        onValueChange = { heap = it },
+                        valueRange = 512f..heapLimit.toFloat(),
+                        steps = (heapLimit - 512) / 256 - 1,
                         enabled = !state.isRunning && !busy,
-                        onValueChangeFinished = { vm.setMaxHeap((heap.toInt() / 256) * 256) })
+                        onValueChangeFinished = { vm.setMaxHeap((heap.toInt() / 256) * 256) }
+                    )
                 }
                 device?.let { profile ->
                     Text("Gợi ý: view " + profile.viewDistance + " • simulation " + profile.simulationDistance +
                         " • tối đa " + profile.maxPlayers + " người.")
                     OutlinedButton(onClick = { confirmTuning = true }, enabled = active != null && ready && !state.isRunning && !busy) {
-                        Text(if (applying) "Đang áp dụng…" else "Áp dụng cấu hình nhẹ")
+                        Text(if (applying) "Đang áp dụng…" else "⚡ Áp dụng cấu hình nhẹ chống lag")
                     }
                 }
-                TextButton(onClick = vm::refreshDeviceProfile) { Text("Đọc lại bộ nhớ") }
-                Text("RAM tự động chừa bộ nhớ cho Android và Java. Độ mượt còn phụ thuộc CPU, nhiệt độ, chunk và plugin/mod.", style = MaterialTheme.typography.bodySmall)
             }
         }
+
         item {
-            HostAction("Console trực tiếp", "Xem log thật và gửi lệnh Minecraft.", Icons.Outlined.Terminal, onConsole)
+            HostAction("Console trực tiếp & Gõ lệnh", "Xem log thời gian thực và gửi lệnh Minecraft (/op, /gamemode, /gamerule).", Icons.Outlined.Terminal, artKind = MinecraftArtKind.COMMAND_BLOCK, onClick = onConsole)
         }
         item {
-            HostAction("Danh sách server", "Chọn hoặc nhập server có sẵn. Một server chạy tại một thời điểm.", Icons.Outlined.Dns) { navigate(SubPage.ServerList) }
-        }
-        item {
-            HostAction("Sao lưu thế giới", "Tạo và khôi phục bản sao trước khi đổi mod/plugin.", Icons.Outlined.Backup) { navigate(SubPage.Backup) }
-        }
-        item {
-            Text("Giữ máy thoáng, theo dõi nhiệt độ. Android có thể dừng ứng dụng nền; không cam kết host 24/7.", style = MaterialTheme.typography.bodySmall)
+            HostAction("Sao lưu & Khôi phục Thế giới", "Tạo và khôi phục bản sao trước khi đổi mod/plugin.", Icons.Outlined.Backup, artKind = MinecraftArtKind.CHEST) { navigate(SubPage.Backup) }
         }
     }
+
     if (confirmTuning) AlertDialog(
         onDismissRequest = { confirmTuning = false },
         title = { Text("Áp dụng cho " + (active?.name ?: "server") + "?") },
@@ -488,54 +930,96 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
             onDismissRequest = { confirm = null },
             title = { Text(if (action == "restart") "Khởi động lại server?" else "Dừng server?") },
             text = { Text("Người chơi sẽ bị ngắt kết nối. MineHost gửi lệnh dừng và chờ server lưu dữ liệu trước.") },
-            confirmButton = { TextButton(onClick = {
-                confirm = null
-                if (action == "restart") vm.restartServer() else vm.stopServer()
-            }) { Text("Đồng ý") } },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirm = null
+                    if (action == "restart") vm.restartServer() else vm.stopServer()
+                }) { Text("Đồng ý") }
+            },
             dismissButton = { TextButton(onClick = { confirm = null }) { Text("Hủy") } }
         )
     }
 }
 
 @Composable
-private fun Metric(label: String, value: String, modifier: Modifier) {
-    Card(modifier) {
+private fun Metric(
+    label: String,
+    value: String,
+    artKind: MinecraftArtKind,
+    modifier: Modifier,
+    onClick: () -> Unit = {}
+) {
+    Card(
+        onClick = onClick,
+        modifier = modifier,
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.28f))
+    ) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text(label, style = MaterialTheme.typography.labelSmall)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
+                MinecraftPixelArtIcon(kind = artKind, size = 20.dp)
+            }
+            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
 
 @Composable
 fun MineHostLibrary(navigate: (SubPage) -> Unit) {
-    HostPage("Kho cài đặt", "Chọn đúng core, phiên bản Minecraft và loại add-on.") {
+    HostPage("Kho cài đặt Minecraft", "Tạo thêm server mới đa phiên bản, tải bộ 56 Mod phân loại & cài Java.") {
         item {
-            HostAction("Core Minecraft", "Paper cho plugin; Fabric cho mod. Không trộn tùy tiện hai loại.", Icons.Outlined.Dns) { navigate(SubPage.Cores) }
+            HostAction(
+                "➕ Tạo Server Mới / Tải Core Minecraft (Đa Phiên Bản)",
+                "Tạo thêm server Fabric, Paper, NeoForge, Forge (1.21.11, 1.21.1, 1.20.1, 1.16.5...).",
+                Icons.Outlined.Dns,
+                artKind = MinecraftArtKind.COMMAND_BLOCK
+            ) { navigate(SubPage.Cores) }
         }
         item {
-            HostAction("Plugin & mod", "Tìm trên Modrinth, nhập JAR hoặc quản lý mục đã cài.", Icons.Outlined.Extension) { navigate(SubPage.Plugins) }
+            HostAction(
+                "📦 Kho 56 Mod Gốc (6 Nhóm) & Modrinth / Plugin",
+                "Cài trọn bộ 56 Mod, cài theo từng nhóm (Tối ưu, Nội thất, Ẩm thực...) hoặc cài lẻ từng Mod.",
+                Icons.Outlined.Extension,
+                artKind = MinecraftArtKind.CHEST
+            ) { navigate(SubPage.Plugins) }
         }
         item {
-            HostAction("Java + Bedrock cùng chơi", "Hướng dẫn Geyser / Floodgate cho server Paper.", Icons.Outlined.Devices) { navigate(SubPage.Crossplay) }
+            HostAction(
+                "🖥️ Danh sách & Chuyển đổi các Server đã tạo",
+                "Quản lý nhiều server, chuyển đổi server đang dùng hoặc đổi tên hiển thị.",
+                Icons.Outlined.Storage,
+                artKind = MinecraftArtKind.GRASS
+            ) { navigate(SubPage.ServerList) }
         }
         item {
-            HostAction("Môi trường Java", "Cài Java phù hợp với core và phiên bản game.", Icons.Outlined.Memory) { navigate(SubPage.EnvManager) }
+            HostAction(
+                "☕ Môi trường Java (Java 8 / 17 / 21 / 25)",
+                "Cài đặt và chuyển đổi phiên bản Java tương thích với từng phiên bản Minecraft.",
+                Icons.Outlined.Memory,
+                artKind = MinecraftArtKind.REDSTONE
+            ) { navigate(SubPage.EnvManager) }
         }
         item {
-            HostCard("Cài mod như thế nào?") {
-                Text("1. Tạo/chọn server Fabric, Forge, NeoForge hoặc Quilt.\n2. Dừng server, sao lưu world.\n3. Mở Plugin & mod, chọn đúng phiên bản + loader và cài JAR server.\n4. Cài thêm dependency được tác giả yêu cầu.\n5. Bật server, đọc log. Mod yêu cầu ở client phải được bạn bè cài cùng phiên bản.")
-                Text("Dependency chưa được tự động giải quyết; luôn kiểm tra trang dự án. Nếu có dependency bắt buộc, bản thử nghiệm yêu cầu tải bộ JAR tương thích từ trang dự án và nhập thủ công.", style = MaterialTheme.typography.bodySmall)
-            }
+            HostAction(
+                "🎮 Java + Bedrock cùng chơi (Geyser / Floodgate)",
+                "Hướng dẫn kết nối cả máy tính Java và điện thoại Bedrock/PE vào chung 1 server.",
+                Icons.Outlined.Devices,
+                artKind = MinecraftArtKind.DIAMOND_SWORD
+            ) { navigate(SubPage.Crossplay) }
         }
         item {
-            HostCard("OptiFine có không?") {
-                Text("OptiFine, shader và mod chỉ dành cho client không cài vào server. Cài chúng ở máy chơi Minecraft Java. Paper dùng plugin; Fabric có thể dùng mod tối ưu phía server tương thích.")
-            }
-        }
-        item {
-            HostCard("Trước khi cài JAR") {
-                Text("Plugin/mod là mã thực thi, có thể đọc hoặc thay đổi dữ liệu server. Chỉ cài từ nguồn tin cậy; kiểm tra JAR không thay thế quét mã độc. Luôn sao lưu.")
+            HostCard("💡 Hướng dẫn chọn Phiên bản & Gói Mod nhẹ mượt", artKind = MinecraftArtKind.GOLDEN_APPLE) {
+                Text(
+                    "• Muốn chơi đủ 56 Mod từ ảnh chụp của bạn: Chọn Fabric (1.21.11, 1.21.1 hoặc 1.20.1) → Mở 'Kho 56 Mod Gốc' để cài trọn bộ hoặc cài từng nhóm.\n" +
+                        "• Muốn máy yếu vẫn siêu mượt: Trong 'Kho 56 Mod', chọn nhóm '⚡ Tối ưu & Chống Lag (14 Mod)' để cài riêng bộ tối ưu RAM & TPS (Lithium, FerriteCore, C2ME, ServerCore, ModernFix, Krypton...).\n" +
+                        "• Muốn chơi Sinh tồn thuần + Plugin: Chọn Paper."
+                )
             }
         }
     }
@@ -544,51 +1028,117 @@ fun MineHostLibrary(navigate: (SubPage) -> Unit) {
 @Composable
 fun MineHostManage(navigate: (SubPage) -> Unit) {
     val uri = LocalUriHandler.current
-    HostPage("Quản lý", "Mọi thứ của server, tập trung ở một nơi.") {
+    HostPage("Trung tâm Quản lý Server", "Quản lý đa server, thế giới, người chơi, biểu tượng 64×64 và luật chơi.") {
         item {
-            HostAction("Server & cấu hình", "Danh sách server, RAM, Java và core đang chọn.", Icons.Outlined.Dns) { navigate(SubPage.ServerList) }
+            HostAction(
+                "🖥️ Danh sách Server, Tạo thêm SV & Chỉnh nhanh",
+                "Chuyển đổi giữa các server, tạo thêm server mới, bật Cracked & chỉnh Tầm nhìn Chunk.",
+                Icons.Outlined.Dns,
+                artKind = MinecraftArtKind.COMMAND_BLOCK
+            ) { navigate(SubPage.ServerList) }
         }
         item {
-            HostAction("Đổi Tên, Ảnh đại diện (64×64) & Mô tả MOTD", "Chọn biểu tượng Pixel-Art Minecraft hoặc ảnh trong máy làm server-icon.png.", Icons.Outlined.Image) { navigate(SubPage.ServerIcon) }
+            HostAction(
+                "➕ Tạo Thêm Server Mới (Chọn Core & Phiên bản)",
+                "Tải thêm server Fabric, Paper, Forge, NeoForge ở bất kỳ phiên bản Minecraft nào.",
+                Icons.Outlined.AddCircleOutline,
+                artKind = MinecraftArtKind.CREEPER
+            ) { navigate(SubPage.Cores) }
         }
         item {
-            HostAction("Người chơi & Lịch sử tham gia", "Trực tuyến, lịch sử từng người chơi, Whitelist, OP, kick và ban.", Icons.Outlined.People) { navigate(SubPage.PlayerList) }
+            HostAction(
+                "📦 Kho 56 Mod (Phân 6 Nhóm) & Quản lý Plugin",
+                "Cài đặt theo nhóm, cài lẻ từng Mod, giải mã thư mục/ZIP mod hoặc xuất gói Mod.",
+                Icons.Outlined.Extension,
+                artKind = MinecraftArtKind.CHEST
+            ) { navigate(SubPage.Plugins) }
         }
         item {
-            HostAction("Luật chơi & Lệnh quản trị", "Difficulty, gamemode, PvP, gamerule và server.properties.", Icons.Outlined.Tune) { navigate(SubPage.Properties) }
+            HostAction(
+                "🎨 Đổi Tên, Ảnh đại diện (64×64) & Mô tả MOTD",
+                "Chọn biểu tượng Pixel-Art Minecraft hoặc ảnh trong máy làm server-icon.png.",
+                Icons.Outlined.Image,
+                artKind = MinecraftArtKind.GOLDEN_APPLE
+            ) { navigate(SubPage.ServerIcon) }
         }
         item {
-            HostAction("Nhập thế giới (ZIP / Thư mục / Map Mod)", "Nhập từ ZIP hoặc thư mục giải nén kèm tự động cài mod.", Icons.Outlined.FileUpload) { navigate(SubPage.WorldImport) }
+            HostAction(
+                "👥 Người chơi & Lịch sử tham gia",
+                "Xem ai đang trực tuyến, lịch sử từng người chơi, Whitelist, OP, kick và ban.",
+                Icons.Outlined.People,
+                artKind = MinecraftArtKind.DIAMOND_SWORD
+            ) { navigate(SubPage.PlayerList) }
         }
         item {
-            HostAction("Thế giới (World)", "Kiểm tra thế giới, đổi tên, xuất ZIP, chọn và đặt lại world.", Icons.Outlined.Public) { navigate(SubPage.WorldManage) }
+            HostAction(
+                "🌍 Thế giới (World) & Nhập Map ZIP / Thư mục",
+                "Kiểm tra thế giới, nhập từ ZIP/thư mục kèm tự động cài mod, đổi tên và xuất ZIP.",
+                Icons.Outlined.Public,
+                artKind = MinecraftArtKind.GRASS
+            ) { navigate(SubPage.WorldManage) }
         }
         item {
-            HostAction("Sao lưu & khôi phục", "Bảo vệ world trước khi nâng cấp.", Icons.Outlined.Backup) { navigate(SubPage.Backup) }
+            HostAction(
+                "🔮 Luật chơi & Cấu hình server.properties",
+                "Difficulty, gamemode, PvP, gamerule và toàn bộ thông số server.properties.",
+                Icons.Outlined.Tune,
+                artKind = MinecraftArtKind.ENDER_EYE
+            ) { navigate(SubPage.Properties) }
         }
         item {
-            HostAction("Kết nối bạn bè (LAN & Playit.gg)", "Địa chỉ tự động cập nhật khi đổi mạng, kiểm tra kết nối thực tế.", Icons.Outlined.Lan) { navigate(SubPage.Network) }
+            HostAction(
+                "💾 Sao lưu & Khôi phục",
+                "Bảo vệ thế giới trước khi nâng cấp hoặc thêm mod mới.",
+                Icons.Outlined.Backup,
+                artKind = MinecraftArtKind.CHEST
+            ) { navigate(SubPage.Backup) }
         }
         item {
-            HostAction("Lịch tự động", "Tự động sao lưu hoặc khởi động lại theo lịch.", Icons.Outlined.Schedule) { navigate(SubPage.Automation) }
+            HostAction(
+                "🌐 Kết nối bạn bè (LAN & Playit.gg)",
+                "Địa chỉ tự động cập nhật khi đổi mạng, kiểm tra kết nối thực tế.",
+                Icons.Outlined.Lan,
+                artKind = MinecraftArtKind.ENDER_EYE
+            ) { navigate(SubPage.Network) }
         }
         item {
-            HostAction("Chạy nền & pin", "Thông báo foreground, giữ Wi-Fi và tiết kiệm pin.", Icons.Outlined.BatteryChargingFull) { navigate(SubPage.KeepAlive) }
+            HostAction(
+                "🩺 Chẩn đoán & Tự sửa lỗi",
+                "Kiểm tra môi trường, cổng mạng, Java và lỗi khởi động bằng tiếng Việt.",
+                Icons.Outlined.HealthAndSafety,
+                artKind = MinecraftArtKind.REDSTONE
+            ) { navigate(SubPage.Diagnostics) }
         }
         item {
-            HostAction("Chẩn đoán & Tự sửa lỗi", "Kiểm tra môi trường, cổng mạng, Java và lỗi khởi động bằng tiếng Việt.", Icons.Outlined.HealthAndSafety) { navigate(SubPage.Diagnostics) }
+            HostAction(
+                "⏰ Lịch tự động & Chạy nền",
+                "Tự động sao lưu/khởi động lại theo lịch và giữ ứng dụng chạy nền ổn định.",
+                Icons.Outlined.Schedule,
+                artKind = MinecraftArtKind.REDSTONE
+            ) { navigate(SubPage.Automation) }
         }
         item {
-            HostAction("Báo cáo crash", "Xem nguyên nhân dễ hiểu và log lần chạy trước.", Icons.Outlined.BugReport) { navigate(SubPage.CrashReports) }
+            HostAction(
+                "🐞 Báo cáo Crash & Log lỗi",
+                "Phân tích nguyên nhân crash bằng tiếng Việt và gợi ý cách khắc phục.",
+                Icons.Outlined.BugReport,
+                artKind = MinecraftArtKind.CREEPER
+            ) { navigate(SubPage.CrashReports) }
         }
         item {
-            HostAction("Cài đặt nâng cao", "Tùy chỉnh thông báo sự kiện, giao diện và hệ thống MineHost.", Icons.Outlined.Settings) { navigate(SubPage.AppSettings) }
+            HostAction(
+                "⚙️ Cài đặt nâng cao",
+                "Tùy chỉnh thông báo sự kiện, giao diện và hệ thống MineHost.",
+                Icons.Outlined.Settings,
+                artKind = MinecraftArtKind.COMMAND_BLOCK
+            ) { navigate(SubPage.AppSettings) }
         }
         item {
-            HostCard("MineHost • bản thử nghiệm") {
-                Text("Dựa trên Minexa (GPL-3.0-or-later), tùy biến giao diện và quy tắc an toàn. Chưa xác minh chạy Minecraft trên điện thoại của bạn.")
-                TextButton(onClick = { uri.openUri("https://github.com/duchilocket-oss/minehost-android") }) { Text("Mã nguồn & bản build trên GitHub") }
-                Text("Repo riêng tư cần đăng nhập trong trình duyệt. Không nhúng tài khoản GitHub vào APK.", style = MaterialTheme.typography.bodySmall)
+            HostCard("MineHost • Minecraft Server Mobile", artKind = MinecraftArtKind.CREEPER) {
+                Text("Dựa trên Minexa (GPL-3.0-or-later), nâng cấp giao diện Minecraft Pixel-Art, Việt hóa toàn diện và tích hợp Kho 56 Mod đa phiên bản.")
+                TextButton(onClick = { uri.openUri("https://github.com/duchilocket-oss/minehost-android") }) {
+                    Text("Mã nguồn & bản build trên GitHub")
+                }
             }
         }
     }
@@ -602,18 +1152,18 @@ fun MineHostCrossplay(onBack: () -> Unit) {
             TextButton(onClick = onBack) { Text("← Quay lại") }
         }
         item {
-            HostCard("1. Chuẩn bị server Paper") {
+            HostCard("1. Chuẩn bị server Paper", artKind = MinecraftArtKind.COMMAND_BLOCK) {
                 Text("Cài Paper và Java đúng yêu cầu, bật thử server, sau đó dừng và sao lưu. Chọn bản Geyser/Floodgate hỗ trợ phiên bản server; đừng mặc định bản mới nhất sẽ tương thích.")
             }
         }
         item {
-            HostCard("2. Tải plugin chính thức") {
+            HostCard("2. Tải plugin chính thức", artKind = MinecraftArtKind.CHEST) {
                 Text("Tải Geyser-Spigot.jar và floodgate-spigot.jar chính thức. Vào Kho cài đặt → Plugin & mod → nhập JAR. Không dùng bản proxy/Fabric với Paper.")
                 TextButton(onClick = { uri.openUri("https://geysermc.org/download") }) { Text("Mở trang tải Geyser / Floodgate") }
             }
         }
         item {
-            HostCard("3. Cấu hình và kiểm tra") {
+            HostCard("3. Cấu hình và kiểm tra", artKind = MinecraftArtKind.REDSTONE) {
                 Text("Bật một lần để tạo cấu hình, rồi dừng. Theo tài liệu hiện hành để đặt auth-type: floodgate ở đúng mục trong cấu hình Geyser. Giữ online-mode=true cho Java; không công khai key.pem của Floodgate.")
                 Text("Bedrock thường dùng UDP 19132. Kiểm tra cả yêu cầu TCP/UDP và NetherNet theo tài liệu hiện hành. Tunnel chỉ có TCP có thể không đủ.", style = MaterialTheme.typography.bodySmall)
                 TextButton(onClick = { uri.openUri("https://geysermc.org/wiki/geyser/setup/") }) { Text("Hướng dẫn Geyser chính thức") }
@@ -621,10 +1171,9 @@ fun MineHostCrossplay(onBack: () -> Unit) {
             }
         }
         item {
-            HostCard("4. Mời bạn bè") {
+            HostCard("4. Mời bạn bè", artKind = MinecraftArtKind.ENDER_EYE) {
                 Text("Java dùng địa chỉ Java của server. Bedrock dùng địa chỉ/cổng Bedrock trong cấu hình. Thử cùng Wi-Fi trước, rồi thiết lập truy cập Internet. Mod cần client Java riêng không được tự động chuyển đổi.")
             }
         }
     }
 }
-

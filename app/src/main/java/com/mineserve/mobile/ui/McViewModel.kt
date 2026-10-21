@@ -3537,11 +3537,21 @@ class McViewModel(
     fun userScreenshot56ModItems(): List<PluginManager.UserScreenshotModItem> =
         pluginManager.USER_SCREENSHOT_56_MOD_ITEMS
 
+    fun modPackCategoryGroups(): List<String> =
+        pluginManager.MOD_PACK_CATEGORY_GROUPS
+
+    fun multiVersionPresets(): List<String> =
+        pluginManager.MULTI_VERSION_PRESETS
+
+    fun currentServerVersionForUi(): String =
+        currentServerVersion().ifBlank { "1.21.11" }
+
     /**
      * Tải tự động trọn bộ ĐỦ 56 MOD CHÍNH XÁC từ 5 ảnh chụp màn hình `.minecraft/mods` của bạn
-     * tương thích với phiên bản Minecraft của server hiện tại từ Modrinth, đồng thời dọn các mod lạ gây lỗi server.
+     * tương thích với phiên bản Minecraft của server hiện tại (hoặc phiên bản tùy chọn) từ Modrinth,
+     * đồng thời dọn các mod lạ gây lỗi server.
      */
-    fun installUserScreenshotModpackFromModrinth(cleanOtherMods: Boolean = false) {
+    fun installUserScreenshotModpackFromModrinth(cleanOtherMods: Boolean = false, customMcVersion: String = "") {
         if (!requireServerStopped("tải gói 56 mod tự động")) return
         val activeInstalled = config.value.installedCores.firstOrNull { it.name == config.value.activeCoreName }
         val targetCore = activeInstalled?.core
@@ -3554,7 +3564,7 @@ class McViewModel(
             return
         }
         val loader = modrinthLoader(targetCore)
-        val mcVer = currentServerVersion().ifBlank { "1.21.11" }
+        val mcVer = customMcVersion.trim().ifBlank { currentServerVersion().ifBlank { "1.21.11" } }
         val items = pluginManager.USER_SCREENSHOT_56_MOD_ITEMS
 
         viewModelScope.launch {
@@ -3595,17 +3605,146 @@ class McViewModel(
                 refreshWorldModCount()
                 _lastModImportReport.value = buildString {
                     appendLine("✅ Đã cài đặt hoàn tất Bộ ${installed.size}/${items.size} Mod gốc từ 5 ảnh chụp của bạn ($loader $mcVer)!")
-                    appendLine("• Đã tải & bật đầy đủ: ${installed.size} tệp .jar trong thư mục mods/ (Macaw's 12 bộ, Farmer's Delight + 5 bản mở rộng, Furnish, 3D Placeable Food, Animal Garden, Tom's Mobs, Waystones, Simple Voice Chat, Lithium, FerriteCore, C2ME, ServerCore, Sodium, Litematica...).")
+                    appendLine("• Đã tải & bật đầy đủ: ${installed.size} tệp .jar trong thư mục mods/ (6 nhóm phân loại: Tối ưu, Thư viện Lõi, Macaw's & Xây dựng, Ẩm thực, Tiện ích & Voice, Động vật).")
                     if (cleanedLegacyCount > 0) {
                         appendLine("• Đã tự động dọn sạch $cleanedLegacyCount tệp mod lạ/xung đột từ lần cài trước để khắc phục lỗi server.")
                     }
                     if (skipped.isNotEmpty()) {
-                        appendLine("• Có ${skipped.size} mod chưa tìm thấy cho $mcVer: ${skipped.take(6).joinToString(", ")}.")
+                        appendLine("• Có ${skipped.size} mod chưa phát hành cho $mcVer: ${skipped.take(6).joinToString(", ")}.")
                     }
                 }.trim()
-                _messageFlow.tryEmit("🎉 Đã cài xong ${installed.size}/${items.size} mod gốc vào server!")
+                _messageFlow.tryEmit("🎉 Đã cài xong ${installed.size}/${items.size} mod gốc ($mcVer) vào server!")
             } catch (e: Exception) {
                 _errorFlow.tryEmit("Lỗi khi tải bộ 56 mod: ${e.message}")
+            } finally {
+                _modBatchProgress.value = null
+            }
+        }
+    }
+
+    /**
+     * Cài đặt nhanh theo từng Nhóm Phân Loại trong 56 Mod (ví dụ: chỉ cài Nhóm Tối ưu 14 Mod,
+     * hoặc cài Nhóm Ẩm thực + tự động kèm Thư viện Lõi để không bao giờ thiếu dependency).
+     */
+    fun installUserScreenshotModCategory(
+        categoryGroup: String,
+        includeCoreLibs: Boolean = true,
+        customMcVersion: String = ""
+    ) {
+        if (!requireServerStopped("cài nhóm mod $categoryGroup")) return
+        val activeInstalled = config.value.installedCores.firstOrNull { it.name == config.value.activeCoreName }
+        val targetCore = activeInstalled?.core
+        if (targetCore == null || !targetCore.supportsMods || targetCore.isBedrock) {
+            _errorFlow.tryEmit("Hãy chọn server chạy Fabric / Forge / NeoForge / Quilt trước khi cài nhóm mod này.")
+            return
+        }
+        val dirName = activeDirName() ?: run {
+            _errorFlow.tryEmit(str(R.string.s212))
+            return
+        }
+        val loader = modrinthLoader(targetCore)
+        val mcVer = customMcVersion.trim().ifBlank { currentServerVersion().ifBlank { "1.21.11" } }
+        val coreGroup = "🧱 Thư viện Lõi"
+        val items = pluginManager.USER_SCREENSHOT_56_MOD_ITEMS.filter {
+            it.categoryGroup == categoryGroup || (includeCoreLibs && categoryGroup != coreGroup && it.categoryGroup == coreGroup)
+        }.distinctBy { it.slug }
+
+        viewModelScope.launch {
+            _modBatchProgress.value = "Đang tải nhóm '$categoryGroup' (${items.size} mod) cho $loader $mcVer..."
+            val installed = java.util.Collections.synchronizedList(mutableListOf<String>())
+            val skipped = java.util.Collections.synchronizedList(mutableListOf<String>())
+            try {
+                withContext(Dispatchers.IO) {
+                    val semaphore = kotlinx.coroutines.sync.Semaphore(4)
+                    val doneCounter = java.util.concurrent.atomic.AtomicInteger(0)
+                    kotlinx.coroutines.coroutineScope {
+                        items.map { item ->
+                            launch(Dispatchers.IO) {
+                                semaphore.acquire()
+                                try {
+                                    val resolved = pluginManager.resolveSingleModrinthSlug(item.slug, mcVer, loader)
+                                    if (resolved == null) {
+                                        skipped += item.title
+                                    } else {
+                                        val (url, fileName) = resolved
+                                        pluginManager.installModPackJarFromUrl(url, fileName, dirName)
+                                        installed += fileName
+                                    }
+                                } catch (e: Exception) {
+                                    skipped += item.title
+                                } finally {
+                                    val done = doneCounter.incrementAndGet()
+                                    _modBatchProgress.value = "Đang cài nhóm $categoryGroup ($done/${items.size}): ${item.title} ($mcVer)..."
+                                    semaphore.release()
+                                }
+                            }
+                        }.forEach { it.join() }
+                    }
+                }
+                refreshMods()
+                refreshWorldModCount()
+                _lastModImportReport.value = buildString {
+                    appendLine("✅ Đã cài đặt xong nhóm [$categoryGroup] (${installed.size}/${items.size} mod) cho $loader $mcVer!")
+                    if (includeCoreLibs && categoryGroup != coreGroup) {
+                        appendLine("• Đã tự động kiểm tra và cài kèm bộ Thư viện Lõi (Fabric API, Balm, Architectury, Cloth Config, Puzzles Lib...) để tránh lỗi thiếu thư viện.")
+                    }
+                    if (skipped.isNotEmpty()) {
+                        appendLine("• Chưa có bản phát hành trên $mcVer cho: ${skipped.take(5).joinToString(", ")}.")
+                    }
+                }.trim()
+                _messageFlow.tryEmit("✅ Đã cài ${installed.size}/${items.size} mod thuộc nhóm $categoryGroup ($mcVer)!")
+            } catch (e: Exception) {
+                _errorFlow.tryEmit("Lỗi khi cài nhóm mod $categoryGroup: ${e.message}")
+            } finally {
+                _modBatchProgress.value = null
+            }
+        }
+    }
+
+    /**
+     * Cài đặt lẻ 1 Mod bất kỳ từ Danh mục 56 Mod Phổ Biến & Nhẹ (tự động tải kèm thư viện phụ thuộc bắt buộc).
+     */
+    fun installSingleCatalogMod(item: PluginManager.UserScreenshotModItem, customMcVersion: String = "") {
+        if (!requireServerStopped("cài mod ${item.title}")) return
+        val activeInstalled = config.value.installedCores.firstOrNull { it.name == config.value.activeCoreName }
+        val targetCore = activeInstalled?.core
+        if (targetCore == null || !targetCore.supportsMods || targetCore.isBedrock) {
+            _errorFlow.tryEmit("Hãy chọn server chạy Fabric / Forge / NeoForge / Quilt trước khi cài mod.")
+            return
+        }
+        val dirName = activeDirName() ?: run {
+            _errorFlow.tryEmit(str(R.string.s212))
+            return
+        }
+        val loader = modrinthLoader(targetCore)
+        val mcVer = customMcVersion.trim().ifBlank { currentServerVersion().ifBlank { "1.21.11" } }
+
+        viewModelScope.launch {
+            _modBatchProgress.value = "Đang tìm & tải ${item.title} (kèm thư viện cần thiết) cho $loader $mcVer..."
+            try {
+                val installedFiles = withContext(Dispatchers.IO) {
+                    val withDeps = pluginManager.resolveModrinthDownloadWithDeps(item.slug, mcVer, loader)
+                    val targets = if (withDeps.isNotEmpty()) {
+                        withDeps
+                    } else {
+                        val single = pluginManager.resolveSingleModrinthSlug(item.slug, mcVer, loader)
+                        if (single != null) listOf(single) else emptyList()
+                    }
+                    check(targets.isNotEmpty()) {
+                        "Mod '${item.title}' hiện chưa có bản phát hành tương thích với $loader $mcVer trên Modrinth."
+                    }
+                    targets.mapIndexed { idx, (url, fileName) ->
+                        _modBatchProgress.value = "Đang tải (${idx + 1}/${targets.size}): $fileName..."
+                        pluginManager.installModPackJarFromUrl(url, fileName, dirName)
+                        fileName
+                    }
+                }
+                refreshMods()
+                refreshWorldModCount()
+                val depNote = if (installedFiles.size > 1) " (đã tự cài kèm ${installedFiles.size - 1} thư viện lõi)" else ""
+                _messageFlow.tryEmit("✅ Đã cài đặt ${item.title} cho $mcVer$depNote!")
+            } catch (e: Exception) {
+                _errorFlow.tryEmit("Không thể cài ${item.title}: ${e.message}")
             } finally {
                 _modBatchProgress.value = null
             }

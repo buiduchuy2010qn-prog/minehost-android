@@ -1438,11 +1438,29 @@ class PluginManager(
         val slug: String,
         val title: String,
         val originalJarName: String,
-        val category: String
+        val category: String,
+        val categoryGroup: String = "",
+        val descVi: String = "",
+        val scopeVi: String = "👥 Server + Client",
+        val weightVi: String = "🔵 Nhẹ"
+    )
+
+    val MOD_PACK_CATEGORY_GROUPS: List<String> = listOf(
+        "⚡ Tối ưu & Chống Lag",
+        "🧱 Thư viện Lõi",
+        "🏠 Nội thất Macaw's & Xây dựng",
+        "🍳 Ẩm thực & Nông trại",
+        "🌿 Tiện ích & Voice Chat",
+        "🐾 Động vật & Sinh vật"
+    )
+
+    val MULTI_VERSION_PRESETS: List<String> = listOf(
+        "1.21.11", "1.21.4", "1.21.1", "1.20.4", "1.20.1", "1.19.2", "1.18.2", "1.16.5"
     )
 
     /**
-     * Danh sách ĐỦ 56 MOD CHÍNH XÁC 100% từ 5 ảnh chụp màn hình `.minecraft/mods` (Fabric 1.21.11) của người dùng:
+     * Danh sách ĐỦ 56 MOD CHÍNH XÁC 100% từ 5 ảnh chụp màn hình `.minecraft/mods` của người dùng,
+     * được phân loại rõ ràng thành 6 nhóm chức năng kèm giải thích tiếng Việt, nhãn độ nhẹ RAM và yêu cầu Server/Client:
      * - Ảnh 1 (1..13): 3d-placeable-food -> cratedelight
      * - Ảnh 2 (14..26): debugify -> malilib
      * - Ảnh 3 (27..39): mcw-bridges -> modernfix
@@ -1450,62 +1468,62 @@ class PluginManager(
      * - Ảnh 5 (53..56): ubesdelight -> yet_another_config_lib_v3
      */
     val USER_SCREENSHOT_56_MOD_ITEMS: List<UserScreenshotModItem> = listOf(
-        UserScreenshotModItem(1, "3d-placeable-food", "3D Placeable Food", "3d-placeable-food-3.0.1-fabric-1.21.11.jar", "Ẩm thực & Trang trí"),
-        UserScreenshotModItem(2, "alternate-current", "Alternate Current", "alternate-current-mc1.21.11-1.9.0.jar", "Tối ưu Server"),
-        UserScreenshotModItem(3, "animal-garden-manatee", "Animal Garden - Manatee", "animalgarden_manatee-1.0.0-fabric-1.21.11-0.140.0.jar", "Sinh vật mới"),
-        UserScreenshotModItem(4, "animal-garden-mouse", "Animal Garden - Mouse", "animalgarden_mouse-1.0.5-fabric-1.21.11-0.140.0.jar", "Sinh vật mới"),
-        UserScreenshotModItem(5, "appleskin", "AppleSkin", "appleskin-fabric-mc1.21.11-3.0.8.jar", "Tiện ích Sinh tồn"),
-        UserScreenshotModItem(6, "architectury-api", "Architectury API", "architectury-19.0.1-fabric.jar", "Thư viện nền"),
-        UserScreenshotModItem(7, "balm", "Balm", "balm-fabric-1.21.11-21.11.9.jar", "Thư viện nền"),
-        UserScreenshotModItem(8, "c2me-fabric", "C2ME (Fabric)", "c2me-fabric-mc1.21.11-0.3.7+alpha.0.10.jar", "Tối ưu Đa luồng Chunk"),
-        UserScreenshotModItem(9, "chefs-delight", "Chef's Delight", "chefs-delight-1.0.5-fabric-1.21.11.jar", "Ẩm thực & Dân làng"),
-        UserScreenshotModItem(10, "chunky", "Chunky", "Chunky-Fabric-1.4.55.jar", "Tối ưu & Tạo sẵn Chunk"),
-        UserScreenshotModItem(11, "cloth-config", "Cloth Config API", "cloth-config-21.11.153-fabric.jar", "Thư viện nền"),
-        UserScreenshotModItem(12, "cooking-for-blockheads", "Cooking for Blockheads", "cookingforblockheads-fabric-1.21.11-21.11.6.jar", "Ẩm thực & Nhà bếp"),
-        UserScreenshotModItem(13, "crate-delight", "Crate Delight", "cratedelight-25.09.22-1.21.7-fabric.jar", "Ẩm thực & Lưu trữ"),
-        UserScreenshotModItem(14, "debugify", "Debugify", "debugify-1.21.11+1.1.jar", "Sửa lỗi Vanilla"),
-        UserScreenshotModItem(15, "emotecraft", "Emotecraft", "emotecraft-fabric-for-MC1.21.11-3.2.0-b.build.149.jar", "Biểu cảm nhân vật"),
-        UserScreenshotModItem(16, "entityculling", "Entity Culling", "entityculling-fabric-1.10.2-mc1.21.11.jar", "Tối ưu Thực thể"),
-        UserScreenshotModItem(17, "fabric-api", "Fabric API", "fabric-api-0.141.4+1.21.11.jar", "Thư viện nền"),
-        UserScreenshotModItem(18, "farmers-delight-refabricated", "Farmer's Delight Refabricated", "FarmersDelight-1.21.11-3.4.9+refabricated.jar", "Ẩm thực & Nông trại"),
-        UserScreenshotModItem(19, "ferrite-core", "FerriteCore", "ferritecore-8.2.0-fabric.jar", "Giảm RAM Server"),
-        UserScreenshotModItem(20, "forge-config-api-port", "Forge Config API Port", "ForgeConfigAPIPort-v21.11.1-mc1.21.11-Fabric.jar", "Thư viện nền"),
-        UserScreenshotModItem(21, "furnish-furniture", "Furnish", "furnish-31.jar", "Nội thất & Trang trí"),
-        UserScreenshotModItem(22, "jamlib", "JamLib", "jamlib-fabric-2.0.0+1.21.11.jar", "Thư viện nền"),
-        UserScreenshotModItem(23, "ksyxis", "Ksyxis", "Ksyxis-1.4.3.jar", "Tăng tốc tải World"),
-        UserScreenshotModItem(24, "litematica", "Litematica", "litematica-fabric-1.21.11-0.26.8.jar", "Sơ đồ Xây dựng"),
-        UserScreenshotModItem(25, "lithium", "Lithium", "lithium-fabric-0.21.4+mc1.21.11.jar", "Tối ưu Tick Server"),
-        UserScreenshotModItem(26, "malilib", "MaLiLib", "malilib-fabric-1.21.11-0.27.7.jar", "Thư viện nền"),
-        UserScreenshotModItem(27, "macaws-bridges", "Macaw's Bridges", "mcw-bridges-3.1.2-mc1.21.11fabric.jar", "Kiến trúc Macaw's"),
-        UserScreenshotModItem(28, "macaws-doors", "Macaw's Doors", "mcw-doors-1.1.5-mc1.21.11fabric.jar", "Kiến trúc Macaw's"),
-        UserScreenshotModItem(29, "macaws-fences-and-walls", "Macaw's Fences and Walls", "mcw-fences-1.2.1-mc1.21.11fabric.jar", "Kiến trúc Macaw's"),
-        UserScreenshotModItem(30, "macaws-furniture", "Macaw's Furniture", "mcw-furniture-3.4.2-mc1.21.11fabric.jar", "Kiến trúc Macaw's"),
-        UserScreenshotModItem(31, "macaws-holidays", "Macaw's Holidays", "mcw-holidays-1.1.2-mc1.21.11fabric.jar", "Kiến trúc Macaw's"),
-        UserScreenshotModItem(32, "macaws-lights-and-lamps", "Macaw's Lights and Lamps", "mcw-lights-1.1.5-mc1.21.11fabric.jar", "Kiến trúc Macaw's"),
-        UserScreenshotModItem(33, "macaws-paintings", "Macaw's Paintings", "mcw-paintings-1.1.0-mc1.21.11fabric.jar", "Kiến trúc Macaw's"),
-        UserScreenshotModItem(34, "macaws-paths-and-pavings", "Macaw's Paths and Pavings", "mcw-paths-1.1.1-mc1.21.11fabric.jar", "Kiến trúc Macaw's"),
-        UserScreenshotModItem(35, "macaws-roofs", "Macaw's Roofs", "mcw-roofs-2.3.2-mc1.21.11fabric.jar", "Kiến trúc Macaw's"),
-        UserScreenshotModItem(36, "macaws-stairs", "Macaw's Stairs", "mcw-stairs-1.0.2-mc1.21.11fabric.jar", "Kiến trúc Macaw's"),
-        UserScreenshotModItem(37, "macaws-trapdoors", "Macaw's Trapdoors", "mcw-trapdoors-1.1.5-mc1.21.11fabric.jar", "Kiến trúc Macaw's"),
-        UserScreenshotModItem(38, "macaws-windows", "Macaw's Windows", "mcw-windows-2.4.2-mc1.21.11fabric.jar", "Kiến trúc Macaw's"),
-        UserScreenshotModItem(39, "modernfix-mvus", "ModernFix-mVUS", "modernfix-5.26.2-build.1.jar", "Tối ưu Hiệu năng & RAM"),
-        UserScreenshotModItem(40, "more-delight", "More Delight", "moredelight-25.12.10-1.21.11-fabric.jar", "Ẩm thực & Nông trại"),
-        UserScreenshotModItem(41, "noisiumforked", "NoisiumForked", "noisium-fabric-2.8.3+mc1.21.11.jar", "Tối ưu Tạo địa hình"),
-        UserScreenshotModItem(42, "player-animation-library", "Player Animation Library", "PlayerAnimationLibFabric-1.1.7+mc1.21.11.jar", "Thư viện nền"),
-        UserScreenshotModItem(43, "polymer", "Polymer", "polymer-bundled-0.15.2+1.21.11.jar", "Thư viện nền"),
-        UserScreenshotModItem(44, "puzzles-lib", "Puzzles Lib", "PuzzlesLib-v21.11.12-mc1.21.11-Fabric.jar", "Thư viện nền"),
-        UserScreenshotModItem(45, "quickleafdecay", "Quick Leaf Decay", "quickleafdecay-mc1.21.11-0.4.1.jar", "Tiện ích Sinh tồn"),
-        UserScreenshotModItem(46, "rightclickharvest", "RightClickHarvest", "rightclickharvest-fabric-4.6.1+1.21.11.jar", "Tiện ích Nông trại"),
-        UserScreenshotModItem(47, "rustic-delight", "Rustic Delight", "rusticdelight-fabric-1.21.11-1.5.4.jar", "Ẩm thực & Nông trại"),
-        UserScreenshotModItem(48, "servercore", "ServerCore", "servercore-fabric-1.5.15+1.21.11.jar", "Tối ưu TPS Server"),
-        UserScreenshotModItem(49, "sodium", "Sodium", "sodium-fabric-0.8.12+mc1.21.11.jar", "Tối ưu Đồ họa"),
-        UserScreenshotModItem(50, "shuttfup", "Stfu", "Stfu-2.9.1-1.21.11.jar", "Tối ưu Log & Mạng"),
-        UserScreenshotModItem(51, "threadtweak", "ThreadTweak", "threadtweak-fabric-0.1.8+mc1.21.11.jar", "Tối ưu Luồng CPU"),
-        UserScreenshotModItem(52, "toms-mobs", "Tom's Mobs", "toms_mobs-3.0.2+1.21.11.jar", "Sinh vật mới"),
-        UserScreenshotModItem(53, "ubes-delight", "Ube's Delight", "ubesdelight-fabric-1.21.11-0.4.11.jar", "Ẩm thực & Nông trại"),
-        UserScreenshotModItem(54, "simple-voice-chat", "Simple Voice Chat", "voicechat-fabric-1.21.11-2.6.18.jar", "Đàm thoại trong Game"),
-        UserScreenshotModItem(55, "waystones", "Waystones", "waystones-fabric-1.21.11-21.11.9.jar", "Cột Dịch chuyển"),
-        UserScreenshotModItem(56, "yacl", "YetAnotherConfigLib (YACL)", "yet_another_config_lib_v3-3.8.2+1.21.11-fabric.jar", "Thư viện nền")
+        UserScreenshotModItem(1, "3d-placeable-food", "3D Placeable Food", "3d-placeable-food-3.0.1-fabric-1.21.11.jar", "Ẩm thực & Trang trí", "🍳 Ẩm thực & Nông trại", "Đặt trực tiếp đồ ăn, bánh ngọt, đĩa thức ăn dạng 3D lên bàn tiệc.", "👥 Server + Client", "🔵 Nhẹ"),
+        UserScreenshotModItem(2, "alternate-current", "Alternate Current", "alternate-current-mc1.21.11-1.9.0.jar", "Tối ưu Server", "⚡ Tối ưu & Chống Lag", "Tối ưu hóa mạch đá đỏ (Redstone) nhanh gấp 20 lần, giảm lag CPU.", "🌐 Chỉ cần Server", "🟢 Siêu nhẹ"),
+        UserScreenshotModItem(3, "animal-garden-manatee", "Animal Garden - Manatee", "animalgarden_manatee-1.0.0-fabric-1.21.11-0.140.0.jar", "Sinh vật mới", "🐾 Động vật & Sinh vật", "Thêm loài Lợn biển (Manatee) hiền lành bơi dưới vùng biển ấm.", "👥 Server + Client", "🟢 Siêu nhẹ"),
+        UserScreenshotModItem(4, "animal-garden-mouse", "Animal Garden - Mouse", "animalgarden_mouse-1.0.5-fabric-1.21.11-0.140.0.jar", "Sinh vật mới", "🐾 Động vật & Sinh vật", "Thêm loài Chuột đồng nhỏ nhắn đáng yêu trong rừng và đồng cỏ.", "👥 Server + Client", "🟢 Siêu nhẹ"),
+        UserScreenshotModItem(5, "appleskin", "AppleSkin", "appleskin-fabric-mc1.21.11-3.0.8.jar", "Tiện ích Sinh tồn", "🌿 Tiện ích & Voice Chat", "Hiển thị chính xác lượng hồi thức ăn và độ no (Saturation) của món ăn.", "👥 Server + Client", "🟢 Siêu nhẹ"),
+        UserScreenshotModItem(6, "architectury-api", "Architectury API", "architectury-19.0.1-fabric.jar", "Thư viện nền", "🧱 Thư viện Lõi", "Thư viện cầu nối đa nền tảng bắt buộc cho nhiều mod lớn.", "👥 Server + Client", "🟢 Siêu nhẹ"),
+        UserScreenshotModItem(7, "balm", "Balm", "balm-fabric-1.21.11-21.11.9.jar", "Thư viện nền", "🧱 Thư viện Lõi", "Thư viện lõi bắt buộc cho Waystones và Cooking for Blockheads.", "👥 Server + Client", "🟢 Siêu nhẹ"),
+        UserScreenshotModItem(8, "c2me-fabric", "C2ME (Fabric)", "c2me-fabric-mc1.21.11-0.3.7+alpha.0.10.jar", "Tối ưu Đa luồng Chunk", "⚡ Tối ưu & Chống Lag", "Tăng tốc sinh và tải vùng địa hình (Chunk) bằng đa nhân CPU điện thoại.", "🌐 Chỉ cần Server", "🟢 Siêu nhẹ"),
+        UserScreenshotModItem(9, "chefs-delight", "Chef's Delight", "chefs-delight-1.0.5-fabric-1.21.11.jar", "Ẩm thực & Dân làng", "🍳 Ẩm thực & Nông trại", "Thêm nghề Đầu bếp cho dân làng và các công trình nhà hàng trong làng.", "👥 Server + Client", "🔵 Nhẹ"),
+        UserScreenshotModItem(10, "chunky", "Chunky", "Chunky-Fabric-1.4.55.jar", "Tối ưu & Tạo sẵn Chunk", "⚡ Tối ưu & Chống Lag", "Tạo sẵn vùng địa hình (Pre-generate chunks) giúp đi khám phá không bị giật.", "🌐 Chỉ cần Server", "🟢 Siêu nhẹ"),
+        UserScreenshotModItem(11, "cloth-config", "Cloth Config API", "cloth-config-21.11.153-fabric.jar", "Thư viện nền", "🧱 Thư viện Lõi", "Thư viện giao diện cấu hình bắt buộc cho nhiều mod.", "👥 Server + Client", "🟢 Siêu nhẹ"),
+        UserScreenshotModItem(12, "cooking-for-blockheads", "Cooking for Blockheads", "cookingforblockheads-fabric-1.21.11-21.11.6.jar", "Ẩm thực & Nhà bếp", "🍳 Ẩm thực & Nông trại", "Hệ thống nhà bếp thông minh (tủ lạnh, bồn rửa, lò nướng, bàn nấu ăn).", "👥 Server + Client", "🔵 Nhẹ"),
+        UserScreenshotModItem(13, "crate-delight", "Crate Delight", "cratedelight-25.09.22-1.21.7-fabric.jar", "Ẩm thực & Lưu trữ", "🍳 Ẩm thực & Nông trại", "Thùng gỗ đóng gói bảo quản nông sản, trái cây, trứng và cá tươi.", "👥 Server + Client", "🟢 Siêu nhẹ"),
+        UserScreenshotModItem(14, "debugify", "Debugify", "debugify-1.21.11+1.1.jar", "Sửa lỗi Vanilla", "⚡ Tối ưu & Chống Lag", "Sửa hơn 70 lỗi cố hữu của Minecraft gốc gây kẹt nhân vật hoặc tụt TPS.", "🌐 Chỉ cần Server", "🟢 Siêu nhẹ"),
+        UserScreenshotModItem(15, "emotecraft", "Emotecraft", "emotecraft-fabric-for-MC1.21.11-3.2.0-b.build.149.jar", "Biểu cảm nhân vật", "🌿 Tiện ích & Voice Chat", "Nhảy múa, vẫy tay và thực hiện hành động biểu cảm cùng bạn bè.", "👥 Server + Client", "🔵 Nhẹ"),
+        UserScreenshotModItem(16, "entityculling", "Entity Culling", "entityculling-fabric-1.10.2-mc1.21.11.jar", "Tối ưu Thực thể", "⚡ Tối ưu & Chống Lag", "Bỏ qua dựng hình các thực thể/quái bị khuất sau tường để tăng FPS.", "🖥️ Hỗ trợ Client", "🟢 Siêu nhẹ"),
+        UserScreenshotModItem(17, "fabric-api", "Fabric API", "fabric-api-0.141.4+1.21.11.jar", "Thư viện nền", "🧱 Thư viện Lõi", "Thư viện nền tảng quan trọng nhất bắt buộc cho hầu hết mọi mod Fabric.", "👥 Server + Client", "🟢 Siêu nhẹ"),
+        UserScreenshotModItem(18, "farmers-delight-refabricated", "Farmer's Delight Refabricated", "FarmersDelight-1.21.11-3.4.9+refabricated.jar", "Ẩm thực & Nông trại", "🍳 Ẩm thực & Nông trại", "Mod nấu ăn & nông trại nổi tiếng nhất với nồi hầm, thớt, bếp lò và món ngon.", "👥 Server + Client", "🔵 Nhẹ"),
+        UserScreenshotModItem(19, "ferrite-core", "FerriteCore", "ferritecore-8.2.0-fabric.jar", "Giảm RAM Server", "⚡ Tối ưu & Chống Lag", "Giảm từ 35%–45% lượng RAM tiêu thụ của server, cực kỳ cần thiết trên điện thoại.", "🌐 Chỉ cần Server", "🟢 Siêu nhẹ"),
+        UserScreenshotModItem(20, "forge-config-api-port", "Forge Config API Port", "ForgeConfigAPIPort-v21.11.1-mc1.21.11-Fabric.jar", "Thư viện nền", "🧱 Thư viện Lõi", "Hỗ trợ hệ thống cấu hình chuẩn Forge/NeoForge hoạt động trên Fabric.", "👥 Server + Client", "🟢 Siêu nhẹ"),
+        UserScreenshotModItem(21, "furnish-furniture", "Furnish", "furnish-31.jar", "Nội thất & Trang trí", "🏠 Nội thất Macaw's & Xây dựng", "Thêm hàng trăm món nội thất đẹp mắt: bàn ghế, tủ kệ, thảm, rèm cửa, hộp thư.", "👥 Server + Client", "🔵 Nhẹ"),
+        UserScreenshotModItem(22, "jamlib", "JamLib", "jamlib-fabric-2.0.0+1.21.11.jar", "Thư viện nền", "🧱 Thư viện Lõi", "Thư viện lõi bắt buộc cho mod thu hoạch nhanh RightClickHarvest.", "👥 Server + Client", "🟢 Siêu nhẹ"),
+        UserScreenshotModItem(23, "ksyxis", "Ksyxis", "Ksyxis-1.4.3.jar", "Tăng tốc tải World", "⚡ Tối ưu & Chống Lag", "Tăng tốc khởi động server và tải thế giới tức thì bằng cách bỏ nạp vùng dư thừa.", "🌐 Chỉ cần Server", "🟢 Siêu nhẹ"),
+        UserScreenshotModItem(24, "litematica", "Litematica", "litematica-fabric-1.21.11-0.26.8.jar", "Sơ đồ Xây dựng", "🏠 Nội thất Macaw's & Xây dựng", "Hiển thị bản vẽ 3D (Schematic) giúp xây dựng công trình lớn nhanh chóng.", "🖥️ Hỗ trợ Client", "🔵 Nhẹ"),
+        UserScreenshotModItem(25, "lithium", "Lithium", "lithium-fabric-0.21.4+mc1.21.11.jar", "Tối ưu Tick Server", "⚡ Tối ưu & Chống Lag", "Tối ưu toàn diện vật lý, AI quái vật và tải chunk giúp giữ TPS 20.0 mượt mà.", "🌐 Chỉ cần Server", "🟢 Siêu nhẹ"),
+        UserScreenshotModItem(26, "malilib", "MaLiLib", "malilib-fabric-1.21.11-0.27.7.jar", "Thư viện nền", "🧱 Thư viện Lõi", "Thư viện lõi bắt buộc cho Litematica và các mod hỗ trợ xây dựng.", "🖥️ Hỗ trợ Client", "🟢 Siêu nhẹ"),
+        UserScreenshotModItem(27, "macaws-bridges", "Macaw's Bridges", "mcw-bridges-3.1.2-mc1.21.11fabric.jar", "Kiến trúc Macaw's", "🏠 Nội thất Macaw's & Xây dựng", "Cầu gỗ, cầu đá, cầu dây văng, cầu đường sắt bắc qua sông và hẻm núi.", "👥 Server + Client", "🔵 Nhẹ"),
+        UserScreenshotModItem(28, "macaws-doors", "Macaw's Doors", "mcw-doors-1.1.5-mc1.21.11fabric.jar", "Kiến trúc Macaw's", "🏠 Nội thất Macaw's & Xây dựng", "Cửa trượt Nhật Bản, cửa kính, cửa hầm ngục, cửa chuồng trại đa dạng.", "👥 Server + Client", "🔵 Nhẹ"),
+        UserScreenshotModItem(29, "macaws-fences-and-walls", "Macaw's Fences and Walls", "mcw-fences-1.2.1-mc1.21.11fabric.jar", "Kiến trúc Macaw's", "🏠 Nội thất Macaw's & Xây dựng", "Hàng rào gỗ, tường đá cổ điển, cổng vòm và hàng rào cây xanh.", "👥 Server + Client", "🔵 Nhẹ"),
+        UserScreenshotModItem(30, "macaws-furniture", "Macaw's Furniture", "mcw-furniture-3.4.2-mc1.21.11fabric.jar", "Kiến trúc Macaw's", "🏠 Nội thất Macaw's & Xây dựng", "Tủ quần áo, bàn làm việc, ghế sofa, kệ sách theo từng loại gỗ Minecraft.", "👥 Server + Client", "🔵 Nhẹ"),
+        UserScreenshotModItem(31, "macaws-holidays", "Macaw's Holidays", "mcw-holidays-1.1.2-mc1.21.11fabric.jar", "Kiến trúc Macaw's", "🏠 Nội thất Macaw's & Xây dựng", "Đồ trang trí lễ hội Giáng Sinh, Halloween, đèn nhấp nháy nhiều màu.", "👥 Server + Client", "🔵 Nhẹ"),
+        UserScreenshotModItem(32, "macaws-lights-and-lamps", "Macaw's Lights and Lamps", "mcw-lights-1.1.5-mc1.21.11fabric.jar", "Kiến trúc Macaw's", "🏠 Nội thất Macaw's & Xây dựng", "Đèn đường, đèn chùm, đèn bàn, đèn lồng chiếu sáng thẩm mỹ.", "👥 Server + Client", "🔵 Nhẹ"),
+        UserScreenshotModItem(33, "macaws-paintings", "Macaw's Paintings", "mcw-paintings-1.1.0-mc1.21.11fabric.jar", "Kiến trúc Macaw's", "🏠 Nội thất Macaw's & Xây dựng", "Bộ sưu tập tranh treo tường nghệ thuật mới đủ mọi kích cỡ.", "👥 Server + Client", "🟢 Siêu nhẹ"),
+        UserScreenshotModItem(34, "macaws-paths-and-pavings", "Macaw's Paths and Pavings", "mcw-paths-1.1.1-mc1.21.11fabric.jar", "Kiến trúc Macaw's", "🏠 Nội thất Macaw's & Xây dựng", "Gạch lát đường, đá cuội, lối đi sân vườn nhiều kiểu hoa văn.", "👥 Server + Client", "🟢 Siêu nhẹ"),
+        UserScreenshotModItem(35, "macaws-roofs", "Macaw's Roofs", "mcw-roofs-2.3.2-mc1.21.11fabric.jar", "Kiến trúc Macaw's", "🏠 Nội thất Macaw's & Xây dựng", "Mái ngói, mái dốc, mái vòm và máng xối thoát nước cho công trình.", "👥 Server + Client", "🔵 Nhẹ"),
+        UserScreenshotModItem(36, "macaws-stairs", "Macaw's Stairs", "mcw-stairs-1.0.2-mc1.21.11fabric.jar", "Kiến trúc Macaw's", "🏠 Nội thất Macaw's & Xây dựng", "Cầu thang xoắn, cầu thang có lan can tay vịn gỗ và đá.", "👥 Server + Client", "🔵 Nhẹ"),
+        UserScreenshotModItem(37, "macaws-trapdoors", "Macaw's Trapdoors", "mcw-trapdoors-1.1.5-mc1.21.11fabric.jar", "Kiến trúc Macaw's", "🏠 Nội thất Macaw's & Xây dựng", "Cửa sập kính, cửa sập lưới sắt, cửa sập gỗ trang trí.", "👥 Server + Client", "🟢 Siêu nhẹ"),
+        UserScreenshotModItem(38, "macaws-windows", "Macaw's Windows", "mcw-windows-2.4.2-mc1.21.11fabric.jar", "Kiến trúc Macaw's", "🏠 Nội thất Macaw's & Xây dựng", "Cửa sổ mở cánh, cửa sổ kính màu, cửa chớp và rèm cửa.", "👥 Server + Client", "🔵 Nhẹ"),
+        UserScreenshotModItem(39, "modernfix-mvus", "ModernFix-mVUS", "modernfix-5.26.2-build.1.jar", "Tối ưu Hiệu năng & RAM", "⚡ Tối ưu & Chống Lag", "Tối ưu toàn diện tốc độ khởi động, giảm ngốn RAM và chống đơ server.", "🌐 Chỉ cần Server", "🟢 Siêu nhẹ"),
+        UserScreenshotModItem(40, "more-delight", "More Delight", "moredelight-25.12.10-1.21.11-fabric.jar", "Ẩm thực & Nông trại", "🍳 Ẩm thực & Nông trại", "Thêm các món bánh mì nướng, bít tết, khoai tây nghiền và salad cho Farmer's Delight.", "👥 Server + Client", "🟢 Siêu nhẹ"),
+        UserScreenshotModItem(41, "noisiumforked", "NoisiumForked", "noisium-fabric-2.8.3+mc1.21.11.jar", "Tối ưu Tạo địa hình", "⚡ Tối ưu & Chống Lag", "Tăng tốc độ thuật toán tạo địa hình (Noise generation) giảm tải CPU khi mở map mới.", "🌐 Chỉ cần Server", "🟢 Siêu nhẹ"),
+        UserScreenshotModItem(42, "player-animation-library", "Player Animation Library", "PlayerAnimationLibFabric-1.1.7+mc1.21.11.jar", "Thư viện nền", "🧱 Thư viện Lõi", "Thư viện hoạt ảnh chuyển động nhân vật bắt buộc cho Emotecraft.", "👥 Server + Client", "🟢 Siêu nhẹ"),
+        UserScreenshotModItem(43, "polymer", "Polymer", "polymer-bundled-0.15.2+1.21.11.jar", "Thư viện nền", "🧱 Thư viện Lõi", "Thư viện lõi giúp đồng bộ và hiển thị vật phẩm/khối phía máy chủ.", "🌐 Chỉ cần Server", "🟢 Siêu nhẹ"),
+        UserScreenshotModItem(44, "puzzles-lib", "Puzzles Lib", "PuzzlesLib-v21.11.12-mc1.21.11-Fabric.jar", "Thư viện nền", "🧱 Thư viện Lõi", "Thư viện lõi đa nền tảng hỗ trợ cấu hình và đồng bộ mạng.", "👥 Server + Client", "🟢 Siêu nhẹ"),
+        UserScreenshotModItem(45, "quickleafdecay", "Quick Leaf Decay", "quickleafdecay-mc1.21.11-0.4.1.jar", "Tiện ích Sinh tồn", "🌿 Tiện ích & Voice Chat", "Lá cây tự rụng cực nhanh ngay sau khi người chơi chặt hết thân gỗ.", "🌐 Chỉ cần Server", "🟢 Siêu nhẹ"),
+        UserScreenshotModItem(46, "rightclickharvest", "RightClickHarvest", "rightclickharvest-fabric-4.6.1+1.21.11.jar", "Tiện ích Nông trại", "🌿 Tiện ích & Voice Chat", "Chạm / nhấp chuột phải để thu hoạch lúa, cà rốt, khoai tây và tự trồng lại ngay.", "🌐 Chỉ cần Server", "🟢 Siêu nhẹ"),
+        UserScreenshotModItem(47, "rustic-delight", "Rustic Delight", "rusticdelight-fabric-1.21.11-1.5.4.jar", "Ẩm thực & Nông trại", "🍳 Ẩm thực & Nông trại", "Thêm cây ớt chuông, cà phê, bông vải và các món ăn đồng quê hấp dẫn.", "👥 Server + Client", "🔵 Nhẹ"),
+        UserScreenshotModItem(48, "servercore", "ServerCore", "servercore-fabric-1.5.15+1.21.11.jar", "Tối ưu TPS Server", "⚡ Tối ưu & Chống Lag", "Tự động cân bằng khoảng cách mô phỏng và giới hạn mob thông minh khi đông người chơi.", "🌐 Chỉ cần Server", "🟢 Siêu nhẹ"),
+        UserScreenshotModItem(49, "sodium", "Sodium", "sodium-fabric-0.8.12+mc1.21.11.jar", "Tối ưu Đồ họa", "⚡ Tối ưu & Chống Lag", "Engine dựng hình hiện đại giúp tăng gấp đôi FPS cho máy người chơi.", "🖥️ Hỗ trợ Client", "🟢 Siêu nhẹ"),
+        UserScreenshotModItem(50, "shuttfup", "Stfu", "Stfu-2.9.1-1.21.11.jar", "Tối ưu Log & Mạng", "⚡ Tối ưu & Chống Lag", "Tắt các dòng log cảnh báo thừa và tối ưu kích thước gói tin.", "🖥️ Hỗ trợ Client", "🟢 Siêu nhẹ"),
+        UserScreenshotModItem(51, "threadtweak", "ThreadTweak", "threadtweak-fabric-0.1.8+mc1.21.11.jar", "Tối ưu Luồng CPU", "⚡ Tối ưu & Chống Lag", "Tối ưu độ ưu tiên luồng CPU giúp server Minecraft phản hồi mượt hơn trên Android.", "🌐 Chỉ cần Server", "🟢 Siêu nhẹ"),
+        UserScreenshotModItem(52, "toms-mobs", "Tom's Mobs", "toms_mobs-3.0.2+1.21.11.jar", "Sinh vật mới", "🐾 Động vật & Sinh vật", "Thêm nhiều loài động vật hoang dã sinh động (chim cánh cụt, voi ma mút, cá voi, cua...).", "👥 Server + Client", "🔵 Nhẹ"),
+        UserScreenshotModItem(53, "ubes-delight", "Ube's Delight", "ubesdelight-fabric-1.21.11-0.4.11.jar", "Ẩm thực & Nông trại", "🍳 Ẩm thực & Nông trại", "Thêm khoai mỡ tím (Ube), trà sữa, bánh flan, tỏi, gừng, sả đậm chất Á Đông.", "👥 Server + Client", "🔵 Nhẹ"),
+        UserScreenshotModItem(54, "simple-voice-chat", "Simple Voice Chat", "voicechat-fabric-1.21.11-2.6.18.jar", "Đàm thoại trong Game", "🌿 Tiện ích & Voice Chat", "Trò chuyện bằng giọng nói trực tiếp theo khoảng cách (Proximity Voice Chat) trong server.", "👥 Server + Client", "🔵 Nhẹ"),
+        UserScreenshotModItem(55, "waystones", "Waystones", "waystones-fabric-1.21.11-21.11.9.jar", "Cột Dịch chuyển", "🌿 Tiện ích & Voice Chat", "Đặt cột đá dịch chuyển tức thì giữa các ngôi làng, căn cứ và chiều không gian.", "👥 Server + Client", "🔵 Nhẹ"),
+        UserScreenshotModItem(56, "yacl", "YetAnotherConfigLib (YACL)", "yet_another_config_lib_v3-3.8.2+1.21.11-fabric.jar", "Thư viện nền", "🧱 Thư viện Lõi", "Thư viện cấu hình hiện đại bắt buộc cho Debugify và nhiều mod tối ưu.", "👥 Server + Client", "🟢 Siêu nhẹ")
     )
 
     val USER_SCREENSHOT_SERVER_MOD_SLUGS: List<String> = USER_SCREENSHOT_56_MOD_ITEMS.map { it.slug }
@@ -1571,15 +1589,27 @@ class PluginManager(
         val clean = mcVersion.trim()
         if (clean.isBlank()) return listOf("1.21.11", "1.21.10", "1.21.9", "1.21.8", "1.21.7", "1.21.5", "1.21.4", "1.21.1", "1.21")
         val list = mutableListOf(clean)
-        // Nếu server là 1.21.11 / 1.21.x, fallback đầy đủ từ 1.21.11 xuống 1.21 để các mod như Crate Delight (1.21.7/1.21.10) luôn tìm thấy bản tương thích
-        if (clean.startsWith("1.21")) {
-            listOf("1.21.11", "1.21.10", "1.21.9", "1.21.8", "1.21.7", "1.21.6", "1.21.5", "1.21.4", "1.21.3", "1.21.2", "1.21.1", "1.21").forEach {
-                if (it !in list) list += it
+        val branchPool = when {
+            clean.startsWith("1.21") -> listOf("1.21.11", "1.21.10", "1.21.9", "1.21.8", "1.21.7", "1.21.6", "1.21.5", "1.21.4", "1.21.3", "1.21.2", "1.21.1", "1.21")
+            clean.startsWith("1.20") -> listOf("1.20.6", "1.20.5", "1.20.4", "1.20.3", "1.20.2", "1.20.1", "1.20")
+            clean.startsWith("1.19") -> listOf("1.19.4", "1.19.3", "1.19.2", "1.19.1", "1.19")
+            clean.startsWith("1.18") -> listOf("1.18.2", "1.18.1", "1.18")
+            clean.startsWith("1.17") -> listOf("1.17.1", "1.17")
+            clean.startsWith("1.16") -> listOf("1.16.5", "1.16.4", "1.16.3", "1.16.2", "1.16.1")
+            clean.startsWith("1.12") -> listOf("1.12.2", "1.12.1", "1.12")
+            else -> emptyList()
+        }
+        val idx = branchPool.indexOf(clean)
+        if (idx >= 0) {
+            // Ưu tiên các bản patch thấp hơn hoặc bằng trong cùng nhánh trước, sau đó mới thử các bản còn lại trong nhánh
+            for (i in idx until branchPool.size) {
+                if (branchPool[i] !in list) list += branchPool[i]
             }
-        } else if (clean.startsWith("1.20")) {
-            listOf("1.20.6", "1.20.4", "1.20.2", "1.20.1", "1.20").forEach {
-                if (it !in list) list += it
+            for (i in 0 until idx) {
+                if (branchPool[i] !in list) list += branchPool[i]
             }
+        } else {
+            branchPool.forEach { if (it !in list) list += it }
         }
         return list
     }

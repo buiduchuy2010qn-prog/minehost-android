@@ -1819,17 +1819,22 @@ private fun formatBytes(bytes: Long): String {
     return String.format(java.util.Locale.US, "%.2f GB", gb)
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ModPackDecoderAndTransferCard(
     vm: McViewModel,
     activeCoreExists: Boolean,
     serverRunning: Boolean,
     hasInstalledMods: Boolean,
-    showFull56ListByDefault: Boolean = false
+    showFull56ListByDefault: Boolean = true
 ) {
     val config by vm.config.collectAsStateWithLifecycle()
     val installedMods by vm.mods.collectAsStateWithLifecycle()
     val all56Items = remember { vm.userScreenshot56ModItems() }
+    val categoryGroups = remember { vm.modPackCategoryGroups() }
+    val multiVersionPresets = remember { vm.multiVersionPresets() }
+    val serverMcVer = vm.currentServerVersionForUi()
+
     val otherServers = remember(config.installedCores, config.activeCoreName) {
         config.installedCores.filter { it.name != config.activeCoreName }
     }
@@ -1837,6 +1842,13 @@ private fun ModPackDecoderAndTransferCard(
     var showAutoPackConfirmDialog by remember { mutableStateOf(false) }
     var showFull56List by remember(showFull56ListByDefault) { mutableStateOf(showFull56ListByDefault) }
     var copyConfigsToo by remember { mutableStateOf(true) }
+
+    // Bộ lọc Nhóm phân loại ("ALL" hoặc 1 trong 6 nhóm) & Phiên bản Minecraft
+    var selectedCategoryGroup by remember { mutableStateOf("ALL") }
+    var selectedCustomVersion by remember { mutableStateOf("") } // "" = Tự khớp phiên bản Server
+    var catalogSearchQuery by remember { mutableStateOf("") }
+
+    val effectiveMcVer = selectedCustomVersion.ifBlank { serverMcVer }
 
     val installedNamesLower = remember(installedMods) {
         installedMods.filter { it.isEnabled }.map { it.baseName.lowercase(java.util.Locale.ROOT) }
@@ -1846,6 +1858,19 @@ private fun ModPackDecoderAndTransferCard(
             val slugPrefix = item.slug.lowercase(java.util.Locale.ROOT)
             val jarPrefix = item.originalJarName.substringBefore('-').substringBefore('_').lowercase(java.util.Locale.ROOT)
             installedNamesLower.any { it.startsWith(slugPrefix) || it.startsWith(jarPrefix) || it.contains(slugPrefix) }
+        }
+    }
+
+    val filteredCatalogItems = remember(all56Items, selectedCategoryGroup, catalogSearchQuery) {
+        all56Items.filter { item ->
+            val matchGroup = selectedCategoryGroup == "ALL" || item.categoryGroup == selectedCategoryGroup
+            val q = catalogSearchQuery.trim()
+            val matchQuery = q.isEmpty() ||
+                item.title.contains(q, ignoreCase = true) ||
+                item.descVi.contains(q, ignoreCase = true) ||
+                item.category.contains(q, ignoreCase = true) ||
+                item.originalJarName.contains(q, ignoreCase = true)
+            matchGroup && matchQuery
         }
     }
 
@@ -1886,10 +1911,10 @@ private fun ModPackDecoderAndTransferCard(
     }
 
     McCard(
-        title = "📦 Bộ Đủ 56 Mod Gốc (Từ 5 Ảnh Của Bạn) & Giải Mã Gói Mod",
+        title = "📦 Kho 56 Mod Gốc (Phân 6 Nhóm & Đa Phiên Bản) + Giải Mã Gói Mod",
         trailing = {
             Text(
-                "Đang có $matched56Count/${all56Items.size} mod gốc",
+                "Đã bật $matched56Count/${all56Items.size} mod",
                 color = if (matched56Count >= all56Items.size) Mint else Indigo,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold
@@ -1897,13 +1922,60 @@ private fun ModPackDecoderAndTransferCard(
         }
     ) {
         Text(
-            "Đã tích hợp chính xác 100% danh sách ĐỦ 56 MOD từ 5 ảnh chụp màn hình (.minecraft/mods Fabric 1.21.11) của bạn " +
-                "(12 bộ Macaw's, Farmer's Delight + 5 bản mở rộng, Furnish, 3D Placeable Food, Animal Garden, Tom's Mobs, Waystones, Simple Voice Chat, Lithium, FerriteCore, C2ME, ServerCore, Sodium, Litematica...).\n" +
-                "Nếu server đang báo lỗi do thiếu mod hoặc dính mod lạ từ lần cài trước, hãy bấm nút màu xanh bên dưới để tự động dọn mod lạ và cài lại đủ 56/56 mod!",
+            "Đã tích hợp và PHÂN LOẠI ĐỦ 56 MOD từ 5 ảnh chụp màn hình của bạn thành 6 nhóm chức năng rõ ràng (hỗ trợ đa phiên bản Minecraft: 1.21.11, 1.21.4, 1.21.1, 1.20.4, 1.20.1, 1.19.2, 1.18.2, 1.16.5...).\n" +
+                "• Bạn có thể tải trọn bộ 56/56 Mod, tải riêng từng nhóm (tự động kèm Thư viện Lõi), hoặc bấm '➕ Cài' trên từng Mod lẻ mà không làm nặng APK!",
             color = Muted,
             fontSize = 11.sp,
             lineHeight = 16.sp
         )
+        Spacer(Modifier.height(10.dp))
+
+        // ── Thanh chọn Phiên bản Minecraft (Đa phiên bản) ──
+        Text(
+            "🌐 Chọn Phiên bản Minecraft khi tải Mod (Đang dùng: $effectiveMcVer):",
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            color = Indigo
+        )
+        Spacer(Modifier.height(4.dp))
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            val isAutoServerVer = selectedCustomVersion.isBlank()
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (isAutoServerVer) Mint else FieldGray)
+                    .clickable { selectedCustomVersion = "" }
+                    .padding(horizontal = 8.dp, vertical = 5.dp)
+            ) {
+                Text(
+                    "🎯 Theo Server ($serverMcVer)",
+                    color = if (isAutoServerVer) Color.White else Indigo,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            multiVersionPresets.forEach { ver ->
+                val isSelected = selectedCustomVersion == ver
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (isSelected) Indigo else FieldGray)
+                        .clickable { selectedCustomVersion = ver }
+                        .padding(horizontal = 8.dp, vertical = 5.dp)
+                ) {
+                    Text(
+                        "MC $ver",
+                        color = if (isSelected) Color.White else Muted,
+                        fontSize = 10.sp,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold
+                    )
+                }
+            }
+        }
+
         Spacer(Modifier.height(10.dp))
 
         // Nút chính nổi bật: Dọn mod lạ & Cài lại ĐỦ 56 Mod gốc từ 5 ảnh của bạn
@@ -1915,7 +1987,7 @@ private fun ModPackDecoderAndTransferCard(
             modifier = Modifier.fillMaxWidth()
         ) {
             Text(
-                "⚡ Dọn Mod Lạ & Tải ĐỦ 56/56 Mod Gốc (Từ 5 Ảnh Của Bạn)",
+                "⚡ Dọn Mod Lạ & Tải ĐỦ 56/56 Mod Gốc (MC $effectiveMcVer)",
                 color = Color.White,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Bold
@@ -1976,7 +2048,7 @@ private fun ModPackDecoderAndTransferCard(
 
         Spacer(Modifier.height(8.dp))
 
-        // Hàng 3: Xuất toàn bộ Mod ra ZIP & Xem danh sách 56 Mod
+        // Hàng 3: Xuất toàn bộ Mod ra ZIP & Ẩn/Hiện danh sách 56 Mod phân loại
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -1998,7 +2070,7 @@ private fun ModPackDecoderAndTransferCard(
                 modifier = Modifier.weight(1f)
             ) {
                 Text(
-                    if (showFull56List) "🔼 Ẩn danh sách 56 Mod" else "📋 Xem đủ 56 Mod ($matched56Count/56)",
+                    if (showFull56List) "🔼 Thu gọn 6 Nhóm Mod" else "📋 Xem 6 Nhóm 56 Mod ($matched56Count/56)",
                     color = Mint,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold
@@ -2007,64 +2079,222 @@ private fun ModPackDecoderAndTransferCard(
         }
 
         if (showFull56List) {
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(12.dp))
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
+                    .clip(RoundedCornerShape(12.dp))
                     .background(FieldGray)
                     .padding(10.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
-                    "📋 Danh sách đối chiếu đủ 56/56 Mod từ 5 ảnh chụp màn hình của bạn:",
+                    "🗂️ Phân loại 56 Mod theo 6 Nhóm Chức Năng (Bấm chọn nhóm để lọc hoặc cài nguyên nhóm):",
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     color = Indigo
                 )
-                all56Items.forEach { item ->
-                    val slugPrefix = item.slug.lowercase(java.util.Locale.ROOT)
-                    val jarPrefix = item.originalJarName.substringBefore('-').substringBefore('_').lowercase(java.util.Locale.ROOT)
-                    val isInstalled = installedNamesLower.any {
-                        it.startsWith(slugPrefix) || it.startsWith(jarPrefix) || it.contains(slugPrefix)
-                    }
-                    Row(
+
+                // ── 6 Nhóm Phân Loại 56 Mod ──
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    val allSelected = selectedCategoryGroup == "ALL"
+                    Box(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(MaterialTheme.colorScheme.surface)
-                            .padding(horizontal = 8.dp, vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (allSelected) Indigo else MaterialTheme.colorScheme.surface)
+                            .clickable { selectedCategoryGroup = "ALL" }
+                            .padding(horizontal = 9.dp, vertical = 5.dp)
                     ) {
                         Text(
-                            "#${item.index}",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Indigo,
-                            modifier = Modifier.size(width = 28.dp, height = 16.dp)
-                        )
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                "${item.title} (${item.category})",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                item.originalJarName,
-                                fontSize = 9.sp,
-                                color = Muted,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                        Text(
-                            if (isInstalled) "✅ Đã bật" else "⏳ Chưa cài",
-                            color = if (isInstalled) Mint else Coral,
+                            "📦 Tất cả 6 Nhóm (${all56Items.size})",
+                            color = if (allSelected) Color.White else Indigo,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold
                         )
+                    }
+
+                    categoryGroups.forEach { groupName ->
+                        val groupCount = all56Items.count { it.categoryGroup == groupName }
+                        val isGroupSelected = selectedCategoryGroup == groupName
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (isGroupSelected) Indigo else MaterialTheme.colorScheme.surface)
+                                .clickable { selectedCategoryGroup = groupName }
+                                .padding(horizontal = 9.dp, vertical = 5.dp)
+                        ) {
+                            Text(
+                                "$groupName ($groupCount)",
+                                color = if (isGroupSelected) Color.White else MaterialTheme.colorScheme.onSurface,
+                                fontSize = 10.sp,
+                                fontWeight = if (isGroupSelected) FontWeight.Bold else FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
+
+                // Nếu người dùng đang chọn 1 nhóm cụ thể -> Hiện nút Cài Nhanh Nguyên Nhóm đó (kèm Thư viện Lõi)
+                if (selectedCategoryGroup != "ALL") {
+                    val groupOnlyCount = all56Items.count { it.categoryGroup == selectedCategoryGroup }
+                    Button(
+                        onClick = {
+                            vm.installUserScreenshotModCategory(
+                                categoryGroup = selectedCategoryGroup,
+                                includeCoreLibs = true,
+                                customMcVersion = selectedCustomVersion
+                            )
+                        },
+                        enabled = activeCoreExists && !serverRunning,
+                        colors = ButtonDefaults.buttonColors(containerColor = Indigo),
+                        shape = McShape.ControlCompact,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            if (selectedCategoryGroup == "🧱 Thư viện Lõi") {
+                                "⚡ Cài trọn bộ $selectedCategoryGroup ($groupOnlyCount Mod • MC $effectiveMcVer)"
+                            } else {
+                                "⚡ Cài Nhóm '$selectedCategoryGroup' ($groupOnlyCount Mod + Tự kèm Thư viện Lõi • MC $effectiveMcVer)"
+                            },
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                // Ô tìm kiếm nhanh trong 56 Mod
+                OutlinedTextField(
+                    value = catalogSearchQuery,
+                    onValueChange = { catalogSearchQuery = it },
+                    placeholder = { Text("🔍 Tìm trong 56 Mod (VD: Macaw, Farmer, Lithium, Voice, Waystones...)", fontSize = 11.sp) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = McShape.ControlCompact
+                )
+
+                // Hiển thị danh sách Mod theo từng nhóm rõ ràng
+                val groupedDisplay = remember(filteredCatalogItems, selectedCategoryGroup, categoryGroups) {
+                    if (selectedCategoryGroup == "ALL") {
+                        categoryGroups.mapNotNull { grp ->
+                            val list = filteredCatalogItems.filter { it.categoryGroup == grp }
+                            if (list.isEmpty()) null else grp to list
+                        }
+                    } else {
+                        listOf(selectedCategoryGroup to filteredCatalogItems)
+                    }
+                }
+
+                groupedDisplay.forEach { (grpTitle, grpItems) ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "$grpTitle (${grpItems.size} mod)",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Indigo
+                        )
+                        if (selectedCategoryGroup == "ALL") {
+                            Text(
+                                "⚡ Cài nhóm này",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Mint,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .clickable(enabled = activeCoreExists && !serverRunning) {
+                                        vm.installUserScreenshotModCategory(
+                                            categoryGroup = grpTitle,
+                                            includeCoreLibs = true,
+                                            customMcVersion = selectedCustomVersion
+                                        )
+                                    }
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+
+                    grpItems.forEach { item ->
+                        val slugPrefix = item.slug.lowercase(java.util.Locale.ROOT)
+                        val jarPrefix = item.originalJarName.substringBefore('-').substringBefore('_').lowercase(java.util.Locale.ROOT)
+                        val isInstalled = installedNamesLower.any {
+                            it.startsWith(slugPrefix) || it.startsWith(jarPrefix) || it.contains(slugPrefix)
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(MaterialTheme.colorScheme.surface)
+                                .padding(horizontal = 8.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "#${item.index}",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Indigo,
+                                modifier = Modifier.size(width = 28.dp, height = 18.dp)
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    item.title,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    item.descVi,
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    lineHeight = 13.sp
+                                )
+                                Spacer(Modifier.height(3.dp))
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    BadgeChip(item.weightVi, Mint, MintSoft)
+                                    BadgeChip(item.scopeVi, Indigo, IndigoSoft)
+                                }
+                                Text(
+                                    item.originalJarName,
+                                    fontSize = 9.sp,
+                                    color = Muted,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            Spacer(Modifier.size(6.dp))
+                            if (isInstalled) {
+                                Text(
+                                    "✅ Đã bật",
+                                    color = Mint,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            } else {
+                                Button(
+                                    onClick = {
+                                        vm.installSingleCatalogMod(item, customMcVersion = selectedCustomVersion)
+                                    },
+                                    enabled = activeCoreExists && !serverRunning,
+                                    colors = ButtonDefaults.buttonColors(containerColor = Mint),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                    modifier = Modifier.height(30.dp)
+                                ) {
+                                    Text("➕ Cài", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -2128,23 +2358,24 @@ private fun ModPackDecoderAndTransferCard(
         var cleanAllNon56 by remember { mutableStateOf(true) }
         AlertDialog(
             onDismissRequest = { showAutoPackConfirmDialog = false },
-            title = { Text("⚡ Cài Đặt ĐỦ 56/56 Mod Gốc Từ 5 Ảnh Của Bạn", fontSize = 15.sp, fontWeight = FontWeight.Bold) },
+            title = { Text("⚡ Cài Đặt ĐỦ 56/56 Mod Gốc (MC $effectiveMcVer)", fontSize = 15.sp, fontWeight = FontWeight.Bold) },
             text = {
                 Column(
                     modifier = Modifier.verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        "Hệ thống sẽ tải trực tiếp từ Modrinth ĐỦ 56 MOD CHÍNH XÁC theo đúng 5 ảnh chụp màn hình `.minecraft/mods` (Fabric 1.21.11) của bạn:",
+                        "Hệ thống sẽ tải trực tiếp từ Modrinth ĐỦ 56 MOD CHÍNH XÁC theo 6 nhóm phân loại cho phiên bản Minecraft $effectiveMcVer:",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        "• Ảnh 1 (1–13): 3D Placeable Food, Alternate Current, Animal Garden (Manatee & Mouse), AppleSkin, Architectury API, Balm, C2ME, Chef's Delight, Chunky, Cloth Config, Cooking for Blockheads, Crate Delight.\n" +
-                            "• Ảnh 2 (14–26): Debugify, Emotecraft, EntityCulling, Fabric API, Farmer's Delight Refabricated, FerriteCore, Forge Config API Port, Furnish, JamLib, Ksyxis, Litematica, Lithium, MaLiLib.\n" +
-                            "• Ảnh 3 (27–39): Trọn bộ 12 mod Macaw's (Bridges, Doors, Fences, Furniture, Holidays, Lights, Paintings, Paths, Roofs, Stairs, Trapdoors, Windows) + ModernFix-mVUS.\n" +
-                            "• Ảnh 4 (40–52): More Delight, NoisiumForked, Player Animation Lib, Polymer, Puzzles Lib, Quick Leaf Decay, RightClickHarvest, Rustic Delight, ServerCore, Sodium, Stfu, ThreadTweak, Tom's Mobs.\n" +
-                            "• Ảnh 5 (53–56): Ube's Delight, Simple Voice Chat, Waystones, YetAnotherConfigLib (YACL).",
+                        "• ⚡ Tối ưu & Chống Lag (14 Mod): Alternate Current, C2ME, Chunky, Debugify, EntityCulling, FerriteCore, Ksyxis, Lithium, ModernFix-mVUS, NoisiumForked, ServerCore, Sodium, Stfu, ThreadTweak.\n" +
+                            "• 🧱 Thư viện Lõi (11 Mod): Architectury API, Balm, Cloth Config, Fabric API, Forge Config API Port, JamLib, MaLiLib, Player Animation Lib, Polymer, Puzzles Lib, YACL.\n" +
+                            "• 🏠 Nội thất Macaw's & Xây dựng (14 Mod): Trọn bộ 12 mod Macaw's + Furnish + Litematica.\n" +
+                            "• 🍳 Ẩm thực & Nông trại (8 Mod): Farmer's Delight Refabricated, 3D Placeable Food, Chef's Delight, Cooking for Blockheads, Crate Delight, More Delight, Rustic Delight, Ube's Delight.\n" +
+                            "• 🌿 Tiện ích & Voice Chat (6 Mod): Simple Voice Chat, Waystones, AppleSkin, Emotecraft, Quick Leaf Decay, RightClickHarvest.\n" +
+                            "• 🐾 Động vật & Sinh vật (3 Mod): Animal Garden (Manatee & Mouse), Tom's Mobs.",
                         fontSize = 11.sp,
                         color = Muted,
                         lineHeight = 16.sp
@@ -2171,11 +2402,14 @@ private fun ModPackDecoderAndTransferCard(
                 Button(
                     onClick = {
                         showAutoPackConfirmDialog = false
-                        vm.installUserScreenshotModpackFromModrinth(cleanOtherMods = cleanAllNon56)
+                        vm.installUserScreenshotModpackFromModrinth(
+                            cleanOtherMods = cleanAllNon56,
+                            customMcVersion = selectedCustomVersion
+                        )
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Mint)
                 ) {
-                    Text("Tải & Cài Đủ 56 Mod", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text("Tải & Cài Đủ 56 Mod ($effectiveMcVer)", color = Color.White, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {

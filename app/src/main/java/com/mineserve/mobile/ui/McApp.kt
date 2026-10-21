@@ -238,7 +238,9 @@ fun McApp() {
                             onPlugins = { subPage = SubPage.Plugins },
                             onProperties = { subPage = SubPage.Properties },
                             onIcon = { subPage = SubPage.ServerIcon },
-                            onWorlds = { subPage = SubPage.WorldManage })
+                            onWorlds = { subPage = SubPage.WorldManage },
+                            onCreateServer = { subPage = SubPage.Cores },
+                            onBack = { subPage = null })
                         SubPage.PlayerList -> PlayersScreen(vm,
                             onNavigateProperties = { subPage = SubPage.Properties },
                             onNavigateOpGuide = { subPage = SubPage.OpLevelGuide })
@@ -257,7 +259,8 @@ fun McApp() {
                         onPlugins = { subPage = SubPage.Plugins },
                         onProperties = { subPage = SubPage.Properties },
                         onIcon = { subPage = SubPage.ServerIcon },
-                        onWorlds = { subPage = SubPage.WorldManage }
+                        onWorlds = { subPage = SubPage.WorldManage },
+                        onCreateServer = { subPage = SubPage.Cores }
                     )
                     McTab.Players -> PlayersScreen(
                         vm = vm,
