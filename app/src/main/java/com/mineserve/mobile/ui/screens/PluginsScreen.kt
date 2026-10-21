@@ -561,7 +561,7 @@ fun PluginsScreen(vm: McViewModel) {
                                 strokeWidth = 2.dp,
                                 color = Indigo
                             )
-                            Spacer(Modifier.width(8.dp))
+                            Spacer(Modifier.size(8.dp))
                             Text(
                                 optPackProgress ?: "",
                                 color = Indigo,
@@ -633,7 +633,7 @@ fun PluginsScreen(vm: McViewModel) {
                                         overflow = TextOverflow.Ellipsis
                                     )
                                 }
-                                Spacer(Modifier.width(6.dp))
+                                Spacer(Modifier.size(6.dp))
                                 Text(
                                     when {
                                         isEnabledNow -> "🟢 Đang bật"

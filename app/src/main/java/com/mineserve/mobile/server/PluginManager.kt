@@ -2193,7 +2193,27 @@ class PluginManager(
     private fun optModsCacheDir(loader: String, mcVersion: String): File {
         val safeVer = mcVersion.ifBlank { "1.21.11" }.replace(Regex("[^A-Za-z0-9._-]"), "_")
         val safeLoader = loader.ifBlank { "fabric" }.lowercase(Locale.ROOT)
-        return File(termux.homeDir, "opt_mods_cache/${safeLoader}_$safeVer").apply { mkdirs() }
+        return File(termux.installer.rootDir, "home/opt_mods_cache/${safeLoader}_$safeVer").apply { mkdirs() }
+    }
+
+    private fun findExistingModJarAcrossServers(prefix: String, excludeDirName: String, mcVersion: String): File? {
+        val serversRoot = File(termux.installer.rootDir, "home/servers")
+        if (!serversRoot.isDirectory) return null
+        val lowerPrefix = prefix.lowercase(Locale.ROOT)
+        val verPrefix = mcVersion.substringBeforeLast('.', mcVersion)
+        for (srvDir in serversRoot.listFiles().orEmpty()) {
+            if (!srvDir.isDirectory || srvDir.name == excludeDirName) continue
+            val mDir = File(srvDir, "mods")
+            if (!mDir.isDirectory) continue
+            for (f in mDir.listFiles().orEmpty()) {
+                if (!f.isFile || f.length() <= 1024L || !isModCandidate(f)) continue
+                val clean = f.name.lowercase(Locale.ROOT).removePrefix("-")
+                if (clean.startsWith(lowerPrefix) && (clean.contains(mcVersion) || clean.contains(verPrefix) || !clean.contains("1."))) {
+                    return f
+                }
+            }
+        }
+        return null
     }
 
     fun getServerOptimizationPackStatus(
