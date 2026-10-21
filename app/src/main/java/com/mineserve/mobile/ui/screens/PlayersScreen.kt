@@ -1,6 +1,7 @@
 package com.mineserve.mobile.ui.screens
 
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.graphics.asImageBitmap
 import com.mineserve.mobile.R
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
