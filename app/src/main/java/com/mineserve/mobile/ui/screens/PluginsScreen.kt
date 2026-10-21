@@ -283,10 +283,10 @@ fun PluginsScreen(vm: McViewModel) {
     val activeCore = config.installedCores.find { it.name == config.activeCoreName }
     val coreType = activeCore?.core ?: config.selectedCore
     val isPowerNukkitX = coreType == com.mineserve.mobile.data.ServerCore.PowerNukkitX
-    // 按核心兼容性计算可用资源类型（不支持的分类自动屏蔽）
+    // Cho phép hiện mục Mod & Gói Mod trên cả Vanilla (tự động nâng cấp tại chỗ lên Fabric giữ nguyên Map khi bật Gói Tối Ưu)
     val availableTypes = buildList {
         if (coreType.supportsPlugins) add(ResourceType.Plugin)
-        if (coreType.supportsMods) {
+        if (coreType.supportsMods || !coreType.isBedrock) {
             add(ResourceType.Mod)
             add(ResourceType.Modpack)
         }
@@ -478,6 +478,224 @@ fun PluginsScreen(vm: McViewModel) {
                             if (coreType.supportsMods) stringResource(R.string.s469) else stringResource(R.string.s470),
                             color = if (coreType.supportsMods) Mint else Coral,
                             fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
+
+            // ── GÓI MOD TỐI ƯU SERVER CỰC MẠNH LƯU SẴN (BẬT 1 CHẠM — TỰ ĐỘNG KHỚP PHIÊN BẢN) ──
+            if (activeCore != null && !coreType.isBedrock) {
+                val optPackStatus by vm.serverOptPackStatus.collectAsStateWithLifecycle()
+                val isTogglingOptPack by vm.isTogglingServerOptPack.collectAsStateWithLifecycle()
+                val optPackProgress by vm.serverOptPackProgress.collectAsStateWithLifecycle()
+                val optBundle = remember { vm.serverOptimizationModBundle() }
+                val detectedMcVer = (activeCore.version.ifBlank { config.mcVersion }).ifBlank { "1.21.11" }
+                var showAllOptMods by remember { mutableStateOf(false) }
+
+                McCard(
+                    title = "🚀 Gói Mod Tối Ưu Server Lưu Sẵn (Bật 1 Chạm)",
+                    trailing = {
+                        Switch(
+                            checked = optPackStatus.isPackActive,
+                            onCheckedChange = { wantEnable ->
+                                vm.toggleServerOptimizationPack(enable = wantEnable, customMcVersion = detectedMcVer)
+                            },
+                            enabled = !isServerRunning && !isTogglingOptPack
+                        )
+                    }
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (optPackStatus.isPackActive) MintSoft else IndigoSoft)
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                if (optPackStatus.isPackActive) {
+                                    "🟢 ĐANG BẬT: ${optPackStatus.enabledCount}/${optPackStatus.totalModsInPack} Mod Tối Ưu Cực Mạnh (MC $detectedMcVer)"
+                                } else {
+                                    "⚡ Chưa bật Gói Tối Ưu · Tự động khớp phiên bản: MC $detectedMcVer"
+                                },
+                                color = if (optPackStatus.isPackActive) Mint else Indigo,
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                "✅ Chỉ cài cho Server (100% Server-Side) — Người chơi PC / Pojav / FCL vào bình thường KHÔNG CẦN cài mod!" +
+                                    if (optPackStatus.cachedCount > 0) " · Đã lưu sẵn trong máy: ${optPackStatus.cachedCount} mod" else "",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 11.sp,
+                                lineHeight = 15.sp
+                            )
+                        }
+                    }
+
+                    if (!coreType.supportsMods) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "💡 Máy chủ hiện tại đang là ${coreType.displayName} $detectedMcVer: Khi bạn gạt bật công tắc hoặc bấm nút bên dưới, ứng dụng sẽ TỰ ĐỘNG nâng cấp lõi lên Fabric $detectedMcVer (giữ nguyên 100% Map, người chơi & cài đặt) và nạp trọn bộ 14 Mod tối ưu!",
+                            color = Indigo,
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+
+                    if (optPackProgress != null) {
+                        Spacer(Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(FieldGray)
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = Indigo
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                optPackProgress ?: "",
+                                color = Indigo,
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+                    // Hiển thị danh sách các Mod tối ưu kết hợp trong gói
+                    val displayedItems = if (showAllOptMods) optBundle else optBundle.take(6)
+                    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        displayedItems.forEach { item ->
+                            val isEnabledNow = item.id in optPackStatus.enabledModIds
+                            val isInstalledNow = item.id in optPackStatus.installedModIds
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (isEnabledNow) MintSoft.copy(alpha = 0.65f) else FieldGray)
+                                    .padding(horizontal = 9.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Text(
+                                            item.displayName,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(5.dp))
+                                                .background(IndigoSoft)
+                                                .padding(horizontal = 5.dp, vertical = 1.dp)
+                                        ) {
+                                            Text(
+                                                item.impactBadge,
+                                                color = Indigo,
+                                                fontSize = 9.5.sp,
+                                                fontWeight = FontWeight.ExtraBold
+                                            )
+                                        }
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(5.dp))
+                                                .background(MintSoft)
+                                                .padding(horizontal = 5.dp, vertical = 1.dp)
+                                        ) {
+                                            Text(
+                                                item.categoryBadge,
+                                                color = Mint,
+                                                fontSize = 9.5.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                    Text(
+                                        item.descriptionVi,
+                                        color = Muted,
+                                        fontSize = 10.5.sp,
+                                        lineHeight = 14.sp,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    when {
+                                        isEnabledNow -> "🟢 Đang bật"
+                                        isInstalledNow -> "⏸ Lưu sẵn"
+                                        else -> "⚡ Sẵn sàng"
+                                    },
+                                    color = if (isEnabledNow) Mint else Muted,
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+
+                    TextButton(
+                        onClick = { showAllOptMods = !showAllOptMods },
+                        modifier = Modifier.align(Alignment.End)
+                    ) {
+                        Text(
+                            if (showAllOptMods) "Thu gọn danh sách ▲" else "Xem đủ ${optBundle.size} Mod tối ưu cực mạnh ▼",
+                            color = Indigo,
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                vm.toggleServerOptimizationPack(
+                                    enable = !optPackStatus.isPackActive,
+                                    customMcVersion = detectedMcVer
+                                )
+                            },
+                            enabled = !isServerRunning && !isTogglingOptPack,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (optPackStatus.isPackActive) Coral else Mint
+                            ),
+                            shape = McShape.ControlCompact,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(
+                                if (optPackStatus.isPackActive) {
+                                    "⏸ Tạm tắt Gói Mod Tối Ưu Server"
+                                } else {
+                                    "🚀 BẬT NGAY 14 MOD TỐI ƯU SERVER (MC $detectedMcVer)"
+                                },
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                        }
+                    }
+                    if (isServerRunning) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "⚠️ Hãy dừng máy chủ trước khi bật/tắt Gói Mod Tối Ưu để không làm hỏng dữ liệu đang chạy.",
+                            color = Coral,
+                            fontSize = 10.5.sp,
                             fontWeight = FontWeight.SemiBold
                         )
                     }

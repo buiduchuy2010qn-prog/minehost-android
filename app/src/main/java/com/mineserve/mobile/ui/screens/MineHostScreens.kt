@@ -682,17 +682,92 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
             }
         }
 
-        // ── 3.5. TRỢ LÝ THÔNG MINH MINEHOST AI & TẮT/BẬT TOÀN BỘ MOD 1 CHẠM ──
+        // ── 3.5. TRỢ LÝ THÔNG MINH MINEHOST AI & GÓI MOD TỐI ƯU SERVER LƯU SẴN 1 CHẠM ──
         item {
             if (active != null) {
                 val enabledModCount = installedMods.count { it.isEnabled }
                 val disabledModCount = installedMods.count { !it.isEnabled }
+                val optPackStatus by vm.serverOptPackStatus.collectAsStateWithLifecycle()
+                val isTogglingOptPack by vm.isTogglingServerOptPack.collectAsStateWithLifecycle()
+                val optPackProgress by vm.serverOptPackProgress.collectAsStateWithLifecycle()
                 var homeBulkModConfirm by remember { mutableStateOf<String?>(null) }
                 HostCard(
-                    title = "🤖 Trợ Lý Thông Minh MineHost & Quản Lý Mod Nhanh",
+                    title = "🚀 Gói Mod Tối Ưu Server Lưu Sẵn & Trợ Lý AI",
                     artKind = MinecraftArtKind.REDSTONE,
-                    badgeText = if (installedMods.isNotEmpty()) "$enabledModCount/${installedMods.size} Mod Bật" else "Tự động tối ưu"
+                    badgeText = if (optPackStatus.isPackActive) {
+                        "🟢 Tối Ưu: ${optPackStatus.enabledCount}/${optPackStatus.totalModsInPack}"
+                    } else if (installedMods.isNotEmpty()) {
+                        "$enabledModCount/${installedMods.size} Mod Bật"
+                    } else {
+                        "1 Chạm"
+                    }
                 ) {
+                    if (!active.core.isBedrock) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(
+                                1.dp,
+                                if (optPackStatus.isPackActive) Color(0xFF10B981) else MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            "🚀 Gói 14 Mod Tối Ưu Server Cực Mạnh (MC ${active.version})",
+                                            style = MaterialTheme.typography.labelLarge,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                        Text(
+                                            if (optPackStatus.isPackActive) {
+                                                "🟢 Đang bật ${optPackStatus.enabledCount}/${optPackStatus.totalModsInPack} Mod (Lithium, FerriteCore, C2ME, Krypton, ModernFix, ServerCore...)"
+                                            } else {
+                                                "⚡ Bật 1 chạm tự chọn đúng bản MC ${active.version} • Chỉ cài cho Server, người chơi không cần cài mod!"
+                                            },
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontSize = 11.5.sp
+                                        )
+                                    }
+                                    Switch(
+                                        checked = optPackStatus.isPackActive,
+                                        onCheckedChange = { wantEnable ->
+                                            vm.toggleServerOptimizationPack(enable = wantEnable, customMcVersion = active.version)
+                                        },
+                                        enabled = !state.isRunning && !isTogglingOptPack
+                                    )
+                                }
+                                if (!active.core.supportsMods) {
+                                    Text(
+                                        "💡 Đang dùng ${active.core.displayName} ${active.version}: Bật công tắc sẽ tự động nâng cấp lõi lên Fabric ${active.version} (giữ nguyên 100% Map & cài đặt)!",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                                if (optPackProgress != null) {
+                                    Text(
+                                        optPackProgress ?: "",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     Text(
                         buildString {
                             append("• Máy chủ: ${active.name} (${active.core.displayName} ${active.version}) • RAM cấp phát: ${config.maxHeapMb} MB\n")
@@ -728,6 +803,14 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     fontSize = 11.5.sp,
                                     color = if (enabledModCount > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                                 )
+                            }
+                        } else if (!active.core.isBedrock) {
+                            OutlinedButton(
+                                onClick = { navigate(SubPage.Plugins) },
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("🧩 Mở Mục Mod Tối Ưu", fontWeight = FontWeight.ExtraBold, fontSize = 11.5.sp)
                             }
                         }
                     }
@@ -1085,6 +1168,14 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                 }
                             }
                             if (playConnectionMode == PlayConnectionMode.Everywhere) {
+                                if (playitState.errorMessage.isNotBlank()) {
+                                    Text(
+                                        "⚠️ ${playitState.errorMessage}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.error,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                                     if (!playitState.isRunning) {
                                         Button(
@@ -1110,6 +1201,22 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                                 modifier = Modifier.weight(1f)
                                             ) { Text("🔑 Claim", fontSize = 12.sp) }
                                         }
+                                    }
+                                }
+                                if (playitState.hasSavedSecret) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            vm.resetPlayitSecretKey()
+                                            vm.startPlayitTunnel()
+                                        },
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(
+                                            "🔑 Tạo liên kết Playit mới (Nếu muốn đổi cổng mới)",
+                                            fontSize = 11.5.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
                                     }
                                 }
                                 if (playitState.isRunning && playitState.isClaimed && playitState.bedrockAddress.isBlank()) {

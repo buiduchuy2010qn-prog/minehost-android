@@ -3166,6 +3166,141 @@ class McViewModel(
 
     // ── 模组管理 ──────────────────────────────────────────────────
 
+    private val _serverOptPackStatus = MutableStateFlow(
+        PluginManager.ServerOptimizationPackStatus(
+            totalModsInPack = 14,
+            installedCount = 0,
+            enabledCount = 0,
+            cachedCount = 0,
+            enabledModIds = emptySet(),
+            installedModIds = emptySet()
+        )
+    )
+    val serverOptPackStatus: StateFlow<PluginManager.ServerOptimizationPackStatus> = _serverOptPackStatus.asStateFlow()
+
+    private val _isTogglingServerOptPack = MutableStateFlow(false)
+    val isTogglingServerOptPack: StateFlow<Boolean> = _isTogglingServerOptPack.asStateFlow()
+
+    private val _serverOptPackProgress = MutableStateFlow<String?>(null)
+    val serverOptPackProgress: StateFlow<String?> = _serverOptPackProgress.asStateFlow()
+
+    fun serverOptimizationModBundle(): List<PluginManager.ServerOptimizationModItem> =
+        pluginManager.serverOptimizationModBundle
+
+    fun refreshServerOptPackStatus() {
+        val dirName = activeDirName() ?: return
+        val activeInstalled = config.value.installedCores.firstOrNull { it.name == config.value.activeCoreName }
+        val mcVer = (activeInstalled?.version?.takeIf { it.isNotBlank() } ?: config.value.mcVersion).ifBlank { "1.21.11" }
+        val loader = activeInstalled?.core?.let { c ->
+            if (c.supportsMods) modrinthLoader(c) else "fabric"
+        } ?: "fabric"
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                _serverOptPackStatus.value = pluginManager.getServerOptimizationPackStatus(dirName, mcVer, loader)
+            }
+        }
+    }
+
+    /**
+     * Bật hoặc Tắt Gói Mod Tối Ưu Server Cực Mạnh Lưu Sẵn (14 Mod Server-Side: Lithium, FerriteCore, C2ME, Noisium,
+     * Krypton, ModernFix, ServerCore, VMP, Alternate Current, Clumps, Ksyxis, ThreadTweak, Chunky + Fabric API).
+     * - Tự động nhận diện phiên bản Minecraft của Server đang chọn (`1.21.11`, `1.21.4`, `1.20.1`, ...).
+     * - Nếu Server đang chọn là `Vanilla` (chưa có bộ nạp Mod), ứng dụng TỰ ĐỘNG nâng cấp tại chỗ lên `Fabric`
+     *   cùng phiên bản (giữ nguyên 100% Thế giới `world/`, `server.properties`, dữ liệu người chơi) rồi kích hoạt trọn bộ Mod tối ưu!
+     * - Người chơi vào Server (PC / Pojav / FCL / Zalith) KHÔNG CẦN cài bất kỳ mod nào trên máy khách!
+     */
+    fun toggleServerOptimizationPack(enable: Boolean, customMcVersion: String = "") {
+        if (!requireServerStopped(if (enable) "bật Gói Mod Tối Ưu Server" else "tắt Gói Mod Tối Ưu Server")) return
+        if (_isTogglingServerOptPack.value) return
+        val activeInstalled = config.value.installedCores.firstOrNull { it.name == config.value.activeCoreName }
+        val dirName = activeInstalled?.dirName ?: activeDirName() ?: run {
+            _errorFlow.tryEmit("Hãy chọn hoặc tạo một máy chủ trước khi bật Gói Mod Tối Ưu Server.")
+            return
+        }
+        val currentCore = activeInstalled?.core ?: config.value.selectedCore
+        if (currentCore.isBedrock) {
+            _errorFlow.tryEmit("Máy chủ Bedrock (PE) đã tích hợp sẵn tối ưu đa luồng; Gói Mod Tối Ưu này dành cho máy chủ Java.")
+            return
+        }
+        val mcVer = customMcVersion.trim().ifBlank {
+            activeInstalled?.version?.trim()?.takeIf { it.isNotBlank() }
+                ?: config.value.mcVersion.trim().ifBlank { "1.21.11" }
+        }
+
+        viewModelScope.launch {
+            _isTogglingServerOptPack.value = true
+            try {
+                var effectiveCore = currentCore
+                // Nếu máy chủ đang là Vanilla (hoặc chưa hỗ trợ Mod) và người dùng BẬT gói tối ưu -> Tự động nâng cấp tại chỗ lên Fabric cùng phiên bản!
+                if (enable && !currentCore.supportsMods) {
+                    _serverOptPackProgress.value = "Đang tự động nâng cấp lõi $dirName lên Fabric $mcVer (giữ nguyên 100% Map & cài đặt)..."
+                    withContext(Dispatchers.IO) {
+                        val serverDir = java.io.File(repo.termuxRuntime.installer.rootDir, "home/servers/$dirName").apply { mkdirs() }
+                        val serverJar = java.io.File(serverDir, "server.jar")
+                        val vanillaBackup = java.io.File(serverDir, "vanilla_original_server.jar")
+                        if (serverJar.exists() && !vanillaBackup.exists()) {
+                            runCatching { serverJar.copyTo(vanillaBackup, overwrite = false) }
+                        }
+                        val tempCfg = config.value.copy(selectedCore = ServerCore.Fabric, mcVersion = mcVer)
+                        controller.downloadCoreTo(serverJar.absolutePath, tempCfg, dirName) { _, _, _ -> }
+                    }
+                    if (activeInstalled != null) {
+                        updateConfig { cfg ->
+                            cfg.copy(
+                                selectedCore = ServerCore.Fabric,
+                                installedCores = cfg.installedCores.map { item ->
+                                    if (item.name == activeInstalled.name) item.copy(core = ServerCore.Fabric, version = mcVer) else item
+                                }
+                            )
+                        }
+                    }
+                    effectiveCore = ServerCore.Fabric
+                }
+
+                val loader = if (effectiveCore.supportsMods) modrinthLoader(effectiveCore) else "fabric"
+                _serverOptPackProgress.value = if (enable) {
+                    "Đang kích hoạt Gói Mod Tối Ưu Server ($loader $mcVer)..."
+                } else {
+                    "Đang tạm tắt Gói Mod Tối Ưu Server..."
+                }
+
+                val (count, modNames) = withContext(Dispatchers.IO) {
+                    pluginManager.setServerOptimizationPackEnabled(
+                        dirName = dirName,
+                        mcVersion = mcVer,
+                        loader = loader,
+                        enable = enable
+                    ) { idx, total, modName ->
+                        _serverOptPackProgress.value = if (enable) {
+                            "⚡ Đang bật & đồng bộ kho lưu sẵn ($idx/$total): $modName ($mcVer)..."
+                        } else {
+                            "Đang tạm tắt ($idx/$total): $modName..."
+                        }
+                    }
+                }
+
+                refreshMods()
+                refreshServerOptPackStatus()
+                refreshWorldModCount()
+
+                if (enable) {
+                    val upgradedNote = if (!currentCore.supportsMods) " (Đã tự động chuyển lõi sang Fabric $mcVer giữ nguyên Map)" else ""
+                    val previewNames = modNames.take(6).joinToString(", ")
+                    notifyActionDone(
+                        "🚀 Đã BẬT $count Mod Tối Ưu Server Cực Mạnh cho MC $mcVer$upgradedNote ($previewNames...)! Chỉ cài trên Server — người chơi vào bình thường không cần cài mod."
+                    )
+                } else {
+                    notifyActionDone("⏸ Đã tạm tắt $count Mod Tối Ưu Server (vẫn lưu sẵn trong máy để bật lại 1 chạm bất cứ lúc nào).")
+                }
+            } catch (e: Exception) {
+                _errorFlow.tryEmit("Không thể chuyển trạng thái Gói Mod Tối Ưu: ${e.message}")
+            } finally {
+                _serverOptPackProgress.value = null
+                _isTogglingServerOptPack.value = false
+            }
+        }
+    }
+
     /** 扫描当前核心的 mods 目录 */
     fun refreshMods() {
         if (!isBootstrapped.value) return
@@ -3173,6 +3308,7 @@ class McViewModel(
         viewModelScope.launch {
             try {
                 _mods.value = withContext(Dispatchers.IO) { pluginManager.readMods(dirName) }
+                refreshServerOptPackStatus()
             } catch (e: Exception) {
                 _errorFlow.tryEmit(str(R.string.s214, e.message))
             }
@@ -7856,6 +7992,7 @@ class McViewModel(
             config.map { it.activeCoreName }.distinctUntilChanged().collect {
                 loadPlayerHistory()
                 refreshServerStorage()
+                refreshServerOptPackStatus()
             }
         }
         viewModelScope.launch {

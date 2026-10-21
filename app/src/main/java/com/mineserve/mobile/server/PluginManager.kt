@@ -2019,4 +2019,348 @@ class PluginManager(
         }
         installedNames
     }
+
+    /**
+     * Mô tả 1 Mod trong Gói Mod Tối Ưu Server Cực Mạnh Lưu Sẵn (100% Server-Side — Người chơi không cần cài mod vẫn vào được).
+     */
+    data class ServerOptimizationModItem(
+        val id: String,
+        val displayName: String,
+        val primaryPrefix: String,
+        val altPrefixes: List<String> = emptyList(),
+        val slugs: List<String>,
+        val categoryBadge: String,
+        val impactBadge: String,
+        val descriptionVi: String,
+        val fabricOnly: Boolean = false
+    ) {
+        fun matchesFileName(fileName: String): Boolean {
+            val clean = fileName.lowercase(Locale.ROOT).removePrefix("-")
+            val allPrefixes = listOf(primaryPrefix) + altPrefixes
+            return allPrefixes.any { p ->
+                clean.startsWith(p.lowercase(Locale.ROOT))
+            }
+        }
+    }
+
+    data class ServerOptimizationPackStatus(
+        val totalModsInPack: Int,
+        val installedCount: Int,
+        val enabledCount: Int,
+        val cachedCount: Int,
+        val enabledModIds: Set<String>,
+        val installedModIds: Set<String>
+    ) {
+        val isPackActive: Boolean
+            get() = enabledCount >= 5
+    }
+
+    val serverOptimizationModBundle: List<ServerOptimizationModItem> = listOf(
+        ServerOptimizationModItem(
+            id = "fabric-api",
+            displayName = "Fabric API",
+            primaryPrefix = "fabric-api",
+            slugs = listOf("fabric-api"),
+            categoryBadge = "Nền tảng",
+            impactBadge = "Lõi bắt buộc",
+            descriptionVi = "Thư viện nền tảng bắt buộc để chạy bộ mod tối ưu trên máy chủ Fabric/Quilt.",
+            fabricOnly = true
+        ),
+        ServerOptimizationModItem(
+            id = "lithium",
+            displayName = "Lithium",
+            primaryPrefix = "lithium",
+            altPrefixes = listOf("radium", "canary"),
+            slugs = listOf("lithium", "radium", "canary"),
+            categoryBadge = "Vật lý & Tick",
+            impactBadge = "+45% TPS",
+            descriptionVi = "Tối ưu toàn diện logic máy chủ, vật lý khối, AI mob và phễu (Hopper) mà giữ nguyên 100% cơ chế Vanilla."
+        ),
+        ServerOptimizationModItem(
+            id = "ferrite-core",
+            displayName = "FerriteCore",
+            primaryPrefix = "ferritecore",
+            altPrefixes = listOf("ferrite-core"),
+            slugs = listOf("ferrite-core"),
+            categoryBadge = "Siêu nén RAM",
+            impactBadge = "-45% RAM",
+            descriptionVi = "Nén dữ liệu trạng thái khối (BlockState), giúp điện thoại tiết kiệm 300MB–800MB RAM chống văng app."
+        ),
+        ServerOptimizationModItem(
+            id = "c2me",
+            displayName = "C2ME (Đa Luồng Chunk)",
+            primaryPrefix = "c2me",
+            slugs = listOf("c2me-fabric", "c2me-neoforge", "c2me"),
+            categoryBadge = "Đa nhân CPU",
+            impactBadge = "x3 Tải Chunk",
+            descriptionVi = "Tận dụng nhiều nhân CPU điện thoại để tạo và tải Chunk song song, hết giật lag khi người chơi bay/chạy nhanh."
+        ),
+        ServerOptimizationModItem(
+            id = "noisium",
+            displayName = "Noisium",
+            primaryPrefix = "noisium",
+            slugs = listOf("noisiumforked", "noisium"),
+            categoryBadge = "Tạo địa hình",
+            impactBadge = "+30% Gen Map",
+            descriptionVi = "Tăng tốc trực tiếp hàm tính toán quần xã và địa hình khi mở rộng vùng đất mới."
+        ),
+        ServerOptimizationModItem(
+            id = "krypton",
+            displayName = "Krypton",
+            primaryPrefix = "krypton",
+            altPrefixes = listOf("pluto"),
+            slugs = listOf("krypton", "pluto"),
+            categoryBadge = "Mạng & Ping",
+            impactBadge = "-35% CPU Mạng",
+            descriptionVi = "Tối ưu truyền tải gói tin mạng Netty và nén luồng dữ liệu, giúp giảm Ping khi chơi qua Playit.gg / 4G."
+        ),
+        ServerOptimizationModItem(
+            id = "modernfix",
+            displayName = "ModernFix",
+            primaryPrefix = "modernfix",
+            slugs = listOf("modernfix-mvus", "modernfix"),
+            categoryBadge = "RAM & Khởi động",
+            impactBadge = "Mở nhanh x2",
+            descriptionVi = "Khắc phục rò rỉ bộ nhớ, giảm dung lượng RAM nền và giúp máy chủ khởi động nhanh gấp đôi."
+        ),
+        ServerOptimizationModItem(
+            id = "servercore",
+            displayName = "ServerCore",
+            primaryPrefix = "servercore",
+            slugs = listOf("servercore"),
+            categoryBadge = "Giữ 20 TPS",
+            impactBadge = "Chống tụt TPS",
+            descriptionVi = "Tự động co giãn nhịp xử lý AI mob, sinh quái và tầm nhìn động khi đông người chơi để giữ cứng 20 TPS."
+        ),
+        ServerOptimizationModItem(
+            id = "vmp",
+            displayName = "VMP (Very Many Players)",
+            primaryPrefix = "vmp",
+            slugs = listOf("vmp-fabric", "vmp"),
+            categoryBadge = "Đông người chơi",
+            impactBadge = "Mượt >5 người",
+            descriptionVi = "Tối ưu hóa bộ theo dõi thực thể (Entity Tracker) và vùng tải khi nhiều người chơi di chuyển cùng lúc."
+        ),
+        ServerOptimizationModItem(
+            id = "alternate-current",
+            displayName = "Alternate Current",
+            primaryPrefix = "alternate-current",
+            altPrefixes = listOf("alternate_current"),
+            slugs = listOf("alternate-current"),
+            categoryBadge = "Redstone",
+            impactBadge = "-90% Lag mạch",
+            descriptionVi = "Thuật toán tính toán mạch đá đỏ (Redstone) siêu tốc, cắt giảm tới 90% số lần cập nhật khối thừa."
+        ),
+        ServerOptimizationModItem(
+            id = "clumps",
+            displayName = "Clumps (Gộp XP)",
+            primaryPrefix = "clumps",
+            slugs = listOf("clumps"),
+            categoryBadge = "Chống lag XP",
+            impactBadge = "Gộp cầu XP",
+            descriptionVi = "Tự động gộp hàng trăm hạt kinh nghiệm (XP Orbs) thành 1 quả duy nhất, chống đứng máy ở máy farm quái."
+        ),
+        ServerOptimizationModItem(
+            id = "ksyxis",
+            displayName = "Ksyxis",
+            primaryPrefix = "ksyxis",
+            slugs = listOf("ksyxis"),
+            categoryBadge = "Bỏ tải Spawn",
+            impactBadge = "Mở map tức thì",
+            descriptionVi = "Ngắt giữ cứng vùng Spawn Chunks lúc không có người đứng, giúp tạo/mở thế giới nhanh tức thì."
+        ),
+        ServerOptimizationModItem(
+            id = "threadtweak",
+            displayName = "ThreadTweak",
+            primaryPrefix = "threadtweak",
+            altPrefixes = listOf("smoothboot"),
+            slugs = listOf("threadtweak", "smoothboot-reloaded"),
+            categoryBadge = "Luồng CPU",
+            impactBadge = "Ưu tiên Tick",
+            descriptionVi = "Điều phối độ ưu tiên các luồng CPU trên Android để luồng chính (Server Tick) luôn mượt nhất."
+        ),
+        ServerOptimizationModItem(
+            id = "chunky",
+            displayName = "Chunky",
+            primaryPrefix = "chunky",
+            slugs = listOf("chunky"),
+            categoryBadge = "Tạo Map sẵn",
+            impactBadge = "Pre-gen Map",
+            descriptionVi = "Hỗ trợ tạo sẵn các vùng bản đồ quanh điểm hồi sinh để khi bạn bè vào khám phá không phải tính toán lại."
+        )
+    )
+
+    private fun optModsCacheDir(loader: String, mcVersion: String): File {
+        val safeVer = mcVersion.ifBlank { "1.21.11" }.replace(Regex("[^A-Za-z0-9._-]"), "_")
+        val safeLoader = loader.ifBlank { "fabric" }.lowercase(Locale.ROOT)
+        return File(termux.homeDir, "opt_mods_cache/${safeLoader}_$safeVer").apply { mkdirs() }
+    }
+
+    fun getServerOptimizationPackStatus(
+        dirName: String,
+        mcVersion: String = "1.21.11",
+        loader: String = "fabric"
+    ): ServerOptimizationPackStatus {
+        val modsDir = modsDirOf(dirName)
+        val files = if (modsDir.isDirectory) modsDir.listFiles()?.filter { it.isFile && isModCandidate(it) }.orEmpty() else emptyList()
+        val cacheDir = optModsCacheDir(loader, mcVersion)
+        val cachedFiles = if (cacheDir.isDirectory) cacheDir.listFiles()?.filter { it.isFile && it.name.endsWith(".jar", true) }.orEmpty() else emptyList()
+
+        val enabledIds = mutableSetOf<String>()
+        val installedIds = mutableSetOf<String>()
+        var cachedCount = 0
+
+        for (item in serverOptimizationModBundle) {
+            val matching = files.filter { item.matchesFileName(it.name) }
+            if (matching.isNotEmpty()) {
+                installedIds += item.id
+                if (matching.any { parseModFileName(it.name).second }) {
+                    enabledIds += item.id
+                }
+            }
+            if (cachedFiles.any { item.matchesFileName(it.name) } || matching.isNotEmpty()) {
+                cachedCount++
+            }
+        }
+
+        return ServerOptimizationPackStatus(
+            totalModsInPack = serverOptimizationModBundle.size,
+            installedCount = installedIds.size,
+            enabledCount = enabledIds.size,
+            cachedCount = cachedCount,
+            enabledModIds = enabledIds,
+            installedModIds = installedIds
+        )
+    }
+
+    /**
+     * Bật hoặc Tắt Gói Mod Tối Ưu Server Lưu Sẵn 1 chạm:
+     * - Tự động khớp đúng phiên bản Minecraft (`mcVersion`) và Loader (`fabric` / `quilt` / `neoforge` / `forge`).
+     * - Khi BẬT (`enable = true`):
+     *   1) Nếu mod đã có sẵn trong `mods/` nhưng đang `.jar.disabled` -> bật lại tức thì (`.jar`).
+     *   2) Nếu mod đã lưu sẵn trong bộ nhớ đệm `opt_mods_cache/${loader}_${mcVersion}` hoặc server cùng phiên bản -> chép sang tức thì (0 giây tải mạng).
+     *   3) Nếu chưa có trong bộ nhớ đệm -> tự động lấy bản chính thức khớp đúng `mcVersion` và lưu vào cả `mods/` lẫn `opt_mods_cache/` để lần sau bật 1 chạm không cần tải lại!
+     * - Khi TẮT (`enable = false`):
+     *   Chuyển các mod tối ưu trong `mods/` sang trạng thái `.jar.disabled` (giữ nguyên file đã lưu sẵn để bật lại cực nhanh).
+     */
+    suspend fun setServerOptimizationPackEnabled(
+        dirName: String,
+        mcVersion: String,
+        loader: String = "fabric",
+        enable: Boolean,
+        onProgress: (index: Int, total: Int, modName: String) -> Unit = { _, _, _ -> }
+    ): Pair<Int, List<String>> = withContext(Dispatchers.IO) {
+        val modsDir = modsDirOf(dirName).apply { mkdirs() }
+        val cleanVer = mcVersion.trim().ifBlank { "1.21.11" }
+        val cleanLoader = loader.trim().lowercase(Locale.ROOT).ifBlank { "fabric" }
+        val applicableBundle = serverOptimizationModBundle.filter { item ->
+            !item.fabricOnly || cleanLoader == "fabric" || cleanLoader == "quilt"
+        }
+
+        if (!enable) {
+            var disabledCount = 0
+            val disabledNames = mutableListOf<String>()
+            val existing = modsDir.listFiles()?.filter { it.isFile && isModCandidate(it) }.orEmpty()
+            for (item in applicableBundle) {
+                for (f in existing.filter { item.matchesFileName(it.name) }) {
+                    val (_, isCurrentlyEnabled) = parseModFileName(f.name)
+                    if (isCurrentlyEnabled) {
+                        val targetName = modToggleTarget(f.name, false)
+                        val targetFile = File(modsDir, targetName)
+                        if (f.renameTo(targetFile)) {
+                            disabledCount++
+                            disabledNames += item.displayName
+                        }
+                    }
+                }
+            }
+            return@withContext disabledCount to disabledNames
+        }
+
+        val cacheDir = optModsCacheDir(cleanLoader, cleanVer)
+        val enabledModNames = mutableListOf<String>()
+        val total = applicableBundle.size
+
+        for ((idx, item) in applicableBundle.withIndex()) {
+            onProgress(idx + 1, total, item.displayName)
+            val currentFiles = modsDir.listFiles()?.filter { it.isFile && item.matchesFileName(it.name) }.orEmpty()
+
+            // 1. Nếu đã có sẵn file .jar đang bật trong mods/ -> giữ nguyên và sao lưu vào cache nếu chưa có
+            val alreadyEnabled = currentFiles.firstOrNull { parseModFileName(it.name).second && it.length() > 1024L }
+            if (alreadyEnabled != null) {
+                runCatching {
+                    val cachedCopy = File(cacheDir, alreadyEnabled.name)
+                    if (!cachedCopy.exists()) alreadyEnabled.copyTo(cachedCopy, overwrite = true)
+                }
+                enabledModNames += item.displayName
+                continue
+            }
+
+            // 2. Nếu có sẵn file .jar.disabled trong mods/ -> bật lại ngay lập tức (0 giây!)
+            val disabledFile = currentFiles.firstOrNull { !parseModFileName(it.name).second && it.length() > 1024L }
+            if (disabledFile != null) {
+                val targetName = modToggleTarget(disabledFile.name, true)
+                val targetFile = File(modsDir, targetName)
+                if (disabledFile.renameTo(targetFile)) {
+                    runCatching {
+                        val cachedCopy = File(cacheDir, targetFile.name)
+                        if (!cachedCopy.exists()) targetFile.copyTo(cachedCopy, overwrite = true)
+                    }
+                    enabledModNames += item.displayName
+                    continue
+                }
+            }
+
+            // 3. Kiểm tra kho lưu sẵn (opt_mods_cache) của đúng phiên bản MC + Loader này
+            val cachedJar = cacheDir.listFiles()?.firstOrNull {
+                it.isFile && it.name.endsWith(".jar", true) && item.matchesFileName(it.name) && it.length() > 1024L
+            }
+            if (cachedJar != null) {
+                val dest = File(modsDir, cachedJar.name)
+                runCatching {
+                    cachedJar.copyTo(dest, overwrite = true)
+                    enabledModNames += item.displayName
+                }
+                if (dest.exists() && dest.length() > 1024L) continue
+            }
+
+            // 4. Kiểm tra các thư mục máy chủ khác cùng phiên bản trên máy
+            val crossServerJar = findExistingModJarAcrossServers(item.primaryPrefix, dirName, cleanVer)
+                ?: item.altPrefixes.firstNotNullOfOrNull { alt -> findExistingModJarAcrossServers(alt, dirName, cleanVer) }
+            if (crossServerJar != null) {
+                val cleanName = modToggleTarget(crossServerJar.name, true)
+                val dest = File(modsDir, cleanName)
+                runCatching {
+                    crossServerJar.copyTo(dest, overwrite = true)
+                    dest.copyTo(File(cacheDir, cleanName), overwrite = true)
+                    enabledModNames += item.displayName
+                }
+                if (dest.exists() && dest.length() > 1024L) continue
+            }
+
+            // 5. Tự động lấy bản khớp đúng phiên bản MC của Server và lưu vào kho lưu sẵn (opt_mods_cache)
+            var resolvedPair: Pair<String, String>? = null
+            for (candidateSlug in item.slugs) {
+                resolvedPair = runCatching {
+                    resolveSingleModrinthSlug(candidateSlug, cleanVer, cleanLoader)
+                }.getOrNull()
+                if (resolvedPair != null) break
+            }
+
+            if (resolvedPair != null) {
+                val (url, fn) = resolvedPair
+                runCatching {
+                    val installedFile = installModPackJarFromUrl(url, fn, dirName)
+                    if (installedFile.exists() && installedFile.length() > 1024L) {
+                        runCatching {
+                            installedFile.copyTo(File(cacheDir, installedFile.name), overwrite = true)
+                        }
+                        enabledModNames += item.displayName
+                    }
+                }
+            }
+        }
+
+        enabledModNames.size to enabledModNames
+    }
 }

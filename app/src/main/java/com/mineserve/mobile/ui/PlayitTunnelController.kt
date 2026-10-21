@@ -94,11 +94,14 @@ class PlayitTunnelController(
     private val appContext = context.applicationContext
     private val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val _state = MutableStateFlow(
-        PlayitUiState(
-            hasSavedSecret = !getSavedSecret().isNullOrBlank(),
-            publicAddress = prefs.getString(KEY_LAST_ADDRESS, "").orEmpty(),
-            bedrockAddress = prefs.getString(KEY_LAST_BEDROCK_ADDRESS, "").orEmpty()
-        )
+        run {
+            val verifiedAgent = !prefs.getString(KEY_LAST_AGENT_ID, null).isNullOrBlank()
+            PlayitUiState(
+                hasSavedSecret = !getSavedSecret().isNullOrBlank(),
+                publicAddress = if (verifiedAgent) prefs.getString(KEY_LAST_ADDRESS, "").orEmpty() else "",
+                bedrockAddress = if (verifiedAgent) prefs.getString(KEY_LAST_BEDROCK_ADDRESS, "").orEmpty() else ""
+            )
+        }
     )
     val state: StateFlow<PlayitUiState> = _state.asStateFlow()
 
@@ -189,7 +192,7 @@ class PlayitTunnelController(
 
     fun resetSecretKey() {
         stop()
-        prefs.edit().remove(KEY_SECRET).remove(KEY_LAST_ADDRESS).remove(KEY_LAST_BEDROCK_ADDRESS).apply()
+        prefs.edit().remove(KEY_SECRET).remove(KEY_LAST_ADDRESS).remove(KEY_LAST_BEDROCK_ADDRESS).remove(KEY_LAST_AGENT_ID).apply()
         updateState {
             PlayitUiState(
                 stage = PlayitStage.Idle,
@@ -312,73 +315,32 @@ class PlayitTunnelController(
                     }
                 }
 
-                // Bước 2: Kiểm tra Secret Key & Đảm bảo đã có Tunnel Minecraft Java gắn đúng vào Agent hiện tại
+                // Bước 2: Mở kênh điều khiển UDP (Port 5525) & Đăng ký phiên Agent (/proto/register) TRƯỚC KHI kiểm tra/tạo Tunnel
+                // (Đúng chuẩn PlayitManager.java để máy chủ Playit ghi nhận phiên bản Agent và chỉ định đúng cổng về điện thoại này)
                 updateState {
                     it.copy(
                         stage = PlayitStage.VerifyingSecret,
-                        statusText = "Đang kiểm tra tài khoản & đồng bộ cổng Playit.gg...",
+                        statusText = "Đang kết nối máy chủ điều khiển Playit.gg...",
                         claimCode = "",
                         claimUrl = "",
                         errorMessage = ""
                     )
                 }
 
-                val rundataResp = try {
-                    postJson("/v1/agents/rundata", "{}", secret)
+                val routingTargets = try {
+                    fetchControlTargets(secret)
                 } catch (e: ApiHttpException) {
                     if (e.code == 401 || e.code == 400) {
                         appendLog("Khóa Playit.gg hết hạn hoặc không hợp lệ (HTTP ${e.code}), đang tạo mã kích hoạt mới...")
-                        prefs.edit().remove(KEY_SECRET).apply()
+                        prefs.edit().remove(KEY_SECRET).remove(KEY_LAST_ADDRESS).remove(KEY_LAST_BEDROCK_ADDRESS).apply()
                         secret = null
                         claimCode = ""
-                        updateState { it.copy(hasSavedSecret = false) }
+                        updateState { it.copy(hasSavedSecret = false, publicAddress = "", secondaryAddress = "", bedrockAddress = "") }
                         continue
                     }
                     throw e
                 }
 
-                val runData = rundataResp.optJSONObject("data")
-                    ?: throw IOException("Phản hồi /v1/agents/rundata thiếu dữ liệu")
-                val agentId = runData.optString("agent_id")
-                var addressInfo = extractAddressesFromRundataAndList(runData, secret, agentId)
-
-                if (addressInfo.first.isBlank()) {
-                    updateState {
-                        it.copy(
-                            stage = PlayitStage.CreatingTunnel,
-                            statusText = "Đang tự động tạo địa chỉ Minecraft công khai..."
-                        )
-                    }
-                    appendLog("Chưa có cổng Minecraft trên Playit.gg, đang tự động tạo cổng mới...")
-                    createMinecraftJavaTunnel(secret, agentId)
-                    for (attempt in 1..10) {
-                        delay(1200)
-                        val rd = postJson("/v1/agents/rundata", "{}", secret).optJSONObject("data")
-                        addressInfo = extractAddressesFromRundataAndList(rd, secret, agentId)
-                        if (addressInfo.first.isNotBlank()) break
-                    }
-                }
-
-                if (addressInfo.first.isNotBlank()) {
-                    prefs.edit().putString(KEY_LAST_ADDRESS, addressInfo.first).apply()
-                    appendLog("Địa chỉ công khai Playit.gg sẵn sàng: ${addressInfo.first}")
-                }
-                if (addressInfo.third.isNotBlank()) {
-                    prefs.edit().putString(KEY_LAST_BEDROCK_ADDRESS, addressInfo.third).apply()
-                }
-
-                // Bước 3: Kết nối kênh điều khiển UDP (Port 5525) & Xác thực phiên
-                updateState {
-                    it.copy(
-                        stage = PlayitStage.ConnectingControl,
-                        statusText = "Đang mở kênh truyền dữ liệu Playit.gg...",
-                        publicAddress = addressInfo.first.ifBlank { it.publicAddress },
-                        secondaryAddress = addressInfo.second,
-                        bedrockAddress = addressInfo.third.ifBlank { it.bedrockAddress }
-                    )
-                }
-
-                val routingTargets = fetchControlTargets(secret)
                 runCatching { controlSocket?.close() }
                 val udpSocket = DatagramSocket()
                 udpSocket.soTimeout = 3000
@@ -387,17 +349,83 @@ class PlayitTunnelController(
                 val (controlAddr, pong) = findReachableControlServer(udpSocket, routingTargets)
                 val registered = authenticateControlChannel(udpSocket, controlAddr, pong, secret)
 
+                // Bước 3: Kiểm tra Rundata & Đảm bảo có Tunnel Minecraft Java gắn ĐÚNG vào AgentId của điện thoại hiện tại
+                updateState {
+                    it.copy(
+                        stage = PlayitStage.ConnectingControl,
+                        statusText = "Đang đồng bộ cổng Minecraft của thiết bị này..."
+                    )
+                }
+
+                val rundataResp = postJson("/v1/agents/rundata", "{}", secret)
+                val runData = rundataResp.optJSONObject("data")
+                    ?: throw IOException("Phản hồi /v1/agents/rundata thiếu dữ liệu")
+                val agentId = runData.optString("agent_id")
+                val activePort = runCatching { currentPortProvider() }.getOrDefault(25565).let { p ->
+                    if (p in 1..65535) p else 25565
+                }
+                var addressInfo = extractAddressesFromRundataAndList(runData, secret, agentId)
+
+                if (addressInfo.first.isBlank()) {
+                    updateState {
+                        it.copy(
+                            stage = PlayitStage.CreatingTunnel,
+                            statusText = "Đang tự động tạo địa chỉ Minecraft công khai cho máy này...",
+                            publicAddress = "",
+                            secondaryAddress = ""
+                        )
+                    }
+                    appendLog("Thiết bị hiện tại ($agentId) chưa có cổng riêng, đang tạo cổng Minecraft Java mới trên Playit.gg...")
+                    val createdOk = createMinecraftJavaTunnel(secret, agentId, activePort)
+                    val keepPingBuf = ByteBuffer.allocate(256).order(ByteOrder.BIG_ENDIAN)
+                    for (attempt in 1..12) {
+                        // Vừa chờ cấp phát cổng vừa gửi Ping UDP giữ kênh điều khiển luôn sống
+                        runCatching {
+                            keepPingBuf.clear()
+                            writePingPacket(keepPingBuf, 200L + attempt, System.currentTimeMillis(), registered.sessionId)
+                            udpSocket.send(DatagramPacket(keepPingBuf.array(), 0, keepPingBuf.position(), controlAddr))
+                        }
+                        delay(1200)
+                        val rd = runCatching { postJson("/v1/agents/rundata", "{}", secret).optJSONObject("data") }.getOrNull()
+                        addressInfo = extractAddressesFromRundataAndList(rd, secret, agentId)
+                        if (addressInfo.first.isNotBlank()) break
+                    }
+                    if (!createdOk && addressInfo.first.isBlank()) {
+                        appendLog("⚠️ Không thể tạo thêm cổng trên tài khoản Playit hiện tại (có thể đã đầy giới hạn 4 cổng của thiết bị cũ). Bạn có thể bấm 'Đổi khóa / Tạo liên kết mới' để nhận cổng mới ngay.")
+                    }
+                }
+
+                if (addressInfo.first.isNotBlank()) {
+                    prefs.edit()
+                        .putString(KEY_LAST_ADDRESS, addressInfo.first)
+                        .putString(KEY_LAST_AGENT_ID, agentId)
+                        .apply()
+                    appendLog("Địa chỉ công khai Playit.gg của máy này sẵn sàng: ${addressInfo.first}")
+                } else {
+                    prefs.edit().remove(KEY_LAST_ADDRESS).apply()
+                }
+                if (addressInfo.third.isNotBlank()) {
+                    prefs.edit().putString(KEY_LAST_BEDROCK_ADDRESS, addressInfo.third).apply()
+                }
+
                 val nowTimeStr = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
-                val activePort = runCatching { currentPortProvider() }.getOrDefault(25565)
-                appendLog("Đường hầm Playit.gg ĐÃ HOẠT ĐỘNG! Đang nối tới cổng máy chủ 127.0.0.1:$activePort.")
+                appendLog("Đường hầm Playit.gg ĐÃ HOẠT ĐỘNG! Đang nối trực tiếp tới 127.0.0.1:$activePort.")
                 updateState {
                     it.copy(
                         stage = PlayitStage.Running,
-                        statusText = "Đang hoạt động (Chơi mọi nơi 4G / Wi-Fi)",
-                        publicAddress = addressInfo.first.ifBlank { it.publicAddress },
+                        statusText = if (addressInfo.first.isNotBlank()) {
+                            "Đang hoạt động (Chơi mọi nơi 4G / Wi-Fi)"
+                        } else {
+                            "Đang chờ Playit cấp phát địa chỉ..."
+                        },
+                        publicAddress = addressInfo.first,
                         secondaryAddress = addressInfo.second,
-                        bedrockAddress = addressInfo.third.ifBlank { it.bedrockAddress },
-                        errorMessage = "",
+                        bedrockAddress = addressInfo.third,
+                        errorMessage = if (addressInfo.first.isBlank()) {
+                            "Tài khoản Playit.gg này chưa cấp được cổng cho thiết bị hiện tại (có thể do đầy 4 cổng cũ trên web Playit.gg). -> Cách sửa: Bấm nút 'Đổi khóa / Liên kết lại Playit' bên dưới để tạo mã kích hoạt mới."
+                        } else {
+                            ""
+                        },
                         lastUpdatedText = nowTimeStr
                     )
                 }
@@ -443,6 +471,8 @@ class PlayitTunnelController(
         agentId: String
     ) {
         var registered = initialRegistered
+        var authClientAddr = initialPong.clientAddrStr
+        var authTunnelAddr = initialPong.tunnelAddrStr
         var lastPingMs = 0L
         var lastPongReceivedMs = System.currentTimeMillis()
         var lastKeepAliveMs = System.currentTimeMillis()
@@ -490,13 +520,18 @@ class PlayitTunnelController(
                     val rd = postJson("/v1/agents/rundata", "{}", secret).optJSONObject("data")
                     val info = extractAddressesFromRundataAndList(rd, secret, agentId)
                     if (info.first.isNotBlank()) {
-                        prefs.edit().putString(KEY_LAST_ADDRESS, info.first).apply()
+                        prefs.edit()
+                            .putString(KEY_LAST_ADDRESS, info.first)
+                            .putString(KEY_LAST_AGENT_ID, agentId)
+                            .apply()
                         appendLog("Đã nhận địa chỉ công khai Playit.gg: ${info.first}")
                         updateState {
                             it.copy(
+                                statusText = "Đang hoạt động (Chơi mọi nơi 4G / Wi-Fi)",
                                 publicAddress = info.first,
                                 secondaryAddress = info.second,
-                                bedrockAddress = info.third.ifBlank { it.bedrockAddress }
+                                bedrockAddress = info.third.ifBlank { it.bedrockAddress },
+                                errorMessage = ""
                             )
                         }
                     }
@@ -524,7 +559,8 @@ class PlayitTunnelController(
             when (msg) {
                 is PongMsg -> {
                     lastPongReceivedMs = System.currentTimeMillis()
-                    if (msg.sessionExpireAt > 0L) {
+                    val flowChanged = msg.clientAddrStr != authClientAddr || msg.tunnelAddrStr != authTunnelAddr
+                    if (msg.sessionExpireAt > 0L && !flowChanged) {
                         registered = registered.copy(expiresAt = msg.sessionExpireAt)
                         // Tính thời gian còn lại theo đồng hồ máy chủ Playit (serverNow) để không bị lệch múi giờ/đồng hồ điện thoại
                         val serverRemainingMs = msg.sessionExpireAt - msg.serverNow
@@ -536,9 +572,11 @@ class PlayitTunnelController(
                             runCatching { udpSocket.send(pkt) }
                         }
                     } else {
-                        // Phiên điều khiển trên máy chủ Playit đã thực sự hết hạn (sessionExpireAt == 0L) -> Gửi yêu cầu /proto/register không chặn luồng đọc!
+                        // Phiên điều khiển hết hạn (sessionExpireAt == 0L) hoặc NAT đổi cổng UDP (flowChanged) -> Gửi /proto/register không chặn luồng đọc!
                         runCatching {
                             sendControlRegisterRequestNonBlocking(udpSocket, controlAddr, msg, secret)
+                            authClientAddr = msg.clientAddrStr
+                            authTunnelAddr = msg.tunnelAddrStr
                             lastKeepAliveMs = now
                         }
                     }
@@ -556,10 +594,10 @@ class PlayitTunnelController(
                     }
                 }
                 is NewClientMsg -> {
-                    // Khử trùng lặp gói phát lại UDP theo đúng PlayitManager.java gốc: peerAddr + "-" + connectAddr
-                    val claimKey = "${msg.peerAddr}-${msg.connectAddr}"
+                    // Khử trùng lặp gói phát lại UDP theo đúng claimToken của phiên kết nối
+                    val claimKey = "${msg.peerAddr}-${msg.connectAddr}-${msg.claimToken.contentHashCode()}"
                     val prev = recentClaimKeys.putIfAbsent(claimKey, now)
-                    if (prev == null || now - prev > 3_000L) {
+                    if (prev == null || now - prev > 8_000L) {
                         recentClaimKeys[claimKey] = now
                         val targetPort = runCatching { currentPortProvider() }.getOrDefault(25565).let { p ->
                             if (p in 1..65535) p else 25565
@@ -613,12 +651,29 @@ class PlayitTunnelController(
         var mcSocket: Socket? = null
         var connectedPort = localPort
         try {
-            // 1. Kết nối tới cổng máy chủ Minecraft cục bộ trước (hỗ trợ tự động dò cổng dự phòng nếu lệch cổng)
+            // 1. Kết nối tới máy chủ Claim của Playit TRƯỚC và gửi claimToken ngay lập tức (tránh hết hạn claimToken 5 giây trên máy chủ Playit!)
+            tunnelSocket = Socket()
+            tunnelSocket.tcpNoDelay = true
+            tunnelSocket.keepAlive = true
+            tunnelSocket.connect(client.claimAddress, 6000)
+            activeBridges.add(tunnelSocket)
+
+            val tunnelOut = tunnelSocket.getOutputStream()
+            tunnelOut.write(client.claimToken)
+            tunnelOut.flush()
+
+            // Đọc đủ 8 byte xác nhận từ máy chủ Playit (chuẩn PlayitTcpTunnel.java)
+            val tunnelIn = DataInputStream(tunnelSocket.getInputStream())
+            val confirmBytes = ByteArray(8)
+            tunnelIn.readFully(confirmBytes)
+
+            // 2. Kết nối tới cổng máy chủ Minecraft cục bộ (hỗ trợ tự động dò cổng dự phòng nếu lệch cổng)
             val candidatePorts = linkedSetOf(localPort, 25565, 25566, 25567)
             var lastLocalErr: Exception? = null
             for (portCandidate in candidatePorts) {
                 val candidate = Socket()
                 candidate.tcpNoDelay = true
+                candidate.keepAlive = true
                 try {
                     candidate.connect(InetSocketAddress("127.0.0.1", portCandidate), 3500)
                     mcSocket = candidate
@@ -634,21 +689,6 @@ class PlayitTunnelController(
                 throw (lastLocalErr ?: IOException("Cổng 127.0.0.1:$localPort chưa mở"))
             }
             activeBridges.add(mcSocket!!)
-
-            // 2. Kết nối tới máy chủ Claim của Playit và gửi claimToken nhận luồng dữ liệu của người chơi
-            tunnelSocket = Socket()
-            tunnelSocket.tcpNoDelay = true
-            tunnelSocket.connect(client.claimAddress, 8000)
-            activeBridges.add(tunnelSocket)
-
-            val tunnelOut = tunnelSocket.getOutputStream()
-            tunnelOut.write(client.claimToken)
-            tunnelOut.flush()
-
-            // Đọc đủ 8 byte xác nhận từ máy chủ Playit trước khi nối vào cổng Minecraft cục bộ
-            val tunnelIn = DataInputStream(tunnelSocket.getInputStream())
-            val confirmBytes = ByteArray(8)
-            tunnelIn.readFully(confirmBytes)
 
             val count = activeConnectionCount.incrementAndGet()
             updateState { it.copy(activeConnections = count) }
@@ -703,17 +743,26 @@ class PlayitTunnelController(
         }
     }
 
-    private fun rebindTunnelToCurrentAgent(secret: String, tunnelId: String, agentId: String, currentlyEnabled: Boolean) {
-        if (tunnelId.isBlank() || agentId.isBlank()) return
+    private fun rebindTunnelToCurrentAgent(
+        secret: String,
+        tunnelId: String,
+        agentId: String,
+        currentlyEnabled: Boolean
+    ): Boolean {
+        if (tunnelId.isBlank() || agentId.isBlank()) return false
+        var reboundOk = false
         runCatching {
             val cfgReq = JSONObject()
                 .put("tunnel_id", tunnelId)
                 .put("new_agent_id", agentId)
-                .put("new_config", JSONObject())
-            postJson("/v1/tunnels/config", cfgReq.toString(), secret)
-            appendLog("Đã gắn chặt cổng Playit ($tunnelId) vào máy chủ trên điện thoại hiện tại.")
+                .put("new_config", JSONObject().put("fields", JSONArray()))
+            val resp = postJson("/v1/tunnels/config", cfgReq.toString(), secret)
+            if (resp.optString("status") == "success") {
+                reboundOk = true
+                appendLog("Đã đồng bộ cổng Playit ($tunnelId) sang thiết bị hiện tại.")
+            }
         }
-        if (!currentlyEnabled) {
+        if (reboundOk && !currentlyEnabled) {
             runCatching {
                 val enReq = JSONObject()
                     .put("tunnel_id", tunnelId)
@@ -721,6 +770,7 @@ class PlayitTunnelController(
                 postJson("/tunnels/enable", enReq.toString(), secret)
             }
         }
+        return reboundOk
     }
 
     private fun extractAddressesFromRundataAndList(
@@ -730,14 +780,17 @@ class PlayitTunnelController(
     ): Triple<String, String, String> {
         val foundJava = LinkedHashSet<String>()
         val foundBedrock = LinkedHashSet<String>()
+        val agentTunnelIds = HashSet<String>()
 
-        // 1. Lấy từ /v1/agents/rundata (các tunnel đã gắn trực tiếp với agent hiện tại)
+        // 1. Lấy từ /v1/agents/rundata (các tunnel chắc chắn thuộc về agentId của điện thoại hiện tại!)
         val agentTunnels = runData?.optJSONArray("tunnels")
         if (agentTunnels != null) {
             for (i in 0 until agentTunnels.length()) {
                 val t = agentTunnels.optJSONObject(i) ?: continue
+                val tid = t.optString("id")
+                if (tid.isNotBlank()) agentTunnelIds.add(tid)
                 val tType = t.optString("tunnel_type")
-                val pType = t.optString("port_type")
+                val pType = t.optString("port_type").ifBlank { t.optString("proto") }
                 val disp = t.optString("display_address").trim()
                 if (disp.isBlank()) continue
                 if (tType == "minecraft-bedrock" || pType.equals("udp", ignoreCase = true)) {
@@ -748,7 +801,8 @@ class PlayitTunnelController(
             }
         }
 
-        // 2. Lấy chi tiết từ /v1/tunnels/list và tự động gắn (rebind) các cổng bị mồ côi sang agentId hiện tại!
+        // 2. Lấy chi tiết từ /v1/tunnels/list — CHỈ LẤY địa chỉ của các cổng thuộc về agentId hiện tại!
+        // (Tuyệt đối không lấy địa chỉ của agent cũ đã chết vì Playit chặn SelfManagedAgentCannotReassignTunnel)
         runCatching {
             val listResp = postJson("/v1/tunnels/list", "{}", secret)
             val tunnels = listResp.optJSONObject("data")?.optJSONArray("tunnels")
@@ -764,13 +818,31 @@ class PlayitTunnelController(
                     if (!isJava && !isBedrock) continue
 
                     val originObj = t.optJSONObject("origin")
-                    val originAgentId = originObj?.optJSONObject("data")?.optString("agent_id")
-                        ?: originObj?.optJSONObject("details")?.optString("agent_id")
-                        ?: ""
+                    val originAgentId = originObj?.optJSONObject("data")?.optString("agent_id")?.takeIf { it.isNotBlank() }
+                        ?: originObj?.optJSONObject("details")?.optString("agent_id").orEmpty()
 
-                    // Nếu cổng trên tài khoản chưa gắn vào agentId hiện tại (hoặc đang tắt) -> Tự động gắn sang agentId này!
-                    if (agentId.isNotBlank() && (originAgentId != agentId || !enabled)) {
+                    val belongsToCurrentAgent = (tunnelId.isNotBlank() && tunnelId in agentTunnelIds) ||
+                        (agentId.isNotBlank() && originAgentId == agentId)
+
+                    val usableOnCurrentAgent = if (belongsToCurrentAgent) {
+                        if (!enabled && tunnelId.isNotBlank()) {
+                            runCatching {
+                                val enReq = JSONObject()
+                                    .put("tunnel_id", tunnelId)
+                                    .put("enabled", true)
+                                postJson("/tunnels/enable", enReq.toString(), secret)
+                            }
+                        }
+                        true
+                    } else if (agentId.isNotBlank()) {
+                        // Thử chuyển nhượng sang agentId hiện tại; nếu Playit từ chối (SelfManagedAgentCannotReassignTunnel) thì BỎ QUA!
                         rebindTunnelToCurrentAgent(secret, tunnelId, agentId, enabled)
+                    } else {
+                        false
+                    }
+
+                    if (!usableOnCurrentAgent) {
+                        continue
                     }
 
                     val addrs = t.optJSONArray("connect_addresses")
@@ -829,7 +901,10 @@ class PlayitTunnelController(
                 val agentId = rd.optString("agent_id")
                 if (agentId.isBlank()) return@launch
                 appendLog("Đang tạo cổng UDP Playit.gg cho Minecraft Bedrock (PE $localBedrockPort)...")
-                val req = JSONObject()
+                val fieldsArr = JSONArray()
+                    .put(JSONObject().put("name", "local_ip").put("value", "127.0.0.1"))
+                    .put(JSONObject().put("name", "local_port").put("value", localBedrockPort.toString()))
+                val reqV1 = JSONObject()
                     .put("name", "MineHost Bedrock UDP")
                     .put(
                         "protocol",
@@ -845,12 +920,7 @@ class PlayitTunnelController(
                                 "data",
                                 JSONObject()
                                     .put("agent_id", agentId)
-                                    .put(
-                                        "config",
-                                        JSONObject()
-                                            .put("local_ip", "127.0.0.1")
-                                            .put("local_port", localBedrockPort)
-                                    )
+                                    .put("config", JSONObject().put("fields", fieldsArr))
                             )
                     )
                     .put(
@@ -860,9 +930,31 @@ class PlayitTunnelController(
                             .put("details", JSONObject().put("region", "global"))
                     )
                     .put("enabled", true)
-                postJson("/v1/tunnels/create", req.toString(), secret)
+                val r1 = runCatching { postJson("/v1/tunnels/create", reqV1.toString(), secret) }.getOrNull()
+                if (r1?.optString("status") != "success") {
+                    val reqLegacy = JSONObject()
+                        .put("name", "MineHost Bedrock UDP")
+                        .put("tunnel_type", "minecraft-bedrock")
+                        .put("port_type", "udp")
+                        .put("port_count", 1)
+                        .put(
+                            "origin",
+                            JSONObject()
+                                .put("type", "agent")
+                                .put(
+                                    "data",
+                                    JSONObject()
+                                        .put("agent_id", agentId)
+                                        .put("local_ip", "127.0.0.1")
+                                        .put("local_port", localBedrockPort)
+                                )
+                        )
+                        .put("enabled", true)
+                    runCatching { postJson("/tunnels/create", reqLegacy.toString(), secret) }
+                }
                 delay(1500)
-                val info = extractAddressesFromRundataAndList(rd, secret, agentId)
+                val rdAfter = postJson("/v1/agents/rundata", "{}", secret).optJSONObject("data") ?: rd
+                val info = extractAddressesFromRundataAndList(rdAfter, secret, agentId)
                 if (info.third.isNotBlank()) {
                     prefs.edit().putString(KEY_LAST_BEDROCK_ADDRESS, info.third).apply()
                     updateState { it.copy(bedrockAddress = info.third) }
@@ -874,8 +966,13 @@ class PlayitTunnelController(
         }
     }
 
-    private fun createMinecraftJavaTunnel(secret: String, agentId: String) {
-        val req = JSONObject()
+    private fun createMinecraftJavaTunnel(secret: String, agentId: String, localPort: Int = 25565): Boolean {
+        val fieldsWithPort = JSONArray()
+            .put(JSONObject().put("name", "local_ip").put("value", "127.0.0.1"))
+            .put(JSONObject().put("name", "local_port").put("value", localPort.toString()))
+
+        // Định dạng 1: /v1/tunnels/create chuẩn api.rs mới (protocol + endpoint + config.fields)
+        val reqV1Fields = JSONObject()
             .put("name", "MineHost Server")
             .put(
                 "protocol",
@@ -891,26 +988,126 @@ class PlayitTunnelController(
                         "data",
                         JSONObject()
                             .put("agent_id", agentId)
-                            .put("config", JSONObject())
+                            .put("config", JSONObject().put("fields", fieldsWithPort))
                     )
             )
             .put(
                 "endpoint",
                 JSONObject()
                     .put("type", "region")
+                    .put("details", JSONObject().put("region", "global"))
+            )
+            .put("enabled", true)
+
+        // Định dạng 2: /v1/tunnels/create chuẩn playit-minecraft-plugin (ReqTunnelsCreateV1.java)
+        val reqPluginV1 = JSONObject()
+            .put("name", "MineHost Server")
+            .put("tunnel_type", "minecraft-java")
+            .put(
+                "ports",
+                JSONObject()
+                    .put("type", "single")
+                    .put("details", "tcp")
+            )
+            .put(
+                "origin",
+                JSONObject()
+                    .put("type", "agent")
                     .put(
-                        "details",
+                        "data",
                         JSONObject()
-                            .put("region", "global")
+                            .put("agent_id", agentId)
+                            .put("config", JSONObject().put("fields", JSONArray()))
+                    )
+            )
+            .put(
+                "alloc",
+                JSONObject()
+                    .put("type", "region")
+                    .put("details", JSONObject().put("region", "global"))
+            )
+
+        // Định dạng 3: /tunnels/create chuẩn playit-agent CLI (ReqTunnelsCreate)
+        val reqCli = JSONObject()
+            .put("name", "MineHost Server")
+            .put("tunnel_type", "minecraft-java")
+            .put("port_type", "tcp")
+            .put("port_count", 1)
+            .put(
+                "origin",
+                JSONObject()
+                    .put("type", "agent")
+                    .put(
+                        "data",
+                        JSONObject()
+                            .put("agent_id", agentId)
+                            .put("local_ip", "127.0.0.1")
+                            .put("local_port", localPort)
                     )
             )
             .put("enabled", true)
 
-        runCatching {
-            postJson("/v1/tunnels/create", req.toString(), secret)
-        }.onFailure { e ->
-            appendLog("Lưu ý khi tạo tunnel tự động: ${e.message}")
+        val candidates = listOf(
+            "/v1/tunnels/create" to reqV1Fields,
+            "/v1/tunnels/create" to reqPluginV1,
+            "/tunnels/create" to reqCli
+        )
+
+        var lastFailReason = ""
+        for ((endpointPath, payload) in candidates) {
+            val ok = runCatching {
+                val resp = postJson(endpointPath, payload.toString(), secret)
+                if (resp.optString("status") == "success") {
+                    true
+                } else {
+                    lastFailReason = resp.optString("data").ifBlank { resp.toString() }
+                    false
+                }
+            }.getOrElse { e ->
+                lastFailReason = e.message ?: "HTTP error"
+                false
+            }
+            if (ok) {
+                appendLog("✅ Đã tạo cổng Minecraft Java mới trên Playit.gg cho thiết bị hiện tại.")
+                return true
+            }
         }
+
+        // Nếu tạo thất bại do tài khoản vướng cổng cũ của thiết bị trước -> thử dọn cổng mồ côi rồi tạo lại
+        runCatching {
+            val listResp = postJson("/v1/tunnels/list", "{}", secret)
+            val tunnels = listResp.optJSONObject("data")?.optJSONArray("tunnels")
+            if (tunnels != null) {
+                for (i in 0 until tunnels.length()) {
+                    val t = tunnels.optJSONObject(i) ?: continue
+                    val tid = t.optString("id")
+                    val originObj = t.optJSONObject("origin")
+                    val originAgentId = originObj?.optJSONObject("data")?.optString("agent_id")?.takeIf { it.isNotBlank() }
+                        ?: originObj?.optJSONObject("details")?.optString("agent_id").orEmpty()
+                    if (tid.isNotBlank() && originAgentId != agentId) {
+                        val delReq = JSONObject().put("tunnel_id", tid)
+                        runCatching { postJson("/v1/tunnels/delete", delReq.toString(), secret) }
+                        runCatching { postJson("/tunnels/delete", delReq.toString(), secret) }
+                    }
+                }
+            }
+        }
+
+        for ((endpointPath, payload) in candidates) {
+            val ok = runCatching {
+                val resp = postJson(endpointPath, payload.toString(), secret)
+                resp.optString("status") == "success"
+            }.getOrDefault(false)
+            if (ok) {
+                appendLog("✅ Đã dọn cổng cũ và tạo cổng Minecraft Java mới thành công.")
+                return true
+            }
+        }
+
+        if (lastFailReason.isNotBlank()) {
+            appendLog("Lưu ý khi tạo tunnel tự động: $lastFailReason")
+        }
+        return false
     }
 
     private fun fetchControlTargets(secret: String): List<InetSocketAddress> {
@@ -1229,6 +1426,7 @@ class PlayitTunnelController(
         private const val KEY_SECRET = "agent_secret_key"
         private const val KEY_LAST_ADDRESS = "last_public_address"
         private const val KEY_LAST_BEDROCK_ADDRESS = "last_bedrock_public_address"
+        private const val KEY_LAST_AGENT_ID = "last_verified_agent_id"
         private const val KEY_PLAY_MODE = "play_connection_mode"
         private const val KEY_MASK_ADDRESS = "mask_address_in_ui"
 
