@@ -15,6 +15,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -760,10 +761,9 @@ fun CoreBrandLogo(
             .clip(RoundedCornerShape(9.dp))
             .background(bgBrush)
             .border(1.2.dp, borderColor.copy(alpha = 0.7f), RoundedCornerShape(9.dp))
-            .then(
-                androidx.compose.ui.draw.drawWithCache {
-                    val w = this.size.width
-                    val h = this.size.height
+            .drawWithCache {
+                val w = this.size.width
+                val h = this.size.height
                     // Khởi tạo trước tất cả Path theo kích thước 1 lần duy nhất (0 tốn CPU khi cuộn)
                     val path1 = androidx.compose.ui.graphics.Path()
                     val path2 = androidx.compose.ui.graphics.Path()
@@ -1056,8 +1056,7 @@ fun CoreBrandLogo(
                             }
                         }
                     }
-                }
-            )
+            }
     )
 }
 
