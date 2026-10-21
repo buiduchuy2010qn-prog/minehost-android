@@ -464,7 +464,7 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                             text = if (countForCore > 0) "✅ ${core.displayName} ($countForCore)" else core.displayName,
                             selected = config.selectedCore == core,
                             compact = true,
-                            unselectedBackground = if (countForCore > 0) MintSoft else if (core.isBedrock) Coral.copy(alpha = 0.16f) else com.mineserve.mobile.ui.theme.FieldGray,
+                            unselectedBackground = if (countForCore > 0) Mint.copy(alpha = 0.16f) else if (core.isBedrock) Coral.copy(alpha = 0.16f) else com.mineserve.mobile.ui.theme.FieldGray,
                             onClick = { vm.selectCore(core) }
                         )
                     }
@@ -541,7 +541,7 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                                 SegPill(
                                     text = if (verInstalled) "✅ $ver (Đã tải)" else ver,
                                     selected = config.mcVersion == ver,
-                                    unselectedBackground = if (verInstalled) MintSoft else com.mineserve.mobile.ui.theme.FieldGray,
+                                    unselectedBackground = if (verInstalled) Mint.copy(alpha = 0.16f) else com.mineserve.mobile.ui.theme.FieldGray,
                                     onClick = { vm.setMcVersion(ver) }
                                 )
                                 if (usesCoreVersion) {
@@ -710,7 +710,7 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(McShape.Row)
-                                .background(MintSoft)
+                                .background(Mint.copy(alpha = 0.16f))
                                 .padding(10.dp),
                             verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
@@ -773,7 +773,7 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                         enabled = !isDownloadingCore && effectiveCoreName.isNotBlank() && !exactNameExists,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = if (exactNameExists) Mint else Indigo,
-                            disabledContainerColor = if (exactNameExists) MintSoft else IndigoSoft
+                            disabledContainerColor = if (exactNameExists) Mint.copy(alpha = 0.16f) else IndigoSoft
                         ),
                         shape = McShape.Control,
                         modifier = Modifier.fillMaxWidth()

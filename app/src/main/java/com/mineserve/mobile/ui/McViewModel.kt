@@ -3594,7 +3594,7 @@ class McViewModel(
             try {
                 withContext(Dispatchers.IO) {
                     cleanedLegacyCount = pluginManager.cleanConflictingModsForUser56Pack(dirName, removeAllNon56 = cleanOtherMods)
-                    val existingMods = pluginManager.listMods(dirName)
+                    val existingMods = pluginManager.readMods(dirName)
                     val itemsToDownload = mutableListOf<PluginManager.UserScreenshotModItem>()
 
                     for (item in items) {
@@ -3602,7 +3602,7 @@ class McViewModel(
                         if (existing != null && !forceReinstallAll) {
                             alreadyInstalledCount++
                             if (!existing.isEnabled) {
-                                pluginManager.toggleMod(dirName, existing.fileName)
+                                pluginManager.toggleModEnabled(existing.fileName, dirName)
                                 reEnabledCount++
                             }
                         } else {
@@ -3704,14 +3704,14 @@ class McViewModel(
             var alreadyCount = 0
             try {
                 withContext(Dispatchers.IO) {
-                    val existingMods = pluginManager.listMods(dirName)
+                    val existingMods = pluginManager.readMods(dirName)
                     val itemsToDownload = mutableListOf<PluginManager.UserScreenshotModItem>()
                     for (item in items) {
                         val existing = findMatchingInstalledMod(item, existingMods)
                         if (existing != null) {
                             alreadyCount++
                             if (!existing.isEnabled) {
-                                pluginManager.toggleMod(dirName, existing.fileName)
+                                pluginManager.toggleModEnabled(existing.fileName, dirName)
                             }
                         } else {
                             itemsToDownload += item
@@ -3794,10 +3794,10 @@ class McViewModel(
         viewModelScope.launch {
             try {
                 val existing = withContext(Dispatchers.IO) {
-                    val existingMods = pluginManager.listMods(dirName)
+                    val existingMods = pluginManager.readMods(dirName)
                     val match = findMatchingInstalledMod(item, existingMods)
                     if (match != null && !match.isEnabled) {
-                        pluginManager.toggleMod(dirName, match.fileName)
+                        pluginManager.toggleModEnabled(match.fileName, dirName)
                     }
                     match
                 }

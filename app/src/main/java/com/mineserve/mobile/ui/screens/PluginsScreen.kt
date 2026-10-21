@@ -1723,7 +1723,7 @@ private fun PluginModrinthCard(
                 val slugLower = hit.slug.lowercase(java.util.Locale.ROOT)
                 val titleNorm = hit.title.lowercase(java.util.Locale.ROOT).replace(Regex("[^a-z0-9]"), "")
                 val matchedInstalledPlugin = installedPlugins.firstOrNull { p ->
-                    val nameLower = p.name.lowercase(java.util.Locale.ROOT)
+                    val nameLower = (p.meta?.name ?: p.baseName).lowercase(java.util.Locale.ROOT)
                     val fileLower = p.fileName.lowercase(java.util.Locale.ROOT)
                     val nameNorm = nameLower.replace(Regex("[^a-z0-9]"), "")
                     nameLower == slugLower ||
@@ -1990,7 +1990,7 @@ private fun ModPackDecoderAndTransferCard(
 
     val effectiveMcVer = selectedCustomVersion.ifBlank { serverMcVer }
 
-    fun findInstalledModFor56(item: McViewModel.CatalogModItem): PluginManager.ModEntry? {
+    fun findInstalledModFor56(item: PluginManager.UserScreenshotModItem): PluginManager.ModEntry? {
         val slugLower = item.slug.lowercase(java.util.Locale.ROOT)
         val slugNorm = slugLower.replace("-", "").replace("_", "")
         val jarPrefix = item.originalJarName

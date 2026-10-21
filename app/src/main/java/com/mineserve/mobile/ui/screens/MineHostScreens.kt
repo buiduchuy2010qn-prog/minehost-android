@@ -303,7 +303,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
     val all56Items = remember { vm.userScreenshot56ModItems() }
     val categoryGroups = remember { vm.modPackCategoryGroups() }
 
-    fun isCatalogItemInstalled(item: McViewModel.CatalogModItem): Boolean {
+    fun isCatalogItemInstalled(item: com.mineserve.mobile.server.PluginManager.UserScreenshotModItem): Boolean {
         val slugLower = item.slug.lowercase(java.util.Locale.ROOT)
         val slugNorm = slugLower.replace("-", "").replace("_", "")
         val jarPrefix = item.originalJarName.substringBefore('-').substringBefore('_').lowercase(java.util.Locale.ROOT)
