@@ -1676,6 +1676,7 @@ fun MineHostCrossplay(vm: McViewModel, onBack: () -> Unit) {
 
     var selectedCrossCore by remember { mutableStateOf(com.mineserve.mobile.data.ServerCore.Paper) }
     var selectedCrossVer by remember { mutableStateOf("1.21.11") }
+    var selectedBedrockBranch by remember { mutableStateOf("") }
     var crossRefreshKey by remember { mutableStateOf(0) }
     val crossCheck = com.mineserve.mobile.ui.rememberCrossplayCheck(selectedCrossCore, selectedCrossVer, refreshKey = crossRefreshKey, targetPe = selectedBedrockBranch)
     val activeCrossCheck = com.mineserve.mobile.ui.rememberCrossplayCheck(
@@ -1686,7 +1687,6 @@ fun MineHostCrossplay(vm: McViewModel, onBack: () -> Unit) {
         targetPe = selectedBedrockBranch
     )
     var customCrossVerInput by remember { mutableStateOf("") }
-    var selectedBedrockBranch by remember { mutableStateOf("1.21") }
     var customServerName by remember { mutableStateOf("") }
     var installedClicked by remember { mutableStateOf(false) }
 
