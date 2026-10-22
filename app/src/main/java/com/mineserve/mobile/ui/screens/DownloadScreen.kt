@@ -1136,9 +1136,9 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
                             )
-                            if (flexibleCrossplayEnabled && config.selectedCore.supportsPlugins) {
+                            if (flexibleCrossplayEnabled && !config.selectedCore.isBedrock) {
                                 Text(
-                                    "📱💻 Tự động tải kèm bộ 4 Plugin Chơi chung PC + PE (GeyserMC + Floodgate + ViaVersion + ViaBackwards • Nhánh PE $flexibleBedrockBranch)",
+                                    "📱💻 Tự động tải kèm bộ 4 công cụ Chơi chung PC + PE (GeyserMC + Floodgate + ViaVersion + ViaBackwards • Nhánh PE $flexibleBedrockBranch)",
                                     color = Mint,
                                     fontSize = 10.5.sp,
                                     fontWeight = FontWeight.SemiBold
@@ -1147,7 +1147,7 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                         }
                         Spacer(Modifier.height(10.dp))
                         val defaultCoreName = when {
-                            flexibleCrossplayEnabled && config.selectedCore.supportsPlugins -> "Crossplay-${config.selectedCore.displayName}-${config.mcVersion}"
+                            flexibleCrossplayEnabled && !config.selectedCore.isBedrock -> "Crossplay-${config.selectedCore.displayName}-${config.mcVersion}"
                             flexibleGamemode == "creative" -> "SangTao-${config.selectedCore.displayName}-${config.mcVersion}"
                             flexibleGamemode == "hardcore" -> "Hardcore-${config.selectedCore.displayName}-${config.mcVersion}"
                             else -> "${config.selectedCore.displayName}-${config.mcVersion}"
@@ -1178,7 +1178,9 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                                     fontWeight = FontWeight.ExtraBold
                                 )
                                 Text(
-                                    "Máy chủ ${config.selectedCore.displayName} ${config.mcVersion} (💾 ${existingSizeMb} MB) đã có sẵn trên máy! Bạn có thể khởi động ngay mà không cần tải lại:",
+                                    "Máy chủ ${config.selectedCore.displayName} ${config.mcVersion} (💾 ${existingSizeMb} MB) đã có sẵn trên máy!" +
+                                        if (flexibleCrossplayEnabled && !config.selectedCore.isBedrock) "\n📱 Khi bấm nút bên dưới, ứng dụng sẽ tự động cài thêm GeyserMC + Floodgate + ViaVersion + ViaBackwards vào ${firstExisting.name} để cả PE và PC chơi chung!"
+                                        else " Bạn có thể khởi động ngay mà không cần tải lại:",
                                     color = MaterialTheme.colorScheme.onSurface,
                                     fontSize = 11.sp,
                                     lineHeight = 15.sp
@@ -1186,6 +1188,9 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                                 Button(
                                     onClick = {
                                         vm.setActiveCore(firstExisting.name)
+                                        if (flexibleCrossplayEnabled && !config.selectedCore.isBedrock) {
+                                            vm.installCrossplayGeyserPack(flexibleBedrockBranch, startAfterInstall = false)
+                                        }
                                         onBack?.invoke()
                                     },
                                     colors = ButtonDefaults.buttonColors(containerColor = Mint),
@@ -1193,7 +1198,11 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Text(
-                                        "🚀 VÀO MỤC KHỞI ĐỘNG SERVER「${firstExisting.name}」NGAY",
+                                        if (flexibleCrossplayEnabled && !config.selectedCore.isBedrock) {
+                                            "📱 CÀI GEYSER (PC+PE) & CHỌN SERVER「${firstExisting.name}」"
+                                        } else {
+                                            "🚀 VÀO MỤC KHỞI ĐỘNG SERVER「${firstExisting.name}」NGAY"
+                                        },
                                         color = Color.White,
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.ExtraBold
@@ -1203,7 +1212,11 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                                     Button(
                                         onClick = {
                                             vm.setActiveCore(firstExisting.name)
-                                            vm.startServer()
+                                            if (flexibleCrossplayEnabled && !config.selectedCore.isBedrock) {
+                                                vm.installCrossplayGeyserPack(flexibleBedrockBranch, startAfterInstall = true)
+                                            } else {
+                                                vm.startServer()
+                                            }
                                             onBack?.invoke()
                                         },
                                         colors = ButtonDefaults.buttonColors(containerColor = Indigo),
@@ -1211,7 +1224,11 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Text(
-                                            "▶️ CHỌN & BẬT SERVER「${firstExisting.name}」LUÔN",
+                                            if (flexibleCrossplayEnabled && !config.selectedCore.isBedrock) {
+                                                "▶️ CÀI GEYSER (PC+PE) & BẬT「${firstExisting.name}」LUÔN"
+                                            } else {
+                                                "▶️ CHỌN & BẬT SERVER「${firstExisting.name}」LUÔN"
+                                            },
                                             color = Color.White,
                                             fontSize = 12.sp,
                                             fontWeight = FontWeight.Bold
@@ -1270,7 +1287,7 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                                         customName = effectiveCoreName,
                                         initialGamemode = flexibleGamemode,
                                         crackedOfflineMode = flexibleCrackedMode,
-                                        installCrossplayPack = flexibleCrossplayEnabled && config.selectedCore.supportsPlugins,
+                                        installCrossplayPack = flexibleCrossplayEnabled && !config.selectedCore.isBedrock,
                                         crossplayBedrockBranch = flexibleBedrockBranch
                                     )
                                 },

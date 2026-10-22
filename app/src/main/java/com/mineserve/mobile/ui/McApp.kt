@@ -158,11 +158,11 @@ fun McApp() {
                 containerColor = MaterialTheme.colorScheme.surface
             ) {
                 val destinations = listOf(
-                    McTab.Dashboard to "Tổng quan",
+                    McTab.Dashboard to "Trang chủ",
                     McTab.Terminal to "Console",
-                    McTab.Download to "Kho cài đặt",
+                    McTab.Download to "Mod & Plugin",
                     McTab.Files to "Tệp",
-                    McTab.Settings to "Quản lý"
+                    McTab.Settings to "Cài đặt"
                 )
                 destinations.forEach { (t, label) ->
                     NavigationBarItem(
@@ -250,7 +250,7 @@ fun McApp() {
                         )
                         SubPage.Cores -> DownloadScreen(vm, onShowDownloadHelp = { subPage = SubPage.DownloadHelp }, onBack = { subPage = null })
                         SubPage.ServerList -> ServerManagementScreen(vm,
-                            onPlugins = { subPage = SubPage.Plugins },
+                            onPlugins = { subPage = null; tab = McTab.Download },
                             onProperties = { subPage = SubPage.Properties },
                             onIcon = { subPage = SubPage.ServerIcon },
                             onWorlds = { subPage = SubPage.WorldManage },
@@ -266,12 +266,19 @@ fun McApp() {
                 }
                 else -> when (page.third) {
                     McTab.Dashboard -> MineHostOverview(vm,
-                        navigate = { subPage = it },
+                        navigate = { target ->
+                            if (target == SubPage.Plugins) {
+                                subPage = null
+                                tab = McTab.Download
+                            } else {
+                                subPage = target
+                            }
+                        },
                         onConsole = { tab = McTab.Terminal })
-                    McTab.Download -> MineHostLibrary(navigate = { subPage = it })
+                    McTab.Download -> PluginsScreen(vm = vm)
                     McTab.ServerManagement -> ServerManagementScreen(
                         vm = vm,
-                        onPlugins = { subPage = SubPage.Plugins },
+                        onPlugins = { subPage = null; tab = McTab.Download },
                         onProperties = { subPage = SubPage.Properties },
                         onIcon = { subPage = SubPage.ServerIcon },
                         onWorlds = { subPage = SubPage.WorldManage },
@@ -284,7 +291,14 @@ fun McApp() {
                     )
                     McTab.Files -> FileManagerScreen(vm = vm, onOpenMtGuide = { subPage = SubPage.MtGuide })
                     McTab.Terminal -> TerminalScreen(vm = vm)
-                    McTab.Settings -> MineHostManage(navigate = { subPage = it })
+                    McTab.Settings -> MineHostManage(vm = vm, navigate = { target ->
+                        if (target == SubPage.Plugins) {
+                            subPage = null
+                            tab = McTab.Download
+                        } else {
+                            subPage = target
+                        }
+                    })
                 }
             }
         }

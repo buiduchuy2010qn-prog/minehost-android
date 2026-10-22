@@ -117,11 +117,11 @@ import kotlinx.coroutines.launch
 
 private enum class PluginTab(val labelRes: Int) { Installed(R.string.s735), Upload(R.string.s736) }
 
-/** 4 Phân mục Tài nguyên theo Mục 7: Plugin / Mod / Gói Mod (56 Mod gốc) / Gói Tài Nguyên */
+/** 4 Phân mục Tài nguyên: Plugin / Mod / Gói Mod & Nhập ZIP / Gói Tài Nguyên */
 private enum class ResourceType(val titleVi: String) {
     Plugin("🔌 Plugin"),
     Mod("🧩 Mod"),
-    Modpack("📦 Gói 56 Mod"),
+    Modpack("📦 Gói Mod & ZIP"),
     ResourcePack("🎨 Gói Tài Nguyên")
 }
 
@@ -422,8 +422,7 @@ fun PluginsScreen(vm: McViewModel) {
                                     "Chưa tải mod nào trong thư mục mods/"
                                 } else {
                                     "✅ Đã tải & cài đặt: ${mods.size} mod (Đang bật: $enabledCount" +
-                                        (if (disabledCount > 0) " · Đang tắt: $disabledCount" else "") +
-                                        " · Bộ 56 Mod gốc: Đã cài $matched56Top/56)"
+                                        (if (disabledCount > 0) " · Đang tắt: $disabledCount" else "") + ")"
                                 },
                                 color = if (mods.isEmpty()) Muted else Mint,
                                 fontSize = 11.sp,
@@ -501,7 +500,7 @@ fun PluginsScreen(vm: McViewModel) {
                             onCheckedChange = { wantEnable ->
                                 vm.toggleServerOptimizationPack(enable = wantEnable, customMcVersion = detectedMcVer)
                             },
-                            enabled = !isServerRunning && !isTogglingOptPack
+                            enabled = !isTogglingOptPack
                         )
                     }
                 ) {
@@ -671,7 +670,7 @@ fun PluginsScreen(vm: McViewModel) {
                                     customMcVersion = detectedMcVer
                                 )
                             },
-                            enabled = !isServerRunning && !isTogglingOptPack,
+                            enabled = !isTogglingOptPack,
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = if (optPackStatus.isPackActive) Coral else Mint
                             ),
@@ -693,8 +692,8 @@ fun PluginsScreen(vm: McViewModel) {
                     if (isServerRunning) {
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            "⚠️ Hãy dừng máy chủ trước khi bật/tắt Gói Mod Tối Ưu để không làm hỏng dữ liệu đang chạy.",
-                            color = Coral,
+                            "💡 Server đang chạy: Khi bật/tắt Gói Mod Tối Ưu, App sẽ tự động lưu thế giới, nạp Mod và khởi động lại Server.",
+                            color = Indigo,
                             fontSize = 10.5.sp,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -702,135 +701,7 @@ fun PluginsScreen(vm: McViewModel) {
                 }
             }
 
-            // ── Thẻ Sao lưu & Khôi phục Bộ Mod cho Map / Server hiện tại (Hỗ trợ Google Drive) ──
-            if (activeCore != null) {
-                val activeWorld by vm.activeWorldName.collectAsStateWithLifecycle()
-                val currentMapLabel = activeWorld.ifBlank { "world" }
-                var modBackupsRefreshTick by remember { mutableStateOf(0) }
-                val modBackups = remember(modBackupsRefreshTick, config.activeCoreName, mods.size) {
-                    runCatching {
-                        vm.externalBackups()
-                            .map { it to vm.externalBackupInfo(it) }
-                            .filter { (_, info) -> info.kind == com.mineserve.mobile.server.BackupManager.BackupKind.Mods }
-                            .sortedByDescending { (file, _) -> file.lastModified() }
-                    }.getOrDefault(emptyList())
-                }
-                McCard(
-                    title = "💾 Sao lưu & Khôi phục Mod cho Map / Server này",
-                    trailing = {
-                        Text(
-                            "Làm mới",
-                            color = Indigo,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.clickable { modBackupsRefreshTick++ }
-                        )
-                    }
-                ) {
-                    Text(
-                        "🗺️ Map đang chọn: $currentMapLabel  ·  🖥️ Server: ${activeCore.name} (${mods.size} Mod / ${installedPlugins.size} Plugin)",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Indigo
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "Sao lưu trọn bộ thư mục mods/ + config/ gắn với Map '$currentMapLabel' và Server '${activeCore.name}' thành tệp ZIP riêng hoặc lưu thẳng lên Google Drive.",
-                        color = Muted,
-                        fontSize = 12.sp,
-                        lineHeight = 17.sp
-                    )
-                    Spacer(Modifier.height(10.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Button(
-                            onClick = {
-                                vm.backupModsForCurrentServer(shareToDrive = false)
-                                modBackupsRefreshTick++
-                            },
-                            enabled = mods.isNotEmpty() || installedPlugins.isNotEmpty(),
-                            colors = ButtonDefaults.buttonColors(containerColor = Indigo),
-                            shape = McShape.ControlCompact,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text(
-                                "📦 Sao lưu Mod cho Map này",
-                                color = Color.White,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                        Button(
-                            onClick = {
-                                vm.backupModsForCurrentServer(shareToDrive = true)
-                                modBackupsRefreshTick++
-                            },
-                            enabled = mods.isNotEmpty() || installedPlugins.isNotEmpty(),
-                            colors = ButtonDefaults.buttonColors(containerColor = Mint),
-                            shape = McShape.ControlCompact,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text(
-                                "☁️ Sao lưu & Lưu Google Drive",
-                                color = Color.White,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-                    if (modBackups.isNotEmpty()) {
-                        Spacer(Modifier.height(10.dp))
-                        Text(
-                            "📂 Bản sao lưu Mod gần đây (${modBackups.size} bản):",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(Modifier.height(6.dp))
-                        modBackups.take(3).forEach { (file, info) ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 3.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(FieldGray)
-                                    .padding(horizontal = 10.dp, vertical = 7.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        file.name,
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Text(
-                                        "SV: ${info.dirName ?: "--"} · ${info.coreTag ?: "mods"} · 💾 ${vm.formatStorageBytes(file.length())}",
-                                        color = Muted,
-                                        fontSize = 11.sp
-                                    )
-                                }
-                                TextButton(
-                                    onClick = { vm.requestShareBackupToGoogleDrive(file.absolutePath) }
-                                ) {
-                                    Text("☁️ Drive", color = Mint, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
-                                }
-                                TextButton(
-                                    onClick = { vm.restoreModsFromExternal(file.name) },
-                                    enabled = !isServerRunning
-                                ) {
-                                    Text("Khôi phục", color = Indigo, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // ── 4 Phân mục Tài nguyên: Plugin / Mod / Gói 56 Mod / Gói Tài Nguyên ──
+            // ── 4 Phân mục Tài nguyên: Plugin / Mod / Gói Mod & ZIP / Gói Tài Nguyên ──
             if (availableTypes.isEmpty()) {
                 Text(
                     stringResource(R.string.s758, coreType.displayName),
@@ -846,7 +717,7 @@ fun PluginsScreen(vm: McViewModel) {
                         when (type) {
                             ResourceType.Plugin -> if (installedPlugins.isNotEmpty()) "${type.titleVi} (${installedPlugins.size})" else type.titleVi
                             ResourceType.Mod -> if (mods.isNotEmpty()) "${type.titleVi} (${mods.size})" else type.titleVi
-                            ResourceType.Modpack -> if (matched56Top > 0) "📦 56 Mod ($matched56Top/56)" else type.titleVi
+                            ResourceType.Modpack -> type.titleVi
                             ResourceType.ResourcePack -> type.titleVi
                         }
                     },
@@ -870,7 +741,7 @@ fun PluginsScreen(vm: McViewModel) {
                 )
             }
 
-            // ── 内容区（Plugin / Mod / Gói 56 Mod / Gói Tài Nguyên） ──
+            // ── 内容区（Plugin / Mod / Gói Mod & ZIP / Gói Tài Nguyên） ──
             when (resourceType) {
                 ResourceType.Plugin -> {
                     when (activeTab) {
@@ -911,8 +782,8 @@ fun PluginsScreen(vm: McViewModel) {
                         onDelete = { pendingModDelete = it },
                         onUpload = { uri -> vm.installModFromUri(uri) },
                         onInstallCurated = { vm.installCuratedMod(it) },
-                        onSearchModrinth = { query, loaders, sort, version ->
-                            vm.searchModrinthMods(query, loaders, sort, version)
+                        onSearchModrinth = { query, loaders, sort, version, category ->
+                            vm.searchModrinthMods(query, loaders, sort, version, category)
                         },
                         onInstallModrinth = { hit, version -> vm.installModrinthMod(hit, version) },
                         onLoadMoreModrinth = { vm.loadMoreModrinthMods() },
@@ -925,7 +796,7 @@ fun PluginsScreen(vm: McViewModel) {
                         activeCoreExists = activeCore != null,
                         serverRunning = isServerRunning,
                         hasInstalledMods = mods.isNotEmpty(),
-                        showFull56ListByDefault = true
+                        showFull56ListByDefault = false
                     )
                 }
                 ResourceType.ResourcePack -> {
@@ -943,8 +814,8 @@ fun PluginsScreen(vm: McViewModel) {
                     selectedVersion = selectedPluginVersion,
                     currentServerVersion = activeCore?.version ?: config.mcVersion,
                     onSetVersion = { vm.setSelectedPluginVersion(it) },
-                    onSearch = { query, loaders, sort, version ->
-                        vm.searchModrinthPlugin(query, loaders, sort, version)
+                    onSearch = { query, loaders, sort, version, category ->
+                        vm.searchModrinthPlugin(query, loaders, sort, version, category)
                     },
                     onInstall = { hit, version -> vm.installModrinthPlugin(hit, version) },
                     onLoadMore = { vm.loadMoreModrinthPlugin() },
@@ -1632,13 +1503,14 @@ private fun ModsTab(
     onDelete: (PluginManager.ModEntry) -> Unit,
     onUpload: (Uri) -> Unit,
     onInstallCurated: (PluginManager.CuratedMod) -> Unit,
-    onSearchModrinth: (String, List<String>, String, String) -> Unit,
+    onSearchModrinth: (String, List<String>, String, String, String) -> Unit,
     onInstallModrinth: (PluginManager.ModrinthHit, String) -> Unit,
     onLoadMoreModrinth: () -> Unit,
     isLoadingMore: Boolean
 ) {
     var detailHit by remember { mutableStateOf<PluginManager.ModrinthHit?>(null) }
     var modrinthQuery by remember { mutableStateOf("") }
+    var selectedModCategory by remember { mutableStateOf("") }
     var installedModSearch by remember { mutableStateOf("") }
     var installedModFilter by remember { mutableStateOf(InstalledFilter.All) }
     var pendingModToggle by remember { mutableStateOf<PluginManager.ModEntry?>(null) }
@@ -1646,19 +1518,15 @@ private fun ModsTab(
     var selectedLoaders by remember { mutableStateOf(setOf<String>()) }
     var sortIndex by remember { mutableStateOf(0) }
     val sortOptions = listOf("downloads" to stringResource(R.string.s825), "relevance" to stringResource(R.string.s826), "newest" to stringResource(R.string.s827))
+    LaunchedEffect(selectedModVersion, coreType) {
+        if (modrinthResults.isEmpty()) {
+            onSearchModrinth("", selectedLoaders.toList(), "downloads", selectedModVersion.ifBlank { currentServerVersion }, selectedModCategory)
+        }
+    }
     // 本地上传模组选择器
     val filePickerLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri -> uri?.let(onUpload) }
-
-    // ── Thẻ Giải mã Thư mục / Gói Full Mod & Chuyển Mod sang Server Mới ──
-    ModPackDecoderAndTransferCard(
-        vm = vm,
-        activeCoreExists = activeCoreExists,
-        serverRunning = serverRunning,
-        hasInstalledMods = mods.isNotEmpty(),
-        showFull56ListByDefault = false
-    )
 
     // 已安装模组 (Quản lý Mod trực quan + Lọc Bật/Tắt + Công tắc có cảnh báo)
     val enabledModsCount = mods.count { it.isEnabled }
@@ -2056,13 +1924,28 @@ private fun ModsTab(
     }
 
 
-    // ── Modrinth 模组获取 ──
+    // ── Kho Modrinth Toàn Cầu (Mọi Mod & Phiên bản thông dụng) ──
     var sortMenuOpen by remember { mutableStateOf(false) }
-    McCard(title = stringResource(R.string.s831)) {
+    val universalModCategories = remember {
+        listOf(
+            "" to "🔥 Phổ biến nhất",
+            "optimization" to "⚡ Tối ưu",
+            "worldgen" to "🌍 Thế giới",
+            "equipment" to "⚔️ Vũ khí & Giáp",
+            "mobs" to "🐾 Sinh vật",
+            "decoration" to "🏠 Nội thất",
+            "food" to "🍳 Ẩm thực",
+            "technology" to "⚙️ Công nghệ",
+            "magic" to "🪄 Phép thuật",
+            "storage" to "🎒 Lưu trữ",
+            "library" to "🧱 Thư viện"
+        )
+    }
+    McCard(title = "🌐 Kho Modrinth Toàn Cầu (Tìm & Cài Mọi Mod)") {
         Text(
-            stringResource(R.string.s832),
+            "Tìm kiếm bất kỳ Mod nào trên Modrinth hoặc bấm danh mục bên dưới để duyệt kho Mod thông dụng. Khi bấm Cài đặt, App sẽ tự chọn đúng phiên bản tương thích và tự tải kèm toàn bộ Mod phụ thuộc (Fabric API, Architectury, Balm, GeckoLib...).",
             color = Muted,
-            fontSize = 10.sp
+            fontSize = 11.sp
         )
         Spacer(Modifier.height(6.dp))
         // 搜索框 + 排序 + 搜索按钮
@@ -2087,19 +1970,59 @@ private fun ModsTab(
                     sortOptions.forEachIndexed { i, (_, label) ->
                         DropdownMenuItem(
                             text = { Text(label, fontSize = 12.sp) },
-                            onClick = { sortIndex = i; sortMenuOpen = false }
+                            onClick = {
+                                sortIndex = i
+                                sortMenuOpen = false
+                                onSearchModrinth(
+                                    modrinthQuery.trim(),
+                                    selectedLoaders.toList(),
+                                    sortOptions[i].first,
+                                    selectedModVersion,
+                                    selectedModCategory
+                                )
+                            }
                         )
                     }
                 }
             }
-Spacer(Modifier.size(6.dp))
+            Spacer(Modifier.size(6.dp))
             Button(
-                onClick = { onSearchModrinth(modrinthQuery.trim(), selectedLoaders.toList(), sortOptions[sortIndex].first, selectedModVersion) },
-                enabled = modrinthQuery.isNotBlank(),
+                onClick = {
+                    onSearchModrinth(
+                        modrinthQuery.trim(),
+                        selectedLoaders.toList(),
+                        sortOptions[sortIndex].first,
+                        selectedModVersion,
+                        selectedModCategory
+                    )
+                },
+                enabled = true,
                 colors = ButtonDefaults.buttonColors(containerColor = Indigo),
                 shape = McShape.ControlCompact
             ) {
                 Text(stringResource(R.string.s834), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            universalModCategories.forEach { (catKey, catLabel) ->
+                FilterChip(
+                    selected = selectedModCategory == catKey,
+                    onClick = {
+                        selectedModCategory = catKey
+                        onSearchModrinth(
+                            modrinthQuery.trim(),
+                            selectedLoaders.toList(),
+                            sortOptions[sortIndex].first,
+                            selectedModVersion,
+                            catKey
+                        )
+                    },
+                    label = { Text(catLabel, fontSize = 11.sp) }
+                )
             }
         }
         // 版本筛选 ｜ 加载器 下拉（布局参考：版本下拉框｜加载器下拉框）
@@ -2128,7 +2051,17 @@ Spacer(Modifier.size(6.dp))
                     modrinthGameVersions.forEach { v ->
                         DropdownMenuItem(
                             text = { Text(v, fontSize = 11.sp, color = if (v == currentServerVersion) Indigo else Muted) },
-                            onClick = { onSetModVersion(v); versionMenuOpen = false }
+                            onClick = {
+                                onSetModVersion(v)
+                                versionMenuOpen = false
+                                onSearchModrinth(
+                                    modrinthQuery.trim(),
+                                    selectedLoaders.toList(),
+                                    sortOptions[sortIndex].first,
+                                    v,
+                                    selectedModCategory
+                                )
+                            }
                         )
                     }
                 }
@@ -2142,7 +2075,7 @@ Spacer(Modifier.size(6.dp))
                 stringResource(R.string.s1063, selectedModVersion, currentServerVersion),
                 color = Coral,
                 fontSize = 10.sp,
-fontWeight = FontWeight.SemiBold
+                fontWeight = FontWeight.SemiBold
             )
         }
         // 加载器多选筛选（可展开列表，避免元素零散排布）
@@ -2268,26 +2201,44 @@ private fun PluginModrinthCard(
     selectedVersion: String,
     currentServerVersion: String,
     onSetVersion: (String) -> Unit,
-    onSearch: (String, List<String>, String, String) -> Unit,
+    onSearch: (String, List<String>, String, String, String) -> Unit,
     onInstall: (PluginManager.ModrinthHit, String) -> Unit,
     onLoadMore: () -> Unit,
     isLoadingMore: Boolean
 ) {
     var query by remember { mutableStateOf("") }
+    var selectedPluginCategory by remember { mutableStateOf("") }
     var selectedLoaders by remember { mutableStateOf(setOf<String>()) }
     var detailHit by remember { mutableStateOf<PluginManager.ModrinthHit?>(null) }
     var sortIndex by remember { mutableStateOf(0) }
     val sortOptions = listOf("downloads" to stringResource(R.string.s825), "relevance" to stringResource(R.string.s826), "newest" to stringResource(R.string.s827))
     var sortMenuOpen by remember { mutableStateOf(false) }
     var versionMenuOpen by remember { mutableStateOf(false) }
+    val universalPluginCategories = remember {
+        listOf(
+            "" to "🔥 Phổ biến nhất",
+            "optimization" to "⚡ Tối ưu",
+            "management" to "🛡️ Quản trị",
+            "economy" to "💰 Kinh tế",
+            "worldgen" to "🌍 Thế giới",
+            "minigame" to "🎮 Minigame",
+            "social" to "💬 Chat & Giao diện",
+            "utility" to "🔧 Tiện ích"
+        )
+    }
+    LaunchedEffect(selectedVersion) {
+        if (results.isEmpty()) {
+            onSearch("", selectedLoaders.toList(), "downloads", selectedVersion.ifBlank { currentServerVersion }, selectedPluginCategory)
+        }
+    }
     // 插件页统一使用 Modrinth 插件库（project_type=plugin，加载器以 bukkit/paper 为主）
     val coreLoader = "bukkit"
 
-    McCard(title = stringResource(R.string.s1068)) {
+    McCard(title = "🌐 Kho Plugin Modrinth Toàn Cầu (Mọi Plugin & Phiên Bản)") {
         Text(
-            stringResource(R.string.s1069),
+            "Tìm kiếm bất kỳ Plugin nào trên Modrinth hoặc duyệt theo danh mục bên dưới. App tự động chọn phiên bản tương thích và tải kèm các Plugin phụ thuộc cần thiết.",
             color = Muted,
-            fontSize = 10.sp
+            fontSize = 11.sp
         )
         Spacer(Modifier.height(6.dp))
         // 搜索框 + 排序 + 搜索按钮
@@ -2312,19 +2263,45 @@ private fun PluginModrinthCard(
                     sortOptions.forEachIndexed { i, (_, label) ->
                         DropdownMenuItem(
                             text = { Text(label, fontSize = 12.sp) },
-                            onClick = { sortIndex = i; sortMenuOpen = false }
+                            onClick = {
+                                sortIndex = i
+                                sortMenuOpen = false
+                                onSearch(query.trim(), selectedLoaders.toList(), sortOptions[i].first, selectedVersion, selectedPluginCategory)
+                            }
                         )
                     }
                 }
             }
             Spacer(Modifier.size(6.dp))
             Button(
-                onClick = { onSearch(query.trim(), selectedLoaders.toList(), sortOptions[sortIndex].first, selectedVersion) },
-                enabled = query.isNotBlank(),
+                onClick = { onSearch(query.trim(), selectedLoaders.toList(), sortOptions[sortIndex].first, selectedVersion, selectedPluginCategory) },
+                enabled = true,
                 colors = ButtonDefaults.buttonColors(containerColor = Indigo),
                 shape = McShape.ControlCompact
             ) {
                 Text(stringResource(R.string.s834), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            universalPluginCategories.forEach { (catKey, catLabel) ->
+                FilterChip(
+                    selected = selectedPluginCategory == catKey,
+                    onClick = {
+                        selectedPluginCategory = catKey
+                        onSearch(
+                            query.trim(),
+                            selectedLoaders.toList(),
+                            sortOptions[sortIndex].first,
+                            selectedVersion,
+                            catKey
+                        )
+                    },
+                    label = { Text(catLabel, fontSize = 11.sp) }
+                )
             }
         }
         // 版本筛选 ｜ 加载器 下拉

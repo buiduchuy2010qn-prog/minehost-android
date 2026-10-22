@@ -1794,34 +1794,47 @@ class PluginManager(
         sort: String,
         projectType: String = "mod",
         mcVersion: String = "",
-        offset: Int = 0
+        offset: Int = 0,
+        category: String = ""
     ): List<ModrinthHit> {
-        if (query.isBlank()) return emptyList()
-        return try {
-            val facets = buildString {
-                append("[")
-                if (loaders.isNotEmpty()) {
+        fun queryForVersion(verFilter: String): List<ModrinthHit> {
+            return try {
+                val facets = buildString {
                     append("[")
-                    loaders.forEachIndexed { i, l ->
-                        if (i > 0) append(",")
-                        append("\"categories:$l\"")
+                    if (loaders.isNotEmpty()) {
+                        append("[")
+                        loaders.forEachIndexed { i, l ->
+                            if (i > 0) append(",")
+                            append("\"categories:$l\"")
+                        }
+                        append("],")
                     }
-                    append("],")
+                    if (category.isNotBlank()) {
+                        append("[\"categories:${category.trim()}\"],")
+                    }
+                    if (verFilter.isNotBlank()) {
+                        append("[\"versions:$verFilter\"],")
+                    }
+                    append("[\"project_type:$projectType\"]")
+                    append("]")
                 }
-                if (mcVersion.isNotBlank()) {
-                    append("[\"versions:$mcVersion\"],")
-                }
-                append("[\"project_type:$projectType\"]")
-                append("]")
+                val urlStr = "https://api.modrinth.com/v2/search?query=${java.net.URLEncoder.encode(query.trim(), "UTF-8")}" +
+                    "&facets=${java.net.URLEncoder.encode(facets, "UTF-8")}" +
+                    "&index=${java.net.URLEncoder.encode(sort, "UTF-8")}&limit=20&offset=$offset"
+                val body = fetchModrinthText(urlStr)
+                modrinthJson.decodeFromString<ModrinthSearchResponse>(body).hits
+            } catch (e: Exception) {
+                emptyList()
             }
-            val urlStr = "https://api.modrinth.com/v2/search?query=${java.net.URLEncoder.encode(query, "UTF-8")}" +
-                "&facets=${java.net.URLEncoder.encode(facets, "UTF-8")}" +
-                "&index=${java.net.URLEncoder.encode(sort, "UTF-8")}&limit=20&offset=$offset"
-            val body = fetchModrinthText(urlStr)
-            modrinthJson.decodeFromString<ModrinthSearchResponse>(body).hits
-        } catch (e: Exception) {
-            emptyList()
         }
+
+        val directHits = queryForVersion(mcVersion.trim())
+        if (directHits.isNotEmpty() || mcVersion.isBlank()) return directHits
+        for (fallbackVer in candidateMcVersions(mcVersion).drop(1).take(3)) {
+            val fallbackHits = queryForVersion(fallbackVer)
+            if (fallbackHits.isNotEmpty()) return fallbackHits
+        }
+        return queryForVersion("")
     }
 
     /** 拉取 Modrinth 支持的 MC 游戏版本列表（过滤 rc/pre/snapshot，取最新 N 个） */
@@ -1905,22 +1918,7 @@ class PluginManager(
     /** 解析 Modrinth 模组在指定 MC 版本+加载器下的最新 release 下载直链 */
     fun resolveModrinthDownload(slug: String, mcVersion: String, loader: String): String? {
         require(slug.matches(Regex("[A-Za-z0-9_-]+"))) { "ID Modrinth không hợp lệ." }
-        val gameVersions = java.net.URLEncoder.encode("[\"$mcVersion\"]", "UTF-8")
-        val loaderList = when (loader) {
-            "paper" -> "[\"paper\",\"spigot\",\"bukkit\"]"
-            "bukkit" -> "[\"spigot\",\"bukkit\"]"
-            else -> "[\"$loader\"]"
-        }
-        val loaders = java.net.URLEncoder.encode(loaderList, "UTF-8")
-        val body = fetchModrinthText("https://api.modrinth.com/v2/project/$slug/version?game_versions=$gameVersions&loaders=$loaders")
-        val versions = modrinthJson.decodeFromString<List<ModrinthVersion>>(body)
-        val version = versions.firstOrNull { it.version_type == "release" } ?: versions.firstOrNull() ?: return null
-        val required = version.dependencies.filter { it.dependency_type == "required" }
-        check(required.isEmpty()) {
-            "Cần dependency: " + required.joinToString { it.project_id ?: it.version_id ?: "xem trang dự án" } +
-                ". Bản thử nghiệm chưa tự giải quyết dependency. Hãy tải bộ JAR tương thích từ trang Modrinth và nhập thủ công."
-        }
-        return version.files.firstOrNull { it.primary }?.url ?: version.files.firstOrNull()?.url
+        return resolveSingleModrinthSlug(slug, mcVersion, loader)?.first
     }
 
     /** 读取 URL 文本（Modrinth 要求 User-Agent） */
@@ -1939,10 +1937,99 @@ class PluginManager(
     }
 
     /**
-     * Cài đặt trọn bộ Crossplay (PC Java mọi phiên bản + PE Bedrock 1.21.114 / 26.x):
-     * - GeyserMC (Chọn đúng nhánh Bedrock: "1.21" cho PE 1.21.50..1.21.114+, hoặc "26" cho PE 26.30..26.52)
-     * - Floodgate (Cho phép điện thoại PE không cần tài khoản Java bản quyền)
-     * - ViaVersion + ViaBackwards (Cho phép PC Java từ 1.8.x -> 1.21.11+ vào chung 1 server)
+     * Tự động khởi tạo & cập nhật cấu hình `config.yml` chuẩn cho GeyserMC (Spigot/Paper và Fabric):
+     * - `bedrock.port: 19132` (UDP chuẩn của Minecraft PE)
+     * - `remote.auth-type: offline` (Cho phép người chơi PE vào thẳng bằng tên Xbox/PE mà KHÔNG cần mua tài khoản Java bản quyền!)
+     * - `bedrock.clone-remote-port: false` (Tránh ghi đè cổng UDP 19132 bằng cổng TCP 25565)
+     */
+    fun ensureGeyserOfflineConfig(dirName: String, core: com.mineserve.mobile.data.ServerCore, bedrockPort: Int = 19132) {
+        val srvDir = termux.serverDirFor(dirName)
+        val candidateDirs = if (core.supportsMods) {
+            listOf(
+                File(srvDir, "config/Geyser-Fabric"),
+                File(srvDir, "config/Geyser-NeoForge"),
+                File(srvDir, "config/geyser")
+            )
+        } else {
+            listOf(
+                File(srvDir, "plugins/Geyser-Spigot"),
+                File(srvDir, "plugins/Geyser")
+            )
+        }
+        val defaultConfigYaml = """
+            bedrock:
+              address: 0.0.0.0
+              port: $bedrockPort
+              clone-remote-port: false
+              motd1: "MineHost Crossplay Server"
+              motd2: "Choi Chung PC + Dien Thoai PE"
+              server-name: "MineHost PC + PE"
+              enable-proxy-protocol: false
+            remote:
+              address: auto
+              port: 25565
+              auth-type: offline
+              allow-password-authentication: true
+              use-proxy-protocol: false
+              forward-hostname: false
+            floodgate-key-file: key.pem
+            saved-user-logins:
+              - ThisExampleUsernameShouldBeLongEnoughToNeverBeAnXboxUsername
+            pending-authentication-timeout: 120
+            command-suggestions: true
+            passthrough-motd: true
+            passthrough-player-counts: true
+            legacy-ping-passthrough: false
+            ping-passthrough-interval: 3
+            forward-player-ping: false
+            max-players: 100
+            debug-mode: false
+            allow-third-party-capes: true
+            allow-third-party-ears: false
+            show-cooldown: title
+            show-coordinates: true
+            disable-bedrock-scaffolding: false
+            emote-offhand-workaround: "disabled"
+            cache-images: 0
+            allow-custom-skulls: true
+            max-visible-custom-skulls: 128
+            custom-skull-render-distance: 32
+            add-non-bedrock-items: true
+            above-bedrock-nether-building: true
+            force-resource-packs: true
+            xbox-achievements-enabled: false
+            log-player-ip-addresses: true
+            notify-on-new-bedrock-update: true
+            unusable-space-block: minecraft:barrier
+            metrics:
+              enabled: false
+              uuid: ${java.util.UUID.randomUUID()}
+            scoreboard-packet-threshold: 20
+            enable-integrated-pack: true
+            config-version: 4
+        """.trimIndent() + "\n"
+
+        for (dir in candidateDirs) {
+            runCatching {
+                dir.mkdirs()
+                val cfgFile = File(dir, "config.yml")
+                if (!cfgFile.exists() || cfgFile.length() < 64L) {
+                    cfgFile.writeText(defaultConfigYaml, Charsets.UTF_8)
+                } else {
+                    var content = cfgFile.readText(Charsets.UTF_8)
+                    content = content.replace(Regex("""auth-type:\s*(online|floodgate)"""), "auth-type: offline")
+                    content = content.replace(Regex("""clone-remote-port:\s*true"""), "clone-remote-port: false")
+                    cfgFile.writeText(content, Charsets.UTF_8)
+                }
+            }
+        }
+    }
+
+    /**
+     * Cài đặt trọn bộ Crossplay (PC Java mọi phiên bản + PE Bedrock 1.21.50..1.21.114+ / 26.x):
+     * - Luôn tải bản GeyserMC + Floodgate chính thức mới nhất từ download.geysermc.org để hỗ trợ PE 1.21.114+ và 26.x.
+     * - Kèm ViaVersion + ViaBackwards để mọi phiên bản PC Java (1.7.10 – 1.21.11+) và mọi bản PE đều vào chung 1 Map!
+     * - Tự động cấu hình `Geyser/config.yml` với `auth-type: offline` và `port: 19132` (UDP).
      */
     suspend fun installCrossplaySuite(
         dirName: String,
@@ -1952,14 +2039,19 @@ class PluginManager(
     ): List<String> = withContext(Dispatchers.IO) {
         val installedNames = mutableListOf<String>()
         val targetMc = mcVersion.ifBlank { "1.21.4" }
-        val geyserMcLookup = if (bedrockBranch == "1.21") "1.21.4" else targetMc
 
         if (core.supportsMods) {
+            val loader = when (core) {
+                com.mineserve.mobile.data.ServerCore.NeoForge -> "neoforge"
+                com.mineserve.mobile.data.ServerCore.Forge -> "forge"
+                com.mineserve.mobile.data.ServerCore.Quilt -> "quilt"
+                else -> "fabric"
+            }
             val modsDir = modsDirOf(dirName).apply { mkdirs() }
             val hasFabricApi = modsDir.listFiles()?.any {
                 it.name.lowercase(Locale.ROOT).startsWith("fabric-api") && it.name.endsWith(".jar", true)
             } == true
-            if (!hasFabricApi && (core == com.mineserve.mobile.data.ServerCore.Fabric || core == com.mineserve.mobile.data.ServerCore.Quilt)) {
+            if (!hasFabricApi && (loader == "fabric" || loader == "quilt")) {
                 runCatching {
                     resolveSingleModrinthSlug("fabric-api", targetMc, "fabric")?.let { (url, fn) ->
                         installModPackJarFromUrl(url, fn, dirName)
@@ -1967,49 +2059,88 @@ class PluginManager(
                     }
                 }
             }
-            val geyserResolved = if (bedrockBranch == "1.21") {
-                runCatching { resolveSingleModrinthSlug("geyser", geyserMcLookup, "fabric") }.getOrNull()
-            } else null
-            val geyserUrl = geyserResolved?.first
-                ?: "https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/fabric"
-            installModPackJarFromUrl(geyserUrl, "Geyser-Fabric.jar", dirName)
-            installedNames += "Geyser-Fabric.jar"
+            var geyserInstalled = false
+            runCatching {
+                val geyserDeps = resolveModrinthDownloadWithDeps("geyser", targetMc, loader)
+                if (geyserDeps.isNotEmpty()) {
+                    geyserDeps.forEach { (url, fn) ->
+                        installModPackJarFromUrl(url, fn, dirName)
+                        if (fn !in installedNames) installedNames += fn
+                    }
+                    geyserInstalled = true
+                }
+            }
+            if (!geyserInstalled) {
+                val geyserUrl = "https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/fabric"
+                runCatching {
+                    installModPackJarFromUrl(geyserUrl, "Geyser-Fabric.jar", dirName)
+                    installedNames += "Geyser-Fabric.jar"
+                }
+            }
 
-            val floodgateUrl = "https://download.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest/downloads/fabric"
-            installModPackJarFromUrl(floodgateUrl, "Floodgate-Fabric.jar", dirName)
-            installedNames += "Floodgate-Fabric.jar"
+            var floodgateInstalled = false
+            runCatching {
+                val fgDeps = resolveModrinthDownloadWithDeps("floodgate", targetMc, loader)
+                if (fgDeps.isNotEmpty()) {
+                    fgDeps.forEach { (url, fn) ->
+                        installModPackJarFromUrl(url, fn, dirName)
+                        if (fn !in installedNames) installedNames += fn
+                    }
+                    floodgateInstalled = true
+                }
+            }
+            if (!floodgateInstalled) {
+                val floodgateUrl = "https://download.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest/downloads/fabric"
+                runCatching {
+                    installModPackJarFromUrl(floodgateUrl, "Floodgate-Fabric.jar", dirName)
+                    installedNames += "Floodgate-Fabric.jar"
+                }
+            }
 
             for (slug in listOf("viafabric", "viaversion", "viabackwards")) {
                 runCatching {
-                    resolveSingleModrinthSlug(slug, targetMc, "fabric")?.let { (url, fn) ->
-                        installModPackJarFromUrl(url, fn, dirName)
-                        installedNames += fn
+                    val viaDeps = resolveModrinthDownloadWithDeps(slug, targetMc, loader)
+                    if (viaDeps.isNotEmpty()) {
+                        viaDeps.forEach { (url, fn) ->
+                            installModPackJarFromUrl(url, fn, dirName)
+                            if (fn !in installedNames) installedNames += fn
+                        }
+                    } else {
+                        resolveSingleModrinthSlug(slug, targetMc, loader)?.let { (url, fn) ->
+                            installModPackJarFromUrl(url, fn, dirName)
+                            if (fn !in installedNames) installedNames += fn
+                        }
                     }
                 }
             }
         } else {
-            val geyserResolved = if (bedrockBranch == "1.21") {
-                runCatching { resolveSingleModrinthSlug("geyser", geyserMcLookup, "paper") }.getOrNull()
-            } else null
-            val geyserUrl = geyserResolved?.first
-                ?: "https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot"
-            installFromUrl(geyserUrl, "Geyser-Spigot.jar", dirName) { _, _, _ -> }
-            installedNames += "Geyser-Spigot.jar"
+            val geyserUrl = "https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot"
+            runCatching {
+                installFromUrl(geyserUrl, "Geyser-Spigot.jar", dirName) { _, _, _ -> }
+                installedNames += "Geyser-Spigot.jar"
+            }.onFailure {
+                resolveSingleModrinthSlug("geyser", targetMc, "paper")?.let { (url, _) ->
+                    installFromUrl(url, "Geyser-Spigot.jar", dirName) { _, _, _ -> }
+                    installedNames += "Geyser-Spigot.jar"
+                }
+            }
 
             val floodgateUrl = "https://download.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest/downloads/spigot"
-            installFromUrl(floodgateUrl, "Floodgate-Spigot.jar", dirName) { _, _, _ -> }
-            installedNames += "Floodgate-Spigot.jar"
+            runCatching {
+                installFromUrl(floodgateUrl, "Floodgate-Spigot.jar", dirName) { _, _, _ -> }
+                installedNames += "Floodgate-Spigot.jar"
+            }
 
-            val viaVerUrl = runCatching { resolveSingleModrinthSlug("viaversion", targetMc, "paper")?.first }.getOrNull()
-                ?: runCatching { resolveLatestAsset("ViaVersion/ViaVersion", "ViaVersion") }.getOrNull()
+            val viaVerUrl = runCatching { resolveLatestAsset("ViaVersion/ViaVersion", "ViaVersion") }.getOrNull()
+                ?: runCatching { resolveSingleModrinthSlug("viaversion", targetMc, "paper")?.first }.getOrNull()
             if (!viaVerUrl.isNullOrBlank()) {
                 runCatching {
                     installFromUrl(viaVerUrl, "ViaVersion.jar", dirName) { _, _, _ -> }
                     installedNames += "ViaVersion.jar"
                 }
             }
-            val viaBackUrl = runCatching { resolveSingleModrinthSlug("viabackwards", targetMc, "paper")?.first }.getOrNull()
-                ?: runCatching { resolveLatestAsset("ViaVersion/ViaBackwards", "ViaBackwards") }.getOrNull()
+            val viaBackUrl = runCatching { resolveLatestAsset("ViaVersion/ViaBackwards", "ViaBackwards") }.getOrNull()
+                ?: runCatching { resolveSingleModrinthSlug("viabackwards", targetMc, "paper")?.first }.getOrNull()
             if (!viaBackUrl.isNullOrBlank()) {
                 runCatching {
                     installFromUrl(viaBackUrl, "ViaBackwards.jar", dirName) { _, _, _ -> }
@@ -2017,6 +2148,7 @@ class PluginManager(
                 }
             }
         }
+        ensureGeyserOfflineConfig(dirName, core, 19132)
         installedNames
     }
 
@@ -2376,6 +2508,44 @@ class PluginManager(
                             installedFile.copyTo(File(cacheDir, installedFile.name), overwrite = true)
                         }
                         enabledModNames += item.displayName
+                    }
+                }
+            }
+        }
+
+        // 6. Bổ sung linh hoạt (Universal Optimization): Nếu phiên bản/loader hiện tại (VD: Forge / NeoForge / bản MC bất kỳ)
+        // có ít hơn 8 mod trong gói cố định hỗ trợ, tự động tìm thêm các Mod Tối Ưu Server phổ biến nhất trên Modrinth
+        // khớp đúng phiên bản MC + Loader đó để mọi phiên bản đều được tối ưu tối đa!
+        if (enabledModNames.size < 8) {
+            runCatching {
+                val dynamicHits = searchModrinth(
+                    query = "",
+                    loaders = listOf(cleanLoader),
+                    sort = "downloads",
+                    projectType = "mod",
+                    mcVersion = cleanVer,
+                    category = "optimization"
+                ).filter { hit ->
+                    hit.server_side != "unsupported" &&
+                        !hit.slug.contains("sodium", true) &&
+                        !hit.slug.contains("iris", true) &&
+                        !hit.slug.contains("optifine", true) &&
+                        !hit.slug.contains("embeddium", true) &&
+                        !hit.slug.contains("modmenu", true)
+                }
+                for (hit in dynamicHits) {
+                    if (enabledModNames.size >= 12) break
+                    val alreadyHas = modsDir.listFiles()?.any {
+                        it.name.lowercase(Locale.ROOT).contains(hit.slug.lowercase(Locale.ROOT))
+                    } == true
+                    if (alreadyHas) continue
+                    val resolved = resolveSingleModrinthSlug(hit.slug, cleanVer, cleanLoader) ?: continue
+                    val installedFile = installModPackJarFromUrl(resolved.first, resolved.second, dirName)
+                    if (installedFile.exists() && installedFile.length() > 1024L) {
+                        runCatching {
+                            installedFile.copyTo(File(cacheDir, installedFile.name), overwrite = true)
+                        }
+                        enabledModNames += hit.title
                     }
                 }
             }

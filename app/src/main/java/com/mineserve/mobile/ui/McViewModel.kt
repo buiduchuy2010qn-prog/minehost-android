@@ -3210,8 +3210,7 @@ class McViewModel(
      * - Người chơi vào Server (PC / Pojav / FCL / Zalith) KHÔNG CẦN cài bất kỳ mod nào trên máy khách!
      */
     fun toggleServerOptimizationPack(enable: Boolean, customMcVersion: String = "") {
-        if (!requireServerStopped(if (enable) "bật Gói Mod Tối Ưu Server" else "tắt Gói Mod Tối Ưu Server")) return
-        if (_isTogglingServerOptPack.value) return
+        if (_isTogglingServerOptPack.value || _stopInFlight.value) return
         val activeInstalled = config.value.installedCores.firstOrNull { it.name == config.value.activeCoreName }
         val dirName = activeInstalled?.dirName ?: activeDirName() ?: run {
             _errorFlow.tryEmit("Hãy chọn hoặc tạo một máy chủ trước khi bật Gói Mod Tối Ưu Server.")
@@ -3226,10 +3225,26 @@ class McViewModel(
             activeInstalled?.version?.trim()?.takeIf { it.isNotBlank() }
                 ?: config.value.mcVersion.trim().ifBlank { "1.21.11" }
         }
+        val wasRunning = serverState.value.isRunning
 
         viewModelScope.launch {
             _isTogglingServerOptPack.value = true
             try {
+                if (wasRunning) {
+                    _stopInFlight.value = true
+                    _serverOptPackProgress.value = "⏳ Đang lưu thế giới & tạm dừng Server để ${if (enable) "bật" else "tắt"} Gói Mod Tối Ưu..."
+                    val stopped = try {
+                        controller.stopGracefully()
+                    } catch (_: Exception) {
+                        false
+                    } finally {
+                        _stopInFlight.value = false
+                    }
+                    if (!stopped) {
+                        _errorFlow.tryEmit("Không thể tạm dừng Server tự động. Hãy bấm Dừng Server rồi thử lại.")
+                        return@launch
+                    }
+                }
                 var effectiveCore = currentCore
                 // Nếu máy chủ đang là Vanilla (hoặc chưa hỗ trợ Mod) và người dùng BẬT gói tối ưu -> Tự động nâng cấp tại chỗ lên Fabric cùng phiên bản!
                 if (enable && !currentCore.supportsMods) {
@@ -3291,6 +3306,9 @@ class McViewModel(
                     )
                 } else {
                     notifyActionDone("⏸ Đã tạm tắt $count Mod Tối Ưu Server (vẫn lưu sẵn trong máy để bật lại 1 chạm bất cứ lúc nào).")
+                }
+                if (wasRunning) {
+                    startServer()
                 }
             } catch (e: Exception) {
                 _errorFlow.tryEmit("Không thể chuyển trạng thái Gói Mod Tối Ưu: ${e.message}")
@@ -3538,7 +3556,8 @@ class McViewModel(
         val query: String,
         val loaders: List<String>,
         val sort: String,
-        val mcVersion: String
+        val mcVersion: String,
+        val category: String = ""
     )
 
     private var lastModrinthModQuery: ModrinthQueryArgs? = null
@@ -3555,18 +3574,37 @@ class McViewModel(
      */
     private var modrinthModSearchToken = 0L
 
-    /** 搜索 Modrinth 模组（多加载器 + 版本筛选 + 排序） */
-    fun searchModrinthMods(query: String, loaders: List<String>, sort: String, mcVersion: String) {
-        lastModrinthModQuery = ModrinthQueryArgs(query, loaders, sort, mcVersion)
+    /** 搜索 Modrinth 模组（多加载器 + 版本筛选 + 排序 + Phân loại danh mục） */
+    fun searchModrinthMods(
+        query: String,
+        loaders: List<String>,
+        sort: String,
+        mcVersion: String,
+        category: String = ""
+    ) {
+        val effectiveLoaders = loaders.ifEmpty {
+            val activeCore = config.value.installedCores.firstOrNull { it.name == config.value.activeCoreName }?.core
+                ?: config.value.selectedCore
+            if (activeCore.supportsMods && !activeCore.isBedrock) listOf(modrinthLoader(activeCore)) else listOf("fabric")
+        }
+        val effectiveVer = mcVersion.ifBlank { currentServerVersion() }
+        lastModrinthModQuery = ModrinthQueryArgs(query, effectiveLoaders, sort, effectiveVer, category)
         val token = ++modrinthModSearchToken
         viewModelScope.launch {
             val hits = withContext(Dispatchers.IO) {
-                pluginManager.searchModrinth(query, loaders, sort, projectType = "mod", mcVersion = mcVersion)
+                pluginManager.searchModrinth(
+                    query = query,
+                    loaders = effectiveLoaders,
+                    sort = sort,
+                    projectType = "mod",
+                    mcVersion = effectiveVer,
+                    category = category
+                )
             }
             // 已被更新的一次搜索取代：本次结果整体丢弃，不覆盖新列表。
             if (token != modrinthModSearchToken) return@launch
             _modrinthResults.value = hits
-            if (hits.isEmpty()) {
+            if (hits.isEmpty() && query.isNotBlank()) {
                 _messageFlow.tryEmit(str(R.string.s223))
             }
         }
@@ -3575,7 +3613,7 @@ class McViewModel(
     /** 分页加载更多 Modrinth 模组（追加到现有结果） */
     fun loadMoreModrinthMods() {
         val args = lastModrinthModQuery ?: run {
-            _messageFlow.tryEmit("Vui lòng nhập từ khóa và bấm Tìm kiếm trước")
+            _messageFlow.tryEmit("Vui lòng chọn danh mục hoặc nhập từ khóa trước")
             return
         }
         if (_isLoadingMoreMods.value) return
@@ -3585,7 +3623,15 @@ class McViewModel(
             try {
                 val offset = _modrinthResults.value.size
                 val more = withContext(Dispatchers.IO) {
-                    pluginManager.searchModrinth(args.query, args.loaders, args.sort, projectType = "mod", mcVersion = args.mcVersion, offset = offset)
+                    pluginManager.searchModrinth(
+                        query = args.query,
+                        loaders = args.loaders,
+                        sort = args.sort,
+                        projectType = "mod",
+                        mcVersion = args.mcVersion,
+                        offset = offset,
+                        category = args.category
+                    )
                 }
                 // 期间若发生过新的搜索，这一页属于旧查询，追加进去会得到混合列表。
                 if (token != modrinthModSearchToken) return@launch
@@ -4208,17 +4254,32 @@ class McViewModel(
     private var modrinthPluginSearchToken = 0L
 
     /** 插件页搜索 Modrinth 插件（project_type=plugin，布局与模组页统一） */
-    fun searchModrinthPlugin(query: String, loaders: List<String>, sort: String, mcVersion: String) {
-        lastModrinthPluginQuery = ModrinthQueryArgs(query, loaders, sort, mcVersion)
+    fun searchModrinthPlugin(
+        query: String,
+        loaders: List<String>,
+        sort: String,
+        mcVersion: String,
+        category: String = ""
+    ) {
+        val effectiveLoaders = loaders.ifEmpty { listOf("paper", "spigot", "bukkit") }
+        val effectiveVer = mcVersion.ifBlank { currentServerVersion() }
+        lastModrinthPluginQuery = ModrinthQueryArgs(query, effectiveLoaders, sort, effectiveVer, category)
         val token = ++modrinthPluginSearchToken
         viewModelScope.launch {
             val hits = withContext(Dispatchers.IO) {
-                pluginManager.searchModrinth(query, loaders, sort, projectType = "plugin", mcVersion = mcVersion)
+                pluginManager.searchModrinth(
+                    query = query,
+                    loaders = effectiveLoaders,
+                    sort = sort,
+                    projectType = "plugin",
+                    mcVersion = effectiveVer,
+                    category = category
+                )
             }
             // 已被更新的一次搜索取代：丢弃本次结果，避免旧响应覆盖新列表。
             if (token != modrinthPluginSearchToken) return@launch
             _pluginModrinthResults.value = hits
-            if (hits.isEmpty()) {
+            if (hits.isEmpty() && query.isNotBlank()) {
                 _messageFlow.tryEmit(str(R.string.s223))
             }
         }
@@ -4227,7 +4288,7 @@ class McViewModel(
     /** 分页加载更多 Modrinth 插件（追加到现有结果） */
     fun loadMoreModrinthPlugin() {
         val args = lastModrinthPluginQuery ?: run {
-            _messageFlow.tryEmit("Vui lòng nhập từ khóa và bấm Tìm kiếm trước")
+            _messageFlow.tryEmit("Vui lòng chọn danh mục hoặc nhập từ khóa trước")
             return
         }
         if (_isLoadingMorePlugins.value) return
@@ -4237,7 +4298,15 @@ class McViewModel(
             try {
                 val offset = _pluginModrinthResults.value.size
                 val more = withContext(Dispatchers.IO) {
-                    pluginManager.searchModrinth(args.query, args.loaders, args.sort, projectType = "plugin", mcVersion = args.mcVersion, offset = offset)
+                    pluginManager.searchModrinth(
+                        query = args.query,
+                        loaders = args.loaders,
+                        sort = args.sort,
+                        projectType = "plugin",
+                        mcVersion = args.mcVersion,
+                        offset = offset,
+                        category = args.category
+                    )
                 }
                 // 期间若发生过新的搜索，这一页属于旧查询，追加进去会得到混合列表。
                 if (token != modrinthPluginSearchToken) return@launch
@@ -4265,10 +4334,6 @@ class McViewModel(
             _errorFlow.tryEmit("Đây là add-on chỉ dành cho máy người chơi, không cài trên server.")
             return
         }
-        if (mcVersion != currentServerVersion()) {
-            _errorFlow.tryEmit("Hãy chọn phiên bản Minecraft trùng với server đang quản lý.")
-            return
-        }
 
         if (!isBootstrapped.value) {
             _errorFlow.tryEmit(str(R.string.s192))
@@ -4279,21 +4344,25 @@ class McViewModel(
             return
         }
         val loader = if (targetCore == ServerCore.CraftBukkit || targetCore == ServerCore.Spigot) "bukkit" else "paper"
+        val effectiveMcVer = mcVersion.ifBlank { currentServerVersion() }
         viewModelScope.launch {
             try {
-                val url = withContext(Dispatchers.IO) {
-                    pluginManager.resolveModrinthDownload(hit.slug, mcVersion, loader)
-                } ?: throw RuntimeException(str(R.string.err_plugin_incompatible))
-                val fileName = "${hit.slug}.jar"
+                val downloads = withContext(Dispatchers.IO) {
+                    pluginManager.resolveModrinthDownloadWithDeps(hit.slug, effectiveMcVer, loader)
+                }
+                if (downloads.isEmpty()) {
+                    throw RuntimeException(str(R.string.err_plugin_incompatible))
+                }
                 withContext(Dispatchers.IO) {
-                    // 下载开始前先放占位进度，保证进度弹窗一定显示
                     _pluginDownloadProgress.update { it + (hit.slug to PluginDownloadProgress(
                         pluginId = hit.slug, downloadedBytes = 0, totalBytes = 0, speedBytesPerSec = 0
                     )) }
-                    pluginManager.installFromUrl(url, fileName, dirName) { d, t, s ->
-                        _pluginDownloadProgress.update { it + (hit.slug to PluginDownloadProgress(
-                            pluginId = hit.slug, downloadedBytes = d, totalBytes = t, speedBytesPerSec = s
-                        )) }
+                    downloads.forEach { (url, fileName) ->
+                        pluginManager.installFromUrl(url, fileName, dirName) { d, t, s ->
+                            _pluginDownloadProgress.update { it + (hit.slug to PluginDownloadProgress(
+                                pluginId = hit.slug, downloadedBytes = d, totalBytes = t, speedBytesPerSec = s
+                            )) }
+                        }
                     }
                 }
                 _pluginDownloadProgress.update { it - hit.slug }
@@ -7345,6 +7414,27 @@ class McViewModel(
         }
     }
 
+    /**
+     * Trích xuất địa chỉ IPv4 toàn số từ tên miền Playit.gg (ví dụ `216.ip.gl.ply.gg` -> `147.185.221.216`).
+     * Tuyệt đối KHÔNG trả về địa chỉ IPv6 (`2602:fbaf:...`) vì Minecraft PC / PE khi dán kèm `:port` không có ngoặc vuông sẽ báo lỗi "Máy chủ không rõ" (Unknown host).
+     */
+    fun extractPlayitIpv4Host(addressOrHost: String?): String? {
+        val raw = addressOrHost?.trim().orEmpty()
+        if (raw.isBlank()) return null
+        val host = if (raw.contains(":") && !raw.startsWith("[")) raw.substringBeforeLast(":").trim() else raw
+        if (host.matches(Regex("""^\d{1,3}(\.\d{1,3}){3}$"""))) return host
+        val plyMatch = Regex("""^(\d{1,3})\.ip\.gl\.ply\.gg$""", RegexOption.IGNORE_CASE).matchEntire(host)
+        if (plyMatch != null) {
+            val octet = plyMatch.groupValues[1].toIntOrNull()
+            if (octet != null && octet in 0..255) {
+                return "147.185.221.$octet"
+            }
+        }
+        return _playitNumericAddress.value?.substringBeforeLast(":")?.takeIf {
+            it.matches(Regex("""^\d{1,3}(\.\d{1,3}){3}$"""))
+        }
+    }
+
     fun resolvePlayitNumericIp(rawAddress: String?) {
         val addr = rawAddress?.trim().orEmpty()
         if (addr.isBlank() || !addr.contains(":")) {
@@ -7357,11 +7447,53 @@ class McViewModel(
             _playitNumericAddress.value = null
             return
         }
+        // 1. Nếu bản thân host đã là IPv4 hoặc là tên miền chuẩn `<N>.ip.gl.ply.gg` của Playit.gg -> Ánh xạ tức thì sang IPv4 `147.185.221.<N>` (0ms, không bị 4G trả về IPv6 `2602:fbaf:800::d8`)
+        if (host.matches(Regex("""^\d{1,3}(\.\d{1,3}){3}$"""))) {
+            _playitNumericAddress.value = "$host:$port"
+            return
+        }
+        val directPlyMatch = Regex("""^(\d{1,3})\.ip\.gl\.ply\.gg$""", RegexOption.IGNORE_CASE).matchEntire(host)
+        if (directPlyMatch != null) {
+            val octet = directPlyMatch.groupValues[1].toIntOrNull()
+            if (octet != null && octet in 0..255) {
+                _playitNumericAddress.value = "147.185.221.$octet:$port"
+                return
+            }
+        }
         viewModelScope.launch(Dispatchers.IO) {
             runCatching {
-                val resolvedIp = java.net.InetAddress.getByName(host).hostAddress
-                if (!resolvedIp.isNullOrBlank()) {
-                    _playitNumericAddress.value = "$resolvedIp:$port"
+                val allAddrs = runCatching { java.net.InetAddress.getAllByName(host) }.getOrNull().orEmpty()
+                val ipv4 = allAddrs.filterIsInstance<java.net.Inet4Address>()
+                    .firstOrNull()?.hostAddress?.takeIf { it.isNotBlank() }
+                if (ipv4 != null) {
+                    _playitNumericAddress.value = "$ipv4:$port"
+                    return@runCatching
+                }
+                // Nếu mạng 4G chỉ trả về bản ghi IPv6 của Playit (`2602:fbaf:800::XX`), byte cuối cùng chính là octet cuối của dải IPv4 `147.185.221.XX`
+                val ipv6 = allAddrs.filterIsInstance<java.net.Inet6Address>().firstOrNull()
+                if (ipv6 != null) {
+                    val hostAddrLower = ipv6.hostAddress?.lowercase(java.util.Locale.ROOT).orEmpty()
+                    val bytes = ipv6.address
+                    if (hostAddrLower.startsWith("2602:fbaf:") && bytes.size == 16) {
+                        val lastOctet = bytes[15].toInt() and 0xFF
+                        if (lastOctet in 1..254) {
+                            _playitNumericAddress.value = "147.185.221.$lastOctet:$port"
+                            return@runCatching
+                        }
+                    }
+                }
+                // Dự phòng: Truy vấn bản ghi A (IPv4) qua Cloudflare DoH (1.1.1.1) nếu DNS nhà mạng chặn hoặc chỉ trả IPv6
+                val dohUrl = java.net.URL("https://1.1.1.1/dns-query?name=${java.net.URLEncoder.encode(host, "UTF-8")}&type=A")
+                val conn = (dohUrl.openConnection() as java.net.HttpURLConnection).apply {
+                    connectTimeout = 4000
+                    readTimeout = 4000
+                    setRequestProperty("Accept", "application/dns-json")
+                }
+                val body = conn.inputStream.bufferedReader().use { it.readText() }
+                val ipv4Regex = Regex(""""data"\s*:\s*"(\d{1,3}(?:\.\d{1,3}){3})"""")
+                val dohIpv4 = ipv4Regex.find(body)?.groupValues?.getOrNull(1)
+                if (!dohIpv4.isNullOrBlank()) {
+                    _playitNumericAddress.value = "$dohIpv4:$port"
                 }
             }
         }
@@ -7372,8 +7504,8 @@ class McViewModel(
         _messageFlow.tryEmit("📱 Đang tạo đường hầm UDP Bedrock (cổng $localBedrockPort) trên Playit.gg để điện thoại PE kết nối mọi mạng...")
     }
 
-    fun installCrossplayGeyserPack(bedrockBranch: String = "1.21") {
-        if (!requireServerStopped("cài gói GeyserMC + Floodgate + ViaVersion")) return
+    fun installCrossplayGeyserPack(bedrockBranch: String = "1.21", startAfterInstall: Boolean = false) {
+        if (_isInstalling.value || _stopInFlight.value) return
         val dirName = activeDirName() ?: run {
             _errorFlow.tryEmit("Chưa chọn máy chủ để cài GeyserMC + Floodgate + ViaVersion.")
             return
@@ -7381,9 +7513,25 @@ class McViewModel(
         val active = config.value.installedCores.firstOrNull { it.name == config.value.activeCoreName }
         val core = active?.core ?: config.value.selectedCore
         val mcVer = active?.version ?: config.value.mcVersion
+        val wasRunning = serverState.value.isRunning
         viewModelScope.launch {
             _isInstalling.value = true
             try {
+                if (wasRunning) {
+                    _stopInFlight.value = true
+                    _messageFlow.tryEmit("⏳ Đang lưu thế giới & tạm dừng Server an toàn để cài GeyserMC + Floodgate + ViaVersion...")
+                    val stopped = try {
+                        controller.stopGracefully()
+                    } catch (_: Exception) {
+                        false
+                    } finally {
+                        _stopInFlight.value = false
+                    }
+                    if (!stopped) {
+                        _errorFlow.tryEmit("Không thể tạm dừng Server tự động. Hãy bấm Dừng Server rồi thử lại.")
+                        return@launch
+                    }
+                }
                 val branchLabel = if (bedrockBranch == "1.21") "Bedrock PE 1.21.50 – 1.21.114+" else "Bedrock PE 26.30 – 26.52"
                 _messageFlow.tryEmit("📱 Đang tải GeyserMC + Floodgate + ViaVersion + ViaBackwards ($branchLabel) cho ${core.displayName} $mcVer...")
                 val installedFiles = withContext(Dispatchers.IO) {
@@ -7406,12 +7554,16 @@ class McViewModel(
                     propertiesManager.writeProperties(currentProps, dirName)
                     files
                 }
+                playitController.createMinecraftBedrockTunnelOnDemand(19132)
                 refreshServerPropertiesNow()
                 if (core.supportsMods) refreshMods() else refreshInstalledPlugins()
                 refreshServerStorage()
                 _messageFlow.tryEmit(
-                    "✅ Đã cài xong ${installedFiles.joinToString(", ")} (Tương thích $branchLabel + PC Java mọi phiên bản)! Hãy bật Server để chơi chung."
+                    "✅ Đã cài xong ${installedFiles.joinToString(", ")} (Tương thích $branchLabel + PC Java mọi phiên bản)!"
                 )
+                if (wasRunning || startAfterInstall) {
+                    startServer()
+                }
             } catch (e: Exception) {
                 _errorFlow.tryEmit("⚠️ Không thể tải gói Crossplay: ${e.message}")
             } finally {
@@ -7507,12 +7659,16 @@ class McViewModel(
                 // Ưu tiên hiển thị các phiên bản chính thức 1.x (1.21.11, 1.21.4, 1.21.1, 1.20.1, 1.16.5...) lên đầu
                 // để người dùng không chọn nhầm bản thử nghiệm 26.x chưa có Mod
                 val rawVersions = options.map { it.version }
-                val versions = rawVersions.sortedWith(compareBy<String> { !it.startsWith("1.") })
+                val versions = if (core == ServerCore.PowerNukkitX) {
+                    rawVersions
+                } else {
+                    rawVersions.sortedWith(compareBy<String> { !it.startsWith("1.") })
+                }
                 _availableVersions.value = versions
                 _versionHints.value = options.associate { it.version to it.supportedGameVersion }
                 val currentVer = config.value.mcVersion
-                if (core == ServerCore.PowerNukkitX && config.value.selectedCore == core &&
-                    currentVer == "latest" && versions.isNotEmpty()
+                if (core == ServerCore.PowerNukkitX && versions.isNotEmpty() &&
+                    (currentVer !in versions || currentVer.startsWith("1.19"))
                 ) {
                     updateConfig { it.copy(mcVersion = versions.first()) }
                 } else if (versions.isNotEmpty() && (currentVer !in versions || currentVer.startsWith("26."))) {
