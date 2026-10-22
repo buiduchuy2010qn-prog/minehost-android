@@ -512,7 +512,7 @@ class MineoraAuditRegressionTest {
         )
         assertFalse("Phản hồi RakNet Pong lệch Ping Timestamp phải bị từ chối", okWrongPing)
 
-        val badMagicPong = validPong.clone().apply { this[20] = 0x00 }
+        val badMagicPong = validPong.clone().apply { this[18] = 0x00 }
         val (okBadMagic, _) = MinecraftProtocolValidator.validateRakNetPong(
             data = badMagicPong,
             offset = 0,
@@ -787,6 +787,9 @@ class MineoraAuditRegressionTest {
         ZipOutputStream(FileOutputStream(file)).use { zos ->
             zos.putNextEntry(ZipEntry(entryName))
             zos.write(content.toByteArray(Charsets.UTF_8))
+            zos.closeEntry()
+            zos.putNextEntry(ZipEntry("META-INF/MINEHOST_TEST.txt"))
+            zos.write("MineHost regression test archive padding ".repeat(12).toByteArray(Charsets.UTF_8))
             zos.closeEntry()
         }
     }

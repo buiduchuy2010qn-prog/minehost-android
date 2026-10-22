@@ -191,7 +191,7 @@ class PluginManager(
          * Tuyệt đối KHÔNG suy ra tương thích chỉ từ tên tệp bên ngoài.
          */
         fun verifyFabricApiJar(file: File, expectedMcVersion: String): Boolean {
-            if (!file.isFile || file.length() <= 256L) return false
+            if (!file.isFile || file.length() <= 32L) return false
             val targetMc = expectedMcVersion.trim()
             if (targetMc.isBlank()) return false
             return runCatching {
@@ -235,7 +235,7 @@ class PluginManager(
             expectedRole: String,
             expectedMcVersion: String? = null
         ): Boolean {
-            if (!file.isFile || file.length() <= 256L) return false
+            if (!file.isFile || file.length() <= 32L) return false
             val role = expectedRole.trim().lowercase(Locale.ROOT)
             if (role == "fabric-api") {
                 return if (!expectedMcVersion.isNullOrBlank()) {
