@@ -47,6 +47,32 @@ class PluginManager(
         else -> null
     }
 
+    data class GeyserConfigSummary(
+        val configExists: Boolean,
+        val bedrockAddress: String = "0.0.0.0",
+        val bedrockPort: Int = 19132,
+        val cloneRemotePort: Boolean = false,
+        val remotePort: Int = 25565,
+        val authType: String = "offline",
+        val enableProxyProtocol: Boolean = false,
+        val transport: String = "raknet"
+    ) {
+        val effectiveBedrockPort: Int
+            get() = if (cloneRemotePort && remotePort in 1..65535) remotePort else bedrockPort
+    }
+
+    data class CrossplayComponentSpec(
+        val role: String,
+        val targetFileName: String,
+        val required: Boolean,
+        val expectedLoader: String,
+        val expectedMcVersion: String? = null,
+        val expectedSha512: String? = null,
+        val expectedSha256: String? = null,
+        val expectedSha1: String? = null,
+        val fetcher: suspend (stagedFile: File) -> Unit
+    )
+
     companion object {
         private const val TAG = "PluginManager"
         private const val JAR_EXT = ".jar"
@@ -248,20 +274,6 @@ class PluginManager(
             }.getOrDefault(false)
         }
 
-        data class GeyserConfigSummary(
-            val configExists: Boolean,
-            val bedrockAddress: String = "0.0.0.0",
-            val bedrockPort: Int = 19132,
-            val cloneRemotePort: Boolean = false,
-            val remotePort: Int = 25565,
-            val authType: String = "offline",
-            val enableProxyProtocol: Boolean = false,
-            val transport: String = "raknet"
-        ) {
-            val effectiveBedrockPort: Int
-                get() = if (cloneRemotePort && remotePort in 1..65535) remotePort else bedrockPort
-        }
-
         fun parseGeyserConfigText(
             yamlText: String,
             fallbackJavaPort: Int = 25565,
@@ -319,18 +331,6 @@ class PluginManager(
                 transport = transport
             )
         }
-
-        data class CrossplayComponentSpec(
-            val role: String,
-            val targetFileName: String,
-            val required: Boolean,
-            val expectedLoader: String,
-            val expectedMcVersion: String? = null,
-            val expectedSha512: String? = null,
-            val expectedSha256: String? = null,
-            val expectedSha1: String? = null,
-            val fetcher: suspend (stagedFile: File) -> Unit
-        )
 
         /**
          * Thực thi giao dịch cài đặt Crossplay an toàn (Staging -> Verify -> Backup -> Atomic Commit -> Rollback nếu lỗi):
