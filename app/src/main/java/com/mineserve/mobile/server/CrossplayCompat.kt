@@ -44,6 +44,37 @@ object CrossplayCompat {
         val buildLabel: String get() = if (build > 0) "$geyserVersion-b$build" else geyserVersion
     }
 
+    data class PinnedGeyserBuild(
+        val versionNumber: String,
+        val loader: String,
+        val gameVersions: List<String>,
+        val downloadUrl: String,
+        val fileName: String,
+        val sha512: String? = null,
+        val sha256: String? = null,
+        val sha1: String? = null,
+        val requiredDependencies: List<String> = emptyList(),
+        val supportedBedrockRanges: List<Pair<String, String>> = emptyList(),
+        val metadataVerified: Boolean = true
+    ) {
+        fun matchesTarget(expectedLoader: String, expectedMcVersion: String, targetPe: String? = null): Boolean {
+            if (!metadataVerified) return false
+            if (versionNumber.isBlank() || downloadUrl.isBlank() || fileName.isBlank()) return false
+            if (!loader.equals(expectedLoader, ignoreCase = true)) return false
+            if (gameVersions.none { it.equals(expectedMcVersion.trim(), ignoreCase = true) }) return false
+            if (sha512.isNullOrBlank() && sha256.isNullOrBlank() && sha1.isNullOrBlank()) return false
+            if (expectedLoader.equals("fabric", ignoreCase = true) &&
+                requiredDependencies.none { it.equals("fabric-api", ignoreCase = true) || it.equals("P7dR8mSH", ignoreCase = true) }
+            ) {
+                return false
+            }
+            if (!targetPe.isNullOrBlank() && supportedBedrockRanges.isNotEmpty()) {
+                if (!inRanges(supportedBedrockRanges, targetPe.trim())) return false
+            }
+            return true
+        }
+    }
+
     data class Result(
         val verdict: Verdict,
         val core: ServerCore,
@@ -64,7 +95,9 @@ object CrossplayCompat {
         val geyserFileName: String? = null,
         val geyserBuildLabel: String? = null,
         /** Dải PE thật của bản Geyser cũ được chọn */
-        val peRangesOverride: List<Pair<String, String>>? = null
+        val peRangesOverride: List<Pair<String, String>>? = null,
+        /** Metadata đầy đủ của bản Geyser được pin (phiên bản, loader, hash, phụ thuộc bắt buộc) */
+        val pinnedBuild: PinnedGeyserBuild? = null
     ) {
         val supported: Boolean get() = verdict == Verdict.SUPPORTED
         val usesOlderGeyser: Boolean get() = geyserUrl != null
@@ -157,6 +190,41 @@ object CrossplayCompat {
         "2026-09-15T23:46:24Z" to singles("26.30", "26.31", "26.32", "26.33", "26.34", "26.40", "26.41", "26.42", "26.43", "26.44", "26.45", "26.50", "26.51"),
         "2026-10-06T09:29:40Z" to singles("26.30", "26.31", "26.32", "26.33", "26.34", "26.40", "26.41", "26.42", "26.43", "26.44", "26.45", "26.50", "26.51", "26.52")
     )
+
+    /**
+     * Bản Geyser lịch sử đã được xác minh đầy đủ metadata (phiên bản, loader, hash SHA-512/SHA-1,
+     * phụ thuộc bắt buộc và dải phiên bản PE thực tế) cho các bản Mod phổ biến như Fabric/NeoForge 1.21.11.
+     * Chỉ dùng khi đúng loader + phiên bản MC được xác nhận; KHÔNG suy rộng thành hỗ trợ mọi bản PE hoặc mọi modpack.
+     */
+    private val PINNED_HISTORICAL_BUILDS: Map<String, PinnedGeyserBuild> = mapOf(
+        "fabric:1.21.11" to PinnedGeyserBuild(
+            versionNumber = "2.9.6-b1133",
+            loader = "fabric",
+            gameVersions = listOf("1.21.11"),
+            downloadUrl = "https://cdn.modrinth.com/data/wKkoqHrH/versions/6uw7I3Qj/geyser-fabric-Geyser-Fabric-2.9.6-b1133.jar",
+            fileName = "geyser-fabric-Geyser-Fabric-2.9.6-b1133.jar",
+            sha512 = "e777f6bd3511dcca2ac9308bc2360f44246ae9c5286506a2fd8d83915781e1337a8c158291a3e6d6f42f76b04a7f78a8e572793d53846eb986a0fd87dd60ec0c",
+            sha1 = "02d84ae13496e6ffa8bb7dddcf73145a1415cf2e",
+            requiredDependencies = listOf("fabric-api"),
+            supportedBedrockRanges = listOf(r("1.21.130", "1.21.132")) + singles("26.0", "26.1", "26.2", "26.3", "26.10", "26.20"),
+            metadataVerified = true
+        ),
+        "neoforge:1.21.11" to PinnedGeyserBuild(
+            versionNumber = "2.9.6-b1133",
+            loader = "neoforge",
+            gameVersions = listOf("1.21.11"),
+            downloadUrl = "https://cdn.modrinth.com/data/wKkoqHrH/versions/4b3hfUgv/geyser-neoforge-Geyser-Neoforge-2.9.6-b1133.jar",
+            fileName = "geyser-neoforge-Geyser-Neoforge-2.9.6-b1133.jar",
+            sha512 = "426d4e565add937626e1c2660cecef02ecfec115ae87c14710f2a1029030b9e6bb1fa376d70ddb8eb602f450f363bffb33d6d2b7bb37f11982bc821fbc02aab1",
+            sha1 = "13b56bc1da9b31d0a8113337b50bb16caa2736df",
+            requiredDependencies = emptyList(),
+            supportedBedrockRanges = listOf(r("1.21.130", "1.21.132")) + singles("26.0", "26.1", "26.2", "26.3", "26.10", "26.20"),
+            metadataVerified = true
+        )
+    )
+
+    fun pinnedHistoricalBuild(loader: String, mcVersion: String): PinnedGeyserBuild? =
+        PINNED_HISTORICAL_BUILDS["${loader.trim().lowercase(Locale.ROOT)}:${mcVersion.trim()}"]
 
     /**
      * Bảng dự phòng cho Geyser bản Mod (Fabric/NeoForge/Quilt) theo từng phiên bản Java phổ biến
@@ -293,17 +361,50 @@ object CrossplayCompat {
         info
     }
 
-    private data class MrVersion(val number: String, val date: String, val instant: java.time.Instant?, val url: String, val fileName: String)
+    private data class MrVersion(
+        val number: String,
+        val date: String,
+        val instant: java.time.Instant?,
+        val url: String,
+        val fileName: String,
+        val loaders: List<String>,
+        val gameVersions: List<String>,
+        val sha512: String?,
+        val sha1: String?,
+        val requiredDeps: List<String>
+    ) {
+        fun toPinnedBuild(loader: String, ranges: List<Pair<String, String>>): PinnedGeyserBuild {
+            val deps = buildList {
+                addAll(requiredDeps)
+                if (loader.equals("fabric", ignoreCase = true) && none { it.equals("fabric-api", ignoreCase = true) }) {
+                    add("fabric-api")
+                }
+            }
+            return PinnedGeyserBuild(
+                versionNumber = number,
+                loader = loader,
+                gameVersions = gameVersions,
+                downloadUrl = url,
+                fileName = fileName,
+                sha512 = sha512?.takeIf { it.isNotBlank() },
+                sha1 = sha1?.takeIf { it.isNotBlank() },
+                requiredDependencies = deps,
+                supportedBedrockRanges = ranges,
+                metadataVerified = true
+            )
+        }
+    }
 
     private val mrVersionsCache = ConcurrentHashMap<String, Pair<Long, List<MrVersion>>>()
 
-    /** Toàn bộ bản Geyser trên Modrinth cho loader + phiên bản MC (mới nhất trước); null nếu lỗi mạng. */
+    /** Toàn bộ bản Geyser trên Modrinth cho đúng loader + phiên bản MC (mới nhất trước); null nếu lỗi mạng. */
     private fun modrinthGeyserVersions(loaders: List<String>, mcVersion: String): List<MrVersion>? {
-        val key = loaders.joinToString(",") + "|" + mcVersion
+        val cleanMc = mcVersion.trim()
+        val key = loaders.joinToString(",") + "|" + cleanMc
         val now = System.currentTimeMillis()
         mrVersionsCache[key]?.let { (at, list) -> if (now - at < RESULT_TTL_MS) return list }
         val loadersParam = URLEncoder.encode(JSONArray(loaders).toString(), "UTF-8")
-        val gvParam = URLEncoder.encode(JSONArray(listOf(mcVersion)).toString(), "UTF-8")
+        val gvParam = URLEncoder.encode(JSONArray(listOf(cleanMc)).toString(), "UTF-8")
         val body = fetchText(
             "https://api.modrinth.com/v2/project/geyser/version?loaders=$loadersParam&game_versions=$gvParam&include_changelog=false"
         ) ?: return null
@@ -312,18 +413,61 @@ object CrossplayCompat {
             val out = ArrayList<MrVersion>(arr.length())
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
+                val vLoaders = ArrayList<String>()
+                val lArr = o.optJSONArray("loaders") ?: JSONArray()
+                for (k in 0 until lArr.length()) {
+                    val lv = lArr.optString(k).trim()
+                    if (lv.isNotBlank()) vLoaders += lv
+                }
+                val vGameVersions = ArrayList<String>()
+                val gvArr = o.optJSONArray("game_versions") ?: JSONArray()
+                for (k in 0 until gvArr.length()) {
+                    val gv = gvArr.optString(k).trim()
+                    if (gv.isNotBlank()) vGameVersions += gv
+                }
+                // Chỉ nhận đúng phiên bản MC và loader yêu cầu, không đoán chéo bản vá khác
+                if (vGameVersions.none { it.equals(cleanMc, ignoreCase = true) }) continue
+                if (vLoaders.none { vl -> loaders.any { it.equals(vl, ignoreCase = true) } }) continue
+
                 val files = o.optJSONArray("files") ?: JSONArray()
                 var url = ""
                 var fileName = ""
+                var sha512: String? = null
+                var sha1: String? = null
                 for (j in 0 until files.length()) {
                     val f = files.getJSONObject(j)
                     if (url.isBlank() || f.optBoolean("primary")) {
                         url = f.optString("url")
                         fileName = f.optString("filename")
+                        val hashes = f.optJSONObject("hashes")
+                        sha512 = hashes?.optString("sha512")?.takeIf { it.isNotBlank() }
+                        sha1 = hashes?.optString("sha1")?.takeIf { it.isNotBlank() }
+                    }
+                }
+                val reqDeps = ArrayList<String>()
+                val depArr = o.optJSONArray("dependencies") ?: JSONArray()
+                for (j in 0 until depArr.length()) {
+                    val d = depArr.getJSONObject(j)
+                    if (d.optString("dependency_type").equals("required", ignoreCase = true)) {
+                        val pid = d.optString("project_id").trim()
+                        if (pid.isNotBlank()) {
+                            reqDeps += if (pid == "P7dR8mSH") "fabric-api" else pid
+                        }
                     }
                 }
                 val date = o.optString("date_published")
-                out += MrVersion(o.optString("version_number"), date, parseInstant(date), url, fileName)
+                out += MrVersion(
+                    number = o.optString("version_number"),
+                    date = date,
+                    instant = parseInstant(date),
+                    url = url,
+                    fileName = fileName,
+                    loaders = vLoaders,
+                    gameVersions = vGameVersions,
+                    sha512 = sha512,
+                    sha1 = sha1,
+                    requiredDeps = reqDeps
+                )
             }
             out.sortedByDescending { it.date }
         }.getOrNull() ?: return null
@@ -371,10 +515,13 @@ object CrossplayCompat {
             )
         }
         if (auto.supported && auto.peRangesOverride != null && inRanges(auto.peRangesOverride, pe)) {
-            return auto.copy(
-                targetPe = pe,
-                headline = "✅ PE $pe VÀO ĐƯỢC: ${core.displayName} $mcVersion ↔ PE ${auto.bedrockRangeText}"
-            )
+            val pinnedOk = auto.pinnedBuild?.matchesTarget(loader, mcVersion, pe) ?: true
+            if (pinnedOk) {
+                return auto.copy(
+                    targetPe = pe,
+                    headline = "✅ PE $pe VÀO ĐƯỢC: ${core.displayName} $mcVersion ↔ PE ${auto.bedrockRangeText}"
+                )
+            }
         }
         val loaders = if (loader == "paper") listOf("paper", "spigot") else listOf(loader)
         val versions = modrinthGeyserVersions(loaders, mcVersion)
@@ -433,6 +580,14 @@ object CrossplayCompat {
             )
         }
         val ranges = rangesAt(candidate.instant!!) ?: emptyList()
+        val pinnedBuild = candidate.toPinnedBuild(loader, ranges)
+        if (!pinnedBuild.matchesTarget(loader, mcVersion, pe)) {
+            return fail(
+                "❌ Không xác minh được metadata Geyser cho ${core.displayName} $mcVersion (PE $pe)",
+                listOf("Bản Geyser tìm thấy thiếu hash hoặc không khớp đúng loader/phiên bản MC."),
+                "Hãy thử lại khi có mạng ổn định hoặc cập nhật Minecraft PE."
+            )
+        }
         val rangeTxt = rangesText(ranges)
         val details = buildList {
             add("PE $pe cũ hơn bản Geyser mới nhất hỗ trợ (${info.bedrockRangeText}), nên app sẽ cài Geyser CŨ ${candidate.number} — bản mới nhất vẫn nhận PE $pe và chạy được trên ${core.displayName} $mcVersion.")
@@ -456,10 +611,11 @@ object CrossplayCompat {
             peLine = "📱 PE (Bedrock): $rangeTxt",
             details = details,
             targetPe = pe,
-            geyserUrl = candidate.url,
-            geyserFileName = candidate.fileName.ifBlank { null },
-            geyserBuildLabel = candidate.number,
-            peRangesOverride = ranges
+            geyserUrl = pinnedBuild.downloadUrl,
+            geyserFileName = pinnedBuild.fileName.ifBlank { null },
+            geyserBuildLabel = pinnedBuild.versionNumber,
+            peRangesOverride = ranges,
+            pinnedBuild = pinnedBuild
         )
     }
 
@@ -552,16 +708,25 @@ object CrossplayCompat {
         }
 
         if (!compatible) {
-            // Với Fabric / NeoForge / Quilt (hoặc Paper đời cũ), nếu có bản Geyser trên Modrinth (hoặc trong bảng dự phòng)
-            // dành cho đúng phiên bản Java này (VD: Fabric 1.21.11 có Geyser 2.9.6-b1133 hỗ trợ PE 1.21.130 → 26.20,
-            // và các bản Geyser 1.21.11 trước đó hỗ trợ từ PE 1.21.111):
-            // Tự động chọn bản Geyser đó, hiển thị rõ dải phiên bản Bedrock/PE tương ứng và CHO PHÉP CÀI ĐẶT NGAY!
+            // Với Fabric / NeoForge / Quilt (hoặc Paper đời cũ), chỉ hỗ trợ khi có bản Geyser đã xác minh
+            // metadata (từ Modrinth hoặc bảng PINNED_HISTORICAL_BUILDS cho đúng loader + phiên bản MC).
             val candidate = modVersions?.firstOrNull { it.url.isNotBlank() }
             val fallbackEntry = if (loader != "paper") MOD_FALLBACK_BY_MC[mcVersion] else null
-            val resolvedRanges = candidate?.instant?.let { rangesAt(it) } ?: fallbackEntry?.second
-            if (candidate != null || (modVersions == null && fallbackEntry != null)) {
-                val buildLabel = candidate?.number ?: fallbackEntry?.first ?: "Geyser-$mcVersion"
-                val ranges = resolvedRanges ?: fallbackEntry?.second ?: listOf(r("1.21.111", "26.3"))
+            val pinnedFallback = pinnedHistoricalBuild(loader, mcVersion)
+            val resolvedRanges = candidate?.instant?.let { rangesAt(it) }
+                ?: pinnedFallback?.supportedBedrockRanges
+                ?: fallbackEntry?.second
+            val pinnedBuild = when {
+                candidate != null && resolvedRanges != null -> candidate.toPinnedBuild(loader, resolvedRanges)
+                modVersions == null && pinnedFallback != null -> pinnedFallback
+                else -> null
+            }?.takeIf { it.matchesTarget(loader, mcVersion) }
+
+            if (pinnedBuild != null) {
+                val buildLabel = pinnedBuild.versionNumber
+                val ranges = pinnedBuild.supportedBedrockRanges.ifEmpty {
+                    resolvedRanges ?: listOf(r("1.21.130", "26.20"))
+                }
                 val rangeTxt = rangesText(ranges)
                 val earliestPeForMc = modVersions
                     ?.mapNotNull { v -> v.instant?.let(::rangesAt) }
@@ -580,16 +745,16 @@ object CrossplayCompat {
                     }
                 }
                 val details = buildList {
-                    add("Với ${core.displayName} $mcVersion, bản GeyserMC tương thích mới nhất là $buildLabel → điện thoại cài Minecraft PE (Bedrock) phiên bản $rangeTxt vào chơi chung được ngay.")
+                    add("Với ${core.displayName} $mcVersion, bản GeyserMC lịch sử đã xác minh metadata là $buildLabel → chỉ hỗ trợ Minecraft PE (Bedrock) trong dải $rangeTxt (không hỗ trợ mọi phiên bản PE ngoài dải này).")
                     if (earliestPeForMc != null && compareVersions(earliestPeForMc, expandRanges(ranges).firstOrNull() ?: earliestPeForMc) < 0) {
-                        add("Nếu điện thoại dùng PE cũ hơn (từ $earliestPeForMc trở lên): chọn đúng số bản PE ở mục 'Phiên bản PE của điện thoại' để app tự cài bản Geyser tương ứng.")
+                        add("Nếu điện thoại dùng PE cũ hơn (từ $earliestPeForMc trở lên): chọn đúng số bản PE ở mục 'Phiên bản PE của điện thoại' để app kiểm tra bản Geyser tương ứng.")
                     }
-                    add("Sẽ tự cài: ${tools.joinToString(" + ")}.")
+                    add("Sẽ cài theo giao dịch an toàn: ${tools.joinToString(" + ")}.")
                     if (paperOk) {
                         add("Mẹo: Nếu điện thoại đã tự cập nhật lên PE mới nhất trên CH Play ($pe), bạn có thể chuyển sang Paper $mcVersion (nhận cả Java $mcVersion lẫn PE $pe) hoặc ${core.displayName} ${info.javaTarget}.")
                     }
                     if (loader != "paper") {
-                        add("Người chơi PC dùng đúng ${core.displayName} $mcVersion và cùng bộ mod của server; PE chỉ hiển thị các khối/vật phẩm Vanilla.")
+                        add("Lưu ý giới hạn: Người chơi PC dùng đúng ${core.displayName} $mcVersion; PE chỉ vào được server Vanilla hoặc server dùng mod phía server (server-side). Các modpack yêu cầu cài mod thêm khối/vật phẩm mới ở client sẽ KHÔNG tương thích với PE.")
                     }
                 }
                 return Result(
@@ -610,10 +775,11 @@ object CrossplayCompat {
                     suggestion = if (paperOk) "Nếu điện thoại đang ở PE mới nhất CH Play ($pe): dùng Paper $mcVersion hoặc ${core.displayName} ${info.javaTarget}." else null,
                     suggestedCore = if (paperOk) ServerCore.Paper else null,
                     suggestedMcVersion = if (paperOk) mcVersion else null,
-                    geyserUrl = candidate?.url,
-                    geyserFileName = candidate?.fileName?.ifBlank { null },
+                    geyserUrl = pinnedBuild.downloadUrl,
+                    geyserFileName = pinnedBuild.fileName.ifBlank { null },
                     geyserBuildLabel = buildLabel,
-                    peRangesOverride = ranges
+                    peRangesOverride = ranges,
+                    pinnedBuild = pinnedBuild
                 )
             }
 

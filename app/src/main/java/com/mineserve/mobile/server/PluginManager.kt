@@ -107,8 +107,393 @@ class PluginManager(
             }
             return false
         }
-        private const val CROSSPLAY_MARKER_FILE = "minehost-crossplay.properties"
+        internal const val CROSSPLAY_MARKER_FILE = "minehost-crossplay.properties"
         private const val UPDATE_CHECK_COOLDOWN_MS = 5 * 60 * 1000L  // 更新检测冷却 5 分钟
+
+        private val serverInstallLocks = ConcurrentHashMap<String, kotlinx.coroutines.sync.Mutex>()
+        private val activeCrossplayTransactions = ConcurrentHashMap<String, Boolean>()
+
+        fun lockForServer(dirName: String): kotlinx.coroutines.sync.Mutex =
+            serverInstallLocks.getOrPut(dirName.trim().ifBlank { "default" }) { kotlinx.coroutines.sync.Mutex() }
+
+        fun isCrossplayTransactionInFlight(dirName: String): Boolean =
+            activeCrossplayTransactions[dirName.trim().ifBlank { "default" }] == true
+
+        internal fun setCrossplayTransactionInFlight(dirName: String, active: Boolean) {
+            val key = dirName.trim().ifBlank { "default" }
+            if (active) activeCrossplayTransactions[key] = true else activeCrossplayTransactions.remove(key)
+        }
+
+        fun computeFileHash(file: File, algorithm: String = "SHA-256"): String {
+            val md = java.security.MessageDigest.getInstance(algorithm)
+            file.inputStream().use { ins ->
+                val buf = ByteArray(16384)
+                while (true) {
+                    val r = ins.read(buf)
+                    if (r <= 0) break
+                    md.update(buf, 0, r)
+                }
+            }
+            return md.digest().joinToString("") { "%02x".format(it) }
+        }
+
+        fun verifyFileHash(
+            file: File,
+            expectedSha512: String? = null,
+            expectedSha256: String? = null,
+            expectedSha1: String? = null
+        ): Boolean {
+            if (!file.isFile || file.length() <= 0L) return false
+            if (!expectedSha512.isNullOrBlank()) {
+                val actual = computeFileHash(file, "SHA-512")
+                if (!actual.equals(expectedSha512.trim(), ignoreCase = true)) return false
+            }
+            if (!expectedSha256.isNullOrBlank()) {
+                val actual = computeFileHash(file, "SHA-256")
+                if (!actual.equals(expectedSha256.trim(), ignoreCase = true)) return false
+            }
+            if (!expectedSha1.isNullOrBlank()) {
+                val actual = computeFileHash(file, "SHA-1")
+                if (!actual.equals(expectedSha1.trim(), ignoreCase = true)) return false
+            }
+            return true
+        }
+
+        /**
+         * Xác minh tệp JAR có thực sự là Fabric API hợp lệ cho đúng [expectedMcVersion] hay không
+         * bằng cách đọc `fabric.mod.json` / `quilt.mod.json` bên trong JAR.
+         * Tuyệt đối KHÔNG suy ra tương thích chỉ từ tên tệp bên ngoài.
+         */
+        fun verifyFabricApiJar(file: File, expectedMcVersion: String): Boolean {
+            if (!file.isFile || file.length() <= 256L) return false
+            val targetMc = expectedMcVersion.trim()
+            if (targetMc.isBlank()) return false
+            return runCatching {
+                JarFile(file).use { jar ->
+                    val entry = jar.getJarEntry("fabric.mod.json") ?: jar.getJarEntry("quilt.mod.json") ?: return@use false
+                    val text = jar.getInputStream(entry).bufferedReader().use { it.readText() }
+                    val obj = org.json.JSONObject(text)
+                    val id = obj.optString("id").trim().lowercase(Locale.ROOT)
+                    if (id != "fabric-api" && id != "fabric" && id != "quilted_fabric_api") return@use false
+                    val version = obj.optString("version").trim()
+                    if (version.isBlank()) return@use false
+                    val depends = obj.optJSONObject("depends")
+                    val mcDepRaw = depends?.opt("minecraft")
+                    val depTokens = mutableListOf<String>()
+                    when (mcDepRaw) {
+                        is String -> depTokens += mcDepRaw.trim()
+                        is org.json.JSONArray -> {
+                            for (i in 0 until mcDepRaw.length()) {
+                                depTokens += mcDepRaw.optString(i).trim()
+                            }
+                        }
+                    }
+                    val versionHasExactMc = version.substringAfter('+', "").equals(targetMc, ignoreCase = true) ||
+                        version.endsWith("-$targetMc", ignoreCase = true)
+                    val depMatchesExactMc = depTokens.any { token ->
+                        val cleaned = token.removePrefix("=").removePrefix("~").removePrefix(">=").trim()
+                        cleaned.equals(targetMc, ignoreCase = true)
+                    }
+                    versionHasExactMc || depMatchesExactMc
+                }
+            }.getOrDefault(false)
+        }
+
+        /**
+         * Xác minh tệp JAR của thành phần Crossplay (`geyser`, `floodgate`, `viaversion`, `viabackwards`, `viafabric`, `fabric-api`)
+         * có descriptor hợp lệ khớp đúng [expectedLoader] và đúng vai trò [expectedRole].
+         */
+        fun verifyCrossplayAddonJar(
+            file: File,
+            expectedLoader: String,
+            expectedRole: String,
+            expectedMcVersion: String? = null
+        ): Boolean {
+            if (!file.isFile || file.length() <= 256L) return false
+            val role = expectedRole.trim().lowercase(Locale.ROOT)
+            if (role == "fabric-api") {
+                return if (!expectedMcVersion.isNullOrBlank()) {
+                    verifyFabricApiJar(file, expectedMcVersion)
+                } else false
+            }
+            val loader = expectedLoader.trim().lowercase(Locale.ROOT)
+            return runCatching {
+                JarFile(file).use { jar ->
+                    when (loader) {
+                        "fabric", "quilt" -> {
+                            val entry = jar.getJarEntry("fabric.mod.json") ?: jar.getJarEntry("quilt.mod.json") ?: return@use false
+                            val text = jar.getInputStream(entry).bufferedReader().use { it.readText() }
+                            val obj = org.json.JSONObject(text)
+                            val id = obj.optString("id").trim().lowercase(Locale.ROOT)
+                            val name = obj.optString("name").trim().lowercase(Locale.ROOT)
+                            id.contains(role) || name.contains(role)
+                        }
+                        "neoforge", "forge" -> {
+                            val entry = jar.getJarEntry("META-INF/neoforge.mods.toml")
+                                ?: jar.getJarEntry("META-INF/mods.toml")
+                                ?: return@use false
+                            val text = jar.getInputStream(entry).bufferedReader().use { it.readText() }.lowercase(Locale.ROOT)
+                            text.contains(role)
+                        }
+                        "paper", "spigot", "bukkit", "purpur" -> {
+                            val entry = jar.getJarEntry("paper-plugin.yml")
+                                ?: jar.getJarEntry("plugin.yml")
+                                ?: return@use false
+                            val text = jar.getInputStream(entry).bufferedReader().use { it.readText() }.lowercase(Locale.ROOT)
+                            text.contains(role)
+                        }
+                        else -> false
+                    }
+                }
+            }.getOrDefault(false)
+        }
+
+        data class GeyserConfigSummary(
+            val configExists: Boolean,
+            val bedrockAddress: String = "0.0.0.0",
+            val bedrockPort: Int = 19132,
+            val cloneRemotePort: Boolean = false,
+            val remotePort: Int = 25565,
+            val authType: String = "offline",
+            val enableProxyProtocol: Boolean = false,
+            val transport: String = "raknet"
+        ) {
+            val effectiveBedrockPort: Int
+                get() = if (cloneRemotePort && remotePort in 1..65535) remotePort else bedrockPort
+        }
+
+        fun parseGeyserConfigText(
+            yamlText: String,
+            fallbackJavaPort: Int = 25565,
+            defaultBedrockPort: Int = 19132
+        ): GeyserConfigSummary {
+            var currentSection = ""
+            var bedrockAddress = "0.0.0.0"
+            var bedrockPort = defaultBedrockPort
+            var cloneRemotePort = false
+            var remotePort = fallbackJavaPort
+            var authType = "offline"
+            var enableProxyProtocol = false
+            var transport = "raknet"
+
+            for (rawLine in yamlText.lines()) {
+                val noComment = rawLine.substringBefore('#')
+                if (noComment.isBlank()) continue
+                val indent = noComment.takeWhile { it == ' ' }.length
+                val trimmed = noComment.trim()
+                if (indent == 0 && trimmed.endsWith(":")) {
+                    currentSection = trimmed.removeSuffix(":").trim().lowercase(Locale.ROOT)
+                    continue
+                }
+                val colonIdx = trimmed.indexOf(':')
+                if (colonIdx <= 0) continue
+                val key = trimmed.substring(0, colonIdx).trim().lowercase(Locale.ROOT)
+                val value = trimmed.substring(colonIdx + 1).trim().trim('"', '\'')
+                when (currentSection) {
+                    "bedrock" -> when (key) {
+                        "address" -> if (value.isNotBlank()) bedrockAddress = value
+                        "port" -> value.toIntOrNull()?.takeIf { it in 1..65535 }?.let { bedrockPort = it }
+                        "clone-remote-port" -> cloneRemotePort = value.equals("true", ignoreCase = true)
+                        "enable-proxy-protocol" -> enableProxyProtocol = value.equals("true", ignoreCase = true)
+                        "transport" -> if (value.isNotBlank()) transport = value.lowercase(Locale.ROOT)
+                    }
+                    "remote" -> when (key) {
+                        "port" -> value.toIntOrNull()?.takeIf { it in 1..65535 }?.let { remotePort = it }
+                        "auth-type" -> if (value.isNotBlank()) authType = value.lowercase(Locale.ROOT)
+                    }
+                    else -> when (key) {
+                        "auth-type" -> if (value.isNotBlank()) authType = value.lowercase(Locale.ROOT)
+                        "clone-remote-port" -> cloneRemotePort = value.equals("true", ignoreCase = true)
+                        "enable-proxy-protocol" -> enableProxyProtocol = value.equals("true", ignoreCase = true)
+                    }
+                }
+            }
+            return GeyserConfigSummary(
+                configExists = true,
+                bedrockAddress = bedrockAddress,
+                bedrockPort = bedrockPort,
+                cloneRemotePort = cloneRemotePort,
+                remotePort = if (cloneRemotePort) fallbackJavaPort else remotePort,
+                authType = authType,
+                enableProxyProtocol = enableProxyProtocol,
+                transport = transport
+            )
+        }
+
+        data class CrossplayComponentSpec(
+            val role: String,
+            val targetFileName: String,
+            val required: Boolean,
+            val expectedLoader: String,
+            val expectedMcVersion: String? = null,
+            val expectedSha512: String? = null,
+            val expectedSha256: String? = null,
+            val expectedSha1: String? = null,
+            val fetcher: suspend (stagedFile: File) -> Unit
+        )
+
+        /**
+         * Thực thi giao dịch cài đặt Crossplay an toàn (Staging -> Verify -> Backup -> Atomic Commit -> Rollback nếu lỗi):
+         * - Không bao giờ xóa Geyser/Floodgate cũ trước khi tải và xác minh đủ mọi thành phần bắt buộc trong thư mục staging.
+         * - Ghi manifest giao dịch và hỗ trợ rollback toàn bộ (khôi phục cả JAR cũ, config cũ và marker cũ) khi gặp lỗi mạng,
+         *   thiếu dung lượng, sai hash/descriptor, hủy coroutine (`CancellationException`) hoặc server bất ngờ chạy giữa chừng.
+         * - Marker `minehost-crossplay.properties` chỉ được ghi SAU KHI commit toàn bộ tệp thành công.
+         */
+        suspend fun executeCrossplayStagedTransaction(
+            serverDir: File,
+            addonDir: File,
+            specs: List<CrossplayComponentSpec>,
+            markerProperties: Map<String, String>,
+            isServerRunning: () -> Boolean,
+            onAfterCommitConfig: () -> Unit = {},
+            commitHookForTest: ((String) -> Unit)? = null
+        ): List<String> = kotlinx.coroutines.withContext(Dispatchers.IO) {
+            val serverKey = serverDir.name.ifBlank { "default" }
+            lockForServer(serverKey).withLock {
+                AddonSafety.lifecycleGate.withLock {
+                    setCrossplayTransactionInFlight(serverKey, true)
+                    val txId = "${System.currentTimeMillis()}_${java.util.UUID.randomUUID().toString().take(8)}"
+                    val stagingDir = File(serverDir, ".crossplay_staging_$txId")
+                    val backupDir = File(serverDir, ".crossplay_backup_$txId")
+                    val markerFile = File(serverDir, CROSSPLAY_MARKER_FILE)
+                    try {
+                        kotlinx.coroutines.currentCoroutineContext()[kotlinx.coroutines.Job]?.let { job ->
+                            if (!job.isActive) throw kotlinx.coroutines.CancellationException("Giao dịch Crossplay đã bị hủy trước khi bắt đầu.")
+                        }
+                        check(!isServerRunning()) { "Hãy dừng server trước khi cài đặt Crossplay." }
+                        addonDir.mkdirs()
+                        stagingDir.mkdirs()
+
+                        // 1. Giai đoạn STAGING & VERIFY: tải và kiểm tra từng thành phần vào stagingDir, CHƯA đụng tới addonDir
+                        val stagedFiles = LinkedHashMap<CrossplayComponentSpec, File>()
+                        val manifestLines = mutableListOf<String>()
+
+                        for (spec in specs) {
+                            kotlinx.coroutines.currentCoroutineContext()[kotlinx.coroutines.Job]?.let { job ->
+                                if (!job.isActive) throw kotlinx.coroutines.CancellationException("Giao dịch Crossplay đã bị hủy trong lúc tải.")
+                            }
+                            check(!isServerRunning()) { "Server đã khởi động giữa lúc tải Crossplay. Đã hủy giao dịch để bảo vệ dữ liệu." }
+
+                            val stagedFile = File(stagingDir, spec.targetFileName)
+                            val stageAttempt = runCatching {
+                                spec.fetcher(stagedFile)
+                                check(stagedFile.isFile && stagedFile.length() > 256L) {
+                                    "Tệp tải về rỗng hoặc bị cắt cụt: ${spec.targetFileName}"
+                                }
+                                check(verifyFileHash(stagedFile, spec.expectedSha512, spec.expectedSha256, spec.expectedSha1)) {
+                                    "Mã băm (hash) của ${spec.targetFileName} không khớp với metadata đã xác minh."
+                                }
+                                check(verifyCrossplayAddonJar(stagedFile, spec.expectedLoader, spec.role, spec.expectedMcVersion)) {
+                                    "Descriptor bên trong ${spec.targetFileName} không hợp lệ cho loader ${spec.expectedLoader} (vai trò: ${spec.role})."
+                                }
+                            }
+                            if (stageAttempt.isFailure) {
+                                val err = stageAttempt.exceptionOrNull()!!
+                                if (err is kotlinx.coroutines.CancellationException) throw err
+                                if (spec.required) {
+                                    throw IllegalStateException(
+                                        "Thành phần bắt buộc '${spec.role}' (${spec.targetFileName}) thất bại: ${err.message}",
+                                        err
+                                    )
+                                } else {
+                                    stagedFile.delete()
+                                    continue
+                                }
+                            }
+                            val sha256 = computeFileHash(stagedFile, "SHA-256")
+                            stagedFiles[spec] = stagedFile
+                            manifestLines += "${spec.role}|${spec.targetFileName}|$sha256|${stagedFile.length()}"
+                        }
+
+                        File(stagingDir, "manifest.txt").writeText(manifestLines.joinToString("\n") + "\n", Charsets.UTF_8)
+
+                        // Kiểm tra lại trạng thái server và cancellation ngay trước khi bước vào COMMIT
+                        kotlinx.coroutines.currentCoroutineContext()[kotlinx.coroutines.Job]?.let { job ->
+                            if (!job.isActive) throw kotlinx.coroutines.CancellationException("Giao dịch Crossplay bị hủy trước khi commit.")
+                        }
+                        check(!isServerRunning()) { "Server đã khởi động trước khi commit Crossplay. Đã hủy thay thế file." }
+
+                        // 2. Giai đoạn BACKUP: sao lưu toàn bộ file cũ có liên quan trước khi thay thế
+                        backupDir.mkdirs()
+                        val backupAddonsDir = File(backupDir, "addons").apply { mkdirs() }
+                        val rolesBeingUpdated = stagedFiles.keys.map { it.role.lowercase(Locale.ROOT) }.toSet()
+                        val existingFilesToReplace = addonDir.listFiles()?.filter { f ->
+                            if (!f.isFile) return@filter false
+                            val lower = f.name.lowercase(Locale.ROOT).removePrefix("-")
+                            val matchesTargetName = stagedFiles.keys.any {
+                                it.targetFileName.equals(f.name, ignoreCase = true) ||
+                                    modToggleTarget(it.targetFileName, false).equals(f.name, ignoreCase = true)
+                            }
+                            val matchesRolePrefix = rolesBeingUpdated.any { role ->
+                                lower.startsWith(role) && (lower.endsWith(".jar") || lower.endsWith(".jar.disabled") || lower.endsWith(".disabled"))
+                            }
+                            matchesTargetName || matchesRolePrefix
+                        }.orEmpty()
+
+                        for (oldFile in existingFilesToReplace) {
+                            oldFile.copyTo(File(backupAddonsDir, oldFile.name), overwrite = true)
+                        }
+                        val hadMarkerBefore = markerFile.isFile
+                        val backupMarkerFile = File(backupDir, CROSSPLAY_MARKER_FILE)
+                        if (hadMarkerBefore) {
+                            markerFile.copyTo(backupMarkerFile, overwrite = true)
+                        }
+
+                        // 3. Giai đoạn COMMIT & ROLLBACK
+                        val newlyCommittedFiles = mutableListOf<File>()
+                        try {
+                            for (oldFile in existingFilesToReplace) {
+                                if (oldFile.exists() && !oldFile.delete()) {
+                                    throw IllegalStateException("Không thể thay thế tệp cũ: ${oldFile.name}")
+                                }
+                            }
+                            for ((spec, staged) in stagedFiles) {
+                                commitHookForTest?.invoke(spec.role)
+                                check(!isServerRunning()) { "Server khởi động giữa lúc commit (${spec.targetFileName})." }
+                                val dest = File(addonDir, spec.targetFileName)
+                                staged.copyTo(dest, overwrite = true)
+                                check(dest.isFile && dest.length() == staged.length()) {
+                                    "Ghi tệp thất bại hoặc thiếu dung lượng: ${dest.name}"
+                                }
+                                newlyCommittedFiles += dest
+                            }
+                            onAfterCommitConfig()
+                            // Chỉ ghi marker SAU KHI mọi tệp bắt buộc đã commit thành công
+                            if (markerProperties.isNotEmpty()) {
+                                val markerContent = buildString {
+                                    for ((k, v) in markerProperties) {
+                                        appendLine("$k=$v")
+                                    }
+                                    appendLine("txCommittedAt=${System.currentTimeMillis()}")
+                                    appendLine("runtimeVerified=false")
+                                }
+                                markerFile.writeText(markerContent, Charsets.UTF_8)
+                            }
+                        } catch (commitErr: Throwable) {
+                            // ROLLBACK toàn bộ về trạng thái cũ trước giao dịch
+                            runCatching {
+                                newlyCommittedFiles.forEach { it.delete() }
+                                backupAddonsDir.listFiles()?.forEach { bak ->
+                                    bak.copyTo(File(addonDir, bak.name), overwrite = true)
+                                }
+                                if (hadMarkerBefore && backupMarkerFile.isFile) {
+                                    backupMarkerFile.copyTo(markerFile, overwrite = true)
+                                } else if (!hadMarkerBefore) {
+                                    markerFile.delete()
+                                }
+                            }
+                            throw commitErr
+                        }
+
+                        stagedFiles.keys.map { it.targetFileName }
+                    } finally {
+                        runCatching { stagingDir.deleteRecursively() }
+                        runCatching { backupDir.deleteRecursively() }
+                        setCrossplayTransactionInFlight(serverKey, false)
+                    }
+                }
+            }
+        }
     }
 
     /**
@@ -1015,7 +1400,10 @@ class PluginManager(
     private data class ModrinthVersion(
         val id: String = "",
         val project_id: String = "",
+        val version_number: String = "",
         val version_type: String = "",
+        val game_versions: List<String> = emptyList(),
+        val loaders: List<String> = emptyList(),
         val files: List<ModrinthFile> = emptyList(),
         val dependencies: List<ModrinthDependency> = emptyList()
     )
@@ -1025,7 +1413,12 @@ class PluginManager(
     )
 
     @Serializable
-    private data class ModrinthFile(val url: String = "", val filename: String = "", val primary: Boolean = false)
+    private data class ModrinthFile(
+        val url: String = "",
+        val filename: String = "",
+        val primary: Boolean = false,
+        val hashes: Map<String, String> = emptyMap()
+    )
 
     @Serializable
     private data class MrpackIndex(
@@ -2038,10 +2431,157 @@ class PluginManager(
         }
     }
 
+    data class ResolvedCrossplayArtifact(
+        val downloadUrl: String,
+        val fileName: String,
+        val versionNumber: String,
+        val sha512: String? = null,
+        val sha1: String? = null
+    )
+
+    /**
+     * Phân giải chính xác (KHÔNG thử các bản vá MC khác trong `candidateMcVersions`) cho các thành phần Crossplay.
+     * Chỉ nhận phiên bản Modrinth mà metadata `game_versions` và `loaders` xác nhận hỗ trợ.
+     */
+    fun resolveCrossplayModrinthExact(
+        slugOrId: String,
+        exactMcVersion: String,
+        exactLoader: String,
+        allowMultiVersionPlugin: Boolean = false
+    ): ResolvedCrossplayArtifact? {
+        require(slugOrId.matches(Regex("[A-Za-z0-9_-]+"))) { "ID Modrinth không hợp lệ." }
+        val cleanMc = exactMcVersion.trim()
+        if (cleanMc.isBlank()) return null
+        val allowedLoaders = when (exactLoader.trim().lowercase(Locale.ROOT)) {
+            "paper", "spigot", "purpur" -> listOf("paper", "spigot", "bukkit")
+            "quilt" -> listOf("quilt", "fabric")
+            else -> listOf(exactLoader.trim().lowercase(Locale.ROOT))
+        }
+        val loaderJson = allowedLoaders.joinToString(",", prefix = "[", postfix = "]") { "\"$it\"" }
+        val encodedLoaders = java.net.URLEncoder.encode(loaderJson, "UTF-8")
+        val encodedVer = java.net.URLEncoder.encode("[\"$cleanMc\"]", "UTF-8")
+
+        fun parseMatching(body: String, requireExactMcInMetadata: Boolean): ResolvedCrossplayArtifact? {
+            val versions = runCatching { modrinthJson.decodeFromString<List<ModrinthVersion>>(body) }.getOrNull().orEmpty()
+            val matching = versions.filter { v ->
+                val loaderOk = v.loaders.isEmpty() || v.loaders.any { vl -> allowedLoaders.any { it.equals(vl, ignoreCase = true) } }
+                val mcOk = !requireExactMcInMetadata || v.game_versions.any { gv -> gv.equals(cleanMc, ignoreCase = true) }
+                loaderOk && mcOk
+            }
+            val found = matching.firstOrNull { it.version_type == "release" } ?: matching.firstOrNull() ?: return null
+            val primaryFile = found.files.firstOrNull { it.primary } ?: found.files.firstOrNull() ?: return null
+            if (primaryFile.url.isBlank()) return null
+            val fn = primaryFile.filename.ifBlank { "$slugOrId-$cleanMc.jar" }
+            return ResolvedCrossplayArtifact(
+                downloadUrl = primaryFile.url,
+                fileName = fn,
+                versionNumber = found.version_number,
+                sha512 = primaryFile.hashes["sha512"]?.takeIf { it.isNotBlank() },
+                sha1 = primaryFile.hashes["sha1"]?.takeIf { it.isNotBlank() }
+            )
+        }
+
+        val exactBody = runCatching {
+            fetchModrinthText("https://api.modrinth.com/v2/project/$slugOrId/version?game_versions=$encodedVer&loaders=$encodedLoaders")
+        }.getOrNull()
+        if (exactBody != null) {
+            parseMatching(exactBody, requireExactMcInMetadata = true)?.let { return it }
+        }
+        // Chỉ với plugin Paper đa phiên bản (ViaVersion/ViaBackwards/Floodgate-Spigot), cho phép lấy bản release mới nhất của đúng loader plugin
+        if (allowMultiVersionPlugin && exactLoader.equals("paper", ignoreCase = true)) {
+            val loaderOnlyBody = runCatching {
+                fetchModrinthText("https://api.modrinth.com/v2/project/$slugOrId/version?loaders=$encodedLoaders")
+            }.getOrNull()
+            if (loaderOnlyBody != null) {
+                return parseMatching(loaderOnlyBody, requireExactMcInMetadata = false)
+            }
+        }
+        return null
+    }
+
+    private fun geyserConfigCandidateDirs(srvDir: File, core: com.mineserve.mobile.data.ServerCore?): List<File> {
+        return when {
+            core == null -> listOf(
+                File(srvDir, "config/Geyser-Fabric"),
+                File(srvDir, "config/Geyser-NeoForge"),
+                File(srvDir, "config/geyser"),
+                File(srvDir, "plugins/Geyser-Spigot"),
+                File(srvDir, "plugins/Geyser")
+            )
+            core.supportsMods -> listOf(
+                File(srvDir, "config/Geyser-Fabric"),
+                File(srvDir, "config/Geyser-NeoForge"),
+                File(srvDir, "config/geyser")
+            )
+            else -> listOf(
+                File(srvDir, "plugins/Geyser-Spigot"),
+                File(srvDir, "plugins/Geyser")
+            )
+        }
+    }
+
+    private fun readJavaServerPortFromProperties(srvDir: File, defaultPort: Int = 25565): Int {
+        val propFile = File(srvDir, "server.properties")
+        if (!propFile.isFile) return defaultPort
+        return runCatching {
+            propFile.readLines(Charsets.UTF_8).firstNotNullOfOrNull { line ->
+                val t = line.trim()
+                if (t.startsWith("server-port=")) {
+                    t.substringAfter("server-port=").trim().toIntOrNull()?.takeIf { it in 1..65535 }
+                } else null
+            } ?: defaultPort
+        }.getOrDefault(defaultPort)
+    }
+
+    /**
+     * Đọc cấu hình Geyser thực tế (`config.yml`) của đúng máy chủ [dirName].
+     */
+    fun inspectGeyserConfig(
+        dirName: String,
+        core: com.mineserve.mobile.data.ServerCore? = null,
+        defaultBedrockPort: Int = 19132
+    ): GeyserConfigSummary {
+        val srvDir = termux.serverDirFor(dirName)
+        val javaPort = readJavaServerPortFromProperties(srvDir, 25565)
+        val detectedCore = core ?: runCatching { ServerCoreDetector.detect(srvDir).core }.getOrNull()
+        val cfgFile = geyserConfigCandidateDirs(srvDir, detectedCore)
+            .map { File(it, "config.yml") }
+            .firstOrNull { it.isFile && it.length() >= 32L }
+            ?: return GeyserConfigSummary(
+                configExists = false,
+                bedrockPort = if (detectedCore?.isBedrock == true) readJavaServerPortFromProperties(srvDir, defaultBedrockPort) else defaultBedrockPort,
+                remotePort = javaPort
+            )
+        val yamlText = runCatching { cfgFile.readText(Charsets.UTF_8) }.getOrDefault("")
+        if (yamlText.isBlank()) {
+            return GeyserConfigSummary(configExists = false, bedrockPort = defaultBedrockPort, remotePort = javaPort)
+        }
+        return parseGeyserConfigText(yamlText, fallbackJavaPort = javaPort, defaultBedrockPort = defaultBedrockPort)
+    }
+
+    /**
+     * Đọc cổng UDP Bedrock thực tế đã cấu hình cho server [dirName].
+     * Chỉ dùng 19132 làm mặc định ban đầu khi chưa có cấu hình riêng.
+     */
+    fun readConfiguredBedrockPort(
+        dirName: String,
+        core: com.mineserve.mobile.data.ServerCore? = null,
+        defaultPort: Int = 19132
+    ): Int {
+        val srvDir = termux.serverDirFor(dirName)
+        val detectedCore = core ?: runCatching { ServerCoreDetector.detect(srvDir).core }.getOrNull()
+        if (detectedCore?.isBedrock == true) {
+            return readJavaServerPortFromProperties(srvDir, defaultPort)
+        }
+        val summary = inspectGeyserConfig(dirName, detectedCore, defaultPort)
+        return summary.effectiveBedrockPort.takeIf { it in 1..65535 } ?: defaultPort
+    }
+
     /**
      * Tự động khởi tạo & cập nhật cấu hình `config.yml` chuẩn cho GeyserMC (Spigot/Paper và Fabric/NeoForge):
-     * - `bedrock.port: 19132` (UDP chuẩn của Minecraft PE)
-     * - `bedrock.clone-remote-port: false` (Tránh ghi đè cổng UDP 19132 bằng cổng TCP Java)
+     * - Chỉ dùng `bedrockPort = 19132` làm mặc định ban đầu khi tạo file mới; nếu người dùng đã cấu hình cổng khác
+     *   trong `config.yml` thì giữ nguyên cổng của người dùng.
+     * - `bedrock.clone-remote-port: false` (Tránh ghi đè cổng UDP Bedrock bằng cổng TCP Java).
      * - Tôn trọng `auth-type` hiện có (`floodgate` / `online` / `offline`) nếu người dùng đã cấu hình sẵn;
      *   chỉ đặt `auth-type` mới khi tạo file lần đầu hoặc khi `forceAuthType` được chỉ định rõ ràng.
      */
@@ -2053,17 +2593,19 @@ class PluginManager(
     ) {
         val srvDir = termux.serverDirFor(dirName)
         val propFile = File(srvDir, "server.properties")
+        val javaPort = readJavaServerPortFromProperties(srvDir, 25565)
         val isOnlineServer = runCatching {
             if (propFile.isFile) {
                 propFile.readLines().any { it.trim().equals("online-mode=true", ignoreCase = true) }
             } else false
         }.getOrDefault(false)
+        val loader = CrossplayCompat.loaderFor(core) ?: if (core.supportsMods) "fabric" else "paper"
         val hasFloodgate = runCatching {
             val checkDir = if (core.supportsMods) File(srvDir, "mods") else File(srvDir, "plugins")
-            checkDir.listFiles()?.any {
-                it.isFile && it.name.endsWith(".jar", ignoreCase = true) &&
-                    !it.name.startsWith("-") &&
-                    it.name.lowercase(Locale.ROOT).contains("floodgate")
+            checkDir.listFiles()?.any { f ->
+                f.isFile && f.name.endsWith(".jar", ignoreCase = true) &&
+                    !f.name.startsWith("-") &&
+                    verifyCrossplayAddonJar(f, loader, "floodgate")
             } == true
         }.getOrDefault(false)
         val initialAuthType = forceAuthType ?: when {
@@ -2072,22 +2614,15 @@ class PluginManager(
             else -> "offline"
         }
 
-        val candidateDirs = if (core.supportsMods) {
-            listOf(
-                File(srvDir, "config/Geyser-Fabric"),
-                File(srvDir, "config/Geyser-NeoForge"),
-                File(srvDir, "config/geyser")
-            )
-        } else {
-            listOf(
-                File(srvDir, "plugins/Geyser-Spigot"),
-                File(srvDir, "plugins/Geyser")
-            )
-        }
+        val candidateDirs = geyserConfigCandidateDirs(srvDir, core)
+        val existingPort = inspectGeyserConfig(dirName, core, bedrockPort)
+            .takeIf { it.configExists }
+            ?.bedrockPort
+            ?: bedrockPort
         val defaultConfigYaml = """
             bedrock:
               address: 0.0.0.0
-              port: $bedrockPort
+              port: $existingPort
               clone-remote-port: false
               motd1: "MineHost Crossplay Server"
               motd2: "Choi Chung PC + Dien Thoai PE"
@@ -2095,7 +2630,7 @@ class PluginManager(
               enable-proxy-protocol: false
             remote:
               address: auto
-              port: 25565
+              port: $javaPort
               auth-type: $initialAuthType
               allow-password-authentication: true
               use-proxy-protocol: false
@@ -2156,26 +2691,30 @@ class PluginManager(
     }
 
     /**
-     * Cài đặt trọn bộ Crossplay (PC Java + PE Bedrock theo đúng dải GeyserMC hiện hành, xem [CrossplayCompat]):
-     * - Kiểm tra nghiêm ngặt thành phần bắt buộc (GeyserMC) đúng Loader (`fabric`/`neoforge`/`spigot`),
-     *   tuyệt đối không tải nhầm JAR Fabric cho Forge/NeoForge hoặc báo thành công khi tải thất bại.
+     * Cài đặt trọn bộ Crossplay theo GIAO DỊCH AN TOÀN (Staging -> Verify -> Backup -> Commit -> Rollback):
+     * - Không bao giờ xóa Geyser/Floodgate cũ trước khi tải và xác minh đủ mọi thành phần bắt buộc trong staging.
+     * - Xác minh `fabric-api` bằng `fabric.mod.json` bên trong JAR (không dựa vào tên file); nếu thiếu hoặc tải lỗi -> hủy giao dịch & giữ nguyên bộ cũ.
+     * - `Floodgate` bắt buộc hay không tuân theo chế độ xác thực (`requireFloodgate`). Không bao giờ hứa cài đủ suite khi thành phần bắt buộc thất bại.
+     * - Resolver chỉ dùng đúng phiên bản Minecraft + loader, không tự đoán sang các bản vá khác.
+     * - Marker `minehost-crossplay.properties` chỉ được ghi SAU KHI commit thành công.
      */
     suspend fun installCrossplaySuite(
         dirName: String,
         core: com.mineserve.mobile.data.ServerCore,
         mcVersion: String,
         bedrockBranch: String = "1.21",
-        forceOfflineAuth: Boolean = false
+        forceOfflineAuth: Boolean = false,
+        requireFloodgate: Boolean = true
     ): List<String> = withContext(Dispatchers.IO) {
         check(!termux.isMcRunning()) { "Hãy dừng server trước khi cài đặt Crossplay." }
-        val installedNames = mutableListOf<String>()
-        val targetMc = mcVersion.ifBlank { "1.21.4" }
-        // Kiểm tra THẬT trước khi tải: chỉ cài khi chắc chắn PE (Bedrock) hiện nay vào được server này
+        val srvDir = termux.serverDirFor(dirName)
+        val targetMc = mcVersion.trim().ifBlank { "1.21.4" }
         val compat = CrossplayCompat.evaluate(core, targetMc, bedrockBranch)
         check(compat.supported) {
             listOfNotNull(compat.headline, compat.details.firstOrNull(), compat.suggestion?.let { "👉 $it" }).joinToString("\n")
         }
         val isGeyserJavaTarget = CrossplayCompat.compareVersions(targetMc, compat.info.javaTarget) == 0
+        val specs = mutableListOf<CrossplayComponentSpec>()
 
         if (core.supportsMods) {
             val loader = when (core) {
@@ -2185,194 +2724,412 @@ class PluginManager(
                 else -> "fabric"
             }
             val modsDir = modsDirOf(dirName).apply { mkdirs() }
-            val hasFabricApi = modsDir.listFiles()?.any {
-                it.name.lowercase(Locale.ROOT).startsWith("fabric-api") && it.name.endsWith(".jar", true)
-            } == true
-            if (!hasFabricApi && (loader == "fabric" || loader == "quilt")) {
-                runCatching {
-                    resolveSingleModrinthSlug("fabric-api", targetMc, "fabric")?.let { (url, fn) ->
-                        installModPackJarFromUrl(url, fn, dirName)
-                        installedNames += fn
-                    }
-                }
-            }
-            // Xóa Geyser cũ trong mods/ để không bao giờ có 2 bản Geyser cùng lúc
-            modsDir.listFiles()?.filter {
-                val n = it.name.lowercase(Locale.ROOT)
-                n.startsWith("geyser") && (n.endsWith(".jar") || n.endsWith(".jar.disabled"))
-            }?.forEach { it.delete() }
-            var geyserInstalled = false
-            val pinnedGeyserUrl = compat.geyserUrl
-            if (pinnedGeyserUrl != null) {
-                // PE đời cũ: cài đúng bản Geyser cũ đã được kiểm tra là nhận PE đó
-                runCatching {
-                    val fn = compat.geyserFileName ?: "Geyser-$loader.jar"
-                    val f = installModPackJarFromUrl(pinnedGeyserUrl, fn, dirName)
-                    if (f.exists() && f.length() > 1024L) {
-                        installedNames += fn
-                        geyserInstalled = true
-                    }
-                }
-            } else runCatching {
-                val geyserDeps = resolveModrinthDownloadWithDeps("geyser", targetMc, loader)
-                if (geyserDeps.isNotEmpty()) {
-                    geyserDeps.forEach { (url, fn) ->
-                        installModPackJarFromUrl(url, fn, dirName)
-                        if (fn !in installedNames) installedNames += fn
-                    }
-                    geyserInstalled = true
-                }
-            }
-            // Chỉ dùng bản "latest" từ GeyserMC khi server đúng phiên bản Java mà Geyser mới nhất nhắm tới (tránh nạp sai bản gây crash)
-            if (!geyserInstalled && isGeyserJavaTarget && compat.geyserUrl == null) {
-                val geyserPlatformAndFile: Pair<String, String>? = when (loader) {
-                    "fabric", "quilt" -> "fabric" to "Geyser-Fabric.jar"
-                    "neoforge" -> "neoforge" to "Geyser-NeoForge.jar"
-                    else -> null
-                }
-                if (geyserPlatformAndFile != null) {
-                    val (platform, jarName) = geyserPlatformAndFile
-                    val geyserUrl = "https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/$platform"
-                    runCatching {
-                        val f = installModPackJarFromUrl(geyserUrl, jarName, dirName)
-                        if (f.exists() && f.length() > 1024L) {
-                            installedNames += jarName
-                            geyserInstalled = true
-                        }
-                    }
-                }
-            }
-            check(geyserInstalled) {
-                "Không thể tải GeyserMC tương thích với ${core.displayName} ($targetMc). Hãy kiểm tra mạng hoặc chuyển sang lõi Paper / Fabric."
-            }
 
-            modsDir.listFiles()?.filter {
-                val n = it.name.lowercase(Locale.ROOT)
-                n.startsWith("floodgate") && (n.endsWith(".jar") || n.endsWith(".jar.disabled"))
-            }?.forEach { it.delete() }
-            var floodgateInstalled = false
-            runCatching {
-                val fgDeps = resolveModrinthDownloadWithDeps("floodgate", targetMc, loader)
-                if (fgDeps.isNotEmpty()) {
-                    fgDeps.forEach { (url, fn) ->
-                        installModPackJarFromUrl(url, fn, dirName)
-                        if (fn !in installedNames) installedNames += fn
-                    }
-                    floodgateInstalled = true
-                } else {
-                    resolveSingleModrinthSlug("floodgate", targetMc, loader)?.let { (url, fn) ->
-                        installModPackJarFromUrl(url, fn, dirName)
-                        if (fn !in installedNames) installedNames += fn
-                        floodgateInstalled = true
-                    }
-                }
-            }
-            if (!floodgateInstalled && isGeyserJavaTarget && (loader == "fabric" || loader == "quilt")) {
-                val floodgateUrl = "https://download.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest/downloads/fabric"
-                runCatching {
-                    val f = installModPackJarFromUrl(floodgateUrl, "Floodgate-Fabric.jar", dirName)
-                    if (f.exists() && f.length() > 1024L) {
-                        installedNames += "Floodgate-Fabric.jar"
-                        floodgateInstalled = true
-                    }
+            // 1. Kiểm tra Fabric API bằng descriptor bên trong JAR (không suy từ tên file)
+            if (loader == "fabric" || loader == "quilt") {
+                val hasValidFabricApi = modsDir.listFiles()?.any { f ->
+                    f.isFile && parseModFileName(f.name).second && verifyFabricApiJar(f, targetMc)
+                } == true
+                if (!hasValidFabricApi) {
+                    val resolvedFabricApi = resolveCrossplayModrinthExact("fabric-api", targetMc, "fabric")
+                        ?: throw IllegalStateException(
+                            "Không tìm thấy Fabric API chính xác cho Minecraft $targetMc trên Modrinth (bắt buộc cho Geyser-Fabric). Giao dịch đã dừng để giữ nguyên dữ liệu cũ."
+                        )
+                    specs += CrossplayComponentSpec(
+                        role = "fabric-api",
+                        targetFileName = ensureJarExtension(sanitizeFileName(resolvedFabricApi.fileName, "fabric-api-$targetMc.jar")),
+                        required = true,
+                        expectedLoader = "fabric",
+                        expectedMcVersion = targetMc,
+                        expectedSha512 = resolvedFabricApi.sha512,
+                        expectedSha1 = resolvedFabricApi.sha1,
+                        fetcher = { staged ->
+                            downloadTo(resolvedFabricApi.downloadUrl, staged) { downloaded, total, _ ->
+                                require(downloaded <= AddonSafety.MAX_BYTES && total <= AddonSafety.MAX_BYTES) { "JAR vượt giới hạn 256 MB." }
+                            }
+                        }
+                    )
                 }
             }
 
-            for (slug in listOf("viafabric", "viaversion", "viabackwards")) {
-                runCatching {
-                    val viaDeps = resolveModrinthDownloadWithDeps(slug, targetMc, loader)
-                    if (viaDeps.isNotEmpty()) {
-                        viaDeps.forEach { (url, fn) ->
-                            installModPackJarFromUrl(url, fn, dirName)
-                            if (fn !in installedNames) installedNames += fn
-                        }
-                    } else {
-                        resolveSingleModrinthSlug(slug, targetMc, loader)?.let { (url, fn) ->
-                            installModPackJarFromUrl(url, fn, dirName)
-                            if (fn !in installedNames) installedNames += fn
+            // 2. Geyser (bắt buộc): ưu tiên bản pinned đã xác minh metadata + hash, hoặc bản khớp chính xác từ Modrinth
+            val pinned = compat.pinnedBuild
+            if (pinned != null) {
+                check(pinned.matchesTarget(loader, targetMc, compat.targetPe)) {
+                    "Metadata của bản Geyser được pin (${pinned.versionNumber}) không khớp với $loader $targetMc."
+                }
+                specs += CrossplayComponentSpec(
+                    role = "geyser",
+                    targetFileName = ensureJarExtension(sanitizeFileName(pinned.fileName, "Geyser-$loader-$targetMc.jar")),
+                    required = true,
+                    expectedLoader = loader,
+                    expectedMcVersion = targetMc,
+                    expectedSha512 = pinned.sha512,
+                    expectedSha256 = pinned.sha256,
+                    expectedSha1 = pinned.sha1,
+                    fetcher = { staged ->
+                        downloadTo(pinned.downloadUrl, staged) { downloaded, total, _ ->
+                            require(downloaded <= AddonSafety.MAX_BYTES && total <= AddonSafety.MAX_BYTES) { "JAR vượt giới hạn 256 MB." }
                         }
                     }
+                )
+            } else {
+                val exactGeyser = resolveCrossplayModrinthExact("geyser", targetMc, loader)
+                val fallbackGeyserUrl: Pair<String, String>? = if (exactGeyser == null && isGeyserJavaTarget) {
+                    when (loader) {
+                        "fabric", "quilt" -> "https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/fabric" to "Geyser-Fabric.jar"
+                        "neoforge" -> "https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/neoforge" to "Geyser-NeoForge.jar"
+                        else -> null
+                    }
+                } else null
+                check(exactGeyser != null || fallbackGeyserUrl != null) {
+                    "Không tìm thấy GeyserMC chính xác cho ${core.displayName} $targetMc. Giao dịch đã dừng và giữ nguyên tệp cũ."
+                }
+                val geyserUrl = exactGeyser?.downloadUrl ?: fallbackGeyserUrl!!.first
+                val geyserFn = exactGeyser?.fileName ?: fallbackGeyserUrl!!.second
+                specs += CrossplayComponentSpec(
+                    role = "geyser",
+                    targetFileName = ensureJarExtension(sanitizeFileName(geyserFn, "Geyser-$loader.jar")),
+                    required = true,
+                    expectedLoader = loader,
+                    expectedMcVersion = targetMc,
+                    expectedSha512 = exactGeyser?.sha512,
+                    expectedSha1 = exactGeyser?.sha1,
+                    fetcher = { staged ->
+                        downloadTo(geyserUrl, staged) { downloaded, total, _ ->
+                            require(downloaded <= AddonSafety.MAX_BYTES && total <= AddonSafety.MAX_BYTES) { "JAR vượt giới hạn 256 MB." }
+                        }
+                    }
+                )
+            }
+
+            // 3. Floodgate: bắt buộc hay không theo chế độ xác thực (requireFloodgate)
+            val exactFloodgate = resolveCrossplayModrinthExact("floodgate", targetMc, loader)
+            val fallbackFloodgateUrl: Pair<String, String>? = if (exactFloodgate == null && (loader == "fabric" || loader == "quilt")) {
+                "https://download.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest/downloads/fabric" to "Floodgate-Fabric.jar"
+            } else null
+            if (requireFloodgate) {
+                check(exactFloodgate != null || fallbackFloodgateUrl != null) {
+                    "Chế độ xác thực đã chọn yêu cầu Floodgate nhưng không tìm thấy bản Floodgate hợp lệ cho ${core.displayName} $targetMc."
                 }
             }
+            if (exactFloodgate != null || fallbackFloodgateUrl != null) {
+                val fgUrl = exactFloodgate?.downloadUrl ?: fallbackFloodgateUrl!!.first
+                val fgFn = exactFloodgate?.fileName ?: fallbackFloodgateUrl!!.second
+                specs += CrossplayComponentSpec(
+                    role = "floodgate",
+                    targetFileName = ensureJarExtension(sanitizeFileName(fgFn, "Floodgate-$loader.jar")),
+                    required = requireFloodgate,
+                    expectedLoader = loader,
+                    expectedMcVersion = targetMc,
+                    expectedSha512 = exactFloodgate?.sha512,
+                    expectedSha1 = exactFloodgate?.sha1,
+                    fetcher = { staged ->
+                        downloadTo(fgUrl, staged) { downloaded, total, _ ->
+                            require(downloaded <= AddonSafety.MAX_BYTES && total <= AddonSafety.MAX_BYTES) { "JAR vượt giới hạn 256 MB." }
+                        }
+                    }
+                )
+            }
+
+            val markerMap = mapOf(
+                "build" to (compat.geyserBuildLabel ?: compat.info.buildLabel),
+                "targetPe" to compat.targetPe.orEmpty(),
+                "peRange" to compat.bedrockRangeText,
+                "mc" to targetMc,
+                "loader" to loader,
+                "requireFloodgate" to requireFloodgate.toString()
+            )
+            val configuredPort = readConfiguredBedrockPort(dirName, core, 19132)
+            return@withContext executeCrossplayStagedTransaction(
+                serverDir = srvDir,
+                addonDir = modsDir,
+                specs = specs,
+                markerProperties = markerMap,
+                isServerRunning = termux::isMcRunning,
+                onAfterCommitConfig = {
+                    ensureGeyserOfflineConfig(
+                        dirName = dirName,
+                        core = core,
+                        bedrockPort = configuredPort,
+                        forceAuthType = if (forceOfflineAuth) "offline" else null
+                    )
+                }
+            )
         } else {
-            var geyserInstalled = false
-            // PE đời cũ -> bản Geyser cũ đã kiểm tra; còn lại -> bản mới nhất từ GeyserMC
-            val geyserUrl = compat.geyserUrl
-                ?: "https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot"
-            runCatching {
-                val f = installFromUrl(geyserUrl, "Geyser-Spigot.jar", dirName) { _, _, _ -> }
-                if (f.exists() && f.length() > 1024L) {
-                    installedNames += "Geyser-Spigot.jar"
-                    geyserInstalled = true
+            val pluginsDir = pluginsDirOf(dirName).apply { mkdirs() }
+            val pinned = compat.pinnedBuild
+            if (pinned != null) {
+                check(pinned.matchesTarget("paper", targetMc, compat.targetPe)) {
+                    "Metadata của bản Geyser-Spigot được pin (${pinned.versionNumber}) không hợp lệ cho Paper $targetMc."
                 }
-            }.onFailure {
-                if (compat.geyserUrl == null) runCatching {
-                    resolveSingleModrinthSlug("geyser", targetMc, "paper")?.let { (url, _) ->
-                        val f = installFromUrl(url, "Geyser-Spigot.jar", dirName) { _, _, _ -> }
-                        if (f.exists() && f.length() > 1024L) {
-                            installedNames += "Geyser-Spigot.jar"
-                            geyserInstalled = true
+                specs += CrossplayComponentSpec(
+                    role = "geyser",
+                    targetFileName = "Geyser-Spigot.jar",
+                    required = true,
+                    expectedLoader = "paper",
+                    expectedMcVersion = targetMc,
+                    expectedSha512 = pinned.sha512,
+                    expectedSha256 = pinned.sha256,
+                    expectedSha1 = pinned.sha1,
+                    fetcher = { staged ->
+                        downloadTo(pinned.downloadUrl, staged) { downloaded, total, _ ->
+                            require(downloaded <= AddonSafety.MAX_BYTES && total <= AddonSafety.MAX_BYTES) { "JAR vượt giới hạn 256 MB." }
                         }
                     }
-                }
-            }
-            check(geyserInstalled) {
-                "Không thể tải Geyser-Spigot cho ${core.displayName} ($targetMc). Vui lòng kiểm tra kết nối mạng."
+                )
+            } else {
+                val geyserUrl = compat.geyserUrl
+                    ?: "https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot"
+                specs += CrossplayComponentSpec(
+                    role = "geyser",
+                    targetFileName = "Geyser-Spigot.jar",
+                    required = true,
+                    expectedLoader = "paper",
+                    expectedMcVersion = targetMc,
+                    fetcher = { staged ->
+                        val primaryAttempt = runCatching {
+                            downloadTo(geyserUrl, staged) { downloaded, total, _ ->
+                                require(downloaded <= AddonSafety.MAX_BYTES && total <= AddonSafety.MAX_BYTES) { "JAR vượt giới hạn 256 MB." }
+                            }
+                        }
+                        if (primaryAttempt.isFailure && compat.geyserUrl == null) {
+                            val fallback = resolveCrossplayModrinthExact("geyser", targetMc, "paper", allowMultiVersionPlugin = true)
+                                ?: throw primaryAttempt.exceptionOrNull()!!
+                            downloadTo(fallback.downloadUrl, staged) { downloaded, total, _ ->
+                                require(downloaded <= AddonSafety.MAX_BYTES && total <= AddonSafety.MAX_BYTES) { "JAR vượt giới hạn 256 MB." }
+                            }
+                        } else if (primaryAttempt.isFailure) {
+                            throw primaryAttempt.exceptionOrNull()!!
+                        }
+                    }
+                )
             }
 
+            // Floodgate-Spigot: bắt buộc nếu requireFloodgate == true
             val floodgateUrl = "https://download.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest/downloads/spigot"
-            runCatching {
-                val f = installFromUrl(floodgateUrl, "Floodgate-Spigot.jar", dirName) { _, _, _ -> }
-                if (f.exists() && f.length() > 1024L) {
-                    installedNames += "Floodgate-Spigot.jar"
+            specs += CrossplayComponentSpec(
+                role = "floodgate",
+                targetFileName = "Floodgate-Spigot.jar",
+                required = requireFloodgate,
+                expectedLoader = "paper",
+                expectedMcVersion = targetMc,
+                fetcher = { staged ->
+                    downloadTo(floodgateUrl, staged) { downloaded, total, _ ->
+                        require(downloaded <= AddonSafety.MAX_BYTES && total <= AddonSafety.MAX_BYTES) { "JAR vượt giới hạn 256 MB." }
+                    }
                 }
+            )
+
+            // ViaVersion (bắt buộc khi compat.needsViaVersion == true)
+            val viaVerArtifact = runCatching { resolveCrossplayModrinthExact("viaversion", targetMc, "paper", allowMultiVersionPlugin = true) }.getOrNull()
+            val viaVerUrl = viaVerArtifact?.downloadUrl ?: runCatching { resolveLatestAsset("ViaVersion/ViaVersion", "ViaVersion") }.getOrNull()
+            if (compat.needsViaVersion) {
+                check(!viaVerUrl.isNullOrBlank()) {
+                    "Không tìm thấy ViaVersion — bắt buộc vì Geyser kết nối bằng giao thức Java ${compat.info.javaTarget} còn server là $targetMc."
+                }
+            }
+            if (!viaVerUrl.isNullOrBlank()) {
+                specs += CrossplayComponentSpec(
+                    role = "viaversion",
+                    targetFileName = "ViaVersion.jar",
+                    required = compat.needsViaVersion,
+                    expectedLoader = "paper",
+                    expectedMcVersion = targetMc,
+                    expectedSha512 = viaVerArtifact?.sha512,
+                    expectedSha1 = viaVerArtifact?.sha1,
+                    fetcher = { staged ->
+                        downloadTo(viaVerUrl, staged) { downloaded, total, _ ->
+                            require(downloaded <= AddonSafety.MAX_BYTES && total <= AddonSafety.MAX_BYTES) { "JAR vượt giới hạn 256 MB." }
+                        }
+                    }
+                )
             }
 
-            val viaVerUrl = runCatching { resolveLatestAsset("ViaVersion/ViaVersion", "ViaVersion") }.getOrNull()
-                ?: runCatching { resolveSingleModrinthSlug("viaversion", targetMc, "paper")?.first }.getOrNull()
-            if (!viaVerUrl.isNullOrBlank()) {
-                runCatching {
-                    installFromUrl(viaVerUrl, "ViaVersion.jar", dirName) { _, _, _ -> }
-                    installedNames += "ViaVersion.jar"
-                }
-            }
-            if (compat.needsViaVersion) {
-                check("ViaVersion.jar" in installedNames) {
-                    "Không tải được ViaVersion — bắt buộc vì Geyser kết nối bằng giao thức Java ${compat.info.javaTarget} còn server là $targetMc. Hãy kiểm tra mạng rồi thử lại."
-                }
-            }
-            val viaBackUrl = runCatching { resolveLatestAsset("ViaVersion/ViaBackwards", "ViaBackwards") }.getOrNull()
-                ?: runCatching { resolveSingleModrinthSlug("viabackwards", targetMc, "paper")?.first }.getOrNull()
+            // ViaBackwards
+            val viaBackArtifact = runCatching { resolveCrossplayModrinthExact("viabackwards", targetMc, "paper", allowMultiVersionPlugin = true) }.getOrNull()
+            val viaBackUrl = viaBackArtifact?.downloadUrl ?: runCatching { resolveLatestAsset("ViaVersion/ViaBackwards", "ViaBackwards") }.getOrNull()
             if (!viaBackUrl.isNullOrBlank()) {
-                runCatching {
-                    installFromUrl(viaBackUrl, "ViaBackwards.jar", dirName) { _, _, _ -> }
-                    installedNames += "ViaBackwards.jar"
-                }
+                specs += CrossplayComponentSpec(
+                    role = "viabackwards",
+                    targetFileName = "ViaBackwards.jar",
+                    required = false,
+                    expectedLoader = "paper",
+                    expectedMcVersion = targetMc,
+                    expectedSha512 = viaBackArtifact?.sha512,
+                    expectedSha1 = viaBackArtifact?.sha1,
+                    fetcher = { staged ->
+                        downloadTo(viaBackUrl, staged) { downloaded, total, _ ->
+                            require(downloaded <= AddonSafety.MAX_BYTES && total <= AddonSafety.MAX_BYTES) { "JAR vượt giới hạn 256 MB." }
+                        }
+                    }
+                )
             }
-        }
-        ensureGeyserOfflineConfig(
-            dirName = dirName,
-            core = core,
-            bedrockPort = 19132,
-            forceAuthType = if (forceOfflineAuth) "offline" else null
-        )
-        // Ghi lại bản Geyser đã cài + dải PE thật để Trang chủ hiển thị đúng và "Cài lại" giữ đúng đời PE
-        runCatching {
-            val marker = File(modsDirOf(dirName).parentFile, CROSSPLAY_MARKER_FILE)
-            marker.writeText(
-                buildString {
-                    appendLine("build=${compat.geyserBuildLabel ?: compat.info.buildLabel}")
-                    appendLine("targetPe=${compat.targetPe.orEmpty()}")
-                    appendLine("peRange=${compat.bedrockRangeText}")
-                    appendLine("mc=$targetMc")
-                },
-                Charsets.UTF_8
+
+            val markerMap = mapOf(
+                "build" to (compat.geyserBuildLabel ?: compat.info.buildLabel),
+                "targetPe" to compat.targetPe.orEmpty(),
+                "peRange" to compat.bedrockRangeText,
+                "mc" to targetMc,
+                "loader" to "paper",
+                "requireFloodgate" to requireFloodgate.toString()
+            )
+            val configuredPort = readConfiguredBedrockPort(dirName, core, 19132)
+            return@withContext executeCrossplayStagedTransaction(
+                serverDir = srvDir,
+                addonDir = pluginsDir,
+                specs = specs,
+                markerProperties = markerMap,
+                isServerRunning = termux::isMcRunning,
+                onAfterCommitConfig = {
+                    ensureGeyserOfflineConfig(
+                        dirName = dirName,
+                        core = core,
+                        bedrockPort = configuredPort,
+                        forceAuthType = if (forceOfflineAuth) "offline" else null
+                    )
+                }
             )
         }
-        installedNames
     }
 
-    /** Thông tin bản Geyser đã cài cho server (build, targetPe, peRange) hoặc rỗng nếu chưa cài qua app. */
+    /**
+     * Trạng thái kiểm tra thực tế 5 bước của bộ Crossplay trên từng server (Group G):
+     * 1. Đã cài (JAR thực tế có mặt, đang bật và đủ phụ thuộc bắt buộc)
+     * 2. Cần khởi động lại (vừa cài/sửa khi server chưa chạy hoặc chưa nạp vào runtime hiện tại)
+     * 3. Đã load (runtime log xác nhận Geyser đã nạp thành công, không có lỗi load)
+     * 4. Đang nghe cổng (runtime log xác nhận Geyser đang lắng nghe cổng UDP thực tế)
+     * 5. Đã kiểm tra (đã nhận phản hồi RakNet Unconnected Pong thực tế từ cổng Bedrock)
+     */
+    data class CrossplayRuntimeInspection(
+        val geyserEnabled: Boolean,
+        val geyserDisabled: Boolean,
+        val floodgateEnabled: Boolean,
+        val viaVersionEnabled: Boolean,
+        val viaBackwardsEnabled: Boolean,
+        val fabricApiVerified: Boolean,
+        val missingDependencies: List<String>,
+        val configuredBedrockPort: Int,
+        val geyserAuthType: String,
+        val geyserTransport: String,
+        val isInstalledAndValid: Boolean,
+        val needsRestart: Boolean,
+        val isRuntimeLoaded: Boolean,
+        val runtimeLoadError: String?,
+        val isListeningOnPort: Boolean,
+        val listeningPort: Int?,
+        val isVerifiedReachable: Boolean
+    ) {
+        val isCrossplayReady: Boolean
+            get() = isInstalledAndValid && !geyserDisabled && missingDependencies.isEmpty() && runtimeLoadError == null && isRuntimeLoaded && isListeningOnPort
+    }
+
+    fun inspectCrossplayRuntimeStatus(
+        dirName: String,
+        core: com.mineserve.mobile.data.ServerCore,
+        mcVersion: String,
+        isServerRunning: Boolean,
+        consoleLogs: List<String> = emptyList(),
+        verifiedReachable: Boolean = false
+    ): CrossplayRuntimeInspection {
+        val srvDir = termux.serverDirFor(dirName)
+        val targetMc = mcVersion.trim().ifBlank { "1.21.4" }
+        val loader = CrossplayCompat.loaderFor(core) ?: if (core.supportsMods) "fabric" else "paper"
+        val addonDir = if (core.supportsMods) modsDirOf(dirName) else pluginsDirOf(dirName)
+        val files = if (addonDir.isDirectory) addonDir.listFiles()?.filter { it.isFile }.orEmpty() else emptyList()
+
+        fun checkRole(role: String): Pair<Boolean, Boolean> {
+            var enabled = false
+            var disabled = false
+            for (f in files) {
+                val isFileEnabled = if (core.supportsMods) parseModFileName(f.name).second else !f.name.startsWith(DISABLED_PREFIX) && f.name.endsWith(JAR_EXT, true)
+                val isCandidate = if (core.supportsMods) isModCandidate(f) else f.name.endsWith(JAR_EXT, true)
+                if (!isCandidate) continue
+                if (verifyCrossplayAddonJar(f, loader, role, targetMc)) {
+                    if (isFileEnabled) enabled = true else disabled = true
+                }
+            }
+            return enabled to disabled
+        }
+
+        val (geyserEnabled, geyserDisabled) = checkRole("geyser")
+        val (floodgateEnabled, _) = checkRole("floodgate")
+        val (viaVersionEnabled, _) = checkRole("viaversion")
+        val (viaBackwardsEnabled, _) = checkRole("viabackwards")
+        val fabricApiVerified = if (loader == "fabric" || loader == "quilt") {
+            files.any { f -> parseModFileName(f.name).second && verifyFabricApiJar(f, targetMc) }
+        } else true
+
+        val geyserCfg = inspectGeyserConfig(dirName, core, 19132)
+        val configuredPort = geyserCfg.effectiveBedrockPort
+        val missingDeps = mutableListOf<String>()
+        if (geyserEnabled) {
+            if ((loader == "fabric" || loader == "quilt") && !fabricApiVerified) {
+                missingDeps += "Fabric API (đúng bản $targetMc)"
+            }
+            if (geyserCfg.authType.equals("floodgate", ignoreCase = true) && !floodgateEnabled) {
+                missingDeps += "Floodgate (bắt buộc khi auth-type=floodgate)"
+            }
+            val cachedCompat = CrossplayCompat.cachedResult(core, targetMc)
+            if (cachedCompat?.needsViaVersion == true && !viaVersionEnabled) {
+                missingDeps += "ViaVersion (bắt buộc cho $targetMc)"
+            }
+        }
+
+        var runtimeLoaded = false
+        var listeningPort: Int? = null
+        var runtimeError: String? = null
+        if (isServerRunning && consoleLogs.isNotEmpty()) {
+            for (rawLine in consoleLogs) {
+                val lower = rawLine.lowercase(Locale.ROOT)
+                if (lower.contains("geyser")) {
+                    if (lower.contains("loading geyser") || lower.contains("enabling geyser") || lower.contains("started geyser")) {
+                        runtimeLoaded = true
+                    }
+                    if (lower.contains("started geyser on")) {
+                        runtimeLoaded = true
+                        val portMatch = Regex("""started geyser on .*?:(\d{2,5})""", RegexOption.IGNORE_CASE).find(rawLine)
+                        listeningPort = portMatch?.groupValues?.getOrNull(1)?.toIntOrNull() ?: configuredPort
+                    }
+                    if (lower.contains("failed to start geyser") ||
+                        lower.contains("disabling geyser") ||
+                        lower.contains("unable to bind") ||
+                        lower.contains("failed to bind") ||
+                        (lower.contains("error") && lower.contains("geyser") && lower.contains("exception"))
+                    ) {
+                        runtimeError = rawLine.trim().take(180)
+                    }
+                }
+            }
+        }
+
+        val isInstalledAndValid = geyserEnabled && !geyserDisabled && missingDeps.isEmpty()
+        val needsRestart = isInstalledAndValid && (!isServerRunning || (!runtimeLoaded && runtimeError == null))
+        val isListening = isServerRunning && listeningPort != null && runtimeError == null
+
+        return CrossplayRuntimeInspection(
+            geyserEnabled = geyserEnabled,
+            geyserDisabled = geyserDisabled,
+            floodgateEnabled = floodgateEnabled,
+            viaVersionEnabled = viaVersionEnabled,
+            viaBackwardsEnabled = viaBackwardsEnabled,
+            fabricApiVerified = fabricApiVerified,
+            missingDependencies = missingDeps,
+            configuredBedrockPort = configuredPort,
+            geyserAuthType = geyserCfg.authType,
+            geyserTransport = geyserCfg.transport,
+            isInstalledAndValid = isInstalledAndValid,
+            needsRestart = needsRestart,
+            isRuntimeLoaded = runtimeLoaded && runtimeError == null,
+            runtimeLoadError = runtimeError,
+            isListeningOnPort = isListening,
+            listeningPort = listeningPort,
+            isVerifiedReachable = isListening && verifiedReachable
+        )
+    }
+
+    /** Thông tin bản Geyser đã cài cho server (build, targetPe, peRange) hoặc rỗng nếu chưa cài qua app.
+     *  Lưu ý: Marker chỉ ghi nhận lịch sử giao dịch cài đặt, KHÔNG phải bằng chứng runtime đã nạp! */
     fun readCrossplayMarker(dirName: String): Map<String, String> = runCatching {
         val marker = File(modsDirOf(dirName).parentFile, CROSSPLAY_MARKER_FILE)
         if (!marker.isFile) return@runCatching emptyMap<String, String>()

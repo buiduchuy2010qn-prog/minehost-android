@@ -643,11 +643,51 @@ class McViewModel(
     val vpnActiveWarning: StateFlow<Boolean> = _vpnActiveWarning.asStateFlow()
 
     /** Kết quả kiểm tra khả năng kết nối thực tế (Localhost / LAN / Playit.gg) */
+    private val connectionCheckGeneration = java.util.concurrent.atomic.AtomicLong(0L)
     private val _connectionCheckStatus = MutableStateFlow<String?>(null)
     val connectionCheckStatus: StateFlow<String?> = _connectionCheckStatus.asStateFlow()
 
+    data class EndpointProbeReport(
+        val serverId: String,
+        val serverName: String,
+        val endpoint: String,
+        val protocol: String,
+        val network: String,
+        val ok: Boolean,
+        val detail: String,
+        val stage: String,
+        val actionHint: String,
+        val checkedAtMs: Long
+    )
+
+    data class ServerConnectionCheckReport(
+        val generation: Long,
+        val serverId: String,
+        val serverName: String,
+        val checkedAtMs: Long,
+        val checkedAtText: String,
+        val serverRunning: Boolean,
+        val localhostJava: EndpointProbeReport?,
+        val localhostBedrock: EndpointProbeReport?,
+        val lanJava: EndpointProbeReport?,
+        val lanBedrock: EndpointProbeReport?,
+        val publicJava: EndpointProbeReport?,
+        val publicBedrock: EndpointProbeReport?,
+        val summaryText: String
+    )
+
+    private val _connectionCheckReport = MutableStateFlow<ServerConnectionCheckReport?>(null)
+    val connectionCheckReport: StateFlow<ServerConnectionCheckReport?> = _connectionCheckReport.asStateFlow()
+
     private val _connectionCheckRunning = MutableStateFlow(false)
     val connectionCheckRunning: StateFlow<Boolean> = _connectionCheckRunning.asStateFlow()
+
+    fun invalidateConnectionCheck() {
+        connectionCheckGeneration.incrementAndGet()
+        _connectionCheckStatus.value = null
+        _connectionCheckReport.value = null
+        _connectionCheckRunning.value = false
+    }
     /**
      * 聚合隧道状态（两条通道取其一），保留给不区分通道的地方。
      * 网络页**不要**用它 —— 两张卡片各自订阅 [frpState] / [stunState]，
@@ -1391,7 +1431,7 @@ class McViewModel(
 
             if (previousIp != snap.ip) {
                 // Khi đổi mạng, kết quả kiểm tra kết nối cũ hết hiệu lực (Mục 5.7)
-                _connectionCheckStatus.value = ""
+                invalidateConnectionCheck()
             }
 
             if (notifyOnChange && previousIp != snap.ip && previousIp != "--") {
@@ -1484,277 +1524,352 @@ class McViewModel(
     }
 
     /**
-     * Kiểm tra kết nối thật theo Mục 5.7 (Kế hoạch tổng thể Mineora):
-     * - Java (TCP): Gửi gói Minecraft Server List Ping (Status Handshake 0x00) và xác minh phản hồi status.
-     * - Bedrock/PE (UDP): Gửi gói RakNet Unconnected Ping (0x01) và xác minh phản hồi Unconnected Pong (0x1C).
-     * - Gắn rõ kết quả với: Server đang kiểm tra, giao thức (TCP/UDP) và thời điểm kiểm tra.
+     * Kiểm tra kết nối thật theo Mục B, D, G (Kế hoạch tổng thể Mineora):
+     * - Java (TCP): Gửi gói Minecraft Server List Ping (Status Handshake 0x00) và xác minh phản hồi status JSON hợp lệ.
+     * - Bedrock/PE (UDP): Gửi gói RakNet Unconnected Ping (0x01) và xác minh phản hồi Unconnected Pong (0x1C + Magic + Timestamp + MCPE;).
+     * - Gắn rõ kết quả với: serverId, endpoint, giao thức (TCP/UDP), mạng và thời điểm kiểm tra.
+     * - Nếu đổi server hoặc dừng/làm mới trong lúc đang kiểm tra, kết quả cũ bị hủy bỏ (không ghi đè sang server mới).
      */
     fun checkConnectionReachability() {
         if (_connectionCheckRunning.value) return
+        val myGen = connectionCheckGeneration.incrementAndGet()
+        val startServerName = config.value.activeCoreName?.takeIf { it.isNotBlank() } ?: "Chưa chọn"
+        val startSrv = config.value.installedCores.firstOrNull { it.name == startServerName }
+        val targetDirName = startSrv?.dirName ?: activeDirName() ?: "unselected"
         viewModelScope.launch(Dispatchers.IO) {
             _connectionCheckRunning.value = true
             try {
                 refreshLanIp(notifyOnChange = false)
-                val activeSrvName = config.value.activeCoreName?.takeIf { it.isNotBlank() } ?: "Chưa chọn"
-                val activeSrv = config.value.installedCores.firstOrNull { it.name == activeSrvName }
-                val isBedrockOnlyCore = activeSrv?.core?.isBedrock == true
-                val port = realServerPort()
-                val bedrockPort = 19132
+                val isBedrockOnlyCore = startSrv?.core?.isBedrock == true
+                val port = resolveLiveLocalServerPort()
+                val bedrockPort = resolveLiveBedrockServerPort(targetDirName)
                 val running = serverState.value.isRunning
                 val lan = _lanIp.value
                 val pState = playitState.value
+                val nowMs = System.currentTimeMillis()
+                val timeStr = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date(nowMs))
                 val lines = mutableListOf<String>()
-                val timeStr = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())
 
-                lines += "📋 Kết quả kiểm tra lúc $timeStr • Server: '$activeSrvName' • Giao thức: ${if (isBedrockOnlyCore) "Bedrock UDP ($port)" else "Java TCP ($port) + Geyser UDP ($bedrockPort)"}"
+                lines += "📋 Kết quả kiểm tra lúc $timeStr • Server: '$startServerName' (ID: $targetDirName) • Giao thức: ${if (isBedrockOnlyCore) "Bedrock UDP ($port)" else "Java TCP ($port) + Geyser UDP ($bedrockPort)"}"
 
                 if (!running) {
-                    lines += "• Trạng thái Minecraft Server: 🔴 ĐÃ DỪNG — Hãy khởi động Server và chờ báo 'Sẵn sàng (Done)' trước khi kiểm tra."
+                    lines += "• Trạng thái tiến trình Minecraft: 🔴 Chưa ghi nhận tiến trình đang chạy trong phiên hiện tại (vẫn tiến hành kiểm tra các cổng đích thực tế bên dưới)."
                 } else {
-                    lines += "• Trạng thái Minecraft Server: 🟢 ĐANG CHẠY"
+                    lines += "• Trạng thái tiến trình Minecraft: 🟢 ĐANG CHẠY"
                 }
 
-                // 1. Kiểm tra Localhost (Java Status Ping + Bedrock RakNet Ping)
-                if (running) {
-                    if (!isBedrockOnlyCore) {
-                        val (javaOk, javaDetail) = probeJavaServerListPing("127.0.0.1", port, 2000)
-                        lines += if (javaOk) {
-                            "• Localhost Java TCP (127.0.0.1:$port): ✅ ĐÃ KIỂM TRA — $javaDetail"
-                        } else {
-                            "• Localhost Java TCP (127.0.0.1:$port): ⚠️ Chưa phản hồi gói Status Ping ($javaDetail)."
-                        }
-                    }
-                    val targetUdp = if (isBedrockOnlyCore) port else bedrockPort
-                    val (peOk, peDetail) = probeBedrockRakNetPing("127.0.0.1", targetUdp, 1800)
-                    lines += if (peOk) {
-                        "• Localhost Bedrock/PE UDP (127.0.0.1:$targetUdp): ✅ ĐÃ KIỂM TRA — $peDetail"
+                var localhostJavaReport: EndpointProbeReport? = null
+                var localhostBedrockReport: EndpointProbeReport? = null
+                var lanJavaReport: EndpointProbeReport? = null
+                var lanBedrockReport: EndpointProbeReport? = null
+                var publicJavaReport: EndpointProbeReport? = null
+                var publicBedrockReport: EndpointProbeReport? = null
+
+                // 1. Kiểm tra Localhost (luôn thử kết nối thực tế tới 127.0.0.1, không tự kết luận "server đang dừng" nếu chưa thử)
+                if (!isBedrockOnlyCore) {
+                    val (javaOk, javaDetail) = probeJavaServerListPing("127.0.0.1", port, 2000)
+                    localhostJavaReport = EndpointProbeReport(
+                        serverId = targetDirName,
+                        serverName = startServerName,
+                        endpoint = "127.0.0.1:$port",
+                        protocol = "Java TCP",
+                        network = "Localhost",
+                        ok = javaOk,
+                        detail = javaDetail,
+                        stage = if (javaOk) "Đã nhận phản hồi Minecraft" else "Kiểm tra cổng đích cục bộ",
+                        actionHint = if (javaOk) "Cổng Java cục bộ hoạt động bình thường." else "Kiểm tra xem Server đã khởi động xong ('Done') và đang lắng nghe đúng cổng $port chưa.",
+                        checkedAtMs = System.currentTimeMillis()
+                    )
+                    lines += if (javaOk) {
+                        "• Localhost Java TCP (127.0.0.1:$port): ✅ ĐÃ KIỂM TRA — $javaDetail"
                     } else {
-                        "• Localhost Bedrock/PE UDP (127.0.0.1:$targetUdp): ⚪ Chưa phản hồi RakNet Pong ($peDetail)."
+                        "• Localhost Java TCP (127.0.0.1:$port): ⚠️ Không kết nối được đích cục bộ 127.0.0.1:$port ($javaDetail). Gợi ý: Kiểm tra Server đã báo 'Done' hoặc cổng server-port=$port."
                     }
+                }
+                val targetUdp = if (isBedrockOnlyCore) port else bedrockPort
+                val (peOk, peDetail) = probeBedrockRakNetPing("127.0.0.1", targetUdp, 1800)
+                localhostBedrockReport = EndpointProbeReport(
+                    serverId = targetDirName,
+                    serverName = startServerName,
+                    endpoint = "127.0.0.1:$targetUdp",
+                    protocol = "Bedrock UDP",
+                    network = "Localhost",
+                    ok = peOk,
+                    detail = peDetail,
+                    stage = if (peOk) "Đã nhận phản hồi RakNet" else "Kiểm tra cổng UDP cục bộ",
+                    actionHint = if (peOk) "Cổng Bedrock/Geyser cục bộ phản hồi tốt." else "Kiểm tra GeyserMC đã nạp xong và mở cổng UDP $targetUdp chưa.",
+                    checkedAtMs = System.currentTimeMillis()
+                )
+                lines += if (peOk) {
+                    "• Localhost Bedrock/PE UDP (127.0.0.1:$targetUdp): ✅ ĐÃ KIỂM TRA — $peDetail"
                 } else {
-                    lines += "• Localhost (127.0.0.1:$port): ⚪ Cần bật Server để kiểm tra gói tin thực tế."
+                    "• Localhost Bedrock/PE UDP (127.0.0.1:$targetUdp): ⚪ Chưa phản hồi RakNet Pong tại 127.0.0.1:$targetUdp ($peDetail)."
                 }
 
-                // 2. Kiểm tra Mạng LAN (Wi-Fi / Hotspot)
+                // 2. Kiểm tra Mạng LAN (Wi-Fi / Hotspot) cho cả Java TCP và Bedrock UDP độc lập
                 if (lan == "--") {
                     lines += "• Mạng LAN nội bộ: ⚠️ Chưa có IP LAN (Hãy bật Wi-Fi hoặc Điểm phát sóng di động)."
-                } else if (running && !isBedrockOnlyCore) {
-                    val (lanJavaOk, lanJavaDetail) = probeJavaServerListPing(lan, port, 2000)
-                    lines += if (lanJavaOk) {
-                        "• Mạng LAN Java TCP ($lan:$port — ${_lanInterfaceLabel.value}): ✅ ĐÃ KIỂM TRA ($lanJavaDetail)."
-                    } else {
-                        "• Mạng LAN Java TCP ($lan:$port — ${_lanInterfaceLabel.value}): ⚠️ Chưa phản hồi ($lanJavaDetail)."
-                    }
                 } else {
-                    lines += "• Mạng LAN ($lan:$port — ${_lanInterfaceLabel.value}): ⚪ Đã có địa chỉ LAN."
+                    if (!isBedrockOnlyCore) {
+                        val (lanJavaOk, lanJavaDetail) = probeJavaServerListPing(lan, port, 2000)
+                        lanJavaReport = EndpointProbeReport(
+                            serverId = targetDirName,
+                            serverName = startServerName,
+                            endpoint = "$lan:$port",
+                            protocol = "Java TCP",
+                            network = "LAN (${_lanInterfaceLabel.value})",
+                            ok = lanJavaOk,
+                            detail = lanJavaDetail,
+                            stage = if (lanJavaOk) "Đã nhận phản hồi Minecraft LAN" else "Kiểm tra LAN Java TCP",
+                            actionHint = if (lanJavaOk) "Người chơi cùng Wi-Fi có thể vào qua $lan:$port." else "Kiểm tra tường lửa / AP Isolation hoặc trạng thái Server.",
+                            checkedAtMs = System.currentTimeMillis()
+                        )
+                        lines += if (lanJavaOk) {
+                            "• Mạng LAN Java TCP ($lan:$port — ${_lanInterfaceLabel.value}): ✅ ĐÃ KIỂM TRA ($lanJavaDetail)."
+                        } else {
+                            "• Mạng LAN Java TCP ($lan:$port — ${_lanInterfaceLabel.value}): ⚠️ Chưa phản hồi tại $lan:$port ($lanJavaDetail)."
+                        }
+                    }
+                    val (lanPeOk, lanPeDetail) = probeBedrockRakNetPing(lan, targetUdp, 1800)
+                    lanBedrockReport = EndpointProbeReport(
+                        serverId = targetDirName,
+                        serverName = startServerName,
+                        endpoint = "$lan:$targetUdp",
+                        protocol = "Bedrock UDP",
+                        network = "LAN (${_lanInterfaceLabel.value})",
+                        ok = lanPeOk,
+                        detail = lanPeDetail,
+                        stage = if (lanPeOk) "Đã nhận phản hồi RakNet LAN" else "Kiểm tra LAN Bedrock UDP",
+                        actionHint = if (lanPeOk) "Điện thoại PE cùng Wi-Fi có thể vào qua $lan:$targetUdp." else "Kiểm tra GeyserMC cổng UDP $targetUdp hoặc VPN trên máy.",
+                        checkedAtMs = System.currentTimeMillis()
+                    )
+                    lines += if (lanPeOk) {
+                        "• Mạng LAN Bedrock/PE UDP ($lan:$targetUdp — ${_lanInterfaceLabel.value}): ✅ ĐÃ KIỂM TRA ($lanPeDetail)."
+                    } else {
+                        "• Mạng LAN Bedrock/PE UDP ($lan:$targetUdp — ${_lanInterfaceLabel.value}): ⚪ Chưa phản hồi RakNet tại $lan:$targetUdp ($lanPeDetail)."
+                    }
                 }
                 if (_vpnActiveWarning.value) {
                     lines += "  ⚠️ Cảnh báo: Phát hiện VPN đang bật trên điện thoại, có thể chặn kết nối LAN hoặc làm lệch định tuyến UDP."
                 }
 
-                // 3. Kiểm tra Đường hầm Playit.gg (Tách biệt trạng thái Agent Online, Java TCP & Bedrock UDP)
+                // 3. Kiểm tra Đường hầm Playit.gg (Tách biệt hoàn toàn Java TCP và Bedrock UDP; hỗ trợ cả Agent chỉ có UDP)
                 val pubAddr = pState.publicAddress
                 val pubIpv4 = pState.allocatedIpv4Address.ifBlank { _playitNumericAddress.value.orEmpty() }
                 val pePubAddr = pState.bedrockAddress
-                when {
-                    pState.isRunning && pubAddr.isNotBlank() -> {
+                val pePubIpv4 = pState.bedrockIpv4Address
+
+                if (pState.isAgentOnline) {
+                    if (pubAddr.isNotBlank()) {
                         val checkTarget = pubIpv4.ifBlank { pubAddr }
                         val host = checkTarget.substringBeforeLast(":", checkTarget)
                         val pubPort = checkTarget.substringAfterLast(":", "").toIntOrNull()
                             ?: pubAddr.substringAfterLast(":", "").toIntOrNull()
                             ?: 25565
-                        val (tunnelOk, tunnelDetail) = if (running) {
-                            probeJavaServerListPing(host, pubPort, 3200)
+                        val (tunnelOk, tunnelDetail) = probeJavaServerListPing(host, pubPort, 3200)
+                        publicJavaReport = EndpointProbeReport(
+                            serverId = targetDirName,
+                            serverName = startServerName,
+                            endpoint = pubAddr,
+                            protocol = "Java TCP",
+                            network = "Playit Internet",
+                            ok = tunnelOk,
+                            detail = tunnelDetail,
+                            stage = if (tunnelOk) "Đã kiểm chứng từ mạng ngoài (Java Status Ping)" else "Kiểm tra cổng Public Java TCP",
+                            actionHint = if (tunnelOk) "Bạn bè khác mạng có thể vào qua $pubAddr." else "Kiểm tra Minecraft Server đã chạy ở cổng $port và tunnel hướng đúng về server '$targetDirName' chưa.",
+                            checkedAtMs = System.currentTimeMillis()
+                        )
+                        lines += if (tunnelOk) {
+                            "• Playit Java TCP ($pubAddr${if (pubIpv4.isNotBlank() && pubIpv4 != pubAddr) " / $pubIpv4" else ""}): ✅ ĐÃ KIỂM CHỨNG — $tunnelDetail"
                         } else {
-                            probeTcpAddress(host, pubPort, 2500) to "Cổng TCP mở (Server Minecraft đang dừng)"
+                            "• Playit Java TCP ($pubAddr): ⚠️ Agent đang Online nhưng cổng công khai chưa trả gói Status Minecraft ($tunnelDetail). Nguyên nhân có thể: Server chưa chạy ở cổng $port hoặc cầu nối TCP chưa thông."
                         }
-                        lines += if (tunnelOk && running) {
-                            "• Playit Java TCP ($pubAddr${if (pubIpv4.isNotBlank() && pubIpv4 != pubAddr) " / $pubIpv4" else ""}): ✅ ĐÃ KIỂM TRA — $tunnelDetail"
-                        } else if (running) {
-                            "• Playit Java TCP ($pubAddr): ⚠️ Agent đang Online nhưng cổng công khai chưa phản hồi Status Ping ($tunnelDetail). Hãy kiểm tra cổng Server ($port) hoặc bấm Làm mới hầm."
-                        } else {
-                            "• Playit Java TCP ($pubAddr): 🟢 Agent đang Online (Hãy bật Minecraft Server để kiểm tra kết nối vào game)."
-                        }
+                    } else {
+                        lines += "• Playit Java TCP: ⚪ Agent đang Online nhưng chưa có đường hầm Java TCP cho server '$startServerName'."
+                    }
 
-                        if (pePubAddr.isNotBlank()) {
-                            val peHost = (pState.bedrockIpv4Address.ifBlank { pePubAddr }).substringBeforeLast(":")
-                            val pePort = pePubAddr.substringAfterLast(":", "").toIntOrNull() ?: 19132
-                            if (running) {
-                                val (peTunnelOk, peTunnelDetail) = probeBedrockRakNetPing(peHost, pePort, 3000)
-                                lines += if (peTunnelOk) {
-                                    "• Playit Bedrock/PE UDP ($pePubAddr): ✅ ĐÃ KIỂM TRA — $peTunnelDetail"
-                                } else {
-                                    "• Playit Bedrock/PE UDP ($pePubAddr): ⚠️ Chưa nhận được RakNet Pong qua Playit ($peTunnelDetail). Hãy chắc chắn GeyserMC đang chạy ở cổng UDP $bedrockPort."
-                                }
-                            } else {
-                                lines += "• Playit Bedrock/PE UDP ($pePubAddr): ⚪ Đã có địa chỉ UDP (cần bật Server + GeyserMC)."
-                            }
+                    // Kiểm tra PE độc lập hoàn toàn với Java (kể cả khi Agent chỉ có UDP tunnel, không có pubAddr Java)
+                    if (pePubAddr.isNotBlank()) {
+                        // Tuyệt đối không lấy IP của Java cho PE; chỉ dùng bedrockIpv4Address nếu có, nếu không giữ nguyên hostname PE
+                        val peTarget = pePubIpv4.ifBlank { pePubAddr }
+                        val peHost = peTarget.substringBeforeLast(":", peTarget)
+                        val pePort = peTarget.substringAfterLast(":", "").toIntOrNull()
+                            ?: pePubAddr.substringAfterLast(":", "").toIntOrNull()
+                            ?: bedrockPort
+                        val (peTunnelOk, peTunnelDetail) = probeBedrockRakNetPing(peHost, pePort, 3000)
+                        publicBedrockReport = EndpointProbeReport(
+                            serverId = targetDirName,
+                            serverName = startServerName,
+                            endpoint = pePubAddr,
+                            protocol = "Bedrock UDP",
+                            network = "Playit Internet",
+                            ok = peTunnelOk,
+                            detail = peTunnelDetail,
+                            stage = if (peTunnelOk) "Đã kiểm chứng từ mạng ngoài (RakNet Pong)" else "Kiểm tra cổng Public Bedrock UDP",
+                            actionHint = if (peTunnelOk) "Điện thoại PE khác mạng có thể vào qua $pePubAddr." else "Hãy chắc chắn GeyserMC đang lắng nghe cổng UDP $bedrockPort và UDP tunnel trên Playit đang bật.",
+                            checkedAtMs = System.currentTimeMillis()
+                        )
+                        lines += if (peTunnelOk) {
+                            "• Playit Bedrock/PE UDP ($pePubAddr${if (pePubIpv4.isNotBlank() && pePubIpv4 != pePubAddr) " / $pePubIpv4" else ""}): ✅ ĐÃ KIỂM CHỨNG — $peTunnelDetail"
                         } else {
-                            lines += "• Playit Bedrock/PE UDP: ⚠️ ${pState.bedrockStatusNote}"
+                            "• Playit Bedrock/PE UDP ($pePubAddr): ⚠️ Chưa nhận được RakNet Pong qua Playit ($peTunnelDetail). Hãy kiểm tra GeyserMC ở cổng UDP $bedrockPort."
                         }
+                    } else {
+                        lines += "• Playit Bedrock/PE UDP: ⚠️ ${pState.bedrockStatusNote}"
                     }
-                    pState.stage == PlayitStage.WaitingForClaim -> {
-                        lines += "• Playit.gg: 🔑 Trạng thái [Đang đăng ký] — Chưa xác nhận liên kết (Claim) trên trình duyệt."
-                    }
-                    pState.isBusy -> {
-                        lines += "• Playit.gg: ⏳ Trạng thái [${pState.phaseDetail}] — ${pState.statusText}"
-                    }
-                    pState.stage == PlayitStage.Error -> {
-                        lines += "• Playit.gg: ❌ Trạng thái [Lỗi] — ${pState.errorMessage.ifBlank { pState.statusText }}"
-                    }
-                    else -> {
-                        lines += "• Playit.gg: ⚪ Đang tắt (Chỉ cần bật khi mời bạn bè khác Wi-Fi / 4G)."
+                } else {
+                    when {
+                        pState.stage == PlayitStage.WaitingForClaim -> {
+                            lines += "• Playit.gg: 🔑 Trạng thái [Đang đăng ký] — Chưa xác nhận liên kết (Claim) trên trình duyệt."
+                        }
+                        pState.isBusy -> {
+                            lines += "• Playit.gg: ⏳ Trạng thái [${pState.phaseDetail}] — ${pState.statusText}"
+                        }
+                        pState.stage == PlayitStage.Error -> {
+                            lines += "• Playit.gg: ❌ Trạng thái [Lỗi] — ${pState.errorMessage.ifBlank { pState.statusText }}"
+                        }
+                        else -> {
+                            lines += "• Playit.gg: ⚪ Agent đang Offline (Chỉ cần bật khi mời bạn bè khác Wi-Fi / 4G)."
+                        }
                     }
                 }
 
-                _connectionCheckStatus.value = lines.joinToString("\n")
+                // Kiểm tra lại generation và server đang chọn trước khi công bố kết quả (tránh kết quả của Server A hiện sang Server B)
+                val currentDirNow = activeDirName() ?: "unselected"
+                if (connectionCheckGeneration.get() == myGen && currentDirNow == targetDirName) {
+                    val summary = lines.joinToString("\n")
+                    _connectionCheckReport.value = ServerConnectionCheckReport(
+                        generation = myGen,
+                        serverId = targetDirName,
+                        serverName = startServerName,
+                        checkedAtMs = nowMs,
+                        checkedAtText = timeStr,
+                        serverRunning = running,
+                        localhostJava = localhostJavaReport,
+                        localhostBedrock = localhostBedrockReport,
+                        lanJava = lanJavaReport,
+                        lanBedrock = lanBedrockReport,
+                        publicJava = publicJavaReport,
+                        publicBedrock = publicBedrockReport,
+                        summaryText = summary
+                    )
+                    _connectionCheckStatus.value = summary
+                }
             } finally {
-                _connectionCheckRunning.value = false
+                if (connectionCheckGeneration.get() == myGen) {
+                    _connectionCheckRunning.value = false
+                }
             }
         }
-    }
-
-    private fun writeMcVarInt(out: java.io.OutputStream, value: Int) {
-        var v = value
-        while (true) {
-            if ((v and 0x7F.inv()) == 0) {
-                out.write(v)
-                return
-            }
-            out.write((v and 0x7F) or 0x80)
-            v = v ushr 7
-        }
-    }
-
-    private fun readMcVarInt(input: java.io.InputStream): Int {
-        var numRead = 0
-        var result = 0
-        while (numRead < 5) {
-            val read = input.read()
-            if (read == -1) throw java.io.EOFException("EOF while reading VarInt")
-            val value = read and 0x7F
-            result = result or (value shl (7 * numRead))
-            numRead++
-            if ((read and 0x80) == 0) return result
-        }
-        throw java.io.IOException("VarInt too big")
     }
 
     /**
      * Gửi gói Minecraft Java Server List Ping (Handshake 0x00 + Status Request 0x00)
-     * và kiểm tra phản hồi JSON thực tế từ Minecraft Server.
+     * và xác minh phản hồi JSON hợp lệ qua MinecraftProtocolValidator.
      */
     private fun probeJavaServerListPing(host: String, port: Int, timeoutMs: Int): Pair<Boolean, String> {
-        return try {
-            java.net.Socket().use { socket ->
-                socket.tcpNoDelay = true
-                socket.soTimeout = timeoutMs
-                socket.connect(java.net.InetSocketAddress(host, port), timeoutMs)
-                val out = socket.getOutputStream()
-                val input = socket.getInputStream()
-
-                val hostBytes = host.toByteArray(Charsets.UTF_8)
-                val handshakePayload = java.io.ByteArrayOutputStream()
-                writeMcVarInt(handshakePayload, 0x00) // Packet ID = 0x00 (Handshake)
-                writeMcVarInt(handshakePayload, 767)  // Protocol version
-                writeMcVarInt(handshakePayload, hostBytes.size)
-                handshakePayload.write(hostBytes)
-                handshakePayload.write((port ushr 8) and 0xFF)
-                handshakePayload.write(port and 0xFF)
-                writeMcVarInt(handshakePayload, 1)    // Next state = 1 (Status)
-
-                val handshakeBytes = handshakePayload.toByteArray()
-                val fullRequest = java.io.ByteArrayOutputStream()
-                writeMcVarInt(fullRequest, handshakeBytes.size)
-                fullRequest.write(handshakeBytes)
-                // Status Request packet: length = 1, packetId = 0x00
-                fullRequest.write(0x01)
-                fullRequest.write(0x00)
-
-                out.write(fullRequest.toByteArray())
-                out.flush()
-
-                val packetLen = readMcVarInt(input)
-                val packetId = readMcVarInt(input)
-                if (packetLen > 2 && packetId == 0x00) {
-                    val jsonLen = readMcVarInt(input).coerceIn(0, 32768)
-                    val jsonBytes = ByteArray(jsonLen)
-                    var offset = 0
-                    while (offset < jsonLen) {
-                        val r = input.read(jsonBytes, offset, jsonLen - offset)
-                        if (r <= 0) break
-                        offset += r
-                    }
-                    val jsonStr = String(jsonBytes, 0, offset, Charsets.UTF_8)
-                    val verName = runCatching {
-                        org.json.JSONObject(jsonStr).optJSONObject("version")?.optString("name").orEmpty()
-                    }.getOrDefault("")
-                    true to if (verName.isNotBlank()) "Phản hồi Status Ping thành công ($verName)" else "Phản hồi Status Ping chuẩn Minecraft Java"
-                } else {
-                    false to "Cổng TCP mở nhưng phản hồi không đúng gói Status Minecraft"
-                }
-            }
-        } catch (e: Exception) {
-            false to (e.message ?: "Không thể kết nối TCP")
-        }
+        val res = com.mineserve.mobile.server.MinecraftProtocolValidator.probeJavaServerListPing(host, port, timeoutMs)
+        return res.ok to res.detail
     }
 
     /**
-     * Gửi gói RakNet Unconnected Ping (0x01) qua UDP và xác minh phản hồi Unconnected Pong (0x1C)
-     * chuẩn Minecraft Bedrock / GeyserMC.
+     * Gửi gói RakNet Unconnected Ping (0x01) qua UDP và xác minh phản hồi Unconnected Pong (0x1C + Magic + PingId + MCPE;)
+     * từ đúng địa chỉ/cổng nguồn qua MinecraftProtocolValidator.
      */
     private fun probeBedrockRakNetPing(host: String, port: Int, timeoutMs: Int): Pair<Boolean, String> {
-        return try {
-            DatagramSocket().use { socket ->
-                socket.soTimeout = timeoutMs
-                val packet = ByteBuffer.allocate(33).order(ByteOrder.BIG_ENDIAN)
-                    .put(0x01.toByte())
-                    .putLong(System.currentTimeMillis())
-                    .put(
-                        byteArrayOf(
-                            0x00, 0xff.toByte(), 0xff.toByte(), 0x00,
-                            0xfe.toByte(), 0xfe.toByte(), 0xfe.toByte(), 0xfe.toByte(),
-                            0xfd.toByte(), 0xfd.toByte(), 0xfd.toByte(), 0xfd.toByte(),
-                            0x12, 0x34, 0x56, 0x78
-                        )
-                    )
-                    .putLong(System.nanoTime())
-                    .array()
-                val targetAddr = java.net.InetAddress.getByName(host)
-                socket.send(DatagramPacket(packet, packet.size, targetAddr, port))
-                val rxBuf = ByteArray(2048)
-                val response = DatagramPacket(rxBuf, rxBuf.size)
-                socket.receive(response)
-                if (response.length >= 35 && rxBuf[response.offset] == 0x1C.toByte()) {
-                    val strLen = java.lang.Short.toUnsignedInt(
-                        ByteBuffer.wrap(rxBuf, response.offset + 33, 2).order(ByteOrder.BIG_ENDIAN).short
-                    )
-                    val motdInfo = if (response.length >= 35 + strLen && strLen > 0) {
-                        val rawPong = String(rxBuf, response.offset + 35, strLen, Charsets.UTF_8)
-                        val parts = rawPong.split(";")
-                        if (parts.size >= 3) "${parts[0]} ${parts[2]} (${parts[1]})" else rawPong.take(40)
-                    } else {
-                        "RakNet Pong 0x1C"
-                    }
-                    true to "Phản hồi RakNet Pong thành công ($motdInfo)"
-                } else {
-                    false to "Gói UDP trả về không phải RakNet Unconnected Pong (0x1C)"
-                }
-            }
-        } catch (e: Exception) {
-            false to (e.message ?: "Không nhận được phản hồi UDP")
-        }
+        val res = com.mineserve.mobile.server.MinecraftProtocolValidator.probeBedrockRakNetPing(host, port, timeoutMs)
+        return res.ok to res.detail
     }
 
-    private fun probeTcpAddress(host: String, port: Int, timeoutMs: Int): Boolean {
-        return try {
-            java.net.Socket().use { socket ->
-                socket.connect(java.net.InetSocketAddress(host, port), timeoutMs)
-                true
-            }
-        } catch (_: Exception) {
-            false
+    /**
+     * Kiểm tra trạng thái Crossplay 5 giai đoạn thật của máy chủ đang chọn:
+     * 1. Đã cài (JAR hợp lệ + đủ dependency)
+     * 2. Cần khởi động lại Server
+     * 3. Đã nạp vào runtime (log Geyser)
+     * 4. Đang lắng nghe cổng UDP thực tế
+     * 5. Đã kiểm tra phản hồi RakNet thực tế
+     */
+    fun inspectActiveCrossplayStatus(): com.mineserve.mobile.server.PluginManager.CrossplayRuntimeStatus {
+        val activeName = config.value.activeCoreName
+        val active = config.value.installedCores.firstOrNull { it.name == activeName }
+        val dirName = active?.dirName ?: activeDirName()
+        val core = active?.core ?: config.value.selectedCore
+        if (dirName.isNullOrBlank()) {
+            return com.mineserve.mobile.server.PluginManager.CrossplayRuntimeStatus(
+                isInstalledAndValid = false,
+                needsRestart = false,
+                isRuntimeLoaded = false,
+                isListeningOnPort = false,
+                isVerifiedReachable = false,
+                configuredPort = 19132,
+                transportType = "raknet",
+                authType = "offline",
+                hasGeyserJar = false,
+                hasDisabledGeyserJar = false,
+                hasFloodgateJar = false,
+                hasViaVersionJar = false,
+                hasViaBackwardsJar = false,
+                hasValidFabricApiJar = false,
+                missingDependencies = emptyList(),
+                loadErrorDetail = null,
+                installedAtMs = 0L
+            )
         }
+        val report = _connectionCheckReport.value?.takeIf { it.serverId == dirName }
+        val verifiedReachable = (report?.localhostBedrock?.ok == true) ||
+            (report?.lanBedrock?.ok == true) ||
+            (report?.publicBedrock?.ok == true)
+        return pluginManager.inspectCrossplayRuntimeStatus(
+            dirName = dirName,
+            core = core,
+            isServerRunning = serverState.value.isRunning,
+            serverRunningSinceMs = serverState.value.runningSinceMs,
+            consoleLines = _consoleLines.value,
+            isBedrockProbeVerified = verifiedReachable
+        )
+    }
+
+    /**
+     * Xuất báo cáo chẩn đoán đầy đủ có dấu thời gian và đã che toàn bộ khoá bí mật (Playit secret, token, claim URL).
+     */
+    fun exportRedactedDiagnosticsText(): String {
+        val nowStr = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", java.util.Locale.US).format(java.util.Date())
+        val activeName = config.value.activeCoreName ?: "Chưa chọn"
+        val dirName = activeDirName() ?: "unselected"
+        val active = config.value.installedCores.firstOrNull { it.name == activeName }
+        val crossplay = runCatching { inspectActiveCrossplayStatus() }.getOrNull()
+        val sb = StringBuilder()
+        sb.appendLine("=== BÁO CÁO CHẨN ĐOÁN MINEHOST (ĐÃ CHE BÍ MẬT) ===")
+        sb.appendLine("Thời điểm xuất: $nowStr")
+        sb.appendLine("Server đang chọn: $activeName (dir=$dirName, core=${active?.core?.displayName ?: config.value.selectedCore.displayName}, mc=${active?.version ?: config.value.mcVersion})")
+        sb.appendLine("Tiến trình Minecraft: isRunning=${serverState.value.isRunning}, phase=${serverState.value.startupPhase}, portJava=${resolveLiveLocalServerPort()}, portBedrock=${resolveLiveBedrockServerPort(dirName)}")
+        sb.appendLine("Mạng LAN: ip=${_lanIp.value}, iface=${_lanInterfaceLabel.value}, vpnActive=${_vpnActiveWarning.value}")
+        if (crossplay != null) {
+            sb.appendLine(
+                "Crossplay 5 giai đoạn: installed=${crossplay.isInstalledAndValid}, needsRestart=${crossplay.needsRestart}, " +
+                    "loaded=${crossplay.isRuntimeLoaded}, listening=${crossplay.isListeningOnPort} (port=${crossplay.configuredPort}, transport=${crossplay.transportType}), " +
+                    "verified=${crossplay.isVerifiedReachable}, floodgate=${crossplay.hasFloodgateJar}, via=${crossplay.hasViaVersionJar}, " +
+                    "missingDeps=${crossplay.missingDependencies}, loadErr=${crossplay.loadErrorDetail ?: "none"}"
+            )
+        }
+        sb.appendLine()
+        sb.appendLine(playitController.exportRedactedDiagnostics())
+        sb.appendLine()
+        sb.appendLine("=== KẾT QUẢ KIỂM TRA KẾT NỐI GẦN NHẤT ===")
+        sb.appendLine(_connectionCheckStatus.value ?: "Chưa chạy kiểm tra.")
+        sb.appendLine()
+        sb.appendLine("=== LOG CONSOLE GẦN NHẤT (ĐÃ CHE SECRET) ===")
+        _consoleLines.value.takeLast(50).forEach { line ->
+            sb.appendLine(com.mineserve.mobile.server.DiagnosticRedactor.redactSecrets(line))
+        }
+        return com.mineserve.mobile.server.DiagnosticRedactor.redactSecrets(sb.toString())
+    }
+
+    fun copyRedactedDiagnostics(context: android.content.Context) {
+        val report = exportRedactedDiagnosticsText()
+        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("MineHost Diagnostics", report))
+        _messageFlow.tryEmit("📋 Đã sao chép báo cáo chẩn đoán (đã tự động che toàn bộ Secret Key & Token) vào bộ nhớ tạm!")
     }
 
     /** 一键复制服务器连接地址到剪贴板，格式：IP:端口 */
@@ -1921,7 +2036,12 @@ class McViewModel(
         // 启动完成时主动请求一次 list，全量校正在线玩家名单。
         if (becameReady && repo.termuxRuntime.isMcRunning()) playerManager.requestOnlineList()
         if (becameReady && playConnectionMode.value == PlayConnectionMode.Everywhere) {
-            playitController.refreshTunnel { resolveLiveLocalServerPort() }
+            val srvId = activeDirName() ?: "default"
+            playitController.refreshTunnel(
+                localPortProvider = { resolveLiveLocalServerPort() },
+                bedrockPortProvider = { resolveLiveBedrockServerPort(srvId) },
+                serverId = srvId
+            )
         }
         if (becameReady) {
             ServerEventNotifier.notify(
@@ -2885,6 +3005,7 @@ class McViewModel(
      */
     fun isServerMutationInFlight(): Boolean =
         _isInstalling.value ||
+            pluginManager.isCrossplayTransactionInFlight(activeDirName()) ||
             _isTogglingServerOptPack.value ||
             _modBatchProgress.value != null ||
             _pluginDownloadProgress.value.isNotEmpty() ||
@@ -3013,6 +3134,7 @@ class McViewModel(
     fun stopServer() {
         if (_stopInFlight.value) return
         _stopInFlight.value = true
+        invalidateConnectionCheck()
         viewModelScope.launch {
             try {
                 val stopped = controller.stopGracefully()
@@ -3061,6 +3183,7 @@ class McViewModel(
     fun forceStopServer() {
         if (_forceStopInFlight.value) return
         _forceStopInFlight.value = true
+        invalidateConnectionCheck()
         viewModelScope.launch {
             try {
                 controller.forceStop()
@@ -5729,7 +5852,7 @@ class McViewModel(
                     _messageFlow.tryEmit(str(R.string.s262))
                     _serverProperties.value = props
                     _serverPropertiesExist.value = true
-                    _connectionCheckStatus.value = ""
+                    invalidateConnectionCheck()
                     // 端口真源回写：「服务器配置」页是端口唯一编辑入口（网络页的输入框已在
                     // 1.2.8 移除）。不回写的话地址栏/穿透默认端口会停在旧值 ——
                     // 用户改了 25562 而界面仍显示 19132 就是这么来的。
@@ -5738,7 +5861,11 @@ class McViewModel(
                     }
                     refreshLanIp()
                     if (playitState.value.isRunning) {
-                        playitController.refreshTunnel { resolveLiveLocalServerPort() }
+                        playitController.refreshTunnel(
+                            localPortProvider = { resolveLiveLocalServerPort() },
+                            bedrockPortProvider = { resolveLiveBedrockServerPort(dirName) },
+                            serverId = dirName
+                        )
                     }
                 } else {
                     _errorFlow.tryEmit(str(R.string.s263))
@@ -5805,24 +5932,61 @@ class McViewModel(
         return realServerPort()
     }
 
+    /**
+     * Đọc cổng Bedrock/PE thực tế từ cấu hình GeyserMC (hoặc PowerNukkitX/Bedrock core) của đúng server,
+     * chỉ dùng 19132 làm mặc định ban đầu khi tệp cấu hình chưa chỉ định cổng khác.
+     */
+    fun resolveLiveBedrockServerPort(dirName: String? = activeDirName()): Int {
+        val dir = dirName?.takeIf { it.isNotBlank() && it != "unselected" && it != "default" } ?: activeDirName()
+        if (dir.isNullOrBlank()) return 19132
+        val coreObj = config.value.installedCores.firstOrNull { it.dirName == dir }
+        if (coreObj?.core?.isBedrock == true) {
+            return resolveLiveLocalServerPort()
+        }
+        return runCatching {
+            pluginManager.readConfiguredBedrockPort(dir, 19132)
+        }.getOrDefault(19132)
+    }
+
     fun startPlayitTunnel() {
-        playitController.start({ resolveLiveLocalServerPort() }, forceRefresh = true)
+        val srvId = activeDirName() ?: "default"
+        playitController.start(
+            localPortProvider = { resolveLiveLocalServerPort() },
+            bedrockPortProvider = { resolveLiveBedrockServerPort(srvId) },
+            serverId = srvId,
+            forceRefresh = true
+        )
     }
 
     fun refreshPlayitTunnel() {
-        playitController.refreshTunnel { resolveLiveLocalServerPort() }
-        _messageFlow.tryEmit("🔄 Đang làm mới phiên Playit.gg & đồng bộ cổng máy chủ (${resolveLiveLocalServerPort()})...")
+        invalidateConnectionCheck()
+        val srvId = activeDirName() ?: "default"
+        playitController.refreshTunnel(
+            localPortProvider = { resolveLiveLocalServerPort() },
+            bedrockPortProvider = { resolveLiveBedrockServerPort(srvId) },
+            serverId = srvId
+        )
+        _messageFlow.tryEmit("🔄 Đang làm mới phiên Playit.gg & đồng bộ cổng máy chủ (Java ${resolveLiveLocalServerPort()} / PE ${resolveLiveBedrockServerPort(srvId)})...")
     }
 
     fun stopPlayitTunnel() {
+        invalidateConnectionCheck()
         playitController.stop()
     }
 
     fun setPlayitSecretKey(secret: String) {
-        playitController.setManualSecretKey(secret) { resolveLiveLocalServerPort() }
+        invalidateConnectionCheck()
+        val srvId = activeDirName() ?: "default"
+        playitController.setManualSecretKey(
+            secret = secret,
+            localPortProvider = { resolveLiveLocalServerPort() },
+            bedrockPortProvider = { resolveLiveBedrockServerPort(srvId) },
+            serverId = srvId
+        )
     }
 
     fun resetPlayitSecretKey() {
+        invalidateConnectionCheck()
         playitController.resetSecretKey()
     }
 
@@ -8133,12 +8297,22 @@ class McViewModel(
      * Trích xuất địa chỉ IPv4 toàn số từ kết quả phân bổ chính thức của Playit API (`allocatedIpv4Address`)
      * hoặc kết quả phân giải DNS/DoH thực tế (`_playitNumericAddress`).
      * Tuyệt đối KHÔNG tự ghép dải IPv4 cứng (`147.185.221.<N>`) hay suy đoán từ byte IPv6.
+     * Đặc biệt: Nếu `isBedrock = true`, chỉ đọc từ `bedrockIpv4Address` của riêng đường hầm PE,
+     * tuyệt đối KHÔNG lấy IP Java làm fallback cho hostname PE!
      */
-    fun extractPlayitIpv4Host(addressOrHost: String?): String? {
+    fun extractPlayitIpv4Host(addressOrHost: String?, isBedrock: Boolean = false): String? {
         val raw = addressOrHost?.trim().orEmpty()
         if (raw.isBlank()) return null
         val host = if (raw.contains(":") && !raw.startsWith("[")) raw.substringBeforeLast(":").trim() else raw
         if (host.matches(Regex("""^\d{1,3}(\.\d{1,3}){3}$"""))) return host
+        if (isBedrock) {
+            val peIpv4 = playitState.value.bedrockIpv4Address.trim()
+            if (peIpv4.isNotBlank()) {
+                val peHost = peIpv4.substringBeforeLast(":").trim()
+                if (peHost.matches(Regex("""^\d{1,3}(\.\d{1,3}){3}$"""))) return peHost
+            }
+            return null
+        }
         val allocIpv4 = playitState.value.allocatedIpv4Address.trim()
         if (allocIpv4.isNotBlank()) {
             val allocHost = allocIpv4.substringBeforeLast(":").trim()
@@ -8148,6 +8322,13 @@ class McViewModel(
             it.matches(Regex("""^\d{1,3}(\.\d{1,3}){3}$"""))
         }
     }
+
+    /**
+     * Trích xuất IPv4 riêng cho Bedrock/PE. Nếu chưa phân giải được IPv4 riêng của PE thì trả về null
+     * (để UI giữ nguyên hostname PE hợp lệ, không bao giờ ghép IP của Java sang).
+     */
+    fun extractPlayitBedrockIpv4Host(bedrockAddress: String?): String? =
+        extractPlayitIpv4Host(bedrockAddress, isBedrock = true)
 
     fun resolvePlayitNumericIp(rawAddress: String?) {
         val allocIpv4 = playitState.value.allocatedIpv4Address.trim()
@@ -8198,15 +8379,18 @@ class McViewModel(
         }
     }
 
-    fun createPlayitBedrockTunnel(localBedrockPort: Int = 19132) {
-        playitController.createMinecraftBedrockTunnelOnDemand(localBedrockPort)
-        _messageFlow.tryEmit("📱 Đang tạo đường hầm UDP Bedrock (cổng $localBedrockPort) trên Playit.gg để điện thoại PE kết nối mọi mạng...")
+    fun createPlayitBedrockTunnel(localBedrockPort: Int = resolveLiveBedrockServerPort()) {
+        val srvId = activeDirName() ?: "default"
+        val effectivePort = if (localBedrockPort in 1..65535) localBedrockPort else resolveLiveBedrockServerPort(srvId)
+        playitController.createMinecraftBedrockTunnelOnDemand(effectivePort, srvId)
+        _messageFlow.tryEmit("📱 Đang tạo đường hầm UDP Bedrock (cổng $effectivePort) trên Playit.gg cho máy chủ '$srvId'...")
     }
 
     fun installCrossplayGeyserPack(
         bedrockBranch: String = "1.21",
         startAfterInstall: Boolean = false,
-        preferOfflineMode: Boolean = false
+        preferOfflineMode: Boolean = false,
+        confirmAuthChange: Boolean = false
     ) {
         if (_isInstalling.value || _stopInFlight.value) return
         val originCoreName = config.value.activeCoreName
@@ -8246,22 +8430,23 @@ class McViewModel(
                     }
                 }
                 val branchLabel = "Minecraft PE ${compat.bedrockRangeText}"
-                _messageFlow.tryEmit("📱 Đang tải GeyserMC + Floodgate + ViaVersion + ViaBackwards ($branchLabel) cho ${core.displayName} $mcVer...")
+                val applyOfflineChange = preferOfflineMode && confirmAuthChange
+                _messageFlow.tryEmit("📱 Đang tải giao dịch an toàn (staging) GeyserMC + Floodgate + ViaVersion ($branchLabel) cho ${core.displayName} $mcVer...")
                 val installedFiles = withContext(Dispatchers.IO) {
                     val files = pluginManager.installCrossplaySuite(
                         dirName = originDirName,
                         core = core,
                         mcVersion = mcVer,
                         bedrockBranch = bedrockBranch,
-                        forceOfflineAuth = preferOfflineMode
+                        forceOfflineAuth = applyOfflineChange
                     )
-                    // Bảo toàn online-mode của người dùng nếu họ đang bật online-mode=true (vì đã có Floodgate),
-                    // chỉ chuyển sang offline khi preferOfflineMode=true hoặc khi chưa có cấu hình
+                    // Tuyệt đối giữ nguyên online-mode và cấu hình bảo mật hiện có của server cũ,
+                    // trừ khi người dùng chủ động chọn và xác nhận thay đổi xác thực (applyOfflineChange = true)
                     val currentProps = propertiesManager.readProperties(originDirName).toMutableMap()
-                    if (preferOfflineMode || currentProps["online-mode"].isNullOrBlank()) {
+                    if (applyOfflineChange) {
                         currentProps["online-mode"] = "false"
+                        currentProps["enforce-secure-profile"] = "false"
                     }
-                    currentProps["enforce-secure-profile"] = "false"
                     if (currentProps["motd"].isNullOrBlank() ||
                         currentProps["motd"]?.contains("powernukkitx", true) == true ||
                         currentProps["motd"] == "A Minecraft Server"
@@ -8271,14 +8456,16 @@ class McViewModel(
                     propertiesManager.writeProperties(currentProps, originDirName)
                     files
                 }
-                playitController.createMinecraftBedrockTunnelOnDemand(19132)
+                val actualBedrockPort = resolveLiveBedrockServerPort(originDirName)
+                playitController.createMinecraftBedrockTunnelOnDemand(actualBedrockPort, originDirName)
                 if (activeDirName() == originDirName) {
                     refreshServerPropertiesNow()
                     if (core.supportsMods) refreshMods() else refreshInstalledPlugins()
                 }
                 refreshServerStorage()
+                val restartNote = if (!wasRunning && !startAfterInstall) " • Khởi động Server để nạp GeyserMC vào runtime." else ""
                 _messageFlow.tryEmit(
-                    "✅ Đã cài xong ${installedFiles.joinToString(", ")}. PC vào bằng Java $mcVer • Điện thoại vào bằng $branchLabel"
+                    "✅ Đã cài xong ${installedFiles.joinToString(", ")}. PC vào bằng Java $mcVer • Điện thoại vào bằng $branchLabel$restartNote"
                 )
                 if (wasRunning || startAfterInstall) {
                     if (config.value.activeCoreName == originCoreName && activeDirName() == originDirName) {
@@ -8288,7 +8475,7 @@ class McViewModel(
                     }
                 }
             } catch (e: Exception) {
-                _errorFlow.tryEmit("⚠️ Không thể tải gói Crossplay: ${e.message}")
+                _errorFlow.tryEmit("⚠️ Không thể tải gói Crossplay (đã giữ nguyên bộ tệp cũ an toàn): ${e.message}")
             } finally {
                 _isInstalling.value = false
             }
@@ -8297,13 +8484,17 @@ class McViewModel(
 
     /**
      * Tạo mới (hoặc chọn) một Server Crossplay theo đúng Phiên bản Java + Nhánh Bedrock PE mà người dùng chọn,
-     * sau đó tự động cài GeyserMC + Floodgate + ViaVersion + ViaBackwards.
+     * sau đó tự động cài GeyserMC + Floodgate + ViaVersion + ViaBackwards theo giao dịch staging an toàn.
+     * Đặc biệt: Nếu tái sử dụng server có sẵn (`existing != null`), tuyệt đối giữ nguyên cấu hình xác thực
+     * (`online-mode`, `enforce-secure-profile`) của server đó trừ khi người dùng xác nhận đổi (`preferOfflineMode && confirmAuthChange`).
      */
     fun createCrossplayServerAndInstallPack(
         core: ServerCore = ServerCore.Paper,
         mcVersion: String = "1.21.4",
         bedrockBranch: String = "1.21",
-        customName: String = ""
+        customName: String = "",
+        preferOfflineMode: Boolean = false,
+        confirmAuthChange: Boolean = false
     ) {
         if (!isBootstrapped.value) {
             _errorFlow.tryEmit(str(R.string.s192))
@@ -8333,6 +8524,7 @@ class McViewModel(
                     it.name.equals(baseName, ignoreCase = true) ||
                         (it.core == core && it.version == mcVersion && customName.isBlank())
                 }
+                val isReusingExistingServer = existing != null
                 val targetServerName = if (existing != null) {
                     setActiveCore(existing.name)
                     existing.name
@@ -8348,24 +8540,41 @@ class McViewModel(
                 val targetCoreObj = repo.currentConfig().installedCores.firstOrNull { it.name == targetServerName }
                 val dirName = targetCoreObj?.dirName ?: activeDirName()
                 if (dirName != null) {
-                    _messageFlow.tryEmit("📦 Đã chuẩn bị Server '$targetServerName'! Đang cài tiếp GeyserMC + Floodgate + ViaVersion + ViaBackwards...")
+                    val applyOfflineChange = preferOfflineMode && confirmAuthChange
+                    _messageFlow.tryEmit("📦 Đang cài đặt giao dịch an toàn GeyserMC + Floodgate + ViaVersion cho '$targetServerName'...")
                     withContext(Dispatchers.IO) {
                         pluginManager.installCrossplaySuite(
                             dirName = dirName,
                             core = core,
                             mcVersion = mcVersion,
-                            bedrockBranch = bedrockBranch
+                            bedrockBranch = bedrockBranch,
+                            forceOfflineAuth = applyOfflineChange
                         )
                         val props = propertiesManager.readProperties(dirName).toMutableMap()
-                        props["online-mode"] = "false"
-                        props["enforce-secure-profile"] = "false"
-                        props["motd"] = "MineHost VN - $targetServerName"
+                        if (isReusingExistingServer) {
+                            // Server có sẵn: giữ nguyên online-mode và enforce-secure-profile hiện có trừ khi được xác nhận đổi
+                            if (applyOfflineChange) {
+                                props["online-mode"] = "false"
+                                props["enforce-secure-profile"] = "false"
+                            }
+                        } else {
+                            // Server mới tạo: chỉ đặt online-mode=false nếu người dùng chọn chế độ offline hoặc chưa có giá trị
+                            if (applyOfflineChange || props["online-mode"].isNullOrBlank()) {
+                                props["online-mode"] = if (preferOfflineMode) "false" else (props["online-mode"] ?: "false")
+                            }
+                            if (applyOfflineChange || props["enforce-secure-profile"].isNullOrBlank()) {
+                                props["enforce-secure-profile"] = "false"
+                            }
+                        }
+                        if (props["motd"].isNullOrBlank() || !isReusingExistingServer) {
+                            props["motd"] = "MineHost VN - $targetServerName"
+                        }
                         propertiesManager.writeProperties(props, dirName)
                     }
                     refreshServerPropertiesNow()
                     if (core.supportsMods) refreshMods() else refreshInstalledPlugins()
                     refreshServerStorage()
-                    _messageFlow.tryEmit("🎉 Đã tạo xong Server Chơi Chung '$targetServerName' (PC Java $mcVersion + PE ${pluginManager.readCrossplayMarker(dirName)["peRange"] ?: "Bedrock"})!")
+                    _messageFlow.tryEmit("🎉 Đã chuẩn bị xong Server Chơi Chung '$targetServerName' (PC Java $mcVersion + PE ${pluginManager.readCrossplayMarker(dirName)["peRange"] ?: "Bedrock"})! Hãy khởi động Server để nạp GeyserMC.")
                     _coreDownloadCompletedFlow.tryEmit(targetServerName)
                 }
             } catch (e: Exception) {
@@ -8483,8 +8692,11 @@ class McViewModel(
                             props["gamemode"] = normalizedMode
                             props["hardcore"] = "false"
                         }
-                        props["online-mode"] = if (crackedOfflineMode || installCrossplayPack) "false" else "true"
-                        props["enforce-secure-profile"] = "false"
+                        // Giữ đúng lựa chọn xác thực của người dùng (crackedOfflineMode), không tự ép online-mode=false chỉ vì chọn cài Crossplay
+                        props["online-mode"] = if (crackedOfflineMode) "false" else "true"
+                        if (crackedOfflineMode) {
+                            props["enforce-secure-profile"] = "false"
+                        }
                         props["motd"] = "MineHost VN - $trimmedName"
                         propertiesManager.writeProperties(props, dirName)
 
@@ -8494,7 +8706,8 @@ class McViewModel(
                                 dirName = dirName,
                                 core = selectedCoreSnap,
                                 mcVersion = selectedVerSnap,
-                                bedrockBranch = crossplayBedrockBranch
+                                bedrockBranch = crossplayBedrockBranch,
+                                forceOfflineAuth = crackedOfflineMode
                             )
                         }
                     }
@@ -8517,16 +8730,16 @@ class McViewModel(
     fun setActiveCore(name: String) {
         // 只切核心，不动运行模式 —— 运行模式由用户在「运行环境」弹窗里决定并完全生效。
         updateConfig { it.copy(activeCoreName = name) }
-        _connectionCheckStatus.value = ""
+        invalidateConnectionCheck()
         viewModelScope.launch {
             refreshServerPropertiesNow()
             loadWorlds()
             refreshMods()
             refreshInstalledPlugins()
             refreshServerStorage()
-            if (playConnectionMode.value == PlayConnectionMode.Everywhere && playitState.value.isRunning) {
-                playitController.refreshTunnel { resolveLiveLocalServerPort() }
-            }
+            val newDir = config.value.installedCores.firstOrNull { it.name == name }?.dirName ?: activeDirName() ?: "default"
+            // Chuyển hồ sơ/server đang xem chỉ cập nhật hiển thị của server đó, tuyệt đối KHÔNG ghi đè origin của tunnel cũ sang server mới!
+            playitController.onViewedServerChanged(newDir)
         }
     }
 

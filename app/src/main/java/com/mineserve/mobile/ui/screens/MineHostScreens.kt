@@ -619,41 +619,59 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             playitNumericAddress?.takeIf { !it.contains("::") }
                     }
                 }
-                val hasGeyserInstalled = active.core.isBedrock ||
-                    installedPlugins.any { it.fileName.contains("geyser", ignoreCase = true) } ||
-                    installedMods.any { it.fileName.contains("geyser", ignoreCase = true) }
+                val crossplayStatus = remember(
+                    active.dirName,
+                    installedPlugins,
+                    installedMods,
+                    state.isRunning,
+                    state.runningSinceMs,
+                    connectionCheckStatus
+                ) {
+                    vm.inspectActiveCrossplayStatus()
+                }
+                val bedrockPort = crossplayStatus.configuredPort
+                val hasGeyserInstalled = active.core.isBedrock || crossplayStatus.isInstalledAndValid
+                val connectionReport by vm.connectionCheckReport.collectAsState()
+                val activeReport = connectionReport?.takeIf { it.serverId == active.dirName }
 
                 HostCard(
                     title = "🌐 Mời Bạn Bè & Đường Hầm Playit.gg (PC + PE)",
                     artKind = MinecraftArtKind.ENDER_EYE,
                     badgeText = if (playConnectionMode == PlayConnectionMode.SameNetwork) "Cùng Wi-Fi" else playitState.phaseDetail
                 ) {
-                    // Tách rõ trạng thái Minecraft Server và trạng thái Playit.gg (Mục 5.2 Kế hoạch tổng thể)
+                    // Tách rõ 6 trạng thái kết nối độc lập (Mục B & G): không dùng một dấu xanh chung cho cả sáu trạng thái
                     Surface(
                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            val s1McRunning = state.isRunning && state.startupPhase == StartupPhase.Ready
+                            val s2AgentOnline = playitState.isAgentOnline
+                            val s3HasPublicAddr = playitState.hasPublicEndpoint
+                            val s4HasBridge = playitState.hasActiveForwardingBridge
+                            val s5McResponded = (activeReport?.localhostJava?.ok == true) ||
+                                (activeReport?.localhostBedrock?.ok == true) ||
+                                (activeReport?.lanJava?.ok == true) ||
+                                (activeReport?.lanBedrock?.ok == true)
+                            val s6ExternalVerified = (activeReport?.publicJava?.ok == true) ||
+                                (activeReport?.publicBedrock?.ok == true)
                             Text(
-                                "🖥️ Trạng thái Minecraft (${active.name}): " + when {
-                                    stopping -> "⏳ Đang dừng..."
-                                    state.startupPhase == StartupPhase.Failed -> "❌ Lỗi khởi động"
-                                    state.isRunning && state.startupPhase != StartupPhase.Ready -> "⚡ Đang khởi động..."
-                                    state.isRunning -> "🟢 Sẵn sàng (Cổng $port)"
-                                    else -> "⚪ Đã dừng (Cổng $port)"
-                                },
+                                "📊 6 Trạng Thái Độc Lập (${active.name}):",
                                 style = MaterialTheme.typography.bodySmall,
                                 fontSize = 11.5.sp,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.ExtraBold
                             )
                             Text(
-                                "🌐 Trạng thái Playit.gg: ${playitState.phaseDetail}" +
-                                    (if (playitState.agentName.isNotBlank()) " • Agent: ${playitState.agentName}" else ""),
+                                "1. Minecraft đang chạy: ${if (s1McRunning) "🟢 Sẵn sàng (Java:$port / PE:$bedrockPort)" else if (state.isRunning) "⏳ Đang khởi động (${state.startupPhase})" else "⚪ Đã dừng"}\n" +
+                                    "2. Agent online (Control): ${if (s2AgentOnline) "🟢 Online (${playitState.agentName.ifBlank { "Đã xác thực Pong" }})" else "⚪ Offline (${playitState.phaseDetail})"}\n" +
+                                    "3. Đã có địa chỉ public: ${if (s3HasPublicAddr) "🟢 Có (${listOfNotNull(playitState.publicAddress.takeIf { it.isNotBlank() }, playitState.bedrockAddress.takeIf { it.isNotBlank() }).joinToString(" | ")})" else "⚪ Chưa có cho server này"}\n" +
+                                    "4. Có bridge/traffic chuyển tiếp: ${if (s4HasBridge) "🟢 Đang chuyển tiếp (TCP:${playitState.forwardedTcpConnections} / UDP:${playitState.activeUdpSessions} phiên)" else "⚪ Chưa phát sinh cầu nối"}\n" +
+                                    "5. Đã nhận phản hồi Minecraft: ${if (s5McResponded) "🟢 Đã xác nhận gói Status/RakNet" else "⚪ Chưa kiểm tra / Chưa phản hồi"}\n" +
+                                    "6. Đã kiểm chứng từ mạng ngoài: ${if (s6ExternalVerified) "🟢 Đã kiểm chứng qua Playit" else "⚪ Chưa kiểm chứng (Bấm nút Kiểm tra bên dưới)"}",
                                 style = MaterialTheme.typography.bodySmall,
-                                fontSize = 11.5.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = if (playitState.isRunning) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurfaceVariant
+                                fontSize = 11.sp,
+                                lineHeight = 15.sp
                             )
                         }
                     }
@@ -945,8 +963,18 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        val diagReason = when {
+                                            crossplayStatus.hasDisabledGeyserJar ->
+                                                "⚠️ GeyserMC đang bị TẮT (.disabled) trong Server '${active.name}' nên điện thoại PE chưa vào được!"
+                                            crossplayStatus.missingDependencies.isNotEmpty() ->
+                                                "⚠️ GeyserMC thiếu thành phần bắt buộc (${crossplayStatus.missingDependencies.joinToString(", ")}) nên Crossplay chưa sẵn sàng!"
+                                            crossplayStatus.loadErrorDetail != null ->
+                                                "⚠️ GeyserMC gặp lỗi khi nạp: ${crossplayStatus.loadErrorDetail}"
+                                            else ->
+                                                "⚠️ Server '${active.name}' hiện chưa cài đủ cầu nối PE (GeyserMC) nên điện thoại Minecraft PE chưa vào được!"
+                                        }
                                         Text(
-                                            "⚠️ Server '${active.name}' hiện chưa cài cầu nối PE (GeyserMC + Floodgate + ViaVersion) nên điện thoại Minecraft PE chưa vào được!",
+                                            diagReason,
                                             style = MaterialTheme.typography.bodySmall,
                                             fontSize = 11.5.sp,
                                             fontWeight = FontWeight.Bold,
@@ -972,7 +1000,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                         ) {
                                             Text(
                                                 if (installing || stopping) "⏳ Đang tự động cài Geyser + Floodgate + ViaVersion..."
-                                                else "📲 Bật Chơi Chung PC + PE Ngay (Tự cài & Tự khởi động lại)",
+                                                else "📲 Bật Chơi Chung PC + PE Ngay (Cài staging an toàn)",
                                                 fontSize = 11.5.sp,
                                                 fontWeight = FontWeight.ExtraBold
                                             )
@@ -986,13 +1014,38 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                        val installedComponents = buildList {
+                                            if (crossplayStatus.hasGeyserJar || active.core.isBedrock) add("GeyserMC")
+                                            if (crossplayStatus.hasFloodgateJar) add("Floodgate")
+                                            if (crossplayStatus.hasViaVersionJar) add("ViaVersion")
+                                            if (crossplayStatus.hasViaBackwardsJar) add("ViaBackwards")
+                                        }.joinToString(" + ").ifBlank { "Cầu nối PE" }
                                         Text(
-                                            "✅ Đã cài cầu nối PE (GeyserMC + Floodgate + ViaVersion)",
+                                            "🧩 Thành phần đã cài: $installedComponents (Transport: ${crossplayStatus.transportType.uppercase()} • Cổng UDP: $bedrockPort)",
                                             style = MaterialTheme.typography.bodySmall,
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = Color(0xFF2DD4BF)
                                         )
+                                        Text(
+                                            "• Đã cài: ${if (crossplayStatus.isInstalledAndValid) "✅ Hợp lệ" else "❌ Thiếu"}  |  " +
+                                                "Cần restart: ${if (crossplayStatus.needsRestart) "⚠️ Có (Hãy khởi động lại Server)" else "🟢 Không"}\n" +
+                                                "• Đã load: ${if (crossplayStatus.isRuntimeLoaded) "🟢 Đã nạp" else "⚪ Chưa nạp"}  |  " +
+                                                "Đang nghe cổng $bedrockPort: ${if (crossplayStatus.isListeningOnPort) "🟢 Đang mở" else "⚪ Chưa mở"}  |  " +
+                                                "Đã kiểm tra: ${if (crossplayStatus.isVerifiedReachable) "✅ Phản hồi RakNet" else "⚪ Chưa kiểm tra"}",
+                                            fontSize = 10.5.sp,
+                                            lineHeight = 14.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        if (crossplayStatus.loadErrorDetail != null) {
+                                            Text(
+                                                "⚠️ Lỗi runtime Geyser: ${crossplayStatus.loadErrorDetail}",
+                                                fontSize = 10.5.sp,
+                                                color = MaterialTheme.colorScheme.error,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
                                         val installedRange = homeMarker["peRange"]
                                         Text(
                                             buildString {
@@ -1043,8 +1096,8 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             }
 
                             Text(
-                                "• Chơi PE ngay trên điện thoại mở Server này: IP 127.0.0.1  •  Port: 19132" +
-                                    (if (lanIp.isNotBlank() && lanIp != "0.0.0.0" && lanIp != "--") "\n• Chơi PE cùng mạng Wi-Fi: IP $lanIp  •  Port: 19132" else ""),
+                                "• Chơi PE ngay trên điện thoại mở Server này: IP 127.0.0.1  •  Port: $bedrockPort" +
+                                    (if (lanIp.isNotBlank() && lanIp != "0.0.0.0" && lanIp != "--") "\n• Chơi PE cùng mạng Wi-Fi: IP $lanIp  •  Port: $bedrockPort" else ""),
                                 style = MaterialTheme.typography.bodySmall,
                                 fontSize = 11.5.sp,
                                 fontWeight = FontWeight.SemiBold
@@ -1052,10 +1105,9 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
 
                             if (playitState.bedrockAddress.isNotBlank()) {
                                 val peDomainHost = playitState.bedrockAddress.substringBeforeLast(":")
-                                val pePort = playitState.bedrockAddress.substringAfterLast(":", "19132")
-                                val peIpv4Host = playitState.bedrockIpv4Address.substringBeforeLast(":").takeIf {
-                                    it.matches(Regex("""^\d{1,3}(\.\d{1,3}){3}$"""))
-                                } ?: vm.extractPlayitIpv4Host(playitState.bedrockAddress) ?: playitIpv4Host
+                                val pePort = playitState.bedrockAddress.substringAfterLast(":", bedrockPort.toString())
+                                // Tuyệt đối không dùng playitIpv4Host của Java làm fallback cho PE!
+                                val peIpv4Host = vm.extractPlayitBedrockIpv4Host(playitState.bedrockAddress)
                                 HorizontalDivider(color = Color(0xFF2DD4BF).copy(alpha = 0.35f))
                                 Text(
                                     "🌍 Chơi PE từ xa (4G / Khác Wi-Fi qua Playit UDP — Nhập vào 2 ô riêng trong Minecraft PE):",
@@ -1065,7 +1117,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                 )
                                 Text(
                                     "• Ô Địa chỉ (Server Address): ${peIpv4Host ?: peDomainHost}" +
-                                        (if (peIpv4Host != null && peIpv4Host != peDomainHost) " (hoặc $peDomainHost)" else ""),
+                                        (if (peIpv4Host != null && peIpv4Host != peDomainHost) " (hoặc $peDomainHost)" else " (Hostname PE độc lập — chưa có IPv4 riêng)"),
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.ExtraBold
                                 )
@@ -1080,13 +1132,13 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                         onClick = {
                                             val ipToCopy = peIpv4Host ?: peDomainHost
                                             clipboard.setText(AnnotatedString(ipToCopy))
-                                            vm.notifyActionDone("📱 Đã chép Địa chỉ IP PE: $ipToCopy (Dán vào ô Server Address trong PE)")
+                                            vm.notifyActionDone("📱 Đã chép Địa chỉ PE: $ipToCopy (Dán vào ô Server Address trong PE)")
                                         },
                                         shape = RoundedCornerShape(8.dp),
                                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D9488), contentColor = Color.White),
                                         modifier = Modifier.weight(1f)
                                     ) {
-                                        Text("📋 Chép IP PE (${peIpv4Host ?: peDomainHost})", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                                        Text("📋 Chép Địa Chỉ PE (${peIpv4Host ?: peDomainHost})", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
                                     }
                                     OutlinedButton(
                                         onClick = {
@@ -1112,23 +1164,23 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     OutlinedButton(
                                         onClick = {
                                             clipboard.setText(AnnotatedString("127.0.0.1"))
-                                            vm.notifyActionDone("📱 Đã chép IP 127.0.0.1 (Cổng mặc định trong PE là 19132)")
+                                            vm.notifyActionDone("📱 Đã chép IP 127.0.0.1 (Cổng PE cấu hình: $bedrockPort)")
                                         },
                                         shape = RoundedCornerShape(8.dp),
                                         modifier = Modifier.weight(1f)
                                     ) {
-                                        Text("📋 Chép 127.0.0.1 (Cùng máy)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        Text("📋 Chép 127.0.0.1 (Cổng $bedrockPort)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                     }
                                     Button(
                                         onClick = {
                                             if (!playitState.isRunning) vm.startPlayitTunnel()
-                                            else vm.createPlayitBedrockTunnel(19132)
+                                            else vm.createPlayitBedrockTunnel(bedrockPort)
                                         },
                                         shape = RoundedCornerShape(8.dp),
                                         modifier = Modifier.weight(1f)
                                     ) {
                                         Text(
-                                            if (!playitState.isRunning) "🚀 Bật Hầm Playit" else "⚡ Lấy Cổng UDP PE",
+                                            if (!playitState.isRunning) "🚀 Bật Hầm Playit" else "⚡ Lấy Cổng UDP PE ($bedrockPort)",
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.ExtraBold
                                         )
@@ -1146,18 +1198,26 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                         )
                     }
 
-                    OutlinedButton(
-                        onClick = { vm.checkConnectionReachability() },
-                        enabled = !connectionCheckRunning,
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            if (connectionCheckRunning) "⏳ Đang kiểm tra kết nối..."
-                            else "🩺 Kiểm tra cổng kết nối thực tế (Localhost / LAN / Playit)",
-                            fontSize = 11.5.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(
+                            onClick = { vm.checkConnectionReachability() },
+                            enabled = !connectionCheckRunning,
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(
+                                if (connectionCheckRunning) "⏳ Đang kiểm tra..."
+                                else "🩺 Kiểm tra cổng thực tế (Local / LAN / Playit)",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        OutlinedButton(
+                            onClick = { vm.copyRedactedDiagnostics(ctx) },
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text("📋 Xuất chẩn đoán", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                     connectionCheckStatus?.let { checkReport ->
                         Surface(
@@ -1715,7 +1775,23 @@ fun MineHostCrossplay(vm: McViewModel, onBack: () -> Unit) {
     )
     var customCrossVerInput by remember { mutableStateOf("") }
     var customServerName by remember { mutableStateOf("") }
-    var installedClicked by remember { mutableStateOf(false) }
+    var preferOfflineAuth by remember { mutableStateOf(false) }
+    var confirmOfflineAuthChange by remember { mutableStateOf(false) }
+    val installedPlugins by vm.installedPlugins.collectAsState()
+    val installedMods by vm.installedMods.collectAsState()
+    val serverState by vm.serverState.collectAsState()
+    val connectionCheckStatus by vm.connectionCheckStatus.collectAsState()
+    val crossplayStatus = remember(
+        active?.dirName,
+        installedPlugins,
+        installedMods,
+        serverState.isRunning,
+        serverState.runningSinceMs,
+        connectionCheckStatus
+    ) {
+        vm.inspectActiveCrossplayStatus()
+    }
+    val bedrockPort = crossplayStatus.configuredPort
 
     HostPage(
         "Chơi Chung PC (Java) + Điện Thoại PE (Bedrock)",
@@ -1778,19 +1854,104 @@ fun MineHostCrossplay(vm: McViewModel, onBack: () -> Unit) {
                         result = activeCrossCheck,
                         onRetry = { crossRefreshKey++ }
                     )
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                "📊 Trạng thái thực tế của '${active.name}' (5 giai đoạn):",
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 12.sp
+                            )
+                            Text(
+                                "1. Đã cài: ${if (crossplayStatus.isInstalledAndValid) "✅ Hợp lệ" else "❌ Chưa cài / Thiếu file"}  •  " +
+                                    "2. Cần restart: ${if (crossplayStatus.needsRestart) "⚠️ Có" else "🟢 Không"}\n" +
+                                    "3. Đã load: ${if (crossplayStatus.isRuntimeLoaded) "🟢 Đã nạp" else "⚪ Chưa nạp"}  •  " +
+                                    "4. Nghe cổng UDP $bedrockPort: ${if (crossplayStatus.isListeningOnPort) "🟢 Đang mở" else "⚪ Chưa mở"}  •  " +
+                                    "5. Đã kiểm tra: ${if (crossplayStatus.isVerifiedReachable) "✅ Phản hồi RakNet" else "⚪ Chưa kiểm tra"}",
+                                fontSize = 11.sp,
+                                lineHeight = 15.sp
+                            )
+                            if (crossplayStatus.missingDependencies.isNotEmpty()) {
+                                Text(
+                                    "⚠️ Thiếu thành phần: ${crossplayStatus.missingDependencies.joinToString(", ")}",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.error,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            if (crossplayStatus.loadErrorDetail != null) {
+                                Text(
+                                    "⚠️ Lỗi runtime: ${crossplayStatus.loadErrorDetail}",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.error,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        preferOfflineAuth = !preferOfflineAuth
+                                        if (!preferOfflineAuth) confirmOfflineAuthChange = false
+                                    }
+                            ) {
+                                Checkbox(
+                                    checked = preferOfflineAuth,
+                                    onCheckedChange = {
+                                        preferOfflineAuth = it
+                                        if (!it) confirmOfflineAuthChange = false
+                                    }
+                                )
+                                Text(
+                                    "Chuyển xác thực sang Offline (online-mode=false) cho tài khoản chưa mua bản quyền (Mặc định giữ nguyên cấu hình xác thực hiện có của Server)",
+                                    fontSize = 11.sp,
+                                    lineHeight = 14.sp
+                                )
+                            }
+                            if (preferOfflineAuth) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { confirmOfflineAuthChange = !confirmOfflineAuthChange }
+                                ) {
+                                    Checkbox(
+                                        checked = confirmOfflineAuthChange,
+                                        onCheckedChange = { confirmOfflineAuthChange = it }
+                                    )
+                                    Text(
+                                        "⚠️ Xác nhận hiểu tác động: Đổi sang online-mode=false sẽ tắt kiểm tra tài khoản Mojang/Microsoft và đổi UUID người chơi nếu chưa dùng plugin bảo vệ mật khẩu.",
+                                        fontSize = 10.5.sp,
+                                        lineHeight = 14.sp,
+                                        color = MaterialTheme.colorScheme.error,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+                        }
+                    }
                     Button(
                         onClick = {
-                            installedClicked = true
-                            vm.installCrossplayGeyserPack(selectedBedrockBranch, startAfterInstall = true)
+                            vm.installCrossplayGeyserPack(
+                                bedrockBranch = selectedBedrockBranch,
+                                startAfterInstall = true,
+                                preferOfflineMode = preferOfflineAuth,
+                                confirmAuthChange = confirmOfflineAuthChange
+                            )
                         },
-                        enabled = !isInstalling && !isDownloadingCore && activeCrossCheck?.supported == true,
+                        enabled = !isInstalling && !isDownloadingCore && activeCrossCheck?.supported == true && (!preferOfflineAuth || confirmOfflineAuthChange),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)
                     ) {
                         Text(
                             when {
-                                isInstalling -> "⏳ Đang cài bộ Crossplay vào '${active.name}'..."
-                                installedClicked -> "✅ Đã cài bộ Crossplay vào '${active.name}'!"
+                                isInstalling -> "⏳ Đang cài giao dịch staging vào '${active.name}'..."
+                                crossplayStatus.isInstalledAndValid && crossplayStatus.needsRestart -> "🔄 Cài lại / Khởi động lại '${active.name}' để nạp Geyser"
+                                crossplayStatus.isInstalledAndValid -> "✅ Đã cài hợp lệ vào '${active.name}' (Bấm để cài lại / cập nhật)"
                                 else -> "📲 BẬT CHƠI CHUNG PC + PE CHO SERVER '${active.name.uppercase()}' NGAY"
                             },
                             fontWeight = FontWeight.ExtraBold,
@@ -1920,10 +2081,12 @@ fun MineHostCrossplay(vm: McViewModel, onBack: () -> Unit) {
                             core = selectedCrossCore,
                             mcVersion = selectedCrossVer,
                             bedrockBranch = selectedBedrockBranch,
-                            customName = customServerName
+                            customName = customServerName,
+                            preferOfflineMode = preferOfflineAuth,
+                            confirmAuthChange = confirmOfflineAuthChange
                         )
                     },
-                    enabled = !isDownloadingCore && !isInstalling && crossCheck?.supported == true,
+                    enabled = !isDownloadingCore && !isInstalling && crossCheck?.supported == true && (!preferOfflineAuth || confirmOfflineAuthChange),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
                 ) {
@@ -1942,14 +2105,13 @@ fun MineHostCrossplay(vm: McViewModel, onBack: () -> Unit) {
 
         // 3. HƯỚNG DẪN ĐỊA CHỈ KẾT NỐI CHO CẢ PC (JAVA) VÀ ĐIỆN THOẠI (PE)
         item {
-            val peIpv4Host = playitState.bedrockIpv4Address.substringBeforeLast(":").takeIf {
-                it.matches(Regex("""^\d{1,3}(\.\d{1,3}){3}$"""))
-            } ?: vm.extractPlayitIpv4Host(playitState.bedrockAddress) ?: vm.extractPlayitIpv4Host(playitState.publicAddress)
+            // Tuyệt đối không lấy IP của Java làm fallback cho hostname PE!
+            val peIpv4Host = vm.extractPlayitBedrockIpv4Host(playitState.bedrockAddress)
             val pcIpv4Host = playitState.allocatedIpv4Address.substringBeforeLast(":").takeIf {
                 it.matches(Regex("""^\d{1,3}(\.\d{1,3}){3}$"""))
             } ?: vm.extractPlayitIpv4Host(playitState.publicAddress)
             val pcTcpPort = playitState.publicAddress.substringAfterLast(":", "")
-            val peUdpPort = playitState.bedrockAddress.substringAfterLast(":", "19132")
+            val peUdpPort = playitState.bedrockAddress.substringAfterLast(":", bedrockPort.toString())
             HostCard(
                 "🌐 Tóm Tắt Địa Chỉ Cho PC (Java) & Điện Thoại (PE)",
                 artKind = MinecraftArtKind.DIAMOND_SWORD,
@@ -1963,8 +2125,8 @@ fun MineHostCrossplay(vm: McViewModel, onBack: () -> Unit) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text("🏠 A. KHI CHƠI CÙNG WI-FI / HOTSPOT:", fontWeight = FontWeight.ExtraBold, fontSize = 12.5.sp)
                         Text("• Máy tính PC (Java): ${lanIp.ifBlank { "192.168.1.x" }}:$port", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        Text("• Điện thoại PE (Bedrock): IP ${lanIp.ifBlank { "192.168.1.x" }} • Port: 19132", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                        Text("• Trên chính điện thoại này: IP 127.0.0.1 • Port: 19132 (PE) hoặc $port (Java)", fontSize = 11.5.sp)
+                        Text("• Điện thoại PE (Bedrock): IP ${lanIp.ifBlank { "192.168.1.x" }} • Port: $bedrockPort", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        Text("• Trên chính điện thoại này: IP 127.0.0.1 • Port: $bedrockPort (PE) hoặc $port (Java)", fontSize = 11.5.sp)
                     }
                 }
 
@@ -1993,7 +2155,7 @@ fun MineHostCrossplay(vm: McViewModel, onBack: () -> Unit) {
                                     if (!playitState.isRunning) {
                                         vm.startPlayitTunnel()
                                     } else {
-                                        vm.createPlayitBedrockTunnel(19132)
+                                        vm.createPlayitBedrockTunnel(bedrockPort)
                                     }
                                 },
                                 shape = RoundedCornerShape(10.dp),
@@ -2001,7 +2163,7 @@ fun MineHostCrossplay(vm: McViewModel, onBack: () -> Unit) {
                             ) {
                                 Text(
                                     if (!playitState.isRunning) "🚀 Bật Playit.gg ngay"
-                                    else "📱 Mở cổng Bedrock UDP (19132)",
+                                    else "📱 Mở cổng Bedrock UDP ($bedrockPort)",
                                     fontSize = 11.5.sp,
                                     fontWeight = FontWeight.ExtraBold
                                 )
@@ -2011,11 +2173,11 @@ fun MineHostCrossplay(vm: McViewModel, onBack: () -> Unit) {
                                     onClick = {
                                         val copyIp = peIpv4Host ?: playitState.bedrockAddress.substringBeforeLast(":")
                                         clipboard.setText(AnnotatedString(copyIp))
-                                        vm.notifyActionDone("📱 Đã chép IP PE: $copyIp (Cổng UDP PE là: $peUdpPort)")
+                                        vm.notifyActionDone("📱 Đã chép Địa chỉ PE: $copyIp (Cổng UDP PE là: $peUdpPort)")
                                     },
                                     shape = RoundedCornerShape(10.dp)
                                 ) {
-                                    Text("📋 Chép IP PE", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                                    Text("📋 Chép Địa Chỉ PE", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }

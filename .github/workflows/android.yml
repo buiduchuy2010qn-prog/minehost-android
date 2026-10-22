@@ -48,10 +48,10 @@ jobs:
           with open(os.environ["GITHUB_ENV"], "a") as env:
               env.write("MINEHOST_STORE_PASSWORD=" + bundle["password"] + "\n")
           PY
-      - name: Fast optimized ARM64 release APK
+      - name: Run mandatory regression tests and build ARM64 release APK
         run: |
           chmod +x gradlew
-          ./gradlew :app:assembleRelease --build-cache --parallel --max-workers=4 -Dorg.gradle.jvmargs="-Xmx4g -Dfile.encoding=UTF-8"
+          ./gradlew :app:testReleaseUnitTest --tests "com.mineserve.mobile.server.MineoraAuditRegressionTest" :app:assembleRelease --build-cache --parallel --max-workers=4 -Dorg.gradle.jvmargs="-Xmx4g -Dfile.encoding=UTF-8"
       - name: Verify signing identity and non-debuggable manifest
         run: |
           set -euo pipefail

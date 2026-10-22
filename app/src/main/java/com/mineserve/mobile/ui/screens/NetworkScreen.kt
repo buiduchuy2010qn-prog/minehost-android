@@ -434,14 +434,14 @@ private fun PlayitEverywhereCard(
     var manualSecretInput by remember { mutableStateOf("") }
     var showHowItWorks by remember { mutableStateOf(false) }
 
-    val isRunning = playitState.stage == PlayitStage.Running
+    val isRunning = playitState.isRunning
     val isBusy = playitState.stage == PlayitStage.WaitingForClaim ||
         playitState.stage == PlayitStage.VerifyingSecret ||
         playitState.stage == PlayitStage.CreatingTunnel ||
         playitState.stage == PlayitStage.ConnectingControl
 
     val statusColor = when (playitState.stage) {
-        PlayitStage.Running -> Mint
+        PlayitStage.Running -> if (playitState.isRunning) Mint else Coral
         PlayitStage.WaitingForClaim, PlayitStage.VerifyingSecret, PlayitStage.CreatingTunnel, PlayitStage.ConnectingControl -> Coral
         PlayitStage.Error -> Coral
         PlayitStage.Idle -> Muted
