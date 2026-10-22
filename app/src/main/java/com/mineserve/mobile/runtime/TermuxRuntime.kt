@@ -3755,26 +3755,36 @@ class TermuxRuntime(context: Context) {
     fun cleanCacheAndRamForStartup(dirName: String?): Long {
         var freedBytes = 0L
         runCatching {
-            val globalTmp = File(installer.rootDir, "tmp")
-            if (globalTmp.isDirectory) {
-                globalTmp.listFiles()?.forEach { f ->
-                    val len = f.length()
-                    if (f.deleteRecursively()) freedBytes += len
-                }
-            }
-            if (!dirName.isNullOrBlank()) {
-                val srvDir = serverDirFor(dirName)
-                val srvTmp = serverTmpDirFor(srvDir)
-                if (srvTmp.isDirectory) {
-                    srvTmp.listFiles()?.forEach { f ->
+            val running = isMcRunning()
+            val now = System.currentTimeMillis()
+            if (!running) {
+                val globalTmp = File(installer.rootDir, "tmp")
+                if (globalTmp.isDirectory) {
+                    globalTmp.listFiles()?.forEach { f ->
+                        // Bảo vệ các thư mục staging khôi phục dữ liệu (restore-*) đang hoạt động
+                        if (f.name.startsWith("restore-") && now - f.lastModified() < 10 * 60 * 1000L) {
+                            return@forEach
+                        }
                         val len = f.length()
                         if (f.deleteRecursively()) freedBytes += len
                     }
                 }
-                val mixinOut = File(srvDir, ".mixin.out")
-                if (mixinOut.isDirectory) {
-                    val len = mixinOut.walkTopDown().filter { it.isFile }.sumOf { it.length() }
-                    if (mixinOut.deleteRecursively()) freedBytes += len
+            }
+            if (!dirName.isNullOrBlank()) {
+                val srvDir = serverDirFor(dirName)
+                if (!running) {
+                    val srvTmp = serverTmpDirFor(srvDir)
+                    if (srvTmp.isDirectory) {
+                        srvTmp.listFiles()?.forEach { f ->
+                            val len = f.length()
+                            if (f.deleteRecursively()) freedBytes += len
+                        }
+                    }
+                    val mixinOut = File(srvDir, ".mixin.out")
+                    if (mixinOut.isDirectory) {
+                        val len = mixinOut.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+                        if (mixinOut.deleteRecursively()) freedBytes += len
+                    }
                 }
                 val logsDir = File(srvDir, "logs")
                 if (logsDir.isDirectory) {
@@ -3784,7 +3794,7 @@ class TermuxRuntime(context: Context) {
                     }
                 }
             }
-            if (!isMcRunning()) {
+            if (!running) {
                 killOrphanMcProcess(null)
             }
             System.gc()

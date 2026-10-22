@@ -115,7 +115,10 @@ class McpServerManager(
             if (spec == servingSpec) return
             stopLocked()
             if (!spec.enabled) return
-            val server = McpHttpServer(spec.port) { request -> onRequest(request, spec.token) }
+            val server = McpHttpServer(
+                port = spec.port,
+                preBodyCheck = { method, rawPath, headers -> checkBeforeBody(method, rawPath, headers, spec.token) }
+            ) { request -> onRequest(request, spec.token) }
             if (server.start(spec.allowLan)) {
                 httpServer = server
                 servingSpec = spec
@@ -139,29 +142,39 @@ class McpServerManager(
 
     // ── HTTP 处理 ─────────────────────────────────────────────
 
-    private fun onRequest(request: McpHttpServer.Request, token: String): McpHttpServer.Response {
-        // 拒绝一切带 Origin 头的请求：MCP 客户端（Claude Desktop、Cursor 等）是原生程序，
-        // 不会发 Origin；而浏览器页面（含 DNS rebinding 构造的同源页面）发 fetch/XHR 时
-        // 必带 Origin。这比"收紧 CORS 白名单"更彻底 —— 直接从来源上排除网页调用，
-        // 无需依赖浏览器是否正确执行 CORS。OPTIONS 预检同样适用（浏览器预检也带 Origin）。
-        if (request.headers.containsKey("origin")) {
+    private fun checkBeforeBody(
+        method: String,
+        rawPath: String,
+        headers: Map<String, String>,
+        token: String
+    ): McpHttpServer.Response? {
+        if (headers.containsKey("origin")) {
             return McpHttpServer.Response.json(
                 403, "{\"error\":\"requests with an Origin header are not accepted\"}"
             )
         }
-        val path = request.path.substringBefore('?')
-        if (request.method == "OPTIONS") {
-            return McpHttpServer.Response(
-                204, McpHttpServer.Response.reasonFor(204), null, ByteArray(0), corsHeaders
-            )
-        }
+        val path = rawPath.substringBefore('?')
+        if (method == "OPTIONS") return null
         if (path != MCP_PATH) {
             return McpHttpServer.Response.json(404, "{\"error\":\"not found\"}", corsHeaders)
         }
-        if (!isAuthorized(request, token)) {
+        if (!isAuthorizedHeaders(headers, token)) {
             return McpHttpServer.Response.json(
                 401, "{\"error\":\"unauthorized\"}",
                 corsHeaders + listOf("WWW-Authenticate" to "Bearer")
+            )
+        }
+        if (method != "POST") {
+            return methodNotAllowed()
+        }
+        return null
+    }
+
+    private fun onRequest(request: McpHttpServer.Request, token: String): McpHttpServer.Response {
+        checkBeforeBody(request.method, request.path, request.headers, token)?.let { return it }
+        if (request.method == "OPTIONS") {
+            return McpHttpServer.Response(
+                204, McpHttpServer.Response.reasonFor(204), null, ByteArray(0), corsHeaders
             )
         }
         return when (request.method) {
@@ -172,14 +185,17 @@ class McpServerManager(
     }
 
     /** 常量时间比较，避免令牌时序泄露 */
-    private fun isAuthorized(request: McpHttpServer.Request, token: String): Boolean {
+    private fun isAuthorizedHeaders(headers: Map<String, String>, token: String): Boolean {
         if (token.isEmpty()) return false
-        val header = request.headers["authorization"]?.trim() ?: return false
+        val header = headers["authorization"]?.trim() ?: return false
         if (!header.startsWith("Bearer ", ignoreCase = true)) return false
         val presented = header.substring("Bearer ".length).trim()
         if (presented.isEmpty()) return false
         return MessageDigest.isEqual(presented.encodeToByteArray(), token.encodeToByteArray())
     }
+
+    private fun isAuthorized(request: McpHttpServer.Request, token: String): Boolean =
+        isAuthorizedHeaders(request.headers, token)
 
     private fun handlePost(request: McpHttpServer.Request): McpHttpServer.Response {
         val text = request.body.toString(Charsets.UTF_8)

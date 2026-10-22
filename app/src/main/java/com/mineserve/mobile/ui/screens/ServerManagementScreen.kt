@@ -106,9 +106,12 @@ fun ServerManagementScreen(
     val serverPort by vm.serverPort.collectAsState()
     val onlinePlayers by vm.onlinePlayerNames.collectAsState()
     val serverStorageMap by vm.serverStorageMap.collectAsState()
+    val trashedServers by vm.trashedServers.collectAsState()
     val active = config.installedCores.firstOrNull { it.name == config.activeCoreName }
     var showEditDialog by remember { mutableStateOf(false) }
     var serverToDelete by remember { mutableStateOf<com.mineserve.mobile.data.InstalledCore?>(null) }
+    var trashItemToPurge by remember { mutableStateOf<McViewModel.TrashedServerItem?>(null) }
+    var confirmEmptyTrash by remember { mutableStateOf(false) }
     var expandedStorageServerName by remember { mutableStateOf<String?>(null) }
     var showQuickTuner by remember { mutableStateOf(true) }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -124,6 +127,7 @@ fun ServerManagementScreen(
 
     LaunchedEffect(Unit) {
         vm.scanUnregisteredServers()
+        vm.refreshTrashedServers()
         vm.loadServerProperties()
         vm.refreshServerStorage()
     }
@@ -344,6 +348,89 @@ fun ServerManagementScreen(
                         modifier = Modifier.weight(1f)
                     ) {
                         Text("➕ Tạo Thêm Server Riêng Mới (Nhiều Phiên Bản)", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+
+            // ── 0B. Thùng rác Server (Khôi phục trong vòng 30 ngày & Xóa vĩnh viễn dọn sạch) ──
+            McCard(
+                title = "🗑️ Thùng Rác Server (${trashedServers.size} máy chủ • Lưu 30 ngày)",
+                trailing = {
+                    if (trashedServers.isNotEmpty()) {
+                        TextButton(onClick = { confirmEmptyTrash = true }) {
+                            Text("🧹 Dọn sạch thùng rác", color = Coral, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            ) {
+                Text(
+                    "Khi xóa Server, toàn bộ Map + Mod + Cấu hình được giữ an toàn trong Thùng rác 30 ngày để bạn khôi phục bất cứ lúc nào. Sau 30 ngày hoặc khi bấm 'Xóa vĩnh viễn', hệ thống sẽ dọn sạch 100% dung lượng.",
+                    color = Muted,
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp
+                )
+                Spacer(Modifier.height(8.dp))
+                if (trashedServers.isEmpty()) {
+                    Text(
+                        "✅ Thùng rác hiện đang trống (không tốn dung lượng bộ nhớ).",
+                        color = Mint,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        trashedServers.forEach { item ->
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(CoralSoft)
+                                    .padding(10.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            "🗂️ ${item.name}",
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text(
+                                            "${item.coreName} · MC ${item.version} · Dung lượng: ${vm.formatStorageBytes(item.sizeBytes)}",
+                                            color = Muted,
+                                            fontSize = 11.sp
+                                        )
+                                    }
+                                    StatusPill("⏳ Còn ${item.daysRemaining} ngày", Coral)
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Button(
+                                        onClick = { vm.restoreTrashedServer(item.trashId) },
+                                        enabled = !state.isRunning,
+                                        colors = ButtonDefaults.buttonColors(containerColor = Mint),
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text("♻️ Khôi phục Server", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                    OutlinedButton(
+                                        onClick = { trashItemToPurge = item },
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text("🔥 Xóa vĩnh viễn (Dọn sạch)", color = Coral, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -683,9 +770,13 @@ fun ServerManagementScreen(
     serverToDelete?.let { targetSrv ->
         AlertDialog(
             onDismissRequest = { serverToDelete = null },
-            title = { Text("⚠️ Xóa Server '${targetSrv.name}'?", fontWeight = FontWeight.Bold) },
+            title = { Text("🗑️ Chuyển Server '${targetSrv.name}' vào Thùng rác?", fontWeight = FontWeight.Bold) },
             text = {
-                Text("Toàn bộ tệp của Server '${targetSrv.name}' (bao gồm Map và Mod trong thư mục ${targetSrv.dirName}) sẽ bị xóa vĩnh viễn. Bạn có chắc chắn muốn xóa không?")
+                Text(
+                    "Toàn bộ tệp của Server '${targetSrv.name}' (bao gồm Map, Mod và cấu hình trong thư mục ${targetSrv.dirName}) sẽ được chuyển vào Thùng rác và lưu giữ an toàn trong 30 ngày.\n\n" +
+                        "• Bạn có thể khôi phục lại nguyên vẹn bất cứ lúc nào trong 30 ngày.\n" +
+                        "• Nếu muốn giải phóng bộ nhớ ngay, bạn có thể bấm 'Xóa vĩnh viễn (Dọn sạch)' ở mục Thùng rác."
+                )
             },
             confirmButton = {
                 Button(
@@ -695,11 +786,67 @@ fun ServerManagementScreen(
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Coral)
                 ) {
-                    Text("Xóa vĩnh viễn", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text("Chuyển vào Thùng rác (30 ngày)", color = Color.White, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { serverToDelete = null }) {
+                    Text("Hủy")
+                }
+            }
+        )
+    }
+
+    trashItemToPurge?.let { targetTrash ->
+        AlertDialog(
+            onDismissRequest = { trashItemToPurge = null },
+            title = { Text("🔥 Xóa vĩnh viễn & Dọn sạch '${targetTrash.name}'?", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "Toàn bộ Map, Mod, Plugin, bộ nhớ đệm và tệp của Server '${targetTrash.name}' (${vm.formatStorageBytes(targetTrash.sizeBytes)}) sẽ bị xóa sạch vĩnh viễn khỏi bộ nhớ máy và KHÔNG THỂ khôi phục lại. Bạn có chắc chắn không?"
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        vm.permanentlyDeleteTrashedServer(targetTrash.trashId)
+                        trashItemToPurge = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Coral)
+                ) {
+                    Text("🔥 Xóa vĩnh viễn & Dọn sạch", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { trashItemToPurge = null }) {
+                    Text("Hủy")
+                }
+            }
+        )
+    }
+
+    if (confirmEmptyTrash) {
+        AlertDialog(
+            onDismissRequest = { confirmEmptyTrash = false },
+            title = { Text("🧹 Dọn sạch toàn bộ Thùng rác?", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "Tất cả ${trashedServers.size} Server trong Thùng rác sẽ bị xóa vĩnh viễn và dọn sạch 100% khỏi bộ nhớ thiết bị. Thao tác này không thể hoàn tác!"
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        vm.emptyServerTrash()
+                        confirmEmptyTrash = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Coral)
+                ) {
+                    Text("🧹 Dọn sạch tất cả", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmEmptyTrash = false }) {
                     Text("Hủy")
                 }
             }

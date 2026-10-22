@@ -9,6 +9,7 @@ import com.mineserve.mobile.runtime.TermuxRuntime
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
@@ -226,6 +227,30 @@ class PluginManager(
     }
 
     /**
+     * Dọn bỏ các tệp JAR phiên bản cũ của cùng một Plugin (trùng `name` trong `plugin.yml`/`paper-plugin.yml`)
+     * để tránh xung đột 2 phiên bản plugin cùng lúc khi cập nhật.
+     */
+    private fun removeDuplicatePluginJars(pluginsDir: File, keepFile: File) {
+        val newMeta = runCatching { readPluginMeta(keepFile) }.getOrNull() ?: return
+        val pluginName = newMeta.name.trim()
+        if (pluginName.isEmpty()) return
+        val keepCanonical = runCatching { keepFile.canonicalPath }.getOrDefault(keepFile.absolutePath)
+        pluginsDir.listFiles()?.forEach { other ->
+            if (!other.isFile || !other.name.endsWith(JAR_EXT, ignoreCase = true)) return@forEach
+            val otherCanonical = runCatching { other.canonicalPath }.getOrDefault(other.absolutePath)
+            if (otherCanonical == keepCanonical) return@forEach
+            val otherMeta = readPluginMetaCached(other) ?: return@forEach
+            if (otherMeta.name.trim().equals(pluginName, ignoreCase = true)) {
+                metaCache.remove(other.absolutePath)
+                if (!other.delete()) {
+                    runCatching { termux.execOnce("rm", "-f", other.absolutePath) }
+                }
+                Log.i(TAG, "Removed duplicate older plugin JAR ${other.name} for plugin '$pluginName'")
+            }
+        }
+    }
+
+    /**
      * 从 URL 下载插件到指定核心的 plugins/ 目录
      * @param onProgress (已下载字节, 总字节, 速度 bytes/s)
      */
@@ -244,6 +269,7 @@ class PluginManager(
             }
         }
         metaCache.remove(target.absolutePath)
+        removeDuplicatePluginJars(dir, result)
         result
     }
 
@@ -261,6 +287,7 @@ class PluginManager(
             input.use { AddonSafety.copyBounded(it, staged) }
         }
         metaCache.remove(target.absolutePath)
+        removeDuplicatePluginJars(dir, target)
         target.name
     }
 
@@ -270,6 +297,7 @@ class PluginManager(
      */
     suspend fun delete(fileName: String, dirName: String, alsoRemoveDataDir: Boolean = false): Boolean =
         withContext(Dispatchers.IO) {
+            if (termux.isMcRunning()) return@withContext false
             val pluginsDir = pluginsDirOf(dirName)
             // 文件名可能来自外部（MCP / 导入）：`../server.properties` 经 File(dir, name)
             // 会落到服务端目录里。这里要求它必须是不含目录成分的纯文件名。
@@ -294,11 +322,6 @@ class PluginManager(
             }
 
             // 清理插件数据目录。
-            //
-            // pluginName 来自插件自己的 plugin.yml（`name: ../world` 这种可以任意构造），
-            // 它和新插件文件名一样是**外部输入**：只做 File(pluginsDir, name) 拼路径的话，
-            // `../world` 会落到服务端目录里，deleteRecursively() 直接把世界删掉。
-            // 所以这里的净化规则必须与上面的 fileName 完全一致（纯文件名 + canonical 父目录校验）。
             if (alsoRemoveDataDir && pluginName != null) {
                 val safeDataName = sanitizeFileName(pluginName, "")
                 if (safeDataName.isNotEmpty() && safeDataName == pluginName) {
@@ -322,6 +345,7 @@ class PluginManager(
      * @return 切换后的新文件名
      */
     suspend fun toggleEnabled(fileName: String, dirName: String): String? = withContext(Dispatchers.IO) {
+        if (termux.isMcRunning()) return@withContext null
         val pluginsDir = pluginsDirOf(dirName)
         // 与 delete 同规则：拒绝含目录成分的文件名，避免 `../xxx` 改写服务端目录里的其它文件
         val safe = sanitizeFileName(fileName, "")
@@ -720,6 +744,7 @@ class PluginManager(
 
     /** 切换模组启用状态（.jar ↔ .jar.disabled），并自愈历史遗留的坏文件名。 */
     suspend fun toggleModEnabled(fileName: String, dirName: String): String? = withContext(Dispatchers.IO) {
+        if (termux.isMcRunning()) return@withContext null
         val dir = modsDirOf(dirName)
         val file = File(dir, fileName)
         if (!file.exists()) return@withContext null
@@ -731,6 +756,7 @@ class PluginManager(
 
     /** Bật hoặc Tắt toàn bộ Mod trong thư mục mods/ cùng lúc (Trả về số lượng Mod đã đổi trạng thái) */
     suspend fun setAllModsEnabled(dirName: String, enabled: Boolean): Int = withContext(Dispatchers.IO) {
+        if (termux.isMcRunning()) return@withContext 0
         val dir = modsDirOf(dirName)
         if (!dir.exists()) return@withContext 0
         var changedCount = 0
@@ -751,6 +777,7 @@ class PluginManager(
 
     /** Chế độ Thông Minh: Chỉ bật các Mod Tối ưu TPS/RAM & Thư viện Lõi, tạm tắt các Mod nội dung nặng */
     suspend fun enableOnlyCoreAndOptimizationMods(dirName: String): Pair<Int, Int> = withContext(Dispatchers.IO) {
+        if (termux.isMcRunning()) return@withContext (0 to 0)
         val dir = modsDirOf(dirName)
         if (!dir.exists()) return@withContext (0 to 0)
         val safePrefixes = listOf(
@@ -790,6 +817,7 @@ class PluginManager(
 
     /** 删除模组文件 */
     suspend fun deleteMod(fileName: String, dirName: String): Boolean = withContext(Dispatchers.IO) {
+        if (termux.isMcRunning()) return@withContext false
         val dir = modsDirOf(dirName)
         val file = File(dir, fileName)
         if (!file.exists()) return@withContext false
@@ -816,9 +844,8 @@ class PluginManager(
     }
 
     /**
-     * Cài đặt tệp Mod thuộc Gói 56 Mod từ URL vào thư mục `mods/` ở trạng thái BẬT (`.jar`),
-     * cho phép cả các mod hỗ trợ song song/client trong bộ 56 mod của người dùng (Fabric Loader trên server
-     * tự động bỏ qua entrypoint client mà không gây lỗi, đảm bảo đủ 56/56 mod trong thư mục `mods/`).
+     * Cài đặt tệp Mod thuộc Gói Mod từ URL vào thư mục `mods/` ở trạng thái BẬT (`.jar`),
+     * có khóa đồng bộ `AddonSafety.lifecycleGate` và kiểm tra kép `!termux.isMcRunning()` trước và sau khi tải.
      */
     suspend fun installModPackJarFromUrl(
         url: String,
@@ -826,29 +853,32 @@ class PluginManager(
         dirName: String,
         onProgress: (Long, Long, Long) -> Unit = { _, _, _ -> }
     ): File = withContext(Dispatchers.IO) {
-        check(!termux.isMcRunning()) { "Hãy dừng server trước khi cài gói mod." }
-        val dir = modsDirOf(dirName).apply { mkdirs() }
-        val cleanJarName = ensureJarExtension(sanitizeFileName(targetFileName, "mod.jar"))
-        val target = File(dir, cleanJarName)
-        val staged = File.createTempFile("minehost-packmod-", ".part", dir)
-        try {
-            downloadTo(url, staged) { downloaded, total, speed ->
-                require(downloaded <= AddonSafety.MAX_BYTES && total <= AddonSafety.MAX_BYTES) { "JAR vượt giới hạn 256 MB." }
-                onProgress(downloaded, total, speed)
+        AddonSafety.lifecycleGate.withLock {
+            check(!termux.isMcRunning()) { "Hãy dừng server trước khi cài gói mod." }
+            val dir = modsDirOf(dirName).apply { mkdirs() }
+            val cleanJarName = ensureJarExtension(sanitizeFileName(targetFileName, "mod.jar"))
+            val target = File(dir, cleanJarName)
+            val staged = File.createTempFile("minehost-packmod-", ".part", dir)
+            try {
+                downloadTo(url, staged) { downloaded, total, speed ->
+                    require(downloaded <= AddonSafety.MAX_BYTES && total <= AddonSafety.MAX_BYTES) { "JAR vượt giới hạn 256 MB." }
+                    onProgress(downloaded, total, speed)
+                }
+                require(isLikelyModJar(staged)) { "Tệp tải về không phải JAR mod hợp lệ: $cleanJarName" }
+                check(!termux.isMcRunning()) { "Server đã được bật trong lúc tải mod. Đã hủy ghi đè để bảo vệ runtime." }
+                val (baseName, _) = parseModFileName(cleanJarName)
+                File(dir, "$baseName$MOD_DISABLED_SUFFIX").takeIf { it.exists() }?.delete()
+                java.nio.file.Files.move(
+                    staged.toPath(),
+                    target.toPath(),
+                    java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING
+                )
+                metaCache.remove(target.absolutePath)
+                target
+            } finally {
+                staged.delete()
             }
-            require(isLikelyModJar(staged)) { "Tệp tải về không phải JAR mod hợp lệ: $cleanJarName" }
-            val (baseName, _) = parseModFileName(cleanJarName)
-            File(dir, "$baseName$MOD_DISABLED_SUFFIX").takeIf { it.exists() }?.delete()
-            java.nio.file.Files.move(
-                staged.toPath(),
-                target.toPath(),
-                java.nio.file.StandardCopyOption.ATOMIC_MOVE,
-                java.nio.file.StandardCopyOption.REPLACE_EXISTING
-            )
-            metaCache.remove(target.absolutePath)
-            target
-        } finally {
-            staged.delete()
         }
     }
 
@@ -1937,13 +1967,39 @@ class PluginManager(
     }
 
     /**
-     * Tự động khởi tạo & cập nhật cấu hình `config.yml` chuẩn cho GeyserMC (Spigot/Paper và Fabric):
+     * Tự động khởi tạo & cập nhật cấu hình `config.yml` chuẩn cho GeyserMC (Spigot/Paper và Fabric/NeoForge):
      * - `bedrock.port: 19132` (UDP chuẩn của Minecraft PE)
-     * - `remote.auth-type: offline` (Cho phép người chơi PE vào thẳng bằng tên Xbox/PE mà KHÔNG cần mua tài khoản Java bản quyền!)
-     * - `bedrock.clone-remote-port: false` (Tránh ghi đè cổng UDP 19132 bằng cổng TCP 25565)
+     * - `bedrock.clone-remote-port: false` (Tránh ghi đè cổng UDP 19132 bằng cổng TCP Java)
+     * - Tôn trọng `auth-type` hiện có (`floodgate` / `online` / `offline`) nếu người dùng đã cấu hình sẵn;
+     *   chỉ đặt `auth-type` mới khi tạo file lần đầu hoặc khi `forceAuthType` được chỉ định rõ ràng.
      */
-    fun ensureGeyserOfflineConfig(dirName: String, core: com.mineserve.mobile.data.ServerCore, bedrockPort: Int = 19132) {
+    fun ensureGeyserOfflineConfig(
+        dirName: String,
+        core: com.mineserve.mobile.data.ServerCore,
+        bedrockPort: Int = 19132,
+        forceAuthType: String? = null
+    ) {
         val srvDir = termux.serverDirFor(dirName)
+        val propFile = File(srvDir, "server.properties")
+        val isOnlineServer = runCatching {
+            if (propFile.isFile) {
+                propFile.readLines().any { it.trim().equals("online-mode=true", ignoreCase = true) }
+            } else false
+        }.getOrDefault(false)
+        val hasFloodgate = runCatching {
+            val checkDir = if (core.supportsMods) File(srvDir, "mods") else File(srvDir, "plugins")
+            checkDir.listFiles()?.any {
+                it.isFile && it.name.endsWith(".jar", ignoreCase = true) &&
+                    !it.name.startsWith("-") &&
+                    it.name.lowercase(Locale.ROOT).contains("floodgate")
+            } == true
+        }.getOrDefault(false)
+        val initialAuthType = forceAuthType ?: when {
+            hasFloodgate && isOnlineServer -> "floodgate"
+            isOnlineServer -> "online"
+            else -> "offline"
+        }
+
         val candidateDirs = if (core.supportsMods) {
             listOf(
                 File(srvDir, "config/Geyser-Fabric"),
@@ -1968,7 +2024,7 @@ class PluginManager(
             remote:
               address: auto
               port: 25565
-              auth-type: offline
+              auth-type: $initialAuthType
               allow-password-authentication: true
               use-proxy-protocol: false
               forward-hostname: false
@@ -2017,7 +2073,9 @@ class PluginManager(
                     cfgFile.writeText(defaultConfigYaml, Charsets.UTF_8)
                 } else {
                     var content = cfgFile.readText(Charsets.UTF_8)
-                    content = content.replace(Regex("""auth-type:\s*(online|floodgate)"""), "auth-type: offline")
+                    if (!forceAuthType.isNullOrBlank()) {
+                        content = content.replace(Regex("""auth-type:\s*(online|floodgate|offline)"""), "auth-type: $forceAuthType")
+                    }
                     content = content.replace(Regex("""clone-remote-port:\s*true"""), "clone-remote-port: false")
                     cfgFile.writeText(content, Charsets.UTF_8)
                 }
@@ -2027,16 +2085,17 @@ class PluginManager(
 
     /**
      * Cài đặt trọn bộ Crossplay (PC Java mọi phiên bản + PE Bedrock 1.21.50..1.21.114+ / 26.x):
-     * - Luôn tải bản GeyserMC + Floodgate chính thức mới nhất từ download.geysermc.org để hỗ trợ PE 1.21.114+ và 26.x.
-     * - Kèm ViaVersion + ViaBackwards để mọi phiên bản PC Java (1.7.10 – 1.21.11+) và mọi bản PE đều vào chung 1 Map!
-     * - Tự động cấu hình `Geyser/config.yml` với `auth-type: offline` và `port: 19132` (UDP).
+     * - Kiểm tra nghiêm ngặt thành phần bắt buộc (GeyserMC) đúng Loader (`fabric`/`neoforge`/`spigot`),
+     *   tuyệt đối không tải nhầm JAR Fabric cho Forge/NeoForge hoặc báo thành công khi tải thất bại.
      */
     suspend fun installCrossplaySuite(
         dirName: String,
         core: com.mineserve.mobile.data.ServerCore,
         mcVersion: String,
-        bedrockBranch: String = "1.21"
+        bedrockBranch: String = "1.21",
+        forceOfflineAuth: Boolean = false
     ): List<String> = withContext(Dispatchers.IO) {
+        check(!termux.isMcRunning()) { "Hãy dừng server trước khi cài đặt Crossplay." }
         val installedNames = mutableListOf<String>()
         val targetMc = mcVersion.ifBlank { "1.21.4" }
 
@@ -2071,11 +2130,25 @@ class PluginManager(
                 }
             }
             if (!geyserInstalled) {
-                val geyserUrl = "https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/fabric"
-                runCatching {
-                    installModPackJarFromUrl(geyserUrl, "Geyser-Fabric.jar", dirName)
-                    installedNames += "Geyser-Fabric.jar"
+                val geyserPlatformAndFile: Pair<String, String>? = when (loader) {
+                    "fabric", "quilt" -> "fabric" to "Geyser-Fabric.jar"
+                    "neoforge" -> "neoforge" to "Geyser-NeoForge.jar"
+                    else -> null
                 }
+                if (geyserPlatformAndFile != null) {
+                    val (platform, jarName) = geyserPlatformAndFile
+                    val geyserUrl = "https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/$platform"
+                    runCatching {
+                        val f = installModPackJarFromUrl(geyserUrl, jarName, dirName)
+                        if (f.exists() && f.length() > 1024L) {
+                            installedNames += jarName
+                            geyserInstalled = true
+                        }
+                    }
+                }
+            }
+            check(geyserInstalled) {
+                "Không thể tải GeyserMC tương thích với ${core.displayName} ($targetMc). Hãy kiểm tra mạng hoặc chuyển sang lõi Paper / Fabric."
             }
 
             var floodgateInstalled = false
@@ -2089,11 +2162,14 @@ class PluginManager(
                     floodgateInstalled = true
                 }
             }
-            if (!floodgateInstalled) {
+            if (!floodgateInstalled && (loader == "fabric" || loader == "quilt")) {
                 val floodgateUrl = "https://download.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest/downloads/fabric"
                 runCatching {
-                    installModPackJarFromUrl(floodgateUrl, "Floodgate-Fabric.jar", dirName)
-                    installedNames += "Floodgate-Fabric.jar"
+                    val f = installModPackJarFromUrl(floodgateUrl, "Floodgate-Fabric.jar", dirName)
+                    if (f.exists() && f.length() > 1024L) {
+                        installedNames += "Floodgate-Fabric.jar"
+                        floodgateInstalled = true
+                    }
                 }
             }
 
@@ -2114,21 +2190,35 @@ class PluginManager(
                 }
             }
         } else {
+            var geyserInstalled = false
             val geyserUrl = "https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot"
             runCatching {
-                installFromUrl(geyserUrl, "Geyser-Spigot.jar", dirName) { _, _, _ -> }
-                installedNames += "Geyser-Spigot.jar"
-            }.onFailure {
-                resolveSingleModrinthSlug("geyser", targetMc, "paper")?.let { (url, _) ->
-                    installFromUrl(url, "Geyser-Spigot.jar", dirName) { _, _, _ -> }
+                val f = installFromUrl(geyserUrl, "Geyser-Spigot.jar", dirName) { _, _, _ -> }
+                if (f.exists() && f.length() > 1024L) {
                     installedNames += "Geyser-Spigot.jar"
+                    geyserInstalled = true
                 }
+            }.onFailure {
+                runCatching {
+                    resolveSingleModrinthSlug("geyser", targetMc, "paper")?.let { (url, _) ->
+                        val f = installFromUrl(url, "Geyser-Spigot.jar", dirName) { _, _, _ -> }
+                        if (f.exists() && f.length() > 1024L) {
+                            installedNames += "Geyser-Spigot.jar"
+                            geyserInstalled = true
+                        }
+                    }
+                }
+            }
+            check(geyserInstalled) {
+                "Không thể tải Geyser-Spigot cho ${core.displayName} ($targetMc). Vui lòng kiểm tra kết nối mạng."
             }
 
             val floodgateUrl = "https://download.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest/downloads/spigot"
             runCatching {
-                installFromUrl(floodgateUrl, "Floodgate-Spigot.jar", dirName) { _, _, _ -> }
-                installedNames += "Floodgate-Spigot.jar"
+                val f = installFromUrl(floodgateUrl, "Floodgate-Spigot.jar", dirName) { _, _, _ -> }
+                if (f.exists() && f.length() > 1024L) {
+                    installedNames += "Floodgate-Spigot.jar"
+                }
             }
 
             val viaVerUrl = runCatching { resolveLatestAsset("ViaVersion/ViaVersion", "ViaVersion") }.getOrNull()
@@ -2148,7 +2238,12 @@ class PluginManager(
                 }
             }
         }
-        ensureGeyserOfflineConfig(dirName, core, 19132)
+        ensureGeyserOfflineConfig(
+            dirName = dirName,
+            core = core,
+            bedrockPort = 19132,
+            forceAuthType = if (forceOfflineAuth) "offline" else null
+        )
         installedNames
     }
 
@@ -2328,19 +2423,70 @@ class PluginManager(
         return File(termux.installer.rootDir, "home/opt_mods_cache/${safeLoader}_$safeVer").apply { mkdirs() }
     }
 
-    private fun findExistingModJarAcrossServers(prefix: String, excludeDirName: String, mcVersion: String): File? {
+    private fun optPackOwnedManifestFile(modsDir: File): File =
+        File(modsDir, ".minehost_opt_pack_owned.txt")
+
+    private fun readOptPackOwnedBaseNames(modsDir: File): MutableSet<String> {
+        val f = optPackOwnedManifestFile(modsDir)
+        if (!f.isFile) return mutableSetOf()
+        return runCatching {
+            f.readLines()
+                .map { it.trim().lowercase(Locale.ROOT) }
+                .filter { it.isNotEmpty() }
+                .toMutableSet()
+        }.getOrDefault(mutableSetOf())
+    }
+
+    private fun writeOptPackOwnedBaseNames(modsDir: File, owned: Set<String>) {
+        runCatching {
+            val f = optPackOwnedManifestFile(modsDir)
+            if (owned.isEmpty()) {
+                f.delete()
+            } else {
+                f.writeText(owned.sorted().joinToString("\n") + "\n", Charsets.UTF_8)
+            }
+        }
+    }
+
+    private fun isJarCompatibleWithLoader(file: File, requiredLoader: String): Boolean {
+        return runCatching {
+            JarFile(file).use { jar ->
+                val hasFabric = jar.getJarEntry("fabric.mod.json") != null
+                val hasQuilt = jar.getJarEntry("quilt.mod.json") != null
+                val hasNeo = jar.getJarEntry("META-INF/neoforge.mods.toml") != null
+                val hasForge = jar.getJarEntry("META-INF/mods.toml") != null || jar.getJarEntry("mcmod.info") != null
+                when (requiredLoader.lowercase(Locale.ROOT)) {
+                    "fabric" -> hasFabric
+                    "quilt" -> hasQuilt || hasFabric
+                    "neoforge" -> hasNeo || hasForge
+                    "forge" -> hasForge
+                    else -> false
+                }
+            }
+        }.getOrDefault(false)
+    }
+
+    private fun findExistingModJarAcrossServers(
+        prefix: String,
+        excludeDirName: String,
+        mcVersion: String,
+        requiredLoader: String
+    ): File? {
         val serversRoot = File(termux.installer.rootDir, "home/servers")
         if (!serversRoot.isDirectory) return null
         val lowerPrefix = prefix.lowercase(Locale.ROOT)
-        val verPrefix = mcVersion.substringBeforeLast('.', mcVersion)
+        val exactVer = mcVersion.trim().lowercase(Locale.ROOT)
         for (srvDir in serversRoot.listFiles().orEmpty()) {
             if (!srvDir.isDirectory || srvDir.name == excludeDirName) continue
+            val srvLoader = detectedLoader(srvDir.name) ?: continue
+            if (!srvLoader.equals(requiredLoader, ignoreCase = true)) continue
             val mDir = File(srvDir, "mods")
             if (!mDir.isDirectory) continue
             for (f in mDir.listFiles().orEmpty()) {
                 if (!f.isFile || f.length() <= 1024L || !isModCandidate(f)) continue
                 val clean = f.name.lowercase(Locale.ROOT).removePrefix("-")
-                if (clean.startsWith(lowerPrefix) && (clean.contains(mcVersion) || clean.contains(verPrefix) || !clean.contains("1."))) {
+                // Require exact Minecraft patch version match in filename AND matching loader metadata inside the JAR
+                if (clean.startsWith(lowerPrefix) && clean.contains(exactVer) && isJarCompatibleWithLoader(f, requiredLoader)) {
                     return f
                 }
             }
@@ -2357,6 +2503,7 @@ class PluginManager(
         val files = if (modsDir.isDirectory) modsDir.listFiles()?.filter { it.isFile && isModCandidate(it) }.orEmpty() else emptyList()
         val cacheDir = optModsCacheDir(loader, mcVersion)
         val cachedFiles = if (cacheDir.isDirectory) cacheDir.listFiles()?.filter { it.isFile && it.name.endsWith(".jar", true) }.orEmpty() else emptyList()
+        val ownedBaseNames = readOptPackOwnedBaseNames(modsDir)
 
         val enabledIds = mutableSetOf<String>()
         val installedIds = mutableSetOf<String>()
@@ -2375,6 +2522,17 @@ class PluginManager(
             }
         }
 
+        // Count dynamically installed optimization mods recorded in .minehost_opt_pack_owned.txt
+        for (f in files) {
+            val (baseName, isEnabled) = parseModFileName(f.name)
+            val baseLower = baseName.lowercase(Locale.ROOT)
+            if (baseLower in ownedBaseNames && serverOptimizationModBundle.none { it.matchesFileName(f.name) }) {
+                val dynId = "dyn:$baseLower"
+                installedIds += dynId
+                if (isEnabled) enabledIds += dynId
+            }
+        }
+
         return ServerOptimizationPackStatus(
             totalModsInPack = serverOptimizationModBundle.size,
             installedCount = installedIds.size,
@@ -2388,12 +2546,9 @@ class PluginManager(
     /**
      * Bật hoặc Tắt Gói Mod Tối Ưu Server Lưu Sẵn 1 chạm:
      * - Tự động khớp đúng phiên bản Minecraft (`mcVersion`) và Loader (`fabric` / `quilt` / `neoforge` / `forge`).
-     * - Khi BẬT (`enable = true`):
-     *   1) Nếu mod đã có sẵn trong `mods/` nhưng đang `.jar.disabled` -> bật lại tức thì (`.jar`).
-     *   2) Nếu mod đã lưu sẵn trong bộ nhớ đệm `opt_mods_cache/${loader}_${mcVersion}` hoặc server cùng phiên bản -> chép sang tức thì (0 giây tải mạng).
-     *   3) Nếu chưa có trong bộ nhớ đệm -> tự động lấy bản chính thức khớp đúng `mcVersion` và lưu vào cả `mods/` lẫn `opt_mods_cache/` để lần sau bật 1 chạm không cần tải lại!
+     * - Lưu danh sách chính xác các mod do gói quản lý vào `.minehost_opt_pack_owned.txt`.
      * - Khi TẮT (`enable = false`):
-     *   Chuyển các mod tối ưu trong `mods/` sang trạng thái `.jar.disabled` (giữ nguyên file đã lưu sẵn để bật lại cực nhanh).
+     *   Tắt toàn bộ các mod thuộc gói (kể cả mod chọn động), nhưng giữ lại `fabric-api` nếu trong `mods/` còn bất kỳ mod người dùng nào khác đang bật cần `fabric-api`.
      */
     suspend fun setServerOptimizationPackEnabled(
         dirName: String,
@@ -2402,20 +2557,37 @@ class PluginManager(
         enable: Boolean,
         onProgress: (index: Int, total: Int, modName: String) -> Unit = { _, _, _ -> }
     ): Pair<Int, List<String>> = withContext(Dispatchers.IO) {
+        check(!termux.isMcRunning()) { "Hãy dừng server trước khi bật/tắt Gói Mod Tối Ưu." }
         val modsDir = modsDirOf(dirName).apply { mkdirs() }
         val cleanVer = mcVersion.trim().ifBlank { "1.21.11" }
         val cleanLoader = loader.trim().lowercase(Locale.ROOT).ifBlank { "fabric" }
         val applicableBundle = serverOptimizationModBundle.filter { item ->
             !item.fabricOnly || cleanLoader == "fabric" || cleanLoader == "quilt"
         }
+        val ownedBaseNames = readOptPackOwnedBaseNames(modsDir)
 
         if (!enable) {
             var disabledCount = 0
             val disabledNames = mutableListOf<String>()
             val existing = modsDir.listFiles()?.filter { it.isFile && isModCandidate(it) }.orEmpty()
+
+            // Kiểm tra xem có mod ngoài gói nào đang bật không (để bảo vệ fabric-api không bị tắt nhầm)
+            val hasOtherEnabledUserMod = existing.any { f ->
+                val (baseName, isEnabled) = parseModFileName(f.name)
+                if (!isEnabled) return@any false
+                val inBundle = applicableBundle.any { it.matchesFileName(f.name) }
+                val inOwned = baseName.lowercase(Locale.ROOT) in ownedBaseNames
+                !inBundle && !inOwned
+            }
+
+            // 1. Tắt các mod trong applicableBundle (trừ fabric-api nếu còn mod người dùng khác đang bật)
             for (item in applicableBundle) {
+                if (item.id == "fabric-api" && hasOtherEnabledUserMod) continue
                 for (f in existing.filter { item.matchesFileName(it.name) }) {
-                    val (_, isCurrentlyEnabled) = parseModFileName(f.name)
+                    val (baseName, isCurrentlyEnabled) = parseModFileName(f.name)
+                    if (item.id == "fabric-api" && baseName.lowercase(Locale.ROOT) !in ownedBaseNames && ownedBaseNames.isNotEmpty()) {
+                        continue
+                    }
                     if (isCurrentlyEnabled) {
                         val targetName = modToggleTarget(f.name, false)
                         val targetFile = File(modsDir, targetName)
@@ -2423,6 +2595,22 @@ class PluginManager(
                             disabledCount++
                             disabledNames += item.displayName
                         }
+                    }
+                }
+            }
+
+            // 2. Tắt cả các mod tối ưu được tải động nằm trong ownedBaseNames
+            val refreshed = modsDir.listFiles()?.filter { it.isFile && isModCandidate(it) }.orEmpty()
+            for (f in refreshed) {
+                val (baseName, isCurrentlyEnabled) = parseModFileName(f.name)
+                if (!isCurrentlyEnabled) continue
+                val baseLower = baseName.lowercase(Locale.ROOT)
+                if (baseLower in ownedBaseNames && applicableBundle.none { it.matchesFileName(f.name) }) {
+                    val targetName = modToggleTarget(f.name, false)
+                    val targetFile = File(modsDir, targetName)
+                    if (f.renameTo(targetFile)) {
+                        disabledCount++
+                        disabledNames += baseName
                     }
                 }
             }
@@ -2454,6 +2642,7 @@ class PluginManager(
                 val targetName = modToggleTarget(disabledFile.name, true)
                 val targetFile = File(modsDir, targetName)
                 if (disabledFile.renameTo(targetFile)) {
+                    ownedBaseNames += parseModFileName(targetFile.name).first.lowercase(Locale.ROOT)
                     runCatching {
                         val cachedCopy = File(cacheDir, targetFile.name)
                         if (!cachedCopy.exists()) targetFile.copyTo(cachedCopy, overwrite = true)
@@ -2465,26 +2654,29 @@ class PluginManager(
 
             // 3. Kiểm tra kho lưu sẵn (opt_mods_cache) của đúng phiên bản MC + Loader này
             val cachedJar = cacheDir.listFiles()?.firstOrNull {
-                it.isFile && it.name.endsWith(".jar", true) && item.matchesFileName(it.name) && it.length() > 1024L
+                it.isFile && it.name.endsWith(".jar", true) && item.matchesFileName(it.name) &&
+                    it.length() > 1024L && isJarCompatibleWithLoader(it, cleanLoader)
             }
             if (cachedJar != null) {
                 val dest = File(modsDir, cachedJar.name)
                 runCatching {
                     cachedJar.copyTo(dest, overwrite = true)
+                    ownedBaseNames += parseModFileName(dest.name).first.lowercase(Locale.ROOT)
                     enabledModNames += item.displayName
                 }
                 if (dest.exists() && dest.length() > 1024L) continue
             }
 
-            // 4. Kiểm tra các thư mục máy chủ khác cùng phiên bản trên máy
-            val crossServerJar = findExistingModJarAcrossServers(item.primaryPrefix, dirName, cleanVer)
-                ?: item.altPrefixes.firstNotNullOfOrNull { alt -> findExistingModJarAcrossServers(alt, dirName, cleanVer) }
+            // 4. Kiểm tra các thư mục máy chủ khác cùng Loader + cùng phiên bản MC trên máy
+            val crossServerJar = findExistingModJarAcrossServers(item.primaryPrefix, dirName, cleanVer, cleanLoader)
+                ?: item.altPrefixes.firstNotNullOfOrNull { alt -> findExistingModJarAcrossServers(alt, dirName, cleanVer, cleanLoader) }
             if (crossServerJar != null) {
                 val cleanName = modToggleTarget(crossServerJar.name, true)
                 val dest = File(modsDir, cleanName)
                 runCatching {
                     crossServerJar.copyTo(dest, overwrite = true)
                     dest.copyTo(File(cacheDir, cleanName), overwrite = true)
+                    ownedBaseNames += parseModFileName(dest.name).first.lowercase(Locale.ROOT)
                     enabledModNames += item.displayName
                 }
                 if (dest.exists() && dest.length() > 1024L) continue
@@ -2504,6 +2696,7 @@ class PluginManager(
                 runCatching {
                     val installedFile = installModPackJarFromUrl(url, fn, dirName)
                     if (installedFile.exists() && installedFile.length() > 1024L) {
+                        ownedBaseNames += parseModFileName(installedFile.name).first.lowercase(Locale.ROOT)
                         runCatching {
                             installedFile.copyTo(File(cacheDir, installedFile.name), overwrite = true)
                         }
@@ -2513,9 +2706,7 @@ class PluginManager(
             }
         }
 
-        // 6. Bổ sung linh hoạt (Universal Optimization): Nếu phiên bản/loader hiện tại (VD: Forge / NeoForge / bản MC bất kỳ)
-        // có ít hơn 8 mod trong gói cố định hỗ trợ, tự động tìm thêm các Mod Tối Ưu Server phổ biến nhất trên Modrinth
-        // khớp đúng phiên bản MC + Loader đó để mọi phiên bản đều được tối ưu tối đa!
+        // 6. Bổ sung linh hoạt (Universal Optimization): Lưu quyền sở hữu vào ownedBaseNames để khi tắt gói sẽ tắt sạch
         if (enabledModNames.size < 8) {
             runCatching {
                 val dynamicHits = searchModrinth(
@@ -2542,6 +2733,7 @@ class PluginManager(
                     val resolved = resolveSingleModrinthSlug(hit.slug, cleanVer, cleanLoader) ?: continue
                     val installedFile = installModPackJarFromUrl(resolved.first, resolved.second, dirName)
                     if (installedFile.exists() && installedFile.length() > 1024L) {
+                        ownedBaseNames += parseModFileName(installedFile.name).first.lowercase(Locale.ROOT)
                         runCatching {
                             installedFile.copyTo(File(cacheDir, installedFile.name), overwrite = true)
                         }
@@ -2551,6 +2743,7 @@ class PluginManager(
             }
         }
 
+        writeOptPackOwnedBaseNames(modsDir, ownedBaseNames)
         enabledModNames.size to enabledModNames
     }
 }

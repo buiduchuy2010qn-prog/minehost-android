@@ -1875,8 +1875,9 @@ class McViewModel(
         viewModelScope.launch {
             try {
                 val dirs = withContext(Dispatchers.IO) {
-                    repo.termuxRuntime.serversDir.listFiles { f -> f.isDirectory }
-                        ?.sortedBy { it.name.lowercase() } ?: emptyList()
+                    repo.termuxRuntime.serversDir.listFiles { f ->
+                        f.isDirectory && !f.name.startsWith(".") && !f.name.contains(".opt_upgrade_bak.")
+                    }?.sortedBy { it.name.lowercase() } ?: emptyList()
                 }
                 if (dirs.isEmpty()) return@launch
                 val cfg = repo.currentConfig()
@@ -2676,8 +2677,30 @@ class McViewModel(
         }
     }
 
+    private val _isRestoringBackup = MutableStateFlow(false)
+    val isRestoringBackup: StateFlow<Boolean> = _isRestoringBackup.asStateFlow()
+
+    /**
+     * Khóa bảo vệ thống nhất cho các thao tác nguy hiểm (cài Mod/Plugin, bật gói tối ưu, nhập Map/Server, khôi phục sao lưu).
+     * Chặn bật Server hoặc xóa dữ liệu khi đang có tác vụ thay đổi tệp trên đĩa.
+     */
+    fun isServerMutationInFlight(): Boolean =
+        _isInstalling.value ||
+            _isTogglingServerOptPack.value ||
+            _modBatchProgress.value != null ||
+            _pluginDownloadProgress.value.isNotEmpty() ||
+            _isImportingServer.value ||
+            _worldImportBusy.value ||
+            _worldModBusy.value ||
+            _isRestoringBackup.value ||
+            _applyingDeviceTuning.value
+
     fun startServer() {
-        if (startRequestPending || serverState.value.isRunning || _stopInFlight.value || _worldImportBusy.value || _applyingDeviceTuning.value) return
+        if (startRequestPending || serverState.value.isRunning || _stopInFlight.value) return
+        if (isServerMutationInFlight()) {
+            _errorFlow.tryEmit("Đang cài đặt Mod/Plugin hoặc khôi phục dữ liệu. Hãy đợi tác vụ hoàn tất trước khi bật Server.")
+            return
+        }
         if (!isBootstrapped.value) {
             _errorFlow.tryEmit(str(R.string.s192))
             return
@@ -2746,6 +2769,11 @@ class McViewModel(
                     repo.termuxRuntime.emitLog(
                         "[MineHost] 🧹 Đã tự động dọn RAM & bộ nhớ đệm (giải phóng ${freed / 1024} KB rác) — Sẵn sàng ${mem.availableMb} MB RAM trống!"
                     )
+                }
+                com.mineserve.mobile.server.AddonSafety.lifecycleGate.withLock {
+                    check(!isServerMutationInFlight()) {
+                        "Đang có tác vụ cài đặt Mod/Plugin hoặc khôi phục dữ liệu. Hãy đợi hoàn tất rồi bật lại Server."
+                    }
                 }
                 val startConfig = current.copy(localPort = detectedPort)
                 repo.updateServerState {
@@ -3145,21 +3173,31 @@ class McViewModel(
         .map { it.isNotEmpty() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
+    @Volatile private var pluginsLoadGeneration = 0L
+    @Volatile private var modsLoadGeneration = 0L
+    @Volatile private var optPackStatusGeneration = 0L
+
     /** 扫描当前核心的 plugins 目录 */
     fun refreshInstalledPlugins() {
         if (!isBootstrapped.value) {
             _errorFlow.tryEmit(str(R.string.s192))
             return
         }
-        val dirName = activeDirName() ?: run {
+        val requestedDir = activeDirName() ?: run {
             _errorFlow.tryEmit(str(R.string.s212))
             return
         }
+        val token = ++pluginsLoadGeneration
         viewModelScope.launch {
             try {
-                _installedPlugins.value = pluginManager.scan(dirName)
+                val scanned = withContext(Dispatchers.IO) { pluginManager.scan(requestedDir) }
+                if (token == pluginsLoadGeneration && activeDirName() == requestedDir) {
+                    _installedPlugins.value = scanned
+                }
             } catch (e: Exception) {
-                _errorFlow.tryEmit(str(R.string.s213, e.message))
+                if (token == pluginsLoadGeneration && activeDirName() == requestedDir) {
+                    _errorFlow.tryEmit(str(R.string.s213, e.message))
+                }
             }
         }
     }
@@ -3188,15 +3226,19 @@ class McViewModel(
         pluginManager.serverOptimizationModBundle
 
     fun refreshServerOptPackStatus() {
-        val dirName = activeDirName() ?: return
+        val requestedDir = activeDirName() ?: return
         val activeInstalled = config.value.installedCores.firstOrNull { it.name == config.value.activeCoreName }
         val mcVer = (activeInstalled?.version?.takeIf { it.isNotBlank() } ?: config.value.mcVersion).ifBlank { "1.21.11" }
         val loader = activeInstalled?.core?.let { c ->
             if (c.supportsMods) modrinthLoader(c) else "fabric"
         } ?: "fabric"
+        val token = ++optPackStatusGeneration
         viewModelScope.launch(Dispatchers.IO) {
             runCatching {
-                _serverOptPackStatus.value = pluginManager.getServerOptimizationPackStatus(dirName, mcVer, loader)
+                val status = pluginManager.getServerOptimizationPackStatus(requestedDir, mcVer, loader)
+                if (token == optPackStatusGeneration && activeDirName() == requestedDir) {
+                    _serverOptPackStatus.value = status
+                }
             }
         }
     }
@@ -3205,20 +3247,28 @@ class McViewModel(
      * Bật hoặc Tắt Gói Mod Tối Ưu Server Cực Mạnh Lưu Sẵn (14 Mod Server-Side: Lithium, FerriteCore, C2ME, Noisium,
      * Krypton, ModernFix, ServerCore, VMP, Alternate Current, Clumps, Ksyxis, ThreadTweak, Chunky + Fabric API).
      * - Tự động nhận diện phiên bản Minecraft của Server đang chọn (`1.21.11`, `1.21.4`, `1.20.1`, ...).
-     * - Nếu Server đang chọn là `Vanilla` (chưa có bộ nạp Mod), ứng dụng TỰ ĐỘNG nâng cấp tại chỗ lên `Fabric`
-     *   cùng phiên bản (giữ nguyên 100% Thế giới `world/`, `server.properties`, dữ liệu người chơi) rồi kích hoạt trọn bộ Mod tối ưu!
-     * - Người chơi vào Server (PC / Pojav / FCL / Zalith) KHÔNG CẦN cài bất kỳ mod nào trên máy khách!
+     * - Chỉ khi Server đang chọn là `Vanilla` thuần, ứng dụng mới tự động nâng cấp có giao dịch (transactional) lên `Fabric`
+     *   cùng phiên bản (không bao giờ tự đổi lõi Paper/Purpur/Spigot sang Fabric để tránh hỏng Plugin và chiều không gian).
+     * - Gắn tác vụ với đúng ID/tên Server ban đầu để không bao giờ tự bật nhầm Server khác nếu người dùng chuyển trang.
      */
     fun toggleServerOptimizationPack(enable: Boolean, customMcVersion: String = "") {
         if (_isTogglingServerOptPack.value || _stopInFlight.value) return
-        val activeInstalled = config.value.installedCores.firstOrNull { it.name == config.value.activeCoreName }
-        val dirName = activeInstalled?.dirName ?: activeDirName() ?: run {
+        val originCoreName = config.value.activeCoreName
+        val activeInstalled = config.value.installedCores.firstOrNull { it.name == originCoreName }
+        val originDirName = activeInstalled?.dirName ?: activeDirName() ?: run {
             _errorFlow.tryEmit("Hãy chọn hoặc tạo một máy chủ trước khi bật Gói Mod Tối Ưu Server.")
             return
         }
         val currentCore = activeInstalled?.core ?: config.value.selectedCore
         if (currentCore.isBedrock) {
             _errorFlow.tryEmit("Máy chủ Bedrock (PE) đã tích hợp sẵn tối ưu đa luồng; Gói Mod Tối Ưu này dành cho máy chủ Java.")
+            return
+        }
+        if (!currentCore.supportsMods && currentCore != ServerCore.Vanilla) {
+            _errorFlow.tryEmit(
+                "Lõi ${currentCore.displayName} sử dụng hệ thống Plugin (và đã tích hợp sẵn tối ưu Paper/Spigot). " +
+                    "Gói Mod Tối Ưu này dành riêng cho máy chủ Fabric / Forge / NeoForge / Quilt hoặc Vanilla."
+            )
             return
         }
         val mcVer = customMcVersion.trim().ifBlank {
@@ -3229,6 +3279,7 @@ class McViewModel(
 
         viewModelScope.launch {
             _isTogglingServerOptPack.value = true
+            var upgradedFromVanilla = false
             try {
                 if (wasRunning) {
                     _stopInFlight.value = true
@@ -3246,23 +3297,38 @@ class McViewModel(
                     }
                 }
                 var effectiveCore = currentCore
-                // Nếu máy chủ đang là Vanilla (hoặc chưa hỗ trợ Mod) và người dùng BẬT gói tối ưu -> Tự động nâng cấp tại chỗ lên Fabric cùng phiên bản!
-                if (enable && !currentCore.supportsMods) {
-                    _serverOptPackProgress.value = "Đang tự động nâng cấp lõi $dirName lên Fabric $mcVer (giữ nguyên 100% Map & cài đặt)..."
+                // Chỉ nâng cấp tại chỗ sang Fabric khi lõi hiện tại thực sự là Vanilla thuần
+                if (enable && currentCore == ServerCore.Vanilla) {
+                    _serverOptPackProgress.value = "Đang nâng cấp lõi Vanilla ($originDirName) lên Fabric $mcVer (có sao lưu dự phòng)..."
                     withContext(Dispatchers.IO) {
-                        val serverDir = java.io.File(repo.termuxRuntime.installer.rootDir, "home/servers/$dirName").apply { mkdirs() }
+                        val serverDir = java.io.File(repo.termuxRuntime.installer.rootDir, "home/servers/$originDirName").apply { mkdirs() }
                         val serverJar = java.io.File(serverDir, "server.jar")
                         val vanillaBackup = java.io.File(serverDir, "vanilla_original_server.jar")
-                        if (serverJar.exists() && !vanillaBackup.exists()) {
-                            runCatching { serverJar.copyTo(vanillaBackup, overwrite = false) }
+                        val stagedFabricJar = java.io.File(serverDir, ".fabric_upgrade_server.jar.tmp")
+                        stagedFabricJar.delete()
+                        try {
+                            val tempCfg = config.value.copy(selectedCore = ServerCore.Fabric, mcVersion = mcVer)
+                            controller.downloadCoreTo(stagedFabricJar.absolutePath, tempCfg, originDirName) { _, _, _ -> }
+                            check(stagedFabricJar.isFile && stagedFabricJar.length() > 1024L) {
+                                "Tệp lõi Fabric tải về không hợp lệ."
+                            }
+                            if (serverJar.exists() && !vanillaBackup.exists()) {
+                                serverJar.copyTo(vanillaBackup, overwrite = false)
+                            }
+                            java.nio.file.Files.move(
+                                stagedFabricJar.toPath(),
+                                serverJar.toPath(),
+                                java.nio.file.StandardCopyOption.REPLACE_EXISTING
+                            )
+                            upgradedFromVanilla = true
+                        } finally {
+                            stagedFabricJar.delete()
                         }
-                        val tempCfg = config.value.copy(selectedCore = ServerCore.Fabric, mcVersion = mcVer)
-                        controller.downloadCoreTo(serverJar.absolutePath, tempCfg, dirName) { _, _, _ -> }
                     }
                     if (activeInstalled != null) {
                         updateConfig { cfg ->
                             cfg.copy(
-                                selectedCore = ServerCore.Fabric,
+                                selectedCore = if (cfg.activeCoreName == activeInstalled.name) ServerCore.Fabric else cfg.selectedCore,
                                 installedCores = cfg.installedCores.map { item ->
                                     if (item.name == activeInstalled.name) item.copy(core = ServerCore.Fabric, version = mcVer) else item
                                 }
@@ -3281,7 +3347,7 @@ class McViewModel(
 
                 val (count, modNames) = withContext(Dispatchers.IO) {
                     pluginManager.setServerOptimizationPackEnabled(
-                        dirName = dirName,
+                        dirName = originDirName,
                         mcVersion = mcVer,
                         loader = loader,
                         enable = enable
@@ -3294,12 +3360,14 @@ class McViewModel(
                     }
                 }
 
-                refreshMods()
-                refreshServerOptPackStatus()
-                refreshWorldModCount()
+                if (activeDirName() == originDirName) {
+                    refreshMods()
+                    refreshServerOptPackStatus()
+                    refreshWorldModCount()
+                }
 
                 if (enable) {
-                    val upgradedNote = if (!currentCore.supportsMods) " (Đã tự động chuyển lõi sang Fabric $mcVer giữ nguyên Map)" else ""
+                    val upgradedNote = if (upgradedFromVanilla) " (Đã chuyển lõi Vanilla sang Fabric $mcVer)" else ""
                     val previewNames = modNames.take(6).joinToString(", ")
                     notifyActionDone(
                         "🚀 Đã BẬT $count Mod Tối Ưu Server Cực Mạnh cho MC $mcVer$upgradedNote ($previewNames...)! Chỉ cài trên Server — người chơi vào bình thường không cần cài mod."
@@ -3308,9 +3376,32 @@ class McViewModel(
                     notifyActionDone("⏸ Đã tạm tắt $count Mod Tối Ưu Server (vẫn lưu sẵn trong máy để bật lại 1 chạm bất cứ lúc nào).")
                 }
                 if (wasRunning) {
-                    startServer()
+                    if (config.value.activeCoreName == originCoreName && activeDirName() == originDirName) {
+                        startServer()
+                    } else {
+                        _messageFlow.tryEmit("ℹ️ Bạn đã chuyển sang máy chủ khác trong lúc tải, nên hệ thống không tự bật lại máy chủ cũ.")
+                    }
                 }
             } catch (e: Exception) {
+                if (upgradedFromVanilla && activeInstalled != null) {
+                    withContext(Dispatchers.IO) {
+                        runCatching {
+                            val serverDir = java.io.File(repo.termuxRuntime.installer.rootDir, "home/servers/$originDirName")
+                            val serverJar = java.io.File(serverDir, "server.jar")
+                            val vanillaBackup = java.io.File(serverDir, "vanilla_original_server.jar")
+                            if (vanillaBackup.isFile) {
+                                vanillaBackup.copyTo(serverJar, overwrite = true)
+                            }
+                        }
+                    }
+                    updateConfig { cfg ->
+                        cfg.copy(
+                            installedCores = cfg.installedCores.map { item ->
+                                if (item.name == activeInstalled.name) item.copy(core = currentCore) else item
+                            }
+                        )
+                    }
+                }
                 _errorFlow.tryEmit("Không thể chuyển trạng thái Gói Mod Tối Ưu: ${e.message}")
             } finally {
                 _serverOptPackProgress.value = null
@@ -3322,13 +3413,19 @@ class McViewModel(
     /** 扫描当前核心的 mods 目录 */
     fun refreshMods() {
         if (!isBootstrapped.value) return
-        val dirName = activeDirName() ?: return
+        val requestedDir = activeDirName() ?: return
+        val token = ++modsLoadGeneration
         viewModelScope.launch {
             try {
-                _mods.value = withContext(Dispatchers.IO) { pluginManager.readMods(dirName) }
-                refreshServerOptPackStatus()
+                val loaded = withContext(Dispatchers.IO) { pluginManager.readMods(requestedDir) }
+                if (token == modsLoadGeneration && activeDirName() == requestedDir) {
+                    _mods.value = loaded
+                    refreshServerOptPackStatus()
+                }
             } catch (e: Exception) {
-                _errorFlow.tryEmit(str(R.string.s214, e.message))
+                if (token == modsLoadGeneration && activeDirName() == requestedDir) {
+                    _errorFlow.tryEmit(str(R.string.s214, e.message))
+                }
             }
         }
     }
@@ -4735,8 +4832,13 @@ class McViewModel(
         if (!isBootstrapped.value) { _errorFlow.tryEmit(str(R.string.s192)); return }
         val dirName = activeDirName() ?: run { _errorFlow.tryEmit(str(R.string.s212)); return }
         if (!requireServerStopped("khôi phục bản sao lưu Mod")) return
+        if (isServerMutationInFlight()) {
+            _errorFlow.tryEmit("Đang có tác vụ cài đặt/khôi phục khác đang chạy. Vui lòng đợi hoàn tất.")
+            return
+        }
         val file = java.io.File(com.mineserve.mobile.server.ExternalBackupStore.rootDir, zipName)
         viewModelScope.launch {
+            _isRestoringBackup.value = true
             try {
                 val ok = withContext(Dispatchers.IO) {
                     backupManager.restoreModsFromExternal(file, dirName)
@@ -4748,10 +4850,12 @@ class McViewModel(
                     refreshServerStorage()
                     _messageFlow.tryEmit("✅ Đã khôi phục bộ Mod & Config từ '$zipName' vào Server hiện tại!")
                 } else {
-                    _errorFlow.tryEmit("Không thể khôi phục bộ Mod từ tệp '$zipName'.")
+                    _errorFlow.tryEmit("Không thể khôi phục bộ Mod từ tệp '$zipName' (Tệp sao lưu không chứa thư mục mods/config/plugins hợp lệ).")
                 }
             } catch (e: Exception) {
                 _errorFlow.tryEmit("Lỗi khôi phục Mod: ${e.message}")
+            } finally {
+                _isRestoringBackup.value = false
             }
         }
     }
@@ -4808,8 +4912,10 @@ class McViewModel(
         }
     }
 
-    /** 从手机其他位置导入备份 zip 到外部备份目录（SAF 选择） */
-    fun importBackupToExternal(uri: android.net.Uri) {        viewModelScope.launch {
+    /** 从手机其他位置导入备份 zip 到外部备份目录（SAF 选择）：先写临时文件并校验结构，再原子替换，防止截断同名备份 */
+    fun importBackupToExternal(uri: android.net.Uri) {
+        viewModelScope.launch {
+            var tempFile: java.io.File? = null
             try {
                 if (!com.mineserve.mobile.server.ExternalBackupStore.ensure()) {
                     _errorFlow.tryEmit(str(R.string.err_ext_dir_unavailable))
@@ -4822,15 +4928,33 @@ class McViewModel(
                         if (c.moveToFirst()) c.getString(0) else null
                     } ?: "backup_${System.currentTimeMillis()}.zip"
                 }
-                val safeName = fileName?.takeIf { it.endsWith(".zip") } ?: "backup_${System.currentTimeMillis()}.zip"
-                val target = java.io.File(com.mineserve.mobile.server.ExternalBackupStore.rootDir, safeName)
+                val safeName = fileName?.takeIf { it.endsWith(".zip", ignoreCase = true) }
+                    ?.replace(Regex("""[\\/:*?"<>|]"""), "_")
+                    ?: "backup_${System.currentTimeMillis()}.zip"
+                val rootDir = com.mineserve.mobile.server.ExternalBackupStore.rootDir
+                val target = java.io.File(rootDir, safeName)
+                val staged = java.io.File(rootDir, ".import_${System.currentTimeMillis()}_${java.util.UUID.randomUUID().toString().take(6)}.zip.tmp")
+                tempFile = staged
                 withContext(Dispatchers.IO) {
-                    app.contentResolver.openInputStream(uri)?.use { input ->
-                        target.outputStream().use { output -> input.copyTo(output) }
+                    val copied = app.contentResolver.openInputStream(uri)?.use { input ->
+                        staged.outputStream().use { output -> input.copyTo(output) }
+                        true
+                    } ?: false
+                    check(copied && staged.isFile && staged.length() > 0L) {
+                        "Không thể đọc tệp sao lưu đã chọn."
                     }
+                    check(backupManager.validateZipFile(staged)) {
+                        "Tệp ZIP không hợp lệ hoặc đang rỗng."
+                    }
+                    java.nio.file.Files.move(
+                        staged.toPath(),
+                        target.toPath(),
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING
+                    )
                 }
                 _messageFlow.tryEmit(str(R.string.msg_backup_imported, safeName))
             } catch (e: Exception) {
+                withContext(Dispatchers.IO) { tempFile?.delete() }
                 _errorFlow.tryEmit(str(R.string.err_backup_import_fail, e.message))
             }
         }
@@ -4862,17 +4986,32 @@ class McViewModel(
         }
     }
 
-    /** 从外部 zip 还原世界（zip 内 world/ 前缀） */
-    fun restoreWorldFromExternal(zipName: String) {        if (!isBootstrapped.value) { _errorFlow.tryEmit(str(R.string.s192)); return }
+    /** 从外部 zip 还原世界（zip 内 world/ 或自定义 level-name 前缀） */
+    fun restoreWorldFromExternal(zipName: String) {
+        if (!isBootstrapped.value) { _errorFlow.tryEmit(str(R.string.s192)); return }
         val dirName = activeDirName() ?: run { _errorFlow.tryEmit(str(R.string.s212)); return }
+        if (!requireServerStopped("khôi phục thế giới")) return
+        if (isServerMutationInFlight()) {
+            _errorFlow.tryEmit("Đang có tác vụ cài đặt/khôi phục khác đang chạy. Vui lòng đợi hoàn tất.")
+            return
+        }
         val file = java.io.File(com.mineserve.mobile.server.ExternalBackupStore.rootDir, zipName)
         viewModelScope.launch {
+            _isRestoringBackup.value = true
             try {
                 val ok = withContext(Dispatchers.IO) { backupManager.restoreWorldFromExternal(file, dirName) }
-                if (ok) _messageFlow.tryEmit(str(R.string.msg_world_restored, zipName))
-                else _errorFlow.tryEmit(str(R.string.err_world_restore_fail))
+                if (ok) {
+                    loadWorlds()
+                    refreshMods()
+                    refreshServerStorage()
+                    _messageFlow.tryEmit(str(R.string.msg_world_restored, zipName))
+                } else {
+                    _errorFlow.tryEmit(str(R.string.err_world_restore_fail))
+                }
             } catch (e: Exception) {
                 _errorFlow.tryEmit(str(R.string.err_world_restore_fail_msg, e.message))
+            } finally {
+                _isRestoringBackup.value = false
             }
         }
     }
@@ -4880,6 +5019,11 @@ class McViewModel(
     /** 请求还原服务器：解析目标目录名与核心类型，存在同名则发冲突事件（UI 弹框） */
     fun requestRestoreServer(zipName: String) {
         if (!isBootstrapped.value) { _errorFlow.tryEmit(str(R.string.s192)); return }
+        if (!requireServerStopped("khôi phục toàn bộ máy chủ")) return
+        if (isServerMutationInFlight()) {
+            _errorFlow.tryEmit("Đang có tác vụ cài đặt/khôi phục khác đang chạy. Vui lòng đợi hoàn tất.")
+            return
+        }
         val (dirName, coreTag) = backupManager.parseServerZipInfo(zipName)
         val target = java.io.File(repo.termuxRuntime.serversDir, dirName)
         if (target.exists()) {
@@ -4900,8 +5044,14 @@ class McViewModel(
     fun dismissRestoreConflict() { _restoreConflict.value = null }
 
     private fun performRestoreServer(zipName: String, dirName: String, overwrite: Boolean, coreTag: String? = null) {
+        if (!requireServerStopped("khôi phục toàn bộ máy chủ")) return
+        if (isServerMutationInFlight()) {
+            _errorFlow.tryEmit("Đang có tác vụ cài đặt/khôi phục khác đang chạy. Vui lòng đợi hoàn tất.")
+            return
+        }
         val file = java.io.File(com.mineserve.mobile.server.ExternalBackupStore.rootDir, zipName)
         viewModelScope.launch {
+            _isRestoringBackup.value = true
             try {
                 val ok = withContext(Dispatchers.IO) {
                     backupManager.restoreServerFromExternal(file, dirName, overwrite)
@@ -4909,12 +5059,19 @@ class McViewModel(
                 if (ok) {
                     // 注册到已安装核心列表并设为当前选中（否则概览/核心列表不显示）
                     registerRestoredCore(dirName, coreTag)
+                    refreshServerPropertiesNow()
+                    loadWorlds()
+                    refreshMods()
+                    refreshInstalledPlugins()
+                    refreshServerStorage()
                     _messageFlow.tryEmit(str(R.string.msg_server_restored, zipName))
                 } else {
                     _errorFlow.tryEmit(str(R.string.err_server_restore_fail))
                 }
             } catch (e: Exception) {
                 _errorFlow.tryEmit(str(R.string.err_server_restore_fail_msg, e.message))
+            } finally {
+                _isRestoringBackup.value = false
             }
         }
     }
@@ -5091,10 +5248,15 @@ class McViewModel(
         }
     }
 
-    /** 删除当前激活核心的世界文件夹（world / world_nether / world_the_end），不可恢复 */
+    /** 删除当前激活核心的世界文件夹（含自定义 level-name 及 world / world_nether / world_the_end），不可恢复 */
     fun deleteWorldDirs() {
         if (!isBootstrapped.value) {
             _errorFlow.tryEmit(str(R.string.s192))
+            return
+        }
+        if (!requireServerStopped("xóa thế giới")) return
+        if (isServerMutationInFlight()) {
+            _errorFlow.tryEmit("Đang có tác vụ cài đặt/khôi phục khác đang chạy. Vui lòng đợi hoàn tất.")
             return
         }
         val dirName = activeDirName() ?: run {
@@ -5104,25 +5266,48 @@ class McViewModel(
         viewModelScope.launch {
             try {
                 val deleted = withContext(Dispatchers.IO) {
-                    val base = File(repo.termuxRuntime.installer.rootDir, "home/servers/$dirName")
-                    var count = 0
-                    for (name in listOf("world", "world_nether", "world_the_end")) {
-                        val dir = File(base, name)
-                        if (dir.exists() && dir.deleteRecursively()) count++
+                    com.mineserve.mobile.server.AddonSafety.lifecycleGate.withLock {
+                        check(!repo.termuxRuntime.isMcRunning() && !serverState.value.isRunning) {
+                            "Hãy dừng server trước khi xóa thế giới."
+                        }
+                        val base = File(repo.termuxRuntime.installer.rootDir, "home/servers/$dirName")
+                        val customLevel = propertiesManager.readProperties(dirName)["level-name"]
+                            ?.trim()?.takeIf { it.isNotBlank() && !it.contains("..") && !it.contains("/") && !it.contains("\\") }
+                            ?: "world"
+                        val targets = linkedSetOf(
+                            customLevel,
+                            "${customLevel}_nether",
+                            "${customLevel}_the_end",
+                            "world",
+                            "world_nether",
+                            "world_the_end"
+                        )
+                        var count = 0
+                        for (name in targets) {
+                            val dir = File(base, name)
+                            if (dir.exists() && dir.deleteRecursively()) count++
+                        }
+                        count
                     }
-                    count
                 }
+                loadWorlds()
+                refreshServerStorage()
                 _messageFlow.tryEmit(str(R.string.ui_world_deleted, deleted))
             } catch (e: Exception) {
-                _errorFlow.tryEmit(str(R.string.ui_world_delete_failed))
+                _errorFlow.tryEmit(e.message ?: str(R.string.ui_world_delete_failed))
             }
         }
     }
 
-    /** 恢复快照（会先停止服务器） */
+    /** 恢复快照（需先停止服务器） */
     fun restoreSnapshot(name: String) {
         if (!isBootstrapped.value) {
             _errorFlow.tryEmit(str(R.string.s192))
+            return
+        }
+        if (!requireServerStopped("khôi phục bản sao lưu nhanh")) return
+        if (isServerMutationInFlight()) {
+            _errorFlow.tryEmit("Đang có tác vụ cài đặt/khôi phục khác đang chạy. Vui lòng đợi hoàn tất.")
             return
         }
         val dirName = activeDirName() ?: run {
@@ -5130,17 +5315,22 @@ class McViewModel(
             return
         }
         viewModelScope.launch {
+            _isRestoringBackup.value = true
             try {
                 _messageFlow.tryEmit(str(R.string.s250))
                 val ok = withContext(Dispatchers.IO) { backupManager.restoreSnapshot(name, dirName) }
                 if (ok) {
                     _messageFlow.tryEmit(str(R.string.s251))
                     loadSnapshots()
+                    loadWorlds()
+                    refreshServerStorage()
                 } else {
                     _errorFlow.tryEmit(str(R.string.s252))
                 }
             } catch (e: Exception) {
                 _errorFlow.tryEmit(str(R.string.s253, e.message))
+            } finally {
+                _isRestoringBackup.value = false
             }
         }
     }
@@ -5242,6 +5432,8 @@ class McViewModel(
     private val _serverPropertiesExist = MutableStateFlow<Boolean?>(null)
     val serverPropertiesExist: StateFlow<Boolean?> = _serverPropertiesExist.asStateFlow()
 
+    @Volatile private var propertiesLoadGeneration = 0L
+
     /**
      * 加载 server.properties，并同步更新配置文件是否已生成的状态。
      *
@@ -5253,39 +5445,41 @@ class McViewModel(
 
     /**
      * 重新读一遍服务端配置文件，并**等它读完**。
-     *
-     * 为什么必须能「等」：端口真源历史上只在进入「服务器配置」页时才被读一次。
-     * 用户在配置文件里把端口从 25565 改成别的，然后直接去开穿透 —— 隧道拿到的还是
-     * 上一次的值，于是把玩家送到 25565，一个没人监听的端口。界面上隧道「已就绪」，
-     * 日志里只有一句 `connect: connection refused`，从字面完全看不出是端口对不上。
-     * 启动前先把真源读回来，这条坑就不存在了。
+     * Có kiểm tra thế hệ (generation) và tên server đang chọn trước khi ghi vào StateFlow / localPort
+     * để tránh kết quả đọc muộn của Server A ghi đè lên Server B khi đổi server nhanh.
      */
     private suspend fun refreshServerPropertiesNow() {
         if (!isBootstrapped.value) return
-        val dirName = activeDirName() ?: return
+        val requestedCoreName = config.value.activeCoreName
+        val requestedDir = activeDirName() ?: return
+        val pnx = config.value.installedCores
+            .firstOrNull { it.name == requestedCoreName }?.core == ServerCore.PowerNukkitX
+        val token = ++propertiesLoadGeneration
         try {
-            val pnx = isPowerNukkitXActive()
-            // PNX 的真实配置是 pnx.yml，Java 系是 server.properties，两者要分别判定，
-            // 否则 PNX 下永远看 server.properties 的存在性，导致 pnx.yml 还没生成就放行表单。
-            val exists = withContext(Dispatchers.IO) {
-                if (pnx) powerNukkitXConfigManager.exists(dirName)
-                else propertiesManager.exists(dirName)
+            val (exists, loaded) = withContext(Dispatchers.IO) {
+                val ex = if (pnx) powerNukkitXConfigManager.exists(requestedDir)
+                else propertiesManager.exists(requestedDir)
+                val map = if (pnx) powerNukkitXConfigManager.read(requestedDir)
+                else propertiesManager.readProperties(requestedDir)
+                ex to map
+            }
+            if (token != propertiesLoadGeneration ||
+                activeDirName() != requestedDir ||
+                config.value.activeCoreName != requestedCoreName
+            ) {
+                return
             }
             _serverPropertiesExist.value = exists
-            val loaded = withContext(Dispatchers.IO) {
-                if (pnx) powerNukkitXConfigManager.read(dirName)
-                else propertiesManager.readProperties(dirName)
-            }
             _serverProperties.value = loaded
-            // 端口真源镜像：配置文件已生成且含合法端口时，把它同步回 [McConfig.localPort]。
-            // 「服务器配置」页是端口唯一编辑入口（网络页的输入框已在 1.2.8 移除），
-            // 不同步的话地址栏会一直停在旧值 —— 这正是「配置 25562、显示 19132」的成因。
-            // 只在 exists 为真时同步：文件不存在时 loaded 是空 Map，会把 localPort 误覆盖成默认值。
             if (exists) ServerPort.parse(loaded["server-port"])?.let { port ->
-                if (config.value.localPort != port) updateConfig { it.copy(localPort = port) }
+                if (activeDirName() == requestedDir && config.value.activeCoreName == requestedCoreName && config.value.localPort != port) {
+                    updateConfig { it.copy(localPort = port) }
+                }
             }
         } catch (e: Exception) {
-            _errorFlow.tryEmit(str(R.string.s261, e.message))
+            if (token == propertiesLoadGeneration && activeDirName() == requestedDir) {
+                _errorFlow.tryEmit(str(R.string.s261, e.message))
+            }
         }
     }
 
@@ -6214,7 +6408,7 @@ class McViewModel(
      * @return true 表示可以继续执行
      */
     private fun requireServerStopped(action: String): Boolean {
-        if (!repo.serverState.value.isRunning) return true
+        if (!repo.serverState.value.isRunning && !repo.termuxRuntime.isMcRunning()) return true
         _errorFlow.tryEmit("Hãy dừng server trước khi thay đổi dữ liệu: $action")
         return false
     }
@@ -6512,11 +6706,13 @@ class McViewModel(
     }
 
     fun refreshWorldModCount() {
-        val dirName = activeDirName() ?: run { _worldModCount.value = 0; return }
+        val requestedDir = activeDirName() ?: run { _worldModCount.value = 0; return }
         viewModelScope.launch(Dispatchers.IO) {
-            val modsDir = java.io.File(repo.termuxRuntime.serverDirFor(dirName), "mods")
+            val modsDir = java.io.File(repo.termuxRuntime.serverDirFor(requestedDir), "mods")
             val count = modsDir.listFiles()?.count { it.isFile && it.name.endsWith(".jar", ignoreCase = true) } ?: 0
-            _worldModCount.value = count
+            if (activeDirName() == requestedDir) {
+                _worldModCount.value = count
+            }
         }
     }
 
@@ -7313,103 +7509,155 @@ class McViewModel(
         }
     }
 
+    private val storageScanMutex = Mutex()
+    private val cachedStorageDirStamp = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    private fun sumFilesAndCount(root: File): Pair<Long, Int> {
+        if (!root.exists()) return 0L to 0
+        if (root.isFile) return root.length() to 1
+        var bytes = 0L
+        var count = 0
+        for (f in root.walkTopDown()) {
+            if (f.isFile) {
+                bytes += f.length()
+                count++
+            }
+        }
+        return bytes to count
+    }
+
     fun refreshServerStorage() {
         if (!isBootstrapped.value) return
         viewModelScope.launch(Dispatchers.IO) {
-            runCatching {
-                val cores = config.value.installedCores
-                val result = linkedMapOf<String, ServerStorageBreakdown>()
-                for (srv in cores) {
-                    val srvDir = repo.termuxRuntime.serverDirFor(srv.dirName)
-                    if (!srvDir.isDirectory) continue
-                    var total = 0L
-                    var worldSz = 0L
-                    var modsSz = 0L
-                    var pluginsSz = 0L
-                    var coreLibsSz = 0L
-                    var logsSz = 0L
-                    val worldEntries = mutableListOf<WorldFileStorageEntry>()
+            if (!storageScanMutex.tryLock()) return@launch
+            try {
+                runCatching {
+                    val cores = config.value.installedCores
+                    val currentActiveDir = activeDirName()
+                    val previousMap = _serverStorageMap.value
+                    val result = linkedMapOf<String, ServerStorageBreakdown>()
+                    for (srv in cores) {
+                        val srvDir = repo.termuxRuntime.serverDirFor(srv.dirName)
+                        if (!srvDir.isDirectory) continue
+                        val isActiveSrv = srv.dirName == currentActiveDir
+                        val dirStamp = srvDir.lastModified()
+                        val cached = previousMap[srv.dirName]
+                        if (!isActiveSrv && cached != null && cachedStorageDirStamp[srv.dirName] == dirStamp) {
+                            result[srv.dirName] = cached
+                            result[srv.name] = cached
+                            continue
+                        }
 
-                    val activeLvl = _serverProperties.value["level-name"]?.trim()?.takeIf { it.isNotBlank() } ?: "world"
-                    val topChildren = srvDir.listFiles() ?: emptyArray()
-                    for (child in topChildren) {
-                        val sz = child.walkTopDown().filter { it.isFile }.sumOf { it.length() }
-                        total += sz
-                        val n = child.name.lowercase(java.util.Locale.ROOT)
-                        when {
-                            n == activeLvl.lowercase(java.util.Locale.ROOT) ||
-                                n.startsWith("${activeLvl.lowercase(java.util.Locale.ROOT)}_") ||
-                                n == "worlds" || File(child, "level.dat").isFile || File(child, "db").isDirectory -> {
-                                worldSz += sz
-                                if (child.isDirectory && (n == activeLvl.lowercase(java.util.Locale.ROOT) || n == "worlds")) {
-                                    child.listFiles()?.forEach { wf ->
-                                        val wfFiles = wf.walkTopDown().filter { it.isFile }.toList()
-                                        val wfsz = wfFiles.sumOf { it.length() }
-                                        val label = when (wf.name) {
-                                            "region" -> "region/ (Dữ liệu vùng đất Chunk)"
-                                            "entities" -> "entities/ (Sinh vật & Thực thể)"
-                                            "playerdata" -> "playerdata/ (Túi đồ & Vị trí người chơi)"
-                                            "DIM-1" -> "DIM-1/ (Địa ngục Nether)"
-                                            "DIM1" -> "DIM1/ (Chiều The End)"
-                                            "datapacks" -> "datapacks/ (Gói dữ liệu thế giới)"
-                                            "poi" -> "poi/ (Điểm nghề dân làng & Cổng)"
-                                            "stats" -> "stats/ (Thống kê người chơi)"
-                                            "advancements" -> "advancements/ (Thành tựu)"
-                                            "level.dat" -> "level.dat (Hạt giống & Cấu hình Map)"
-                                            else -> (if (wf.isDirectory) "${wf.name}/" else wf.name)
-                                        }
-                                        worldEntries.add(
-                                            WorldFileStorageEntry(
-                                                name = label,
-                                                sizeBytes = wfsz,
-                                                isDirectory = wf.isDirectory,
-                                                fileCount = wfFiles.size.coerceAtLeast(1)
-                                            )
-                                        )
+                        var total = 0L
+                        var worldSz = 0L
+                        var modsSz = 0L
+                        var pluginsSz = 0L
+                        var coreLibsSz = 0L
+                        var logsSz = 0L
+                        val worldEntries = mutableListOf<WorldFileStorageEntry>()
+
+                        val activeLvl = if (isActiveSrv) {
+                            _serverProperties.value["level-name"]?.trim()?.takeIf { it.isNotBlank() } ?: "world"
+                        } else {
+                            propertiesManager.readProperties(srv.dirName)["level-name"]?.trim()?.takeIf { it.isNotBlank() } ?: "world"
+                        }
+                        val activeLvlLower = activeLvl.lowercase(java.util.Locale.ROOT)
+                        val topChildren = srvDir.listFiles() ?: emptyArray()
+                        for (child in topChildren) {
+                            val n = child.name.lowercase(java.util.Locale.ROOT)
+                            val isWorldDir = n == activeLvlLower ||
+                                n.startsWith("${activeLvlLower}_") ||
+                                n == "worlds" ||
+                                (child.isDirectory && (File(child, "level.dat").isFile || File(child, "db").isDirectory))
+
+                            if (isWorldDir && isActiveSrv && child.isDirectory && (n == activeLvlLower || n == "worlds")) {
+                                var primaryWorldBytes = 0L
+                                child.listFiles()?.forEach { wf ->
+                                    val (wfsz, wfCount) = sumFilesAndCount(wf)
+                                    primaryWorldBytes += wfsz
+                                    val label = when (wf.name) {
+                                        "region" -> "region/ (Dữ liệu vùng đất Chunk)"
+                                        "entities" -> "entities/ (Sinh vật & Thực thể)"
+                                        "playerdata" -> "playerdata/ (Túi đồ & Vị trí người chơi)"
+                                        "DIM-1" -> "DIM-1/ (Địa ngục Nether)"
+                                        "DIM1" -> "DIM1/ (Chiều The End)"
+                                        "datapacks" -> "datapacks/ (Gói dữ liệu thế giới)"
+                                        "poi" -> "poi/ (Điểm nghề dân làng & Cổng)"
+                                        "stats" -> "stats/ (Thống kê người chơi)"
+                                        "advancements" -> "advancements/ (Thành tựu)"
+                                        "level.dat" -> "level.dat (Hạt giống & Cấu hình Map)"
+                                        else -> (if (wf.isDirectory) "${wf.name}/" else wf.name)
                                     }
-                                } else if (child.isDirectory) {
-                                    val subFiles = child.walkTopDown().filter { it.isFile }.count().coerceAtLeast(1)
                                     worldEntries.add(
                                         WorldFileStorageEntry(
-                                            name = "${child.name}/ (Chiều không gian phụ)",
-                                            sizeBytes = sz,
-                                            isDirectory = true,
-                                            fileCount = subFiles
+                                            name = label,
+                                            sizeBytes = wfsz,
+                                            isDirectory = wf.isDirectory,
+                                            fileCount = wfCount.coerceAtLeast(1)
                                         )
                                     )
                                 }
+                                total += primaryWorldBytes
+                                worldSz += primaryWorldBytes
+                            } else {
+                                val (sz, fileCount) = sumFilesAndCount(child)
+                                total += sz
+                                when {
+                                    isWorldDir -> {
+                                        worldSz += sz
+                                        if (isActiveSrv && child.isDirectory) {
+                                            worldEntries.add(
+                                                WorldFileStorageEntry(
+                                                    name = "${child.name}/ (Chiều không gian phụ)",
+                                                    sizeBytes = sz,
+                                                    isDirectory = true,
+                                                    fileCount = fileCount.coerceAtLeast(1)
+                                                )
+                                            )
+                                        }
+                                    }
+                                    n == "mods" -> modsSz += sz
+                                    n == "plugins" -> pluginsSz += sz
+                                    n == "logs" || n == "crash-reports" || n == ".mineserve" || n == ".fabric" || n == "cache" -> logsSz += sz
+                                    else -> coreLibsSz += sz
+                                }
                             }
-                            n == "mods" -> modsSz += sz
-                            n == "plugins" -> pluginsSz += sz
-                            n == "logs" || n == "crash-reports" || n == ".mineserve" || n == ".fabric" || n == "cache" -> logsSz += sz
-                            else -> coreLibsSz += sz
                         }
+                        var modTotalCount = 0
+                        var enabledMods = 0
+                        listOf(File(srvDir, "mods"), File(srvDir, "plugins")).forEach { addonDir ->
+                            addonDir.listFiles()?.forEach { f ->
+                                if (f.isFile && (f.name.endsWith(".jar", true) || f.name.endsWith(".jar.disabled", true) || f.name.endsWith(".phar", true))) {
+                                    modTotalCount++
+                                    if (!f.name.endsWith(".disabled", true)) enabledMods++
+                                }
+                            }
+                        }
+                        val breakdown = ServerStorageBreakdown(
+                            serverName = srv.name,
+                            dirName = srv.dirName,
+                            activeWorldName = activeLvl,
+                            totalBytes = total,
+                            worldBytes = worldSz,
+                            modsBytes = modsSz,
+                            pluginsBytes = pluginsSz,
+                            modsPluginsBytes = modsSz + pluginsSz,
+                            coreJarBytes = coreLibsSz,
+                            coreAndLibsBytes = coreLibsSz,
+                            logsBytes = logsSz,
+                            logsAndCacheBytes = logsSz,
+                            modCount = modTotalCount,
+                            enabledModCount = enabledMods,
+                            worldFileEntries = worldEntries.sortedByDescending { it.sizeBytes }
+                        )
+                        cachedStorageDirStamp[srv.dirName] = dirStamp
+                        result[srv.dirName] = breakdown
+                        result[srv.name] = breakdown
                     }
-                    val modFiles = (File(srvDir, "mods").listFiles()?.toList().orEmpty() +
-                        File(srvDir, "plugins").listFiles()?.toList().orEmpty())
-                        .filter { it.isFile && (it.name.endsWith(".jar", true) || it.name.endsWith(".jar.disabled", true) || it.name.endsWith(".phar", true)) }
-                    val enabledMods = modFiles.count { !it.name.endsWith(".disabled", true) }
-                    val breakdown = ServerStorageBreakdown(
-                        serverName = srv.name,
-                        dirName = srv.dirName,
-                        activeWorldName = activeLvl,
-                        totalBytes = total,
-                        worldBytes = worldSz,
-                        modsBytes = modsSz,
-                        pluginsBytes = pluginsSz,
-                        modsPluginsBytes = modsSz + pluginsSz,
-                        coreJarBytes = coreLibsSz,
-                        coreAndLibsBytes = coreLibsSz,
-                        logsBytes = logsSz,
-                        logsAndCacheBytes = logsSz,
-                        modCount = modFiles.size,
-                        enabledModCount = enabledMods,
-                        worldFileEntries = worldEntries.sortedByDescending { it.sizeBytes }
-                    )
-                    result[srv.dirName] = breakdown
-                    result[srv.name] = breakdown
+                    _serverStorageMap.value = result
                 }
-                _serverStorageMap.value = result
+            } finally {
+                storageScanMutex.unlock()
             }
         }
     }
@@ -7504,13 +7752,18 @@ class McViewModel(
         _messageFlow.tryEmit("📱 Đang tạo đường hầm UDP Bedrock (cổng $localBedrockPort) trên Playit.gg để điện thoại PE kết nối mọi mạng...")
     }
 
-    fun installCrossplayGeyserPack(bedrockBranch: String = "1.21", startAfterInstall: Boolean = false) {
+    fun installCrossplayGeyserPack(
+        bedrockBranch: String = "1.21",
+        startAfterInstall: Boolean = false,
+        preferOfflineMode: Boolean = false
+    ) {
         if (_isInstalling.value || _stopInFlight.value) return
-        val dirName = activeDirName() ?: run {
+        val originCoreName = config.value.activeCoreName
+        val originDirName = activeDirName() ?: run {
             _errorFlow.tryEmit("Chưa chọn máy chủ để cài GeyserMC + Floodgate + ViaVersion.")
             return
         }
-        val active = config.value.installedCores.firstOrNull { it.name == config.value.activeCoreName }
+        val active = config.value.installedCores.firstOrNull { it.name == originCoreName }
         val core = active?.core ?: config.value.selectedCore
         val mcVer = active?.version ?: config.value.mcVersion
         val wasRunning = serverState.value.isRunning
@@ -7536,14 +7789,18 @@ class McViewModel(
                 _messageFlow.tryEmit("📱 Đang tải GeyserMC + Floodgate + ViaVersion + ViaBackwards ($branchLabel) cho ${core.displayName} $mcVer...")
                 val installedFiles = withContext(Dispatchers.IO) {
                     val files = pluginManager.installCrossplaySuite(
-                        dirName = dirName,
+                        dirName = originDirName,
                         core = core,
                         mcVersion = mcVer,
-                        bedrockBranch = bedrockBranch
+                        bedrockBranch = bedrockBranch,
+                        forceAuthType = if (preferOfflineMode) "offline" else null
                     )
-                    // Tự động bật Cracked (online-mode=false) và cấu hình MOTD chuẩn cho Crossplay
-                    val currentProps = propertiesManager.readProperties(dirName).toMutableMap()
-                    currentProps["online-mode"] = "false"
+                    // Bảo toàn online-mode của người dùng nếu họ đang bật online-mode=true (vì đã có Floodgate),
+                    // chỉ chuyển sang offline khi preferOfflineMode=true hoặc khi chưa có cấu hình
+                    val currentProps = propertiesManager.readProperties(originDirName).toMutableMap()
+                    if (preferOfflineMode || currentProps["online-mode"].isNullOrBlank()) {
+                        currentProps["online-mode"] = "false"
+                    }
                     currentProps["enforce-secure-profile"] = "false"
                     if (currentProps["motd"].isNullOrBlank() ||
                         currentProps["motd"]?.contains("powernukkitx", true) == true ||
@@ -7551,18 +7808,24 @@ class McViewModel(
                     ) {
                         currentProps["motd"] = "MineHost VN - Server Choi Chung PE & PC"
                     }
-                    propertiesManager.writeProperties(currentProps, dirName)
+                    propertiesManager.writeProperties(currentProps, originDirName)
                     files
                 }
                 playitController.createMinecraftBedrockTunnelOnDemand(19132)
-                refreshServerPropertiesNow()
-                if (core.supportsMods) refreshMods() else refreshInstalledPlugins()
+                if (activeDirName() == originDirName) {
+                    refreshServerPropertiesNow()
+                    if (core.supportsMods) refreshMods() else refreshInstalledPlugins()
+                }
                 refreshServerStorage()
                 _messageFlow.tryEmit(
                     "✅ Đã cài xong ${installedFiles.joinToString(", ")} (Tương thích $branchLabel + PC Java mọi phiên bản)!"
                 )
                 if (wasRunning || startAfterInstall) {
-                    startServer()
+                    if (config.value.activeCoreName == originCoreName && activeDirName() == originDirName) {
+                        startServer()
+                    } else {
+                        _messageFlow.tryEmit("ℹ️ Bạn đã chuyển sang máy chủ khác trong lúc tải, nên hệ thống không tự bật lại máy chủ cũ.")
+                    }
                 }
             } catch (e: Exception) {
                 _errorFlow.tryEmit("⚠️ Không thể tải gói Crossplay: ${e.message}")
@@ -7851,26 +8114,224 @@ class McViewModel(
      * 就是让用户能手动清掉这类残留）。因此：目录不存在视为「已经删干净」，
      * 继续清理登记信息。
      */
+    // ── Thùng rác Server (Khôi phục trong 30 ngày & Xóa vĩnh viễn dọn sạch) ──
+
+    data class TrashedServerItem(
+        val trashId: String,
+        val name: String,
+        val coreName: String,
+        val version: String,
+        val dirName: String,
+        val serverFile: String?,
+        val deletedAtMs: Long,
+        val expiresAtMs: Long,
+        val sizeBytes: Long
+    ) {
+        val daysRemaining: Int
+            get() {
+                val diff = (expiresAtMs - System.currentTimeMillis()).coerceAtLeast(0L)
+                return ((diff + (24L * 3600L * 1000L - 1L)) / (24L * 3600L * 1000L)).toInt().coerceIn(0, 30)
+            }
+    }
+
+    private val trashRetentionMs = 30L * 24L * 3600L * 1000L
+    private val trashMutex = kotlinx.coroutines.sync.Mutex()
+    private val _trashedServers = MutableStateFlow<List<TrashedServerItem>>(emptyList())
+    val trashedServers: StateFlow<List<TrashedServerItem>> = _trashedServers.asStateFlow()
+
+    private val serverTrashRoot: java.io.File
+        get() = java.io.File(repo.termuxRuntime.installer.rootDir, "home/servers_trash")
+
+    private val serverTrashIndexFile: java.io.File
+        get() = java.io.File(serverTrashRoot, "trash_index.json")
+
+    private fun readTrashIndexLocked(): MutableList<TrashedServerItem> {
+        val file = serverTrashIndexFile
+        if (!file.isFile) return mutableListOf()
+        return runCatching {
+            val arr = org.json.JSONArray(file.readText())
+            val list = mutableListOf<TrashedServerItem>()
+            for (i in 0 until arr.length()) {
+                val obj = arr.optJSONObject(i) ?: continue
+                val trashId = obj.optString("trashId").trim()
+                val name = obj.optString("name").trim()
+                val dirName = obj.optString("dirName").trim()
+                if (trashId.isEmpty() || name.isEmpty() || dirName.isEmpty()) continue
+                list.add(
+                    TrashedServerItem(
+                        trashId = trashId,
+                        name = name,
+                        coreName = obj.optString("coreName", ServerCore.Unknown.name),
+                        version = obj.optString("version", ""),
+                        dirName = dirName,
+                        serverFile = obj.optString("serverFile", "").takeIf { it.isNotBlank() },
+                        deletedAtMs = obj.optLong("deletedAtMs", System.currentTimeMillis()),
+                        expiresAtMs = obj.optLong("expiresAtMs", System.currentTimeMillis() + trashRetentionMs),
+                        sizeBytes = obj.optLong("sizeBytes", 0L)
+                    )
+                )
+            }
+            list
+        }.getOrDefault(mutableListOf())
+    }
+
+    private fun writeTrashIndexLocked(items: List<TrashedServerItem>) {
+        val root = serverTrashRoot
+        if (!root.exists()) root.mkdirs()
+        val arr = org.json.JSONArray()
+        items.forEach { item ->
+            val obj = org.json.JSONObject().apply {
+                put("trashId", item.trashId)
+                put("name", item.name)
+                put("coreName", item.coreName)
+                put("version", item.version)
+                put("dirName", item.dirName)
+                put("serverFile", item.serverFile ?: "")
+                put("deletedAtMs", item.deletedAtMs)
+                put("expiresAtMs", item.expiresAtMs)
+                put("sizeBytes", item.sizeBytes)
+            }
+            arr.put(obj)
+        }
+        val tmp = java.io.File(root, "trash_index.json.tmp")
+        tmp.writeText(arr.toString(2))
+        try {
+            java.nio.file.Files.move(
+                tmp.toPath(),
+                serverTrashIndexFile.toPath(),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                java.nio.file.StandardCopyOption.ATOMIC_MOVE
+            )
+        } catch (_: Exception) {
+            java.nio.file.Files.move(
+                tmp.toPath(),
+                serverTrashIndexFile.toPath(),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING
+            )
+        }
+    }
+
+    private fun wipeServerTracesCompletelyLocked(trashId: String, originalDirName: String) {
+        val trashDir = java.io.File(serverTrashRoot, trashId)
+        if (trashDir.exists()) {
+            runCatching { trashDir.deleteRecursively() }
+        }
+        val stillInstalled = repo.currentConfig().installedCores.any { it.dirName == originalDirName }
+        if (!stillInstalled) {
+            val ghostServerDir = repo.termuxRuntime.serverDirFor(originalDirName)
+            if (ghostServerDir.exists()) {
+                runCatching { ghostServerDir.deleteRecursively() }
+            }
+            cachedStorageDirStamp.remove(originalDirName)
+            // Dọn các thư mục staging/backup tạm còn sót của server này
+            repo.termuxRuntime.serversDir.listFiles()?.forEach { f ->
+                if (f.name.startsWith("${originalDirName}.opt_upgrade_bak.") ||
+                    f.name.startsWith(".${originalDirName}.")
+                ) {
+                    runCatching { f.deleteRecursively() }
+                }
+            }
+        }
+    }
+
+    fun refreshTrashedServers() {
+        viewModelScope.launch(Dispatchers.IO) {
+            trashMutex.withLock {
+                val now = System.currentTimeMillis()
+                val loaded = readTrashIndexLocked()
+                val valid = mutableListOf<TrashedServerItem>()
+                var changed = false
+                for (item in loaded) {
+                    val folder = java.io.File(serverTrashRoot, item.trashId)
+                    if (now >= item.expiresAtMs || !folder.exists()) {
+                        wipeServerTracesCompletelyLocked(item.trashId, item.dirName)
+                        changed = true
+                    } else {
+                        valid.add(item)
+                    }
+                }
+                // Dọn các thư mục mồ côi trong servers_trash không nằm trong index và quá 30 ngày
+                val validIds = valid.map { it.trashId }.toHashSet()
+                serverTrashRoot.listFiles()?.forEach { f ->
+                    if (f.isDirectory && f.name !in validIds && now - f.lastModified() >= trashRetentionMs) {
+                        runCatching { f.deleteRecursively() }
+                    }
+                }
+                if (changed) {
+                    writeTrashIndexLocked(valid)
+                }
+                _trashedServers.value = valid.sortedByDescending { it.deletedAtMs }
+            }
+        }
+    }
+
+    /**
+     * Chuyển Server vào Thùng rác lưu giữ 30 ngày (thay vì xóa mất ngay lập tức).
+     * Trong vòng 30 ngày người dùng có thể khôi phục 1 chạm hoặc bấm Xóa vĩnh viễn để dọn sạch.
+     */
     fun deleteCore(name: String) {
-        // 兜底：下面是对含世界存档的目录做整目录 deleteRecursively()，运行中执行会得到部分删除的存档且不可逆
-        if (!requireServerStopped("xóa Core máy chủ")) return
+        if (!requireServerStopped("xóa máy chủ")) return
+        if (isServerMutationInFlight()) {
+            _errorFlow.tryEmit("⏳ Đang có tác vụ cài đặt hoặc khôi phục đang chạy, vui lòng đợi hoàn tất.")
+            return
+        }
         viewModelScope.launch {
             try {
                 val cfg = repo.currentConfig()
                 val core = cfg.installedCores.find { it.name == name }
                     ?: throw RuntimeException(str(R.string.msg_core_not_found, name))
                 val dir = repo.termuxRuntime.serverDirFor(core.dirName)
-                val existed = withContext(Dispatchers.IO) { dir.exists() }
-                if (existed) {
-                    val deleted = withContext(Dispatchers.IO) { dir.deleteRecursively() }
-                    if (!deleted) {
-                        _errorFlow.tryEmit(str(R.string.s299, dir.absolutePath))
-                        return@launch
+                val now = System.currentTimeMillis()
+                val safeDirTag = core.dirName.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+                val trashId = "${safeDirTag}_$now"
+
+                withContext(Dispatchers.IO) {
+                    AddonSafety.lifecycleGate.withLock {
+                        check(!repo.termuxRuntime.isMcRunning()) { "Máy chủ đang chạy, không thể xóa." }
+                        trashMutex.withLock {
+                            if (dir.exists()) {
+                                val trashRoot = serverTrashRoot
+                                if (!trashRoot.exists()) trashRoot.mkdirs()
+                                val trashDir = java.io.File(trashRoot, trashId)
+                                val moved = try {
+                                    java.nio.file.Files.move(
+                                        dir.toPath(),
+                                        trashDir.toPath(),
+                                        java.nio.file.StandardCopyOption.REPLACE_EXISTING
+                                    )
+                                    true
+                                } catch (_: Exception) {
+                                    val copied = runCatching { dir.copyRecursively(trashDir, overwrite = true) }.getOrDefault(false)
+                                    if (copied) dir.deleteRecursively() else false
+                                }
+                                if (!moved) {
+                                    throw RuntimeException(str(R.string.s299, dir.absolutePath))
+                                }
+                                val sizeBytes = sumFilesAndCount(trashDir).first
+                                val currentTrash = readTrashIndexLocked()
+                                currentTrash.add(
+                                    0,
+                                    TrashedServerItem(
+                                        trashId = trashId,
+                                        name = core.name,
+                                        coreName = core.core.name,
+                                        version = core.version,
+                                        dirName = core.dirName,
+                                        serverFile = core.serverFile,
+                                        deletedAtMs = now,
+                                        expiresAtMs = now + trashRetentionMs,
+                                        sizeBytes = sizeBytes
+                                    )
+                                )
+                                writeTrashIndexLocked(currentTrash)
+                                _trashedServers.value = currentTrash.sortedByDescending { it.deletedAtMs }
+                            } else {
+                                termux3Log("deleteCore: Thư mục không còn tồn tại, chỉ xóa bản ghi ${dir.absolutePath}")
+                            }
+                        }
                     }
-                } else {
-                    termux3Log("deleteCore: Thư mục không còn tồn tại, chỉ xóa bản ghi ${dir.absolutePath}")
                 }
-                // 原子读改写 + 落盘；based on 权威态，不会把陈旧列表写回去
+                cachedStorageDirStamp.remove(core.dirName)
                 repo.updateAndSaveConfig { current ->
                     val updated = current.installedCores.filter { it.name != name }
                     current.copy(
@@ -7882,9 +8343,148 @@ class McViewModel(
                         }
                     )
                 }
-                _messageFlow.tryEmit(str(R.string.s300, name))
+                refreshServerStorage()
+                _messageFlow.tryEmit("🗑️ Đã chuyển Server '$name' vào Thùng rác (có thể khôi phục trong 30 ngày)!")
             } catch (e: Exception) {
                 _errorFlow.tryEmit(str(R.string.s301, e.message))
+            }
+        }
+    }
+
+    /** Khôi phục Server từ Thùng rác trong vòng 30 ngày */
+    fun restoreTrashedServer(trashId: String) {
+        if (!requireServerStopped("khôi phục Server từ Thùng rác")) return
+        if (isServerMutationInFlight()) {
+            _errorFlow.tryEmit("⏳ Đang có tác vụ khác đang chạy, vui lòng đợi hoàn tất.")
+            return
+        }
+        viewModelScope.launch {
+            try {
+                var restoredDisplayName = ""
+                withContext(Dispatchers.IO) {
+                    AddonSafety.lifecycleGate.withLock {
+                        trashMutex.withLock {
+                            val list = readTrashIndexLocked()
+                            val item = list.firstOrNull { it.trashId == trashId }
+                                ?: throw RuntimeException("Không tìm thấy Server này trong Thùng rác.")
+                            val trashDir = java.io.File(serverTrashRoot, item.trashId)
+                            if (!trashDir.exists()) {
+                                list.removeAll { it.trashId == trashId }
+                                writeTrashIndexLocked(list)
+                                _trashedServers.value = list.sortedByDescending { it.deletedAtMs }
+                                throw RuntimeException("Thư mục dữ liệu trong Thùng rác không còn tồn tại.")
+                            }
+                            val cfg = repo.currentConfig()
+                            val existingDirs = cfg.installedCores.map { it.dirName }.toHashSet()
+                            val targetDirName = if (item.dirName !in existingDirs && !repo.termuxRuntime.serverDirFor(item.dirName).exists()) {
+                                item.dirName
+                            } else {
+                                "${item.dirName}_restored_${System.currentTimeMillis() % 10000}"
+                            }
+                            val existingNames = cfg.installedCores.map { it.name }.toHashSet()
+                            val targetName = if (item.name !in existingNames) {
+                                item.name
+                            } else {
+                                "${item.name} (Khôi phục)"
+                            }
+                            restoredDisplayName = targetName
+                            val targetDir = repo.termuxRuntime.serverDirFor(targetDirName)
+                            targetDir.parentFile?.mkdirs()
+                            val moved = try {
+                                java.nio.file.Files.move(
+                                    trashDir.toPath(),
+                                    targetDir.toPath(),
+                                    java.nio.file.StandardCopyOption.REPLACE_EXISTING
+                                )
+                                true
+                            } catch (_: Exception) {
+                                val copied = runCatching { trashDir.copyRecursively(targetDir, overwrite = true) }.getOrDefault(false)
+                                if (copied) trashDir.deleteRecursively() else false
+                            }
+                            if (!moved) {
+                                throw RuntimeException("Không thể di chuyển thư mục Server từ Thùng rác về lại máy chủ.")
+                            }
+                            val restoredCoreEnum = ServerCore.values().firstOrNull { it.name == item.coreName } ?: ServerCore.Unknown
+                            val restoredEntry = com.mineserve.mobile.data.InstalledCore(
+                                name = targetName,
+                                core = restoredCoreEnum,
+                                version = item.version,
+                                dirName = targetDirName,
+                                serverFile = item.serverFile
+                            )
+                            repo.updateAndSaveConfig { current ->
+                                val updated = current.installedCores + restoredEntry
+                                current.copy(
+                                    installedCores = updated,
+                                    activeCoreName = current.activeCoreName ?: targetName
+                                )
+                            }
+                            list.removeAll { it.trashId == trashId }
+                            writeTrashIndexLocked(list)
+                            _trashedServers.value = list.sortedByDescending { it.deletedAtMs }
+                        }
+                    }
+                }
+                refreshServerStorage()
+                _messageFlow.tryEmit("♻️ Đã khôi phục nguyên vẹn Server '$restoredDisplayName' từ Thùng rác!")
+            } catch (e: Exception) {
+                _errorFlow.tryEmit("⚠️ Không thể khôi phục Server: ${e.message}")
+            }
+        }
+    }
+
+    /** Xóa vĩnh viễn 1 Server trong Thùng rác và dọn sạch toàn bộ tệp liên quan */
+    fun permanentlyDeleteTrashedServer(trashId: String) {
+        viewModelScope.launch {
+            try {
+                var deletedName = ""
+                var freedBytes = 0L
+                withContext(Dispatchers.IO) {
+                    trashMutex.withLock {
+                        val list = readTrashIndexLocked()
+                        val item = list.firstOrNull { it.trashId == trashId }
+                            ?: throw RuntimeException("Mục này đã được xóa khỏi Thùng rác.")
+                        deletedName = item.name
+                        freedBytes = item.sizeBytes
+                        wipeServerTracesCompletelyLocked(item.trashId, item.dirName)
+                        list.removeAll { it.trashId == trashId }
+                        writeTrashIndexLocked(list)
+                        _trashedServers.value = list.sortedByDescending { it.deletedAtMs }
+                    }
+                }
+                refreshServerStorage()
+                _messageFlow.tryEmit("🔥 Đã xóa vĩnh viễn & dọn sạch Server '$deletedName' (Giải phóng ${formatStorageBytes(freedBytes)})!")
+            } catch (e: Exception) {
+                _errorFlow.tryEmit("⚠️ Lỗi xóa vĩnh viễn: ${e.message}")
+            }
+        }
+    }
+
+    /** Dọn sạch toàn bộ Thùng rác Server */
+    fun emptyServerTrash() {
+        viewModelScope.launch {
+            try {
+                var totalFreed = 0L
+                var count = 0
+                withContext(Dispatchers.IO) {
+                    trashMutex.withLock {
+                        val list = readTrashIndexLocked()
+                        count = list.size
+                        for (item in list) {
+                            totalFreed += item.sizeBytes
+                            wipeServerTracesCompletelyLocked(item.trashId, item.dirName)
+                        }
+                        serverTrashRoot.listFiles()?.forEach { f ->
+                            if (f.isDirectory) runCatching { f.deleteRecursively() }
+                        }
+                        writeTrashIndexLocked(emptyList())
+                        _trashedServers.value = emptyList()
+                    }
+                }
+                refreshServerStorage()
+                _messageFlow.tryEmit("🧹 Đã dọn sạch toàn bộ Thùng rác ($count Server • Giải phóng ${formatStorageBytes(totalFreed)})!")
+            } catch (e: Exception) {
+                _errorFlow.tryEmit("⚠️ Lỗi dọn sạch Thùng rác: ${e.message}")
             }
         }
     }
@@ -8144,6 +8744,7 @@ class McViewModel(
             cm?.registerNetworkCallback(req, networkChangeCallback)
         }
         scanUnregisteredServers()
+        refreshTrashedServers()
         viewModelScope.launch {
             config.map { it.activeCoreName }.distinctUntilChanged().collect {
                 loadPlayerHistory()

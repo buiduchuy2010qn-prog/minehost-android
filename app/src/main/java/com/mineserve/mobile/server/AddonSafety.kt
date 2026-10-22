@@ -86,6 +86,7 @@ object AddonSafety {
         try {
             fill(staged)
             validate(staged, mod, loader)
+            check(!isRunning()) { "Server đã được bật trong lúc tải. Đã hủy ghi đè tệp để bảo vệ runtime." }
             Files.move(staged.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
             target
         } finally { staged.delete() }

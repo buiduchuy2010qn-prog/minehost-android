@@ -26,6 +26,7 @@ import java.util.concurrent.atomic.AtomicInteger
  */
 class McpHttpServer(
     private val port: Int,
+    private val preBodyCheck: ((method: String, path: String, headers: Map<String, String>) -> Response?)? = null,
     private val handler: Handler
 ) {
     fun interface Handler {
@@ -74,6 +75,7 @@ class McpHttpServer(
 
     private class MalformedRequestException(message: String) : IOException(message)
     private class BodyTooLargeException : IOException("request body too large")
+    private class PreBodyRejectedException(val response: Response) : IOException("rejected before body")
 
     private val running = AtomicBoolean(false)
     private var serverSocket: ServerSocket? = null
@@ -179,6 +181,9 @@ class McpHttpServer(
             while (running.get()) {
                 val request = try {
                     readRequest(input, output)
+                } catch (e: PreBodyRejectedException) {
+                    writeResponse(output, e.response, false)
+                    break
                 } catch (e: MalformedRequestException) {
                     writeResponse(output, Response.json(400, "{\"error\":\"bad request\"}"), false)
                     break
@@ -225,6 +230,8 @@ class McpHttpServer(
         if (parts.size != 3 || !parts[2].startsWith("HTTP/")) {
             throw MalformedRequestException("bad request line: $line")
         }
+        val method = parts[0].uppercase()
+        val rawPath = parts[1]
         val headers = HashMap<String, String>()
         var headerBytes = 0
         while (true) {
@@ -237,6 +244,10 @@ class McpHttpServer(
                 headers[headerLine.substring(0, idx).trim().lowercase()] = headerLine.substring(idx + 1).trim()
             }
         }
+        // 在发送 100 Continue 或分配读取最大 64MB 请求体之前先执行鉴权与路径预检，防止未授权请求耗尽内存
+        preBodyCheck?.invoke(method, rawPath, headers)?.let { earlyResponse ->
+            throw PreBodyRejectedException(earlyResponse)
+        }
         if (headers["expect"]?.contains("100-continue", ignoreCase = true) == true) {
             output.write("HTTP/1.1 100 Continue\r\n\r\n".toByteArray(Charsets.US_ASCII))
             output.flush()
@@ -244,11 +255,15 @@ class McpHttpServer(
         val body = if (headers["transfer-encoding"]?.contains("chunked", ignoreCase = true) == true) {
             readChunked(input)
         } else {
-            val length = headers["content-length"]?.toLongOrNull() ?: 0L
-            if (length > MAX_BODY_BYTES) throw BodyTooLargeException()
-            if (length > 0) readFully(input, length.toInt()) else ByteArray(0)
+            val contentLenHeader = headers["content-length"]
+            val length = if (contentLenHeader != null) {
+                contentLenHeader.trim().toLongOrNull()?.takeIf { it >= 0L }
+                    ?: throw MalformedRequestException("invalid content-length")
+            } else 0L
+            if (length > MAX_BODY_BYTES.toLong()) throw BodyTooLargeException()
+            if (length > 0L) readFully(input, length.toInt()) else ByteArray(0)
         }
-        return Request(parts[0].uppercase(), parts[1], headers, body, parts[2])
+        return Request(method, rawPath, headers, body, parts[2])
     }
 
     private fun readChunked(input: InputStream): ByteArray {
@@ -257,7 +272,9 @@ class McpHttpServer(
             val sizeLine = readLine(input) ?: throw MalformedRequestException("eof in chunk size")
             val size = sizeLine.substringBefore(';').trim().toIntOrNull(16)
                 ?: throw MalformedRequestException("bad chunk size: $sizeLine")
-            if (out.size() + size > MAX_BODY_BYTES) throw BodyTooLargeException()
+            if (size < 0) throw MalformedRequestException("negative chunk size: $sizeLine")
+            // 防整数溢出：用 MAX_BODY_BYTES - out.size() 比较，避免 out.size() + size 溢出为负数绕过上限
+            if (size > MAX_BODY_BYTES - out.size()) throw BodyTooLargeException()
             if (size == 0) {
                 while (true) {
                     val trailer = readLine(input) ?: break

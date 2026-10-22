@@ -141,6 +141,8 @@ class PlayitTunnelController(
     @Volatile
     private var currentPortProvider: () -> Int = { 25565 }
     @Volatile
+    private var currentBedrockPortProvider: () -> Int = { 19132 }
+    @Volatile
     private var lastActiveNetworkHandle: Long = 0L
     private val forceReauthRequested = java.util.concurrent.atomic.AtomicBoolean(false)
     private val activeBridges = ConcurrentHashMap.newKeySet<Socket>()
@@ -224,8 +226,19 @@ class PlayitTunnelController(
         appendLog("Đã xóa khóa Playit.gg cũ. Bấm 'Bật kết nối Mọi Nơi' để tạo liên kết mới.")
     }
 
-    fun start(localPortProvider: () -> Int, forceRefresh: Boolean = false) {
+    fun setBedrockPortProvider(bedrockPortProvider: () -> Int) {
+        currentBedrockPortProvider = bedrockPortProvider
+    }
+
+    fun start(
+        localPortProvider: () -> Int,
+        forceRefresh: Boolean = false,
+        bedrockPortProvider: (() -> Int)? = null
+    ) {
         currentPortProvider = localPortProvider
+        if (bedrockPortProvider != null) {
+            currentBedrockPortProvider = bedrockPortProvider
+        }
         ensureNetworkCallback()
         if (tunnelJob?.isActive == true) {
             if (forceRefresh) {
@@ -849,9 +862,9 @@ class PlayitTunnelController(
     ) {
         val now = System.currentTimeMillis()
         val key = "$srcIp:$srcPort-$dstIp:$dstPort-$tunnelId"
-        val configuredPort = runCatching { currentPortProvider() }.getOrDefault(19132)
-        // Nếu Server hiện tại là Java (25565), GeyserMC sẽ mở cổng UDP 19132; nếu là Bedrock riêng thì dùng cổng cấu hình
-        val targetUdpPort = if (configuredPort == 25565 || configuredPort <= 0) 19132 else configuredPort
+        val configuredBedrockPort = runCatching { currentBedrockPortProvider() }.getOrDefault(19132)
+        // Quản lý riêng cổng UDP của Bedrock/Geyser (19132) tách biệt với cổng TCP Java (kể cả khi Java dùng cổng riêng như 25566)
+        val targetUdpPort = if (configuredBedrockPort in 1..65535) configuredBedrockPort else 19132
         val localTarget = InetSocketAddress("127.0.0.1", targetUdpPort)
 
         var client = activeUdpClients[key]
@@ -1218,6 +1231,9 @@ class PlayitTunnelController(
     }
 
     fun createMinecraftBedrockTunnelOnDemand(localBedrockPort: Int = 19132) {
+        if (localBedrockPort in 1..65535) {
+            currentBedrockPortProvider = { localBedrockPort }
+        }
         scope.launch(Dispatchers.IO) {
             val secret = getSavedSecret() ?: return@launch
             runCatching {
@@ -1439,39 +1455,9 @@ class PlayitTunnelController(
             }
         }
 
-        // Nếu tạo thất bại do tài khoản vướng cổng cũ của thiết bị trước -> thử dọn cổng mồ côi rồi tạo lại
-        runCatching {
-            val listResp = postJson("/v1/tunnels/list", "{}", secret)
-            val tunnels = listResp.optJSONObject("data")?.optJSONArray("tunnels")
-            if (tunnels != null) {
-                for (i in 0 until tunnels.length()) {
-                    val t = tunnels.optJSONObject(i) ?: continue
-                    val tid = t.optString("id")
-                    val originObj = t.optJSONObject("origin")
-                    val originAgentId = originObj?.optJSONObject("data")?.optString("agent_id")?.takeIf { it.isNotBlank() }
-                        ?: originObj?.optJSONObject("details")?.optString("agent_id").orEmpty()
-                    if (tid.isNotBlank() && originAgentId != agentId) {
-                        val delReq = JSONObject().put("tunnel_id", tid)
-                        runCatching { postJson("/v1/tunnels/delete", delReq.toString(), secret) }
-                        runCatching { postJson("/tunnels/delete", delReq.toString(), secret) }
-                    }
-                }
-            }
-        }
-
-        for ((endpointPath, payload) in candidates) {
-            val ok = runCatching {
-                val resp = postJson(endpointPath, payload.toString(), secret)
-                resp.optString("status") == "success"
-            }.getOrDefault(false)
-            if (ok) {
-                appendLog("✅ Đã dọn cổng cũ và tạo cổng Minecraft Java mới thành công.")
-                return true
-            }
-        }
-
+        // Không tự động xóa tunnel của agent khác để bảo vệ kết nối của các thiết bị khác trên cùng tài khoản Playit.
         if (lastFailReason.isNotBlank()) {
-            appendLog("Lưu ý khi tạo tunnel tự động: $lastFailReason")
+            appendLog("Lưu ý khi tạo tunnel tự động: $lastFailReason (Nếu tài khoản đã hết hạn mức 4 tunnel miễn phí, vui lòng xóa bớt tunnel không dùng trên trang playit.gg).")
         }
         return false
     }

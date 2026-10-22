@@ -36,9 +36,10 @@ object AppUpdateService {
         coerceInputValues = true
     }
 
-    suspend fun latest(currentVersion: String): AppRelease? = withContext(Dispatchers.IO) {
+    suspend fun latest(currentVersion: String, customFeedUrl: String? = null): AppRelease? = withContext(Dispatchers.IO) {
         var lastError: Exception? = null
-        for (api in apiUrls()) try {
+        var sawNotFoundOrPrivate = false
+        for (api in apiUrls(customFeedUrl)) try {
             val connection = URL(api).openConnection() as HttpURLConnection
             try {
                 connection.requestMethod = "GET"
@@ -46,14 +47,21 @@ object AppUpdateService {
                 connection.readTimeout = 12_000
                 connection.setRequestProperty("Accept", "application/vnd.github+json")
                 connection.setRequestProperty("User-Agent", "MineServeMobile")
-                if (connection.responseCode !in 200..299) {
-                    throw IllegalStateException("update check failed: HTTP ${connection.responseCode}")
+                val code = connection.responseCode
+                if (code == 404) {
+                    // Repo riêng tư hoặc chưa phát hành bản Release công khai (tuyệt đối không nhúng token vào APK)
+                    sawNotFoundOrPrivate = true
+                    continue
+                }
+                if (code !in 200..299) {
+                    throw IllegalStateException("update check failed: HTTP $code")
                 }
                 val release = decodeRelease(connection.inputStream.bufferedReader().use { it.readText() })
                 val tag = release.tag_name.trim().removePrefix("v")
+                if (tag.isBlank()) return@withContext null
                 val apk = release.assets.firstOrNull { it.name == APK_NAME }
                     ?: release.assets.firstOrNull { it.name.endsWith(".apk", ignoreCase = true) }
-                    ?: throw IllegalStateException("release has no ARM64 APK")
+                    ?: return@withContext null
                 return@withContext if (compare(tag, currentVersion) <= 0) null
                 else AppRelease(tag, release.body?.trim().orEmpty(), downloadUrls(apk.browser_download_url), "$PROJECT_URL/releases/tag/$tag")
             } finally {
@@ -61,6 +69,9 @@ object AppUpdateService {
             }
         } catch (e: Exception) {
             lastError = e
+        }
+        if (sawNotFoundOrPrivate && lastError == null) {
+            return@withContext null
         }
         throw lastError ?: IllegalStateException("update check failed")
     }
@@ -117,10 +128,14 @@ object AppUpdateService {
      * `ghproxy.net` 对 api 请求一律返回 403，`gh.api.99988866.xyz` 已失效。直连兜底
      * （GitHub API 比 Release 资产更容易直连成功）。
      */
-    private fun apiUrls() = listOf(
-        API,
-        "https://cdn.gh-proxy.com/$API"
-    )
+    private fun apiUrls(customFeedUrl: String? = null): List<String> {
+        val custom = customFeedUrl?.trim()?.takeIf { it.startsWith("https://", ignoreCase = true) }
+        return if (custom != null) {
+            listOf(custom, API, "https://cdn.gh-proxy.com/$API")
+        } else {
+            listOf(API, "https://cdn.gh-proxy.com/$API")
+        }
+    }
 
     private fun downloadUrls(url: String) = listOf(
         url,
