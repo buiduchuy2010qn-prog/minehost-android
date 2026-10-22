@@ -2341,11 +2341,11 @@ class PlayitTunnelController(
         }
 
         if (allCurrentAgentTunnelIds.isNotEmpty()) {
-            val staleRoutes = routesByServerAndProto.values.filter { route ->
+            val staleRoutes = routesByServerKey.values.filter { route ->
                 route.tunnelId.isNotBlank() && route.tunnelId !in allCurrentAgentTunnelIds
             }
             for (stale in staleRoutes) {
-                routesByServerAndProto.remove(routeKey(stale.serverId, stale.protocol))
+                routesByServerKey.remove(serverRouteKey(stale.serverId, stale.protocol))
                 routesByTunnelUuid.remove(stale.tunnelId)
                 if (stale.internalTunnelId != 0L) {
                     routesByInternalTunnelId.remove(stale.internalTunnelId)
@@ -2398,7 +2398,7 @@ class PlayitTunnelController(
                         enabledCountForProto == 1 &&
                         getRouteForServer(cleanDefaultServerId, proto) == null
                     if (shouldRebindSingleShared) {
-                        routesByServerAndProto.remove(routeKey(existingRoute.serverId, proto))
+                        routesByServerKey.remove(serverRouteKey(existingRoute.serverId, proto))
                     }
                     val targetServerId = if (shouldRebindSingleShared) cleanDefaultServerId else existingRoute.serverId
                     val targetPort = if (shouldRebindSingleShared) {
@@ -2618,7 +2618,7 @@ class PlayitTunnelController(
 
                 if (existingRoute != null) {
                     if (shouldRebindSingleShared) {
-                        routesByServerAndProto.remove(routeKey(existingRoute.serverId, proto))
+                        routesByServerKey.remove(serverRouteKey(existingRoute.serverId, proto))
                     }
                     val targetServerId = if (shouldRebindSingleShared) cleanDefaultServerId else existingRoute.serverId
                     val targetPort = if (shouldRebindSingleShared) {
