@@ -732,13 +732,19 @@ class PluginManager(
         val filePath: String = "",
         val displayName: String? = null,
         val version: String? = null,
-        val modId: String? = null
+        val modId: String? = null,
+        /** Mô tả gốc (tiếng Anh) trong fabric.mod.json / mods.toml */
+        val description: String? = null,
+        /** Trường "environment" của fabric.mod.json: "*", "client" hoặc "server" */
+        val environment: String? = null
     )
 
     private data class ModJarMeta(
         val displayName: String?,
         val version: String?,
-        val modId: String?
+        val modId: String?,
+        val description: String? = null,
+        val environment: String? = null
     )
 
     private val modMetaCache = ConcurrentHashMap<String, Pair<Long, ModJarMeta>>()
@@ -757,7 +763,10 @@ class PluginManager(
                     val name = Regex(""""name"\s*:\s*"([^"]+)"""").find(jsonText)?.groupValues?.get(1)?.trim()
                     val ver = Regex(""""version"\s*:\s*"([^"]+)"""").find(jsonText)?.groupValues?.get(1)?.trim()
                         ?.takeIf { !it.startsWith("\${") }
-                    return@use ModJarMeta(name?.takeIf { it.isNotBlank() }, ver, id?.takeIf { it.isNotBlank() })
+                    val desc = Regex(""""description"\s*:\s*"((?:[^"\\]|\\.)*)"""").find(jsonText)?.groupValues?.get(1)
+                        ?.replace("\\n", " ")?.replace("\\\"", "\"")?.trim()
+                    val env = Regex(""""environment"\s*:\s*"([^"]+)"""").find(jsonText)?.groupValues?.get(1)?.trim()
+                    return@use ModJarMeta(name?.takeIf { it.isNotBlank() }, ver, id?.takeIf { it.isNotBlank() }, desc?.takeIf { it.isNotBlank() }, env)
                 }
                 val tomlEntry = jar.getJarEntry("META-INF/neoforge.mods.toml") ?: jar.getJarEntry("META-INF/mods.toml")
                 if (tomlEntry != null) {
@@ -766,7 +775,9 @@ class PluginManager(
                     val name = Regex("""displayName\s*=\s*"([^"]+)"""").find(tomlText)?.groupValues?.get(1)?.trim()
                     val ver = Regex("""version\s*=\s*"([^"]+)"""").find(tomlText)?.groupValues?.get(1)?.trim()
                         ?.takeIf { !it.startsWith("\${") }
-                    return@use ModJarMeta(name?.takeIf { it.isNotBlank() }, ver, id?.takeIf { it.isNotBlank() })
+                    val desc = Regex("""description\s*=\s*'''([\s\S]*?)'''""").find(tomlText)?.groupValues?.get(1)?.trim()
+                        ?: Regex("""description\s*=\s*"([^"]*)"""").find(tomlText)?.groupValues?.get(1)?.trim()
+                    return@use ModJarMeta(name?.takeIf { it.isNotBlank() }, ver, id?.takeIf { it.isNotBlank() }, desc?.takeIf { it.isNotBlank() })
                 }
                 ModJarMeta(null, null, null)
             }
@@ -794,7 +805,9 @@ class PluginManager(
                     filePath = f.absolutePath,
                     displayName = meta.displayName,
                     version = meta.version,
-                    modId = meta.modId
+                    modId = meta.modId,
+                    description = meta.description,
+                    environment = meta.environment
                 )
             } ?: emptyList()
     }
@@ -990,7 +1003,8 @@ class PluginManager(
         val downloads: Long = 0,
         val icon_url: String = "",
         val categories: List<String> = emptyList(),
-        val server_side: String = ""
+        val server_side: String = "",
+        val client_side: String = ""
     )
 
     @Serializable
@@ -2141,7 +2155,7 @@ class PluginManager(
     }
 
     /**
-     * Cài đặt trọn bộ Crossplay (PC Java mọi phiên bản + PE Bedrock 1.21.50..1.21.114+ / 26.x):
+     * Cài đặt trọn bộ Crossplay (PC Java + PE Bedrock theo đúng dải GeyserMC hiện hành, xem [CrossplayCompat]):
      * - Kiểm tra nghiêm ngặt thành phần bắt buộc (GeyserMC) đúng Loader (`fabric`/`neoforge`/`spigot`),
      *   tuyệt đối không tải nhầm JAR Fabric cho Forge/NeoForge hoặc báo thành công khi tải thất bại.
      */
@@ -2155,6 +2169,12 @@ class PluginManager(
         check(!termux.isMcRunning()) { "Hãy dừng server trước khi cài đặt Crossplay." }
         val installedNames = mutableListOf<String>()
         val targetMc = mcVersion.ifBlank { "1.21.4" }
+        // Kiểm tra THẬT trước khi tải: chỉ cài khi chắc chắn PE (Bedrock) hiện nay vào được server này
+        val compat = CrossplayCompat.evaluate(core, targetMc)
+        check(compat.supported) {
+            listOfNotNull(compat.headline, compat.details.firstOrNull(), compat.suggestion?.let { "👉 $it" }).joinToString("\n")
+        }
+        val isGeyserJavaTarget = CrossplayCompat.compareVersions(targetMc, compat.info.javaTarget) == 0
 
         if (core.supportsMods) {
             val loader = when (core) {
@@ -2186,7 +2206,8 @@ class PluginManager(
                     geyserInstalled = true
                 }
             }
-            if (!geyserInstalled) {
+            // Chỉ dùng bản "latest" từ GeyserMC khi server đúng phiên bản Java mà Geyser mới nhất nhắm tới (tránh nạp sai bản gây crash)
+            if (!geyserInstalled && isGeyserJavaTarget) {
                 val geyserPlatformAndFile: Pair<String, String>? = when (loader) {
                     "fabric", "quilt" -> "fabric" to "Geyser-Fabric.jar"
                     "neoforge" -> "neoforge" to "Geyser-NeoForge.jar"
@@ -2284,6 +2305,11 @@ class PluginManager(
                 runCatching {
                     installFromUrl(viaVerUrl, "ViaVersion.jar", dirName) { _, _, _ -> }
                     installedNames += "ViaVersion.jar"
+                }
+            }
+            if (compat.needsViaVersion) {
+                check("ViaVersion.jar" in installedNames) {
+                    "Không tải được ViaVersion — bắt buộc vì Geyser kết nối bằng giao thức Java ${compat.info.javaTarget} còn server là $targetMc. Hãy kiểm tra mạng rồi thử lại."
                 }
             }
             val viaBackUrl = runCatching { resolveLatestAsset("ViaVersion/ViaBackwards", "ViaBackwards") }.getOrNull()

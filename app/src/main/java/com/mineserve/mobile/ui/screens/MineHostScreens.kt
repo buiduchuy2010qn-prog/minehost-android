@@ -914,6 +914,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             }
 
                             // Trạng thái cài đặt GeyserMC + Floodgate + ViaVersion ngay tại chỗ
+                            val homeCrossCheck = com.mineserve.mobile.ui.rememberCrossplayCheck(active.core, active.version)
                             if (!hasGeyserInstalled) {
                                 Surface(
                                     color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.9f),
@@ -928,9 +929,20 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                             fontWeight = FontWeight.Bold,
                                             color = MaterialTheme.colorScheme.onErrorContainer
                                         )
+                                        Text(
+                                            when {
+                                                homeCrossCheck == null -> "🔎 Đang kiểm tra Java ${active.version} chơi chung được với PE bản nào..."
+                                                homeCrossCheck.supported -> "${homeCrossCheck.pcLine}\n${homeCrossCheck.peLine}"
+                                                else -> "${homeCrossCheck.headline}\n👉 ${homeCrossCheck.suggestion.orEmpty()}"
+                                            },
+                                            fontSize = 11.sp,
+                                            lineHeight = 15.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onErrorContainer
+                                        )
                                         Button(
                                             onClick = { vm.installCrossplayGeyserPack("1.21", startAfterInstall = true) },
-                                            enabled = !installing && !stopping,
+                                            enabled = !installing && !stopping && homeCrossCheck?.supported == true,
                                             shape = RoundedCornerShape(8.dp),
                                             modifier = Modifier.fillMaxWidth()
                                         ) {
@@ -949,14 +961,34 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     shape = RoundedCornerShape(8.dp),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text(
-                                        "✅ Đã bật Chơi Chung PC + PE (GeyserMC + Floodgate + ViaVersion) — Cả máy tính Java và điện thoại PE vào chung 1 Map!",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color(0xFF2DD4BF),
-                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                                    )
+                                    Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                        Text(
+                                            "✅ Đã cài cầu nối PE (GeyserMC + Floodgate + ViaVersion)",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF2DD4BF)
+                                        )
+                                        Text(
+                                            when {
+                                                homeCrossCheck == null -> "🔎 Đang kiểm tra bản PE vào được..."
+                                                homeCrossCheck.supported -> "💻 PC: Minecraft Java ${active.version}   •   📱 PE: ${homeCrossCheck.bedrockRangeText}\nNếu PE báo 'Phiên bản không khớp': cập nhật Minecraft PE trên CH Play, hoặc bấm Cài lại Geyser để lấy bản mới nhất."
+                                                else -> "${homeCrossCheck.headline}\n👉 ${homeCrossCheck.suggestion.orEmpty()}"
+                                            },
+                                            fontSize = 10.5.sp,
+                                            lineHeight = 14.sp,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        if (homeCrossCheck?.supported == true) {
+                                            TextButton(
+                                                onClick = { vm.installCrossplayGeyserPack("1.21", startAfterInstall = false) },
+                                                enabled = !installing && !stopping,
+                                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
+                                            ) {
+                                                Text("🔄 Cài lại Geyser mới nhất", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2DD4BF))
+                                            }
+                                        }
+                                    }
                                 }
                             }
 
@@ -1589,7 +1621,7 @@ fun MineHostManage(vm: McViewModel, navigate: (SubPage) -> Unit) {
 
         item(key = "about_card") {
             HostCard("🇻🇳 MineHost 2.3 • Bản Cộng Đồng Minecraft Việt Nam", artKind = MinecraftArtKind.CREEPER) {
-                Text("Giao diện trực quan không trùng lặp, định tuyến IPv4 Playit.gg chống lỗi 'Máy chủ không rõ', Chơi chung PC + PE 1.21.114+ / 26.x qua GeyserMC + Floodgate + ViaVersion & Gói 14 Mod Tối Ưu Server 1 chạm.")
+                Text("Giao diện trực quan không trùng lặp, định tuyến IPv4 Playit.gg chống lỗi 'Máy chủ không rõ', Chơi chung PC + PE (tự kiểm tra bản PE vào được) qua GeyserMC + Floodgate + ViaVersion & Gói 14 Mod Tối Ưu Server 1 chạm.")
                 TextButton(onClick = { uri.openUri("https://github.com/duchilocket-oss/minehost-android") }) {
                     Text("Mã nguồn & bản build trên GitHub")
                 }
@@ -1613,7 +1645,15 @@ fun MineHostCrossplay(vm: McViewModel, onBack: () -> Unit) {
     val active = config.installedCores.firstOrNull { it.name == config.activeCoreName }
 
     var selectedCrossCore by remember { mutableStateOf(com.mineserve.mobile.data.ServerCore.Paper) }
-    var selectedCrossVer by remember { mutableStateOf("1.21.4") }
+    var selectedCrossVer by remember { mutableStateOf("1.21.11") }
+    var crossRefreshKey by remember { mutableStateOf(0) }
+    val crossCheck = com.mineserve.mobile.ui.rememberCrossplayCheck(selectedCrossCore, selectedCrossVer, refreshKey = crossRefreshKey)
+    val activeCrossCheck = com.mineserve.mobile.ui.rememberCrossplayCheck(
+        core = active?.core ?: com.mineserve.mobile.data.ServerCore.Paper,
+        mcVersion = active?.version.orEmpty(),
+        enabled = active != null,
+        refreshKey = crossRefreshKey
+    )
     var customCrossVerInput by remember { mutableStateOf("") }
     var selectedBedrockBranch by remember { mutableStateOf("1.21") }
     var customServerName by remember { mutableStateOf("") }
@@ -1621,7 +1661,7 @@ fun MineHostCrossplay(vm: McViewModel, onBack: () -> Unit) {
 
     HostPage(
         "Chơi Chung PC (Java) + Điện Thoại PE (Bedrock)",
-        "Tự chọn phiên bản Server Java & Nhánh Bedrock (1.21.114 hoặc 26.x) — Tự động cài GeyserMC + Floodgate + ViaVersion + ViaBackwards."
+        "Chọn phiên bản Java — app kiểm tra thật xem Minecraft PE bản nào vào được (theo GeyserMC hiện hành), chỉ cho tạo khi chắc chắn chơi chung được."
     ) {
         item {
             TextButton(onClick = onBack) { Text("← Quay lại Trang chủ") }
@@ -1670,12 +1710,18 @@ fun MineHostCrossplay(vm: McViewModel, onBack: () -> Unit) {
                 badgeText = "Tự động 100%"
             ) {
                 if (active != null) {
+                    com.mineserve.mobile.ui.CrossplayCompatCard(
+                        core = active.core,
+                        mcVersion = active.version,
+                        result = activeCrossCheck,
+                        onRetry = { crossRefreshKey++ }
+                    )
                     Button(
                         onClick = {
                             installedClicked = true
                             vm.installCrossplayGeyserPack(selectedBedrockBranch, startAfterInstall = true)
                         },
-                        enabled = !isInstalling && !isDownloadingCore,
+                        enabled = !isInstalling && !isDownloadingCore && activeCrossCheck?.supported == true,
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)
                     ) {
@@ -1700,7 +1746,7 @@ fun MineHostCrossplay(vm: McViewModel, onBack: () -> Unit) {
                 val crossCores = listOf(
                     Triple(com.mineserve.mobile.data.ServerCore.Paper, "Paper (Khuyên dùng)", "Siêu mượt 20 TPS • Chuẩn nhất cho Geyser + ViaVersion"),
                     Triple(com.mineserve.mobile.data.ServerCore.Purpur, "Purpur (Mở rộng)", "Nhánh nâng cấp của Paper • Hỗ trợ đầy đủ Plugin"),
-                    Triple(com.mineserve.mobile.data.ServerCore.Fabric, "Fabric (Chơi Mod)", "Dùng khi muốn vừa chạy Mod Server-side vừa cho PE vào")
+                    Triple(com.mineserve.mobile.data.ServerCore.Fabric, "Fabric (Chơi Mod)", "Vừa chạy Mod vừa cho PE vào — chỉ được với bản Java mới nhất mà Geyser hỗ trợ")
                 )
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     crossCores.forEach { (coreItem, titleTxt, subTxt) ->
@@ -1735,16 +1781,14 @@ fun MineHostCrossplay(vm: McViewModel, onBack: () -> Unit) {
                     fontWeight = FontWeight.ExtraBold,
                     fontSize = 13.sp
                 )
+                val geyserJavaTarget = com.mineserve.mobile.server.CrossplayCompat.lastKnownInfo().javaTarget
                 val presetCrossVersions = listOf(
-                    "1.21.4" to "🌟 Chuẩn PE 1.21.114",
-                    "1.21.11" to "Mới nhất 1.21",
-                    "1.21.1" to "Ổn định",
-                    "1.20.4" to "Siêu mượt",
-                    "1.20.1" to "Nhiều Mod/Plugin",
-                    "1.19.4" to "Nhẹ máy",
-                    "1.18.2" to "Cổ điển",
-                    "1.16.5" to "Máy yếu"
-                )
+                    "1.21.11" to "🌟 Khuyên dùng",
+                    geyserJavaTarget to "Mới nhất (Fabric/NeoForge chỉ bản này)",
+                    "1.21.4" to "Ổn định",
+                    "1.21.1" to "Nhiều plugin",
+                    "1.20.6" to "Thấp nhất còn chơi chung"
+                ).distinctBy { it.first }
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
@@ -1788,6 +1832,17 @@ fun MineHostCrossplay(vm: McViewModel, onBack: () -> Unit) {
                     }
                 }
 
+                com.mineserve.mobile.ui.CrossplayCompatCard(
+                    core = selectedCrossCore,
+                    mcVersion = selectedCrossVer,
+                    result = crossCheck,
+                    onApplySuggestion = { sugCore, sugVer ->
+                        if (sugCore in crossCores.map { it.first }) selectedCrossCore = sugCore
+                        selectedCrossVer = sugVer
+                    },
+                    onRetry = { crossRefreshKey++ }
+                )
+
                 OutlinedTextField(
                     value = customServerName,
                     onValueChange = { customServerName = it },
@@ -1806,7 +1861,7 @@ fun MineHostCrossplay(vm: McViewModel, onBack: () -> Unit) {
                             customName = customServerName
                         )
                     },
-                    enabled = !isDownloadingCore && !isInstalling,
+                    enabled = !isDownloadingCore && !isInstalling && crossCheck?.supported == true,
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
                 ) {

@@ -224,19 +224,19 @@ internal object AddonIconLoader {
 
     private fun diskCacheDir(): File {
         val base = System.getProperty("java.io.tmpdir") ?: "/data/local/tmp"
-        return File(base, "minehost_addon_icons_v1").apply { mkdirs() }
+        return File(base, "minehost_addon_icons_v2").apply { mkdirs() }
     }
 
     private fun diskCacheFileFor(key: String): File {
         val safe = key.lowercase(Locale.ROOT).replace(Regex("[^a-z0-9._-]"), "_").take(96)
         val hash = key.hashCode().toUInt().toString(16)
-        return File(diskCacheDir(), "_.png")
+        return File(diskCacheDir(), "${safe}_$hash.png")
     }
 
     suspend fun load(url: String): Bitmap? {
         if (url.isBlank()) return null
         cache.get(url)?.let { return it }
-        val diskFile = diskCacheFileFor("url_")
+        val diskFile = diskCacheFileFor("url_$url")
         if (diskFile.isFile && diskFile.length() > 64L) {
             val diskBmp = withContext(Dispatchers.IO) {
                 runCatching { decode(diskFile.readBytes()) }.getOrNull()
@@ -306,7 +306,7 @@ internal object AddonIconLoader {
         modIdHint: String? = null,
         iconUrlHint: String? = null
     ): Bitmap? {
-        val cacheKey = "addon::::"
+        val cacheKey = "addon:${jarPath.orEmpty()}:$baseName:${slugHint.orEmpty()}:${modIdHint.orEmpty()}:${iconUrlHint.orEmpty()}"
         cache.get(cacheKey)?.let { return it }
 
         if (!iconUrlHint.isNullOrBlank()) {
@@ -319,7 +319,7 @@ internal object AddonIconLoader {
         val diskKey = (slugHint?.takeIf { it.isNotBlank() }
             ?: modIdHint?.takeIf { it.isNotBlank() }
             ?: baseName.ifBlank { jarPath.orEmpty() })
-        val diskFile = diskCacheFileFor("addon_")
+        val diskFile = diskCacheFileFor("addon_$diskKey")
         if (diskFile.isFile && diskFile.length() > 64L) {
             val diskBmp = withContext(Dispatchers.IO) {
                 runCatching { decode(diskFile.readBytes()) }.getOrNull()
@@ -460,7 +460,7 @@ internal object AddonIconLoader {
             val norm = lower.replace("_", "-")
             KNOWN_MODRINTH_ICON_URLS[norm]?.let { return it }
             for ((prefix, targetSlug) in PREFIX_TO_KNOWN_SLUG) {
-                if (norm == prefix || norm.startsWith("-") || norm.startsWith("_") || norm.startsWith(prefix)) {
+                if (norm == prefix || norm.startsWith("$prefix-") || norm.startsWith("${prefix}_") || norm.startsWith(prefix)) {
                     KNOWN_MODRINTH_ICON_URLS[targetSlug]?.let { return it }
                 }
             }
@@ -480,10 +480,10 @@ internal object AddonIconLoader {
             if (f.isFile && f.length() in 256L..(64L * 1024 * 1024)) {
                 val sha1 = runCatching { computeSha1Hex(f) }.getOrNull()
                 if (!sha1.isNullOrBlank()) {
-                    val verBody = fetchTextQuick("https://api.modrinth.com/v2/version_file/=sha1")
+                    val verBody = fetchTextQuick("https://api.modrinth.com/v2/version_file/$sha1?algorithm=sha1")
                     val projId = verBody?.let { Regex(""""project_id"\s*:\s*"([^"]+)"""").find(it)?.groupValues?.get(1) }
                     if (!projId.isNullOrBlank()) {
-                        val projBody = fetchTextQuick("https://api.modrinth.com/v2/project/")
+                        val projBody = fetchTextQuick("https://api.modrinth.com/v2/project/$projId")
                         val iconUrl = projBody?.let { Regex(""""icon_url"\s*:\s*"([^"]+)"""").find(it)?.groupValues?.get(1) }
                         if (!iconUrl.isNullOrBlank()) return iconUrl
                     }
@@ -495,12 +495,12 @@ internal object AddonIconLoader {
         val cleanQuery = cleanAddonQueryName(slugHint ?: modIdHint ?: baseName)
         if (cleanQuery.isNotBlank()) {
             val slugCandidate = cleanQuery.lowercase(Locale.ROOT).replace(" ", "-")
-            val projBody = fetchTextQuick("https://api.modrinth.com/v2/project/")
+            val projBody = fetchTextQuick("https://api.modrinth.com/v2/project/${URLEncoder.encode(slugCandidate, "UTF-8")}")
             val directIcon = projBody?.let { Regex(""""icon_url"\s*:\s*"([^"]+)"""").find(it)?.groupValues?.get(1) }
             if (!directIcon.isNullOrBlank()) return directIcon
 
             val encoded = URLEncoder.encode(cleanQuery, "UTF-8")
-            val searchBody = fetchTextQuick("https://api.modrinth.com/v2/search?query=&limit=1")
+            val searchBody = fetchTextQuick("https://api.modrinth.com/v2/search?query=$encoded&limit=1")
             val searchIcon = searchBody?.let { Regex(""""icon_url"\s*:\s*"([^"]+)"""").find(it)?.groupValues?.get(1) }
             if (!searchIcon.isNullOrBlank()) return searchIcon
         }
@@ -565,9 +565,9 @@ internal object AddonIconLoader {
     suspend fun loadPlayerHead(playerName: String): Bitmap? {
         val clean = playerName.trim().removePrefix(".").replace(Regex("[^a-zA-Z0-9_]"), "")
         if (clean.isBlank()) return null
-        val primaryUrl = "https://mc-heads.net/avatar//64"
+        val primaryUrl = "https://mc-heads.net/avatar/$clean/64"
         load(primaryUrl)?.let { return it }
-        val fallbackUrl = "https://minotar.net/helm//64.png"
+        val fallbackUrl = "https://minotar.net/helm/$clean/64.png"
         return load(fallbackUrl)
     }
 

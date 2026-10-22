@@ -170,6 +170,13 @@ private enum class InstalledFilter(val labelRes: Int) { All(R.string.s747), Enab
  */
 @Composable
 fun PluginsScreen(vm: McViewModel) {
+    // Nạp mô tả tiếng Việt + Server/Client của danh mục 56 mod để mod ĐÃ CÀI cũng hiện đúng thông tin
+    remember {
+        vm.userScreenshot56ModItems().forEach {
+            AddonInfoVi.registerCatalog(it.slug, it.originalJarName, it.title, it.scopeVi, it.descVi)
+        }
+        true
+    }
     val context = LocalContext.current
     val config by vm.config.collectAsStateWithLifecycle()
     val isBootstrapped by vm.isBootstrapped.collectAsStateWithLifecycle()
@@ -630,6 +637,7 @@ fun PluginsScreen(vm: McViewModel) {
                                             )
                                         }
                                     }
+                                    AddonSideBadge(if (item.id == "fabric-api") AddonSide.LIBRARY else AddonSide.SERVER_ONLY)
                                     Text(
                                         item.descriptionVi,
                                         color = Muted,
@@ -1154,6 +1162,7 @@ private fun InstalledPluginRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+            AddonInfoLines(rememberPluginInfo(plugin), modifier = Modifier.padding(top = 3.dp), descMaxLines = 2)
         }
         // 详情按钮
         Box(
@@ -1760,6 +1769,12 @@ private fun ModsTab(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
+                            AddonInfoLines(
+                                rememberModInfo(mod),
+                                modifier = Modifier.padding(top = 3.dp),
+                                descMaxLines = 3,
+                                warnClientOnlyOnServer = mod.isEnabled
+                            )
                         }
                         // Công tắc Bật / Tắt có cảnh báo xác nhận
                         Switch(
@@ -2148,9 +2163,8 @@ private fun ModsTab(
                                 fontSize = 9.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
-                        } else if (hit.description.isNotBlank()) {
-                            Text(hit.description, color = Muted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
+                        AddonInfoLines(rememberHitInfo(hit, isPlugin = false), modifier = Modifier.padding(top = 2.dp), descMaxLines = 2)
                     }
                     if (matchedInstalledMod != null) {
                         if (matchedInstalledMod.isEnabled) {
@@ -2413,9 +2427,8 @@ private fun PluginModrinthCard(
                                 fontSize = 9.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
-                        } else if (hit.description.isNotBlank()) {
-                            Text(hit.description, color = Muted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
+                        AddonInfoLines(rememberHitInfo(hit, isPlugin = true), modifier = Modifier.padding(top = 2.dp), descMaxLines = 2)
                     }
                     if (matchedInstalledPlugin != null) {
                         Box(
@@ -2454,7 +2467,7 @@ private fun PluginModrinthCard(
     }
 
     // 插件详情对话框（Modrinth 搜索结果）
-    ModrinthDetailDialog(detailHit) { detailHit = null }
+    ModrinthDetailDialog(detailHit, isPlugin = true) { detailHit = null }
 }
 
 /** Modrinth 下载量格式化 */
@@ -2524,8 +2537,9 @@ private fun LoaderFilterSection(
 
 /** Modrinth 搜索结果详情对话框（模组/插件通用）：作者/下载量/分类/描述 */
 @Composable
-private fun ModrinthDetailDialog(hit: PluginManager.ModrinthHit?, onDismiss: () -> Unit) {
+private fun ModrinthDetailDialog(hit: PluginManager.ModrinthHit?, isPlugin: Boolean = false, onDismiss: () -> Unit) {
     val h = hit ?: return
+    val info = rememberHitInfo(h, isPlugin)
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
@@ -2557,12 +2571,17 @@ private fun ModrinthDetailDialog(hit: PluginManager.ModrinthHit?, onDismiss: () 
                         fontSize = 11.sp
                     )
                 }
-                Spacer(Modifier.height(10.dp))
-                Text(
-                    h.description.ifBlank { "-" },
-                    fontSize = 13.sp,
-                    color = com.mineserve.mobile.ui.theme.Ink
-                )
+                Spacer(Modifier.height(8.dp))
+                AddonInfoLines(info, descMaxLines = 30, showSideExplain = true)
+                if (h.description.isNotBlank() && info.descVi != h.description) {
+                    Spacer(Modifier.height(8.dp))
+                    Text("Mô tả gốc (tiếng Anh):", fontSize = 10.sp, color = Muted)
+                    Text(
+                        h.description,
+                        fontSize = 11.sp,
+                        color = Muted
+                    )
+                }
             }
         },
         confirmButton = {

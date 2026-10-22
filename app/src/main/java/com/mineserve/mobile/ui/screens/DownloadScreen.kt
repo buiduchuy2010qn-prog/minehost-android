@@ -125,6 +125,16 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
     var flexibleCrackedMode by rememberSaveable { mutableStateOf(true) }
     var flexibleCrossplayEnabled by rememberSaveable { mutableStateOf(false) }
     var flexibleBedrockBranch by rememberSaveable { mutableStateOf("1.21") }
+    var crossplayRefreshKey by remember { mutableStateOf(0) }
+    val crossplayWanted = flexibleCrossplayEnabled && config.selectedCore.supportsPlugins && !config.selectedCore.isBedrock
+    // Kiểm tra THẬT: Java ${config.mcVersion} chơi chung được với Minecraft PE bản nào (theo GeyserMC hiện hành)
+    val crossplayCheck = com.mineserve.mobile.ui.rememberCrossplayCheck(
+        core = config.selectedCore,
+        mcVersion = config.mcVersion,
+        enabled = crossplayWanted,
+        refreshKey = crossplayRefreshKey
+    )
+    val crossplayBlocked = crossplayWanted && crossplayCheck?.supported != true
     val freeStorageMb = remember { (context.filesDir.usableSpace / (1024L * 1024L)).coerceAtLeast(0L) }
     var showSoftwareComparison by rememberSaveable { mutableStateOf(false) }
     var installedExpanded by rememberSaveable { mutableStateOf(true) }
@@ -242,7 +252,13 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                                 if (config.selectedCore.isBedrock) {
                                     append(" • 📱 Thuần Bedrock PE (UDP)")
                                 } else if (flexibleCrossplayEnabled && config.selectedCore.supportsPlugins) {
-                                    append(" • 📱💻 Tự cài Geyser + Floodgate + ViaVersion (PE nhánh $flexibleBedrockBranch)")
+                                    append(
+                                        when {
+                                            crossplayCheck == null -> " • 📱💻 Chơi chung PC + PE: đang kiểm tra..."
+                                            crossplayCheck.supported -> " • 📱💻 Chơi chung: PC Java ${config.mcVersion} + PE ${crossplayCheck.bedrockRangeText}"
+                                            else -> " • ❌ Java ${config.mcVersion} này PE KHÔNG vào được — xem gợi ý bên dưới"
+                                        }
+                                    )
                                 } else if (config.selectedCore.supportsMods) {
                                     append(" • 🧩 Hỗ trợ cài Mod .jar")
                                 } else if (config.selectedCore.supportsPlugins) {
@@ -286,7 +302,7 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                             }
                         )
                         SegPill(
-                            text = "📱💻 Chơi Chung PC + PE (Mọi bản)",
+                            text = "📱💻 Chơi Chung PC + PE",
                             selected = flexibleCrossplayEnabled && config.selectedCore.supportsPlugins,
                             compact = true,
                             onClick = {
@@ -431,26 +447,15 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                                 )
                             }
 
-                            if (flexibleCrossplayEnabled) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 2.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text("Nhánh PE:", fontSize = 10.5.sp, color = Muted, fontWeight = FontWeight.SemiBold)
-                                    SegPill(
-                                        text = "📱 PE 1.21.50–1.21.114+",
-                                        selected = flexibleBedrockBranch == "1.21",
-                                        compact = true,
-                                        onClick = { flexibleBedrockBranch = "1.21" }
-                                    )
-                                    SegPill(
-                                        text = "🚀 PE 26.x Mới nhất",
-                                        selected = flexibleBedrockBranch == "26",
-                                        compact = true,
-                                        onClick = { flexibleBedrockBranch = "26" }
-                                    )
-                                }
+                            if (crossplayWanted) {
+                                Spacer(Modifier.height(4.dp))
+                                com.mineserve.mobile.ui.CrossplayCompatCard(
+                                    core = config.selectedCore,
+                                    mcVersion = config.mcVersion,
+                                    result = crossplayCheck,
+                                    onApplySuggestion = { sugCore, sugVer -> vm.selectCoreAndVersion(sugCore, sugVer) },
+                                    onRetry = { crossplayRefreshKey++ }
+                                )
                             }
                         }
                     }
@@ -1156,8 +1161,12 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                             )
                             if (flexibleCrossplayEnabled && !config.selectedCore.isBedrock) {
                                 Text(
-                                    "📱💻 Tự động tải kèm bộ 4 công cụ Chơi chung PC + PE (GeyserMC + Floodgate + ViaVersion + ViaBackwards • Nhánh PE $flexibleBedrockBranch)",
-                                    color = Mint,
+                                    when {
+                                        crossplayCheck == null -> "📱💻 Đang kiểm tra GeyserMC cho Java ${config.mcVersion}..."
+                                        crossplayCheck.supported -> "📱💻 Tự cài GeyserMC + Floodgate + ViaVersion + ViaBackwards • PC: Java ${config.mcVersion} • PE: ${crossplayCheck.bedrockRangeText}"
+                                        else -> "❌ Không tạo được server chơi chung với Java ${config.mcVersion}: ${crossplayCheck.suggestion ?: crossplayCheck.headline}"
+                                    },
+                                    color = if (crossplayCheck?.supported == false) Coral else Mint,
                                     fontSize = 10.5.sp,
                                     fontWeight = FontWeight.SemiBold
                                 )
@@ -1211,6 +1220,7 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                                         }
                                         onBack?.invoke()
                                     },
+                                    enabled = !crossplayBlocked,
                                     colors = ButtonDefaults.buttonColors(containerColor = Mint),
                                     shape = McShape.Control,
                                     modifier = Modifier.fillMaxWidth()
@@ -1237,6 +1247,7 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                                             }
                                             onBack?.invoke()
                                         },
+                                        enabled = !crossplayBlocked,
                                         colors = ButtonDefaults.buttonColors(containerColor = Indigo),
                                         shape = McShape.Control,
                                         modifier = Modifier.fillMaxWidth()
@@ -1309,7 +1320,7 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                                         crossplayBedrockBranch = flexibleBedrockBranch
                                     )
                                 },
-                                enabled = !isDownloadingCore && effectiveCoreName.isNotBlank() && !exactNameExists,
+                                enabled = !isDownloadingCore && effectiveCoreName.isNotBlank() && !exactNameExists && !crossplayBlocked,
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = if (exactNameExists) Mint else Indigo,
                                     disabledContainerColor = if (exactNameExists) Mint.copy(alpha = 0.16f) else IndigoSoft

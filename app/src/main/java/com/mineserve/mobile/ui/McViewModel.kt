@@ -2576,6 +2576,19 @@ class McViewModel(
         else it.copy(selectedCore = core, localPort = port)
     }
 
+    @Volatile private var preferredVersionOnLoad: String? = null
+
+    /** Đổi core + phiên bản cùng lúc (không bị danh sách phiên bản tải sau ghi đè về 1.21.11). */
+    fun selectCoreAndVersion(core: ServerCore, version: String) {
+        if (config.value.selectedCore == core) {
+            setMcVersion(version)
+            return
+        }
+        preferredVersionOnLoad = version.trim()
+        selectCore(core)
+        setMcVersion(version)
+    }
+
     fun setMcVersion(version: String) {
         val trimmed = version.trim()
         val core = config.value.selectedCore
@@ -7944,6 +7957,15 @@ class McViewModel(
         viewModelScope.launch {
             _isInstalling.value = true
             try {
+                // Kiểm tra THẬT trước khi dừng server / tải file: chỉ cài khi PE hiện nay chắc chắn vào được
+                _messageFlow.tryEmit("🔎 Đang kiểm tra GeyserMC: ${core.displayName} $mcVer có cho Minecraft PE vào được không...")
+                val compat = com.mineserve.mobile.server.CrossplayCompat.evaluate(core, mcVer)
+                if (!compat.supported) {
+                    _errorFlow.tryEmit(
+                        listOfNotNull(compat.headline, compat.details.firstOrNull(), compat.suggestion?.let { "👉 $it" }).joinToString("\n")
+                    )
+                    return@launch
+                }
                 if (wasRunning) {
                     _stopInFlight.value = true
                     _messageFlow.tryEmit("⏳ Đang lưu thế giới & tạm dừng Server an toàn để cài GeyserMC + Floodgate + ViaVersion...")
@@ -7959,7 +7981,7 @@ class McViewModel(
                         return@launch
                     }
                 }
-                val branchLabel = if (bedrockBranch == "1.21") "Bedrock PE 1.21.50 – 1.21.114+" else "Bedrock PE 26.30 – 26.52"
+                val branchLabel = "Minecraft PE ${compat.bedrockRangeText}"
                 _messageFlow.tryEmit("📱 Đang tải GeyserMC + Floodgate + ViaVersion + ViaBackwards ($branchLabel) cho ${core.displayName} $mcVer...")
                 val installedFiles = withContext(Dispatchers.IO) {
                     val files = pluginManager.installCrossplaySuite(
@@ -7992,7 +8014,7 @@ class McViewModel(
                 }
                 refreshServerStorage()
                 _messageFlow.tryEmit(
-                    "✅ Đã cài xong ${installedFiles.joinToString(", ")} (Tương thích $branchLabel + PC Java mọi phiên bản)!"
+                    "✅ Đã cài xong ${installedFiles.joinToString(", ")}. PC vào bằng Java $mcVer • Điện thoại vào bằng $branchLabel"
                 )
                 if (wasRunning || startAfterInstall) {
                     if (config.value.activeCoreName == originCoreName && activeDirName() == originDirName) {
@@ -8027,13 +8049,21 @@ class McViewModel(
         if (_isDownloadingCore.value || _isInstalling.value) return
 
         val baseName = customName.trim().ifBlank {
-            val peTag = if (bedrockBranch == "1.21") "PE1.21.114" else "PE26.x"
+            val peTag = "PE"
             "ChoiChung-${core.displayName}-$mcVersion-$peTag"
         }
         viewModelScope.launch {
             _isDownloadingCore.value = true
             _downloadProgress.value = DownloadProgress()
             try {
+                // Kiểm tra THẬT khả năng chơi chung trước khi tải Core (tránh tải xong mới biết PE không vào được)
+                val compat = com.mineserve.mobile.server.CrossplayCompat.evaluate(core, mcVersion)
+                if (!compat.supported) {
+                    _errorFlow.tryEmit(
+                        listOfNotNull(compat.headline, compat.details.firstOrNull(), compat.suggestion?.let { "👉 $it" }).joinToString("\n")
+                    )
+                    return@launch
+                }
                 // Kiểm tra xem đã có server trùng tên chưa; nếu chưa thì tải Core mới
                 val existing = config.value.installedCores.firstOrNull {
                     it.name.equals(baseName, ignoreCase = true) ||
@@ -8071,7 +8101,7 @@ class McViewModel(
                     refreshServerPropertiesNow()
                     if (core.supportsMods) refreshMods() else refreshInstalledPlugins()
                     refreshServerStorage()
-                    _messageFlow.tryEmit("🎉 Đã tạo xong Server Chơi Chung '$targetServerName' (Java $mcVersion + PE ${if (bedrockBranch == "1.21") "1.21.114" else "26.x"})!")
+                    _messageFlow.tryEmit("🎉 Đã tạo xong Server Chơi Chung '$targetServerName' (PC Java $mcVersion + PE ${com.mineserve.mobile.server.CrossplayCompat.cachedResult(core, mcVersion)?.bedrockRangeText ?: "Bedrock"})!")
                     _coreDownloadCompletedFlow.tryEmit(targetServerName)
                 }
             } catch (e: Exception) {
@@ -8103,6 +8133,13 @@ class McViewModel(
                 }
                 _availableVersions.value = versions
                 _versionHints.value = options.associate { it.version to it.supportedGameVersion }
+                val preferredVer = preferredVersionOnLoad
+                preferredVersionOnLoad = null
+                if (preferredVer != null && preferredVer in versions) {
+                    // Người dùng vừa bấm "Đổi sang <core> <phiên bản>" (VD gợi ý chơi chung PC + PE) -> giữ đúng phiên bản đó
+                    updateConfig { it.copy(mcVersion = preferredVer) }
+                    return@launch
+                }
                 val currentVer = config.value.mcVersion
                 if (core == ServerCore.PowerNukkitX && versions.isNotEmpty() &&
                     (currentVer !in versions || currentVer.startsWith("1.19"))
@@ -8155,6 +8192,16 @@ class McViewModel(
         viewModelScope.launch {
             try {
                 val trimmedName = customName.trim()
+                if (installCrossplayPack && !selectedCoreSnap.isBedrock) {
+                    // Kiểm tra THẬT trước khi tải Core: chỉ tạo server chơi chung khi PE hiện nay vào được
+                    val compat = com.mineserve.mobile.server.CrossplayCompat.evaluate(selectedCoreSnap, selectedVerSnap)
+                    if (!compat.supported) {
+                        _errorFlow.tryEmit(
+                            listOfNotNull(compat.headline, compat.details.firstOrNull(), compat.suggestion?.let { "👉 $it" }).joinToString("\n")
+                        )
+                        return@launch
+                    }
+                }
                 controller.downloadCore(config.value, trimmedName) { downloaded, total, speed ->
                     _downloadProgress.value = DownloadProgress(downloaded, total, speed)
                 }
