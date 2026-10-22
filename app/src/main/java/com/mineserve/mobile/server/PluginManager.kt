@@ -3022,6 +3022,16 @@ class PluginManager(
     ) {
         val isCrossplayReady: Boolean
             get() = isInstalledAndValid && !geyserDisabled && missingDependencies.isEmpty() && runtimeLoadError == null && isRuntimeLoaded && isListeningOnPort
+        val configuredPort: Int get() = configuredBedrockPort
+        val transportType: String get() = geyserTransport
+        val authType: String get() = geyserAuthType
+        val hasGeyserJar: Boolean get() = geyserEnabled
+        val hasDisabledGeyserJar: Boolean get() = geyserDisabled
+        val hasFloodgateJar: Boolean get() = floodgateEnabled
+        val hasViaVersionJar: Boolean get() = viaVersionEnabled
+        val hasViaBackwardsJar: Boolean get() = viaBackwardsEnabled
+        val hasValidFabricApiJar: Boolean get() = fabricApiVerified
+        val loadErrorDetail: String? get() = runtimeLoadError
     }
 
     fun inspectCrossplayRuntimeStatus(

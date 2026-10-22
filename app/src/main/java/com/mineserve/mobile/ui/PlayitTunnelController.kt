@@ -143,9 +143,21 @@ data class PlayitUiState(
     val hasPublicAddress: Boolean
         get() = publicAddress.isNotBlank() || bedrockAddress.isNotBlank()
 
+    val hasPublicEndpoint: Boolean
+        get() = hasPublicAddress
+
     /** Trạng thái 4 (Có bridge/traffic chuyển tiếp đang hoạt động). */
     val hasBridgeTraffic: Boolean
         get() = activeConnections > 0 || activeUdpFlows > 0
+
+    val hasActiveForwardingBridge: Boolean
+        get() = hasBridgeTraffic
+
+    val forwardedTcpConnections: Int
+        get() = activeConnections
+
+    val activeUdpSessions: Int
+        get() = activeUdpFlows
 
     val isBusy: Boolean
         get() = stage == PlayitStage.WaitingForClaim ||
@@ -726,6 +738,24 @@ class PlayitTunnelController(
             )
         }
         appendLog("Đã dừng đường hầm Playit.gg (vô hiệu hóa các tác vụ phiên cũ).")
+    }
+
+    fun exportRedactedDiagnostics(): String {
+        val st = _state.value
+        val sb = StringBuilder()
+        sb.appendLine("=== PLAYIT TUNNEL DIAGNOSTICS (REDACTED) ===")
+        sb.appendLine("stage=${st.stage}, phase=${st.phaseDetail}, isRunning=${st.isRunning}, isAgentOnline=${st.isAgentOnline}, controlValid=${st.controlSessionValid}, gen=${st.sessionGeneration}")
+        sb.appendLine("hostingServerId=${st.hostingServerId}, viewedServerId=${st.viewedServerId}, javaLocalPort=${st.javaLocalPort}, bedrockLocalPort=${st.bedrockLocalPort}")
+        sb.appendLine("publicAddress=${st.publicAddress}, allocatedIpv4=${st.allocatedIpv4Address}, bedrockAddress=${st.bedrockAddress}, bedrockIpv4=${st.bedrockIpv4Address}")
+        sb.appendLine("udpRelayEndpoint=${st.udpRelayEndpoint}, udpRelayEstablished=${st.udpRelayEstablished}, udpRelaySessionAgeMs=${st.udpRelaySessionAgeMs}")
+        sb.appendLine("activeConnections=${st.activeConnections}, activeUdpFlows=${st.activeUdpFlows}, lastErrorKind=${st.lastErrorKind}, lastLocalTargetError=${st.lastLocalTargetError}")
+        sb.appendLine("routes:")
+        for (r in getAllTunnelRoutes()) {
+            sb.appendLine("  - server=${r.serverId} -> tunnel=${r.tunnelId} (internal=${r.internalTunnelId}) -> ${r.protocol} -> ${r.targetHost}:${r.targetPort} (pub=${r.publicAddress}, ipv4=${r.allocatedIpv4}, enabled=${r.userEnabled})")
+        }
+        sb.appendLine("recentLogs:")
+        st.recentLogs.forEach { sb.appendLine("  $it") }
+        return DiagnosticRedactor.redactSecrets(sb.toString())
     }
 
     private fun resolveValidPort(provider: () -> Int, fallback: Int): Int {
@@ -1739,10 +1769,12 @@ class PlayitTunnelController(
             }
 
             val parsed = parseUdpFlowFooter(rxPkt.data, rxPkt.offset, len)
-            val flow = parsed.getOrElse { err ->
-                appendLog("⚠️ [UDP Relay] ${err.message}")
+            val parseErr = parsed.exceptionOrNull()
+            if (parseErr != null) {
+                appendLog("⚠️ [UDP Relay] ${parseErr.message}")
                 continue
-            } ?: continue
+            }
+            val flow = parsed.getOrNull() ?: continue
 
             forwardBedrockUdpPacket(
                 sessionGen = sessionGen,

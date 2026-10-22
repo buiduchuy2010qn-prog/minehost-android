@@ -624,7 +624,6 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                     installedPlugins,
                     installedMods,
                     state.isRunning,
-                    state.runningSinceMs,
                     connectionCheckStatus
                 ) {
                     vm.inspectActiveCrossplayStatus()
@@ -1213,7 +1212,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             )
                         }
                         OutlinedButton(
-                            onClick = { vm.copyRedactedDiagnostics(ctx) },
+                            onClick = { vm.copyRedactedDiagnostics(context) },
                             shape = RoundedCornerShape(10.dp)
                         ) {
                             Text("📋 Xuất chẩn đoán", fontSize = 11.sp, fontWeight = FontWeight.Bold)
@@ -1777,16 +1776,15 @@ fun MineHostCrossplay(vm: McViewModel, onBack: () -> Unit) {
     var customServerName by remember { mutableStateOf("") }
     var preferOfflineAuth by remember { mutableStateOf(false) }
     var confirmOfflineAuthChange by remember { mutableStateOf(false) }
-    val installedPlugins by vm.installedPlugins.collectAsState()
-    val installedMods by vm.installedMods.collectAsState()
-    val serverState by vm.serverState.collectAsState()
-    val connectionCheckStatus by vm.connectionCheckStatus.collectAsState()
+    val installedPlugins by vm.installedPlugins.collectAsStateWithLifecycle()
+    val installedMods by vm.mods.collectAsStateWithLifecycle()
+    val serverState by vm.serverState.collectAsStateWithLifecycle()
+    val connectionCheckStatus by vm.connectionCheckStatus.collectAsStateWithLifecycle()
     val crossplayStatus = remember(
         active?.dirName,
         installedPlugins,
         installedMods,
         serverState.isRunning,
-        serverState.runningSinceMs,
         connectionCheckStatus
     ) {
         vm.inspectActiveCrossplayStatus()

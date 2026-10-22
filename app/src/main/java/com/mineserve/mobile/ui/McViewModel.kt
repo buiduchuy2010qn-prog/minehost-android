@@ -1767,19 +1767,15 @@ class McViewModel(
      * Gửi gói Minecraft Java Server List Ping (Handshake 0x00 + Status Request 0x00)
      * và xác minh phản hồi JSON hợp lệ qua MinecraftProtocolValidator.
      */
-    private fun probeJavaServerListPing(host: String, port: Int, timeoutMs: Int): Pair<Boolean, String> {
-        val res = com.mineserve.mobile.server.MinecraftProtocolValidator.probeJavaServerListPing(host, port, timeoutMs)
-        return res.ok to res.detail
-    }
+    private fun probeJavaServerListPing(host: String, port: Int, timeoutMs: Int): Pair<Boolean, String> =
+        com.mineserve.mobile.server.MinecraftProtocolValidator.probeJavaServerListPing(host, port, timeoutMs)
 
     /**
      * Gửi gói RakNet Unconnected Ping (0x01) qua UDP và xác minh phản hồi Unconnected Pong (0x1C + Magic + PingId + MCPE;)
      * từ đúng địa chỉ/cổng nguồn qua MinecraftProtocolValidator.
      */
-    private fun probeBedrockRakNetPing(host: String, port: Int, timeoutMs: Int): Pair<Boolean, String> {
-        val res = com.mineserve.mobile.server.MinecraftProtocolValidator.probeBedrockRakNetPing(host, port, timeoutMs)
-        return res.ok to res.detail
-    }
+    private fun probeBedrockRakNetPing(host: String, port: Int, timeoutMs: Int): Pair<Boolean, String> =
+        com.mineserve.mobile.server.MinecraftProtocolValidator.probeBedrockRakNetPing(host, port, timeoutMs)
 
     /**
      * Kiểm tra trạng thái Crossplay 5 giai đoạn thật của máy chủ đang chọn:
@@ -1789,30 +1785,31 @@ class McViewModel(
      * 4. Đang lắng nghe cổng UDP thực tế
      * 5. Đã kiểm tra phản hồi RakNet thực tế
      */
-    fun inspectActiveCrossplayStatus(): com.mineserve.mobile.server.PluginManager.CrossplayRuntimeStatus {
+    fun inspectActiveCrossplayStatus(): com.mineserve.mobile.server.PluginManager.CrossplayRuntimeInspection {
         val activeName = config.value.activeCoreName
         val active = config.value.installedCores.firstOrNull { it.name == activeName }
         val dirName = active?.dirName ?: activeDirName()
         val core = active?.core ?: config.value.selectedCore
+        val mcVer = active?.version ?: config.value.mcVersion
         if (dirName.isNullOrBlank()) {
-            return com.mineserve.mobile.server.PluginManager.CrossplayRuntimeStatus(
+            return com.mineserve.mobile.server.PluginManager.CrossplayRuntimeInspection(
+                geyserEnabled = false,
+                geyserDisabled = false,
+                floodgateEnabled = false,
+                viaVersionEnabled = false,
+                viaBackwardsEnabled = false,
+                fabricApiVerified = false,
+                missingDependencies = emptyList(),
+                configuredBedrockPort = 19132,
+                geyserAuthType = "offline",
+                geyserTransport = "raknet",
                 isInstalledAndValid = false,
                 needsRestart = false,
                 isRuntimeLoaded = false,
+                runtimeLoadError = null,
                 isListeningOnPort = false,
-                isVerifiedReachable = false,
-                configuredPort = 19132,
-                transportType = "raknet",
-                authType = "offline",
-                hasGeyserJar = false,
-                hasDisabledGeyserJar = false,
-                hasFloodgateJar = false,
-                hasViaVersionJar = false,
-                hasViaBackwardsJar = false,
-                hasValidFabricApiJar = false,
-                missingDependencies = emptyList(),
-                loadErrorDetail = null,
-                installedAtMs = 0L
+                listeningPort = null,
+                isVerifiedReachable = false
             )
         }
         val report = _connectionCheckReport.value?.takeIf { it.serverId == dirName }
@@ -1822,10 +1819,10 @@ class McViewModel(
         return pluginManager.inspectCrossplayRuntimeStatus(
             dirName = dirName,
             core = core,
+            mcVersion = mcVer,
             isServerRunning = serverState.value.isRunning,
-            serverRunningSinceMs = serverState.value.runningSinceMs,
-            consoleLines = _consoleLines.value,
-            isBedrockProbeVerified = verifiedReachable
+            consoleLogs = _consoleLines.value,
+            verifiedReachable = verifiedReachable
         )
     }
 
@@ -3005,7 +3002,7 @@ class McViewModel(
      */
     fun isServerMutationInFlight(): Boolean =
         _isInstalling.value ||
-            pluginManager.isCrossplayTransactionInFlight(activeDirName()) ||
+            com.mineserve.mobile.server.PluginManager.isCrossplayTransactionInFlight(activeDirName().orEmpty()) ||
             _isTogglingServerOptPack.value ||
             _modBatchProgress.value != null ||
             _pluginDownloadProgress.value.isNotEmpty() ||
@@ -5944,7 +5941,7 @@ class McViewModel(
             return resolveLiveLocalServerPort()
         }
         return runCatching {
-            pluginManager.readConfiguredBedrockPort(dir, 19132)
+            pluginManager.readConfiguredBedrockPort(dir, coreObj?.core, 19132)
         }.getOrDefault(19132)
     }
 
