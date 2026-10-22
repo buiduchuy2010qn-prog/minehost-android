@@ -7793,7 +7793,7 @@ class McViewModel(
                         core = core,
                         mcVersion = mcVer,
                         bedrockBranch = bedrockBranch,
-                        forceAuthType = if (preferOfflineMode) "offline" else null
+                        forceOfflineAuth = preferOfflineMode
                     )
                     // Bảo toàn online-mode của người dùng nếu họ đang bật online-mode=true (vì đã có Floodgate),
                     // chỉ chuyển sang offline khi preferOfflineMode=true hoặc khi chưa có cấu hình
@@ -8286,7 +8286,7 @@ class McViewModel(
                 val trashId = "${safeDirTag}_$now"
 
                 withContext(Dispatchers.IO) {
-                    AddonSafety.lifecycleGate.withLock {
+                    com.mineserve.mobile.server.AddonSafety.lifecycleGate.withLock {
                         check(!repo.termuxRuntime.isMcRunning()) { "Máy chủ đang chạy, không thể xóa." }
                         trashMutex.withLock {
                             if (dir.exists()) {
@@ -8362,7 +8362,7 @@ class McViewModel(
             try {
                 var restoredDisplayName = ""
                 withContext(Dispatchers.IO) {
-                    AddonSafety.lifecycleGate.withLock {
+                    com.mineserve.mobile.server.AddonSafety.lifecycleGate.withLock {
                         trashMutex.withLock {
                             val list = readTrashIndexLocked()
                             val item = list.firstOrNull { it.trashId == trashId }
