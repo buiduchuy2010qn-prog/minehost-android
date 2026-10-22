@@ -319,6 +319,8 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
     var lastCopiedTag by remember { mutableStateOf<String?>(null) }
 
     var confirm by remember { mutableStateOf<String?>(null) }
+    var showPastePlayitKeyDialog by remember { mutableStateOf(false) }
+    var pastedPlayitKeyInput by remember { mutableStateOf("") }
     val heapLimit = device?.maxManualHeapMb ?: 2048
     var heap by remember(config.maxHeapMb, heapLimit) { mutableFloatStateOf(config.maxHeapMb.toFloat().coerceIn(512f, heapLimit.toFloat())) }
     var showRamSlider by remember { mutableStateOf(false) }
@@ -596,18 +598,25 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                 val lanAddress = lanIp.takeIf {
                     it.matches(Regex("""\d{1,3}(\.\d{1,3}){3}""")) && it != "0.0.0.0" && !it.startsWith("127.")
                 }?.let { "$it:$port" }
-                val playitAddress = playitState.publicAddress?.takeIf { it.isNotBlank() }
-                val playitIpv4Host = remember(playitAddress, playitNumericAddress) {
-                    vm.extractPlayitIpv4Host(playitAddress) ?: vm.extractPlayitIpv4Host(playitNumericAddress)
+                val playitAddress = playitState.publicAddress.takeIf { it.isNotBlank() }
+                val playitAllocIpv4 = playitState.allocatedIpv4Address.takeIf { it.isNotBlank() }
+                val playitIpv4Host = remember(playitAllocIpv4, playitAddress, playitNumericAddress) {
+                    vm.extractPlayitIpv4Host(playitAllocIpv4)
+                        ?: vm.extractPlayitIpv4Host(playitAddress)
+                        ?: vm.extractPlayitIpv4Host(playitNumericAddress)
                 }
-                val playitTcpPort = remember(playitAddress) {
+                val playitTcpPort = remember(playitAddress, playitAllocIpv4) {
                     playitAddress?.substringAfterLast(":", "")?.takeIf { it.isNotBlank() }
+                        ?: playitAllocIpv4?.substringAfterLast(":", "")?.takeIf { it.isNotBlank() }
                 }
-                val playitPureIpv4Address = remember(playitIpv4Host, playitTcpPort, playitNumericAddress) {
-                    if (playitIpv4Host != null && playitTcpPort != null) {
-                        "$playitIpv4Host:$playitTcpPort"
-                    } else {
-                        playitNumericAddress?.takeIf { !it.contains("::") }
+                val playitPureIpv4Address = remember(playitAllocIpv4, playitIpv4Host, playitTcpPort, playitNumericAddress) {
+                    when {
+                        playitAllocIpv4 != null && playitAllocIpv4.substringBeforeLast(":").matches(Regex("""^\d{1,3}(\.\d{1,3}){3}$""")) ->
+                            playitAllocIpv4
+                        playitIpv4Host != null && playitTcpPort != null ->
+                            "$playitIpv4Host:$playitTcpPort"
+                        else ->
+                            playitNumericAddress?.takeIf { !it.contains("::") }
                     }
                 }
                 val hasGeyserInstalled = active.core.isBedrock ||
@@ -615,10 +624,40 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                     installedMods.any { it.fileName.contains("geyser", ignoreCase = true) }
 
                 HostCard(
-                    title = "🌐 Đường Hầm & Địa Chỉ Vào Game (PC + PE)",
+                    title = "🌐 Mời Bạn Bè & Đường Hầm Playit.gg (PC + PE)",
                     artKind = MinecraftArtKind.ENDER_EYE,
-                    badgeText = if (playConnectionMode == PlayConnectionMode.SameNetwork) "Cùng Wi-Fi" else "Playit.gg 4G/Wi-Fi"
+                    badgeText = if (playConnectionMode == PlayConnectionMode.SameNetwork) "Cùng Wi-Fi" else playitState.phaseDetail
                 ) {
+                    // Tách rõ trạng thái Minecraft Server và trạng thái Playit.gg (Mục 5.2 Kế hoạch tổng thể)
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text(
+                                "🖥️ Trạng thái Minecraft (${active.name}): " + when {
+                                    stopping -> "⏳ Đang dừng..."
+                                    state.startupPhase == StartupPhase.Failed -> "❌ Lỗi khởi động"
+                                    state.isRunning && state.startupPhase != StartupPhase.Ready -> "⚡ Đang khởi động..."
+                                    state.isRunning -> "🟢 Sẵn sàng (Cổng $port)"
+                                    else -> "⚪ Đã dừng (Cổng $port)"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                "🌐 Trạng thái Playit.gg: ${playitState.phaseDetail}" +
+                                    (if (playitState.agentName.isNotBlank()) " • Agent: ${playitState.agentName}" else ""),
+                                style = MaterialTheme.typography.bodySmall,
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (playitState.isRunning) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
                     // Chuyển chế độ Cùng Wi-Fi / Kết nối mọi nơi (Playit.gg)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                         val isLanMode = playConnectionMode == PlayConnectionMode.SameNetwork
@@ -658,17 +697,22 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                 Text(
                                     when {
                                         playitState.isRunning && playitAddress != null ->
-                                            "🟢 Đường hầm Playit.gg ĐANG HOẠT ĐỘNG • Tự nối cổng TCP $port (PC) & UDP 19132 (PE)"
-                                        playitState.isRunning && !playitState.claimUrl.isNullOrBlank() && !playitState.isClaimed ->
-                                            "🔑 Cần xác nhận liên kết (Claim) lần đầu — Hãy bấm nút Mở trang Claim bên dưới"
-                                        playitState.isRunning ->
-                                            "⏳ Đang kết nối máy chủ Playit.gg và lấy cổng..."
+                                            "🟢 Đường hầm Playit.gg ĐANG CHUYỂN TIẾP (${playitState.agentName.ifBlank { "Agent Online" }}) • Nối cổng TCP $port" +
+                                                (if (playitState.bedrockAddress.isNotBlank()) " & UDP 19132 (PE)" else "")
+                                        playitState.stage == com.mineserve.mobile.ui.PlayitStage.WaitingForClaim && playitState.claimUrl.isNotBlank() ->
+                                            "🔑 Cần xác nhận liên kết (Claim) trên web Playit.gg (Mã: ${playitState.claimCode}) — Bấm 'Mở trang Claim' hoặc 'Dán Secret Key' bên dưới"
+                                        playitState.isBusy ->
+                                            "⏳ ${playitState.statusText}"
                                         else ->
-                                            "⚪ Đường hầm Playit.gg đang tắt — Bấm nút bên dưới để mở đường hầm cho 4G / khác Wi-Fi"
+                                            "⚪ Đường hầm Playit.gg đang tắt — Bấm Bật Đường Hầm hoặc Dán Secret Key từ web Playit.gg"
                                     },
                                     style = MaterialTheme.typography.bodySmall,
                                     fontWeight = FontWeight.Bold,
-                                    color = if (playitState.isRunning && playitAddress != null) Color(0xFF10B981) else MaterialTheme.colorScheme.primary
+                                    color = when {
+                                        playitState.isRunning && playitAddress != null -> Color(0xFF10B981)
+                                        playitState.stage == com.mineserve.mobile.ui.PlayitStage.Error -> MaterialTheme.colorScheme.error
+                                        else -> MaterialTheme.colorScheme.primary
+                                    }
                                 )
                                 if (playitState.errorMessage.isNotBlank()) {
                                     Text(
@@ -679,41 +723,45 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     )
                                 }
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                                    if (!playitState.isRunning) {
+                                    if (!playitState.isActiveOrConnecting) {
                                         Button(
                                             onClick = { vm.startPlayitTunnel() },
                                             shape = RoundedCornerShape(10.dp),
-                                            modifier = Modifier.fillMaxWidth()
+                                            modifier = Modifier.weight(1.2f)
                                         ) {
-                                            Text("🚀 Bật Đường Hầm Playit.gg Ngay", fontWeight = FontWeight.ExtraBold)
+                                            Text("🚀 Bật Playit.gg", fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
+                                        }
+                                        OutlinedButton(
+                                            onClick = { showPastePlayitKeyDialog = true },
+                                            shape = RoundedCornerShape(10.dp),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Text("🔑 Dán Secret Key", fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
                                         }
                                     } else {
-                                        Button(
-                                            onClick = { vm.refreshPlayitTunnel() },
-                                            shape = RoundedCornerShape(10.dp),
-                                            modifier = Modifier.weight(1f)
-                                        ) { Text("🔄 Làm mới", fontWeight = FontWeight.Bold, fontSize = 11.5.sp) }
-                                        OutlinedButton(
-                                            onClick = { vm.stopPlayitTunnel() },
-                                            shape = RoundedCornerShape(10.dp),
-                                            modifier = Modifier.weight(1f)
-                                        ) { Text("⏹️ Tắt hầm", fontSize = 11.5.sp) }
                                         if (playitState.claimUrl.isNotBlank() && !playitState.isClaimed) {
                                             Button(
                                                 onClick = { uriHandler.openUri(playitState.claimUrl) },
                                                 shape = RoundedCornerShape(10.dp),
-                                                modifier = Modifier.weight(1f)
-                                            ) { Text("🔑 Claim", fontSize = 11.5.sp) }
-                                        } else if (playitState.hasSavedSecret) {
-                                            OutlinedButton(
-                                                onClick = {
-                                                    vm.resetPlayitSecretKey()
-                                                    vm.startPlayitTunnel()
-                                                },
+                                                modifier = Modifier.weight(1.2f)
+                                            ) { Text("🔑 Mở trang Claim", fontWeight = FontWeight.ExtraBold, fontSize = 11.5.sp) }
+                                        } else {
+                                            Button(
+                                                onClick = { vm.refreshPlayitTunnel() },
                                                 shape = RoundedCornerShape(10.dp),
                                                 modifier = Modifier.weight(1f)
-                                            ) { Text("🔑 Đổi cổng mới", fontSize = 11.sp) }
+                                            ) { Text("🔄 Làm mới", fontWeight = FontWeight.Bold, fontSize = 11.5.sp) }
                                         }
+                                        OutlinedButton(
+                                            onClick = { showPastePlayitKeyDialog = true },
+                                            shape = RoundedCornerShape(10.dp),
+                                            modifier = Modifier.weight(1f)
+                                        ) { Text("🔑 Dán Key", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                                        OutlinedButton(
+                                            onClick = { vm.stopPlayitTunnel() },
+                                            shape = RoundedCornerShape(10.dp),
+                                            modifier = Modifier.weight(0.85f)
+                                        ) { Text("⏹️ Tắt", fontSize = 11.5.sp) }
                                     }
                                 }
                             }
@@ -923,7 +971,9 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             if (playitState.bedrockAddress.isNotBlank()) {
                                 val peDomainHost = playitState.bedrockAddress.substringBeforeLast(":")
                                 val pePort = playitState.bedrockAddress.substringAfterLast(":", "19132")
-                                val peIpv4Host = vm.extractPlayitIpv4Host(playitState.bedrockAddress) ?: playitIpv4Host
+                                val peIpv4Host = playitState.bedrockIpv4Address.substringBeforeLast(":").takeIf {
+                                    it.matches(Regex("""^\d{1,3}(\.\d{1,3}){3}$"""))
+                                } ?: vm.extractPlayitIpv4Host(playitState.bedrockAddress) ?: playitIpv4Host
                                 HorizontalDivider(color = Color(0xFF2DD4BF).copy(alpha = 0.35f))
                                 Text(
                                     "🌍 Chơi PE từ xa (4G / Khác Wi-Fi qua Playit UDP — Nhập vào 2 ô riêng trong Minecraft PE):",
@@ -968,6 +1018,14 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     }
                                 }
                             } else {
+                                if (playitState.bedrockStatusNote.isNotBlank()) {
+                                    Text(
+                                        "ℹ️ ${playitState.bedrockStatusNote}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                                     OutlinedButton(
                                         onClick = {
@@ -1109,10 +1167,10 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                         }
                     }
 
-                    // Công tắc 2: Tự động dọn RAM & chỉnh dung lượng RAM
+                    // Công tắc 2: Tự động dọn bộ nhớ đệm & chỉnh dung lượng RAM
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.weight(1f)) {
-                            Text("🧹 Tự động dọn RAM & Tối ưu G1GC đa nhân", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("🧹 Tự động dọn bộ nhớ đệm & Tối ưu G1GC đa nhân", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                             Text(
                                 device?.let { "RAM máy: %.1f GB • Đang cấp cho Server: ${config.maxHeapMb} MB (Gợi ý: ${it.recommendedHeapMb} MB)".format(it.totalMb / 1024.0) }
                                     ?: "Đang cấp cho Server: ${config.maxHeapMb} MB",
@@ -1226,6 +1284,71 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                 }
             }
         }
+    }
+
+    if (showPastePlayitKeyDialog) {
+        AlertDialog(
+            onDismissRequest = { showPastePlayitKeyDialog = false },
+            title = { Text("🔑 Dán Secret Key hoặc Mã Claim Playit.gg", fontWeight = FontWeight.ExtraBold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Nếu bạn đã tạo Agent trên web playit.gg (ví dụ `from-key-...`), hãy sao chép mã Secret Key (64 ký tự hex) từ trang Agent của Playit.gg và dán vào bên dưới để kết nối trực tiếp:",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    OutlinedTextField(
+                        value = pastedPlayitKeyInput,
+                        onValueChange = { pastedPlayitKeyInput = it },
+                        label = { Text("Secret Key (64 ký tự hex) từ web Playit.gg") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(
+                            onClick = {
+                                val clipText = clipboard.getText()?.text?.trim().orEmpty()
+                                if (clipText.isNotBlank()) {
+                                    pastedPlayitKeyInput = clipText
+                                }
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("📋 Dán từ bộ nhớ tạm", fontSize = 11.5.sp)
+                        }
+                        if (playitState.hasSavedSecret) {
+                            OutlinedButton(
+                                onClick = {
+                                    showPastePlayitKeyDialog = false
+                                    vm.resetPlayitSecretKey()
+                                    vm.startPlayitTunnel()
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("♻️ Tạo mã Claim mới", fontSize = 11.5.sp)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val cleaned = pastedPlayitKeyInput.trim()
+                        if (cleaned.isNotBlank()) {
+                            showPastePlayitKeyDialog = false
+                            vm.setPlayitSecretKey(cleaned)
+                            pastedPlayitKeyInput = ""
+                        }
+                    },
+                    enabled = pastedPlayitKeyInput.trim().isNotBlank()
+                ) {
+                    Text("Lưu & Kết nối Agent ngay", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showPastePlayitKeyDialog = false }) { Text("Đóng") }
+            }
+        )
     }
 
     confirm?.let { action ->
@@ -1702,8 +1825,12 @@ fun MineHostCrossplay(vm: McViewModel, onBack: () -> Unit) {
 
         // 3. HƯỚNG DẪN ĐỊA CHỈ KẾT NỐI CHO CẢ PC (JAVA) VÀ ĐIỆN THOẠI (PE)
         item {
-            val peIpv4Host = vm.extractPlayitIpv4Host(playitState.bedrockAddress) ?: vm.extractPlayitIpv4Host(playitState.publicAddress)
-            val pcIpv4Host = vm.extractPlayitIpv4Host(playitState.publicAddress)
+            val peIpv4Host = playitState.bedrockIpv4Address.substringBeforeLast(":").takeIf {
+                it.matches(Regex("""^\d{1,3}(\.\d{1,3}){3}$"""))
+            } ?: vm.extractPlayitIpv4Host(playitState.bedrockAddress) ?: vm.extractPlayitIpv4Host(playitState.publicAddress)
+            val pcIpv4Host = playitState.allocatedIpv4Address.substringBeforeLast(":").takeIf {
+                it.matches(Regex("""^\d{1,3}(\.\d{1,3}){3}$"""))
+            } ?: vm.extractPlayitIpv4Host(playitState.publicAddress)
             val pcTcpPort = playitState.publicAddress.substringAfterLast(":", "")
             val peUdpPort = playitState.bedrockAddress.substringAfterLast(":", "19132")
             HostCard(
@@ -1738,7 +1865,7 @@ fun MineHostCrossplay(vm: McViewModel, onBack: () -> Unit) {
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            "• Điện thoại PE (Bedrock - UDP): ${if (playitState.bedrockAddress.isNotBlank()) "IP ${peIpv4Host ?: playitState.bedrockAddress.substringBeforeLast(":")} • Port UDP: $peUdpPort" else "Bấm nút 'Mở cổng Bedrock UDP' bên dưới"}",
+                            "• Điện thoại PE (Bedrock - UDP): ${if (playitState.bedrockAddress.isNotBlank()) "IP ${peIpv4Host ?: playitState.bedrockAddress.substringBeforeLast(":")} • Port UDP: $peUdpPort" else playitState.bedrockStatusNote.ifBlank { "PE chưa dùng được từ mạng ngoài — Bấm 'Mở cổng Bedrock UDP' bên dưới" }}",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary
