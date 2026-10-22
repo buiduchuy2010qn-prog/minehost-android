@@ -1495,7 +1495,7 @@ class McViewModel(
             _connectionCheckRunning.value = true
             try {
                 refreshLanIp(notifyOnChange = false)
-                val activeSrvName = config.value.activeCoreName.ifBlank { "Chưa chọn" }
+                val activeSrvName = config.value.activeCoreName?.takeIf { it.isNotBlank() } ?: "Chưa chọn"
                 val activeSrv = config.value.installedCores.firstOrNull { it.name == activeSrvName }
                 val isBedrockOnlyCore = activeSrv?.core?.isBedrock == true
                 val port = realServerPort()

@@ -571,9 +571,9 @@ class PlayitTunnelController(
         initialRegistered: AgentRegisteredMsg,
         secret: String
     ) {
-        @Volatile var registered = initialRegistered
-        @Volatile var authClientIp = initialPong.clientAddr.address.hostAddress.orEmpty()
-        @Volatile var authTunnelAddr = initialPong.tunnelAddrStr
+        var registered = initialRegistered
+        var authClientIp = initialPong.clientAddr.address.hostAddress.orEmpty()
+        var authTunnelAddr = initialPong.tunnelAddrStr
         var lastPingMs = 0L
         var lastPongReceivedMs = System.currentTimeMillis()
         var lastKeepAliveMs = System.currentTimeMillis()
@@ -581,7 +581,7 @@ class PlayitTunnelController(
         var lastReauthMs = System.currentTimeMillis()
         var lastRttMs: Int? = null
         // Chuẩn hóa thời điểm hết hạn phiên về đồng hồ cục bộ của điện thoại (mặc định 30 giây từ lúc đăng ký)
-        @Volatile var sessionExpiresAtLocalMs = System.currentTimeMillis() + 30_000L
+        var sessionExpiresAtLocalMs = System.currentTimeMillis() + 30_000L
 
         val sendBuf = ByteBuffer.allocate(2048).order(ByteOrder.BIG_ENDIAN)
         val rxBuf = ByteArray(2048)
