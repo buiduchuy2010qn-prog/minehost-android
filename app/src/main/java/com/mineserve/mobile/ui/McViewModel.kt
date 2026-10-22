@@ -1661,12 +1661,28 @@ class McViewModel(
 
                 if (pState.isAgentOnline) {
                     if (pubAddr.isNotBlank()) {
-                        val checkTarget = pubIpv4.ifBlank { pubAddr }
-                        val host = checkTarget.substringBeforeLast(":", checkTarget)
-                        val pubPort = checkTarget.substringAfterLast(":", "").toIntOrNull()
-                            ?: pubAddr.substringAfterLast(":", "").toIntOrNull()
+                        val domainHost = pubAddr.substringBeforeLast(":", pubAddr)
+                        val ipv4Host = pubIpv4.substringBeforeLast(":", pubIpv4)
+                        val pubPort = pubAddr.substringAfterLast(":", "").toIntOrNull()
+                            ?: pubIpv4.substringAfterLast(":", "").toIntOrNull()
                             ?: 25565
-                        val (tunnelOk, tunnelDetail) = probeJavaServerListPing(host, pubPort, 3200)
+                        // Quan trọng: Playit áp dụng NoRawIp trên các tunnel *.tun.ply.gg miễn phí,
+                        // bắt buộc gói Handshake 0x00 của Minecraft Java phải chứa tên miền Playit (domainHost) thay vì IP số!
+                        var probeResult = probeJavaServerListPing(
+                            host = domainHost,
+                            port = pubPort,
+                            timeoutMs = 3200,
+                            handshakeHost = domainHost
+                        )
+                        if (!probeResult.first && ipv4Host.isNotBlank() && ipv4Host != domainHost) {
+                            probeResult = probeJavaServerListPing(
+                                host = ipv4Host,
+                                port = pubPort,
+                                timeoutMs = 3200,
+                                handshakeHost = domainHost
+                            )
+                        }
+                        val (tunnelOk, tunnelDetail) = probeResult
                         publicJavaReport = EndpointProbeReport(
                             serverId = targetDirName,
                             serverName = startServerName,
@@ -1676,13 +1692,13 @@ class McViewModel(
                             ok = tunnelOk,
                             detail = tunnelDetail,
                             stage = if (tunnelOk) "Đã kiểm chứng từ mạng ngoài (Java Status Ping)" else "Kiểm tra cổng Public Java TCP",
-                            actionHint = if (tunnelOk) "Bạn bè khác mạng có thể vào qua $pubAddr." else "Kiểm tra Minecraft Server đã chạy ở cổng $port và tunnel hướng đúng về server '$targetDirName' chưa.",
+                            actionHint = if (tunnelOk) "Bạn bè khác mạng nhập tên miền $pubAddr vào Minecraft Java/Pojav." else "Kiểm tra Minecraft Server đã chạy ở cổng $port và người chơi nhập đúng tên miền $pubAddr (không nhập IP số trần vì Playit chặn NoRawIp).",
                             checkedAtMs = System.currentTimeMillis()
                         )
                         lines += if (tunnelOk) {
-                            "• Playit Java TCP ($pubAddr${if (pubIpv4.isNotBlank() && pubIpv4 != pubAddr) " / $pubIpv4" else ""}): ✅ ĐÃ KIỂM CHỨNG — $tunnelDetail"
+                            "• Playit Java TCP ($pubAddr): ✅ ĐÃ KIỂM CHỨNG — $tunnelDetail"
                         } else {
-                            "• Playit Java TCP ($pubAddr): ⚠️ Agent đang Online nhưng cổng công khai chưa trả gói Status Minecraft ($tunnelDetail). Nguyên nhân có thể: Server chưa chạy ở cổng $port hoặc cầu nối TCP chưa thông."
+                            "• Playit Java TCP ($pubAddr): ⚠️ Agent đang Online nhưng cổng công khai chưa trả gói Status Minecraft ($tunnelDetail). Nguyên nhân có thể: Server chưa mở xong cổng $port hoặc cầu nối TCP chưa thông."
                         }
                     } else {
                         lines += "• Playit Java TCP: ⚪ Agent đang Online nhưng chưa có đường hầm Java TCP cho server '$startServerName'."
@@ -1767,8 +1783,18 @@ class McViewModel(
      * Gửi gói Minecraft Java Server List Ping (Handshake 0x00 + Status Request 0x00)
      * và xác minh phản hồi JSON hợp lệ qua MinecraftProtocolValidator.
      */
-    private fun probeJavaServerListPing(host: String, port: Int, timeoutMs: Int): Pair<Boolean, String> =
-        com.mineserve.mobile.server.MinecraftProtocolValidator.probeJavaServerListPing(host, port, timeoutMs)
+    private fun probeJavaServerListPing(
+        host: String,
+        port: Int,
+        timeoutMs: Int,
+        handshakeHost: String = host
+    ): Pair<Boolean, String> =
+        com.mineserve.mobile.server.MinecraftProtocolValidator.probeJavaServerListPing(
+            host = host,
+            port = port,
+            timeoutMs = timeoutMs,
+            handshakeHost = handshakeHost
+        )
 
     /**
      * Gửi gói RakNet Unconnected Ping (0x01) qua UDP và xác minh phản hồi Unconnected Pong (0x1C + Magic + PingId + MCPE;)
@@ -2034,10 +2060,11 @@ class McViewModel(
         if (becameReady && repo.termuxRuntime.isMcRunning()) playerManager.requestOnlineList()
         if (becameReady && playConnectionMode.value == PlayConnectionMode.Everywhere) {
             val srvId = activeDirName() ?: "default"
-            playitController.refreshTunnel(
+            playitController.start(
                 localPortProvider = { resolveLiveLocalServerPort() },
                 bedrockPortProvider = { resolveLiveBedrockServerPort(srvId) },
-                serverId = srvId
+                serverId = srvId,
+                forceRefresh = false
             )
         }
         if (becameReady) {
@@ -5887,7 +5914,7 @@ class McViewModel(
     fun setPlayConnectionMode(mode: PlayConnectionMode) {
         playitController.setPlayConnectionMode(mode)
         if (mode == PlayConnectionMode.Everywhere) {
-            if (repo.serverState.value.isRunning && playitState.value.stage == PlayitStage.Idle) {
+            if (repo.serverState.value.isRunning && !playitState.value.isActiveOrConnecting) {
                 startPlayitTunnel()
                 _messageFlow.tryEmit("🌍 Đã bật chế độ Kết Nối Mọi Nơi & tự động mở đường hầm Playit Cloud (Ẩn 100% IP nhà)!")
             } else {
@@ -5936,7 +5963,8 @@ class McViewModel(
     fun resolveLiveBedrockServerPort(dirName: String? = activeDirName()): Int {
         val dir = dirName?.takeIf { it.isNotBlank() && it != "unselected" && it != "default" } ?: activeDirName()
         if (dir.isNullOrBlank()) return 19132
-        val coreObj = config.value.installedCores.firstOrNull { it.dirName == dir }
+        val coreObj = config.value.installedCores.firstOrNull { it.name == config.value.activeCoreName && it.dirName == dir }
+            ?: config.value.installedCores.firstOrNull { it.dirName == dir }
         if (coreObj?.core?.isBedrock == true) {
             return resolveLiveLocalServerPort()
         }
@@ -5951,7 +5979,7 @@ class McViewModel(
             localPortProvider = { resolveLiveLocalServerPort() },
             bedrockPortProvider = { resolveLiveBedrockServerPort(srvId) },
             serverId = srvId,
-            forceRefresh = true
+            forceRefresh = false
         )
     }
 

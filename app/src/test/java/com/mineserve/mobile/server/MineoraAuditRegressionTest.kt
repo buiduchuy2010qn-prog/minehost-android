@@ -783,6 +783,168 @@ class MineoraAuditRegressionTest {
         assertTrue(redacted.contains("REDACTED"))
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // 15. Reauth gửi lặp gói đăng ký khi RequestQueued (code=4) và tự chuyển route khi Agent chỉ có 1 tunnel dùng chung
+    // ─────────────────────────────────────────────────────────────────────────
+    @Test
+    fun test15_reauthResendsRegisterPacketOnRequestQueuedAndRebindsSingleSharedTunnel() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        val controller = PlayitTunnelController(context(), scope)
+
+        // Kịch bản A: Agent chỉ có 1 tunnel Java duy nhất, trước đó gắn cho serverOld -> khi mở serverNew phải tự chuyển sang serverNew
+        controller.bindServerTunnelRoute(
+            serverId = "serverOld",
+            tunnelId = "tun-single-shared",
+            internalTunnelId = 7001L,
+            protocol = TunnelProtocol.JAVA_TCP,
+            targetHost = "127.0.0.1",
+            targetPort = 25565,
+            publicAddress = "signaling-delegation.tun.ply.gg:18862",
+            userEnabled = true
+        )
+        val rundataEmpty = JSONObject().put(
+            "data",
+            JSONObject()
+                .put("agent_id", "agent-single")
+                .put("tunnels", JSONArray())
+        )
+        val listSingle = JSONObject().put(
+            "data",
+            JSONObject().put(
+                "tunnels",
+                JSONArray().put(
+                    JSONObject()
+                        .put("id", "tun-single-shared")
+                        .put("tunnel_type", "minecraft-java")
+                        .put("port_type", "tcp")
+                        .put("user_enabled", true)
+                        .put("origin", JSONObject().put("type", "agent").put("data", JSONObject().put("agent_id", "agent-single")))
+                        .put(
+                            "public_allocations",
+                            JSONArray().put(
+                                JSONObject()
+                                    .put("type", "PortAllocation")
+                                    .put(
+                                        "details",
+                                        JSONObject()
+                                            .put("ip", "147.185.221.216")
+                                            .put("port", 18862)
+                                            .put("auto_domain", "signaling-delegation.tun.ply.gg")
+                                    )
+                            )
+                        )
+                )
+            )
+        )
+        val sync = controller.parseTunnelSyncFromResponses(
+            rundataResp = rundataEmpty,
+            listResp = listSingle,
+            defaultServerId = "serverNew",
+            localJavaPort = 25575,
+            localBedrockPort = 19132
+        )
+        assertEquals("signaling-delegation.tun.ply.gg:18862", sync.javaPrimary)
+        val resolvedRoute = controller.resolveRouteForInternalTunnelId(7001L, TunnelProtocol.JAVA_TCP)
+        assertNotNull(resolvedRoute)
+        assertEquals("serverNew", resolvedRoute?.serverId)
+        assertEquals(25575, resolvedRoute?.targetPort)
+
+        // Kịch bản B: sendControlRegisterRequestAsync gửi lặp gói UDP cho tới khi nhận AgentRegisteredMsg
+        DatagramSocket(0, InetAddress.getByName("127.0.0.1")).use { serverSock ->
+            DatagramSocket(0, InetAddress.getByName("127.0.0.1")).use { clientSock ->
+                serverSock.soTimeout = 2500
+                var receivedCount = 0
+                val receiverThread = Thread {
+                    val buf = ByteArray(256)
+                    while (receivedCount < 2) {
+                        val pkt = java.net.DatagramPacket(buf, buf.size)
+                        serverSock.receive(pkt)
+                        receivedCount++
+                        if (receivedCount == 2) {
+                            controller.pendingRegisterPacketBytes = null
+                        }
+                    }
+                }.apply { isDaemon = true; start() }
+
+                val pong = PlayitTunnelController.PongMsg(
+                    requestId = 200L,
+                    requestNow = 1000L,
+                    serverNow = 1000L,
+                    clientAddr = InetSocketAddress("127.0.0.1", clientSock.localPort),
+                    clientAddrStr = "127.0.0.1:${clientSock.localPort}",
+                    tunnelAddrStr = "127.0.0.1:${serverSock.localPort}",
+                    sessionExpireAt = 5000L
+                )
+                controller.sendControlRegisterRequestAsync(
+                    sessionGen = controller.sessionGeneration.get(),
+                    socket = clientSock,
+                    controlAddr = InetSocketAddress("127.0.0.1", serverSock.localPort),
+                    pong = pong,
+                    secret = "00112233445566778899aabbccddeeff",
+                    postJsonFn = { _, _, _ ->
+                        JSONObject()
+                            .put("status", "success")
+                            .put("data", JSONObject().put("key", "aabbccddeeff00112233445566778899"))
+                    }
+                )
+                receiverThread.join(2500)
+                assertEquals("Phải gửi lặp gói đăng ký UDP khi lần 1 gặp RequestQueued", 2, receivedCount)
+            }
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 16. Kiểm định Java Status Ping gửi đúng tên miền Playit trong gói Handshake 0x00 (vượt bộ lọc NoRawIp)
+    // ─────────────────────────────────────────────────────────────────────────
+    @Test
+    fun test16_probeJavaServerListPingUsesDomainInHandshakeForNoRawIp() {
+        ServerSocket(0, 5, InetAddress.getByName("127.0.0.1")).use { server ->
+            val port = server.localPort
+            var receivedHandshakeBytes = byteArrayOf()
+            val serverThread = Thread {
+                runCatching {
+                    server.accept().use { client ->
+                        val ins = client.getInputStream()
+                        val pktLen = MinecraftProtocolValidator.readVarInt(ins)
+                        val body = ByteArray(pktLen)
+                        var off = 0
+                        while (off < pktLen) {
+                            val r = ins.read(body, off, pktLen - off)
+                            if (r <= 0) break
+                            off += r
+                        }
+                        receivedHandshakeBytes = body
+                        val statusJson = """{"version":{"name":"1.21.4","protocol":769},"players":{"max":20,"online":1}}"""
+                        val jsonBytes = statusJson.toByteArray(Charsets.UTF_8)
+                        val payload = java.io.ByteArrayOutputStream()
+                        MinecraftProtocolValidator.writeVarInt(payload, 0x00)
+                        MinecraftProtocolValidator.writeVarInt(payload, jsonBytes.size)
+                        payload.write(jsonBytes)
+                        val out = client.getOutputStream()
+                        val payloadArr = payload.toByteArray()
+                        MinecraftProtocolValidator.writeVarInt(out, payloadArr.size)
+                        out.write(payloadArr)
+                        out.flush()
+                    }
+                }
+            }.apply { isDaemon = true; start() }
+
+            val (ok, _) = MinecraftProtocolValidator.probeJavaServerListPing(
+                host = "127.0.0.1",
+                port = port,
+                timeoutMs = 1500,
+                handshakeHost = "signaling-delegation.tun.ply.gg:18862"
+            )
+            serverThread.join(1500)
+            assertTrue(ok)
+            val handshakeText = String(receivedHandshakeBytes, Charsets.UTF_8)
+            assertTrue(
+                "Gói Handshake 0x00 phải chứa tên miền Playit để vượt bộ lọc NoRawIp",
+                handshakeText.contains("signaling-delegation.tun.ply.gg")
+            )
+        }
+    }
+
     private fun createValidJar(file: File, entryName: String, content: String) {
         ZipOutputStream(FileOutputStream(file)).use { zos ->
             zos.putNextEntry(ZipEntry(entryName))

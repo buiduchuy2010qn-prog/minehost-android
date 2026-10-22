@@ -259,6 +259,8 @@ class PlayitTunnelController(
 
     private val forceReauthRequested = AtomicBoolean(false)
     internal val reauthInFlight = AtomicBoolean(false)
+    @Volatile
+    internal var pendingRegisterPacketBytes: ByteArray? = null
     private val activeBridges = ConcurrentHashMap.newKeySet<Socket>()
     private val activeUdpClients = ConcurrentHashMap<String, LocalBedrockUdpClient>()
 
@@ -366,6 +368,25 @@ class PlayitTunnelController(
         if (internalTunnelId != 0L) {
             val direct = routesByInternalTunnelId[internalTunnelId]
             if (direct != null && direct.protocol == protocol) return direct
+            // Trường hợp route vừa được đồng bộ từ /v1/tunnels/list (chưa có internal_id, internalTunnelId == 0L)
+            // và chỉ có đúng 1 route chưa gán internalTunnelId cho giao thức này:
+            val unindexedCandidates = routesByServerKey.values.filter {
+                it.protocol == protocol && it.userEnabled && it.internalTunnelId == 0L
+            }
+            if (unindexedCandidates.size == 1) {
+                val candidate = unindexedCandidates.first()
+                return bindServerTunnelRoute(
+                    serverId = candidate.serverId,
+                    tunnelId = candidate.tunnelId,
+                    internalTunnelId = internalTunnelId,
+                    protocol = candidate.protocol,
+                    targetHost = candidate.targetHost,
+                    targetPort = candidate.targetPort,
+                    publicAddress = candidate.publicAddress,
+                    allocatedIpv4 = candidate.allocatedIpv4,
+                    userEnabled = candidate.userEnabled
+                )
+            }
         }
         // Chỉ cho phép khớp legacy tunnelId == 0L (NewClientOld / UdpFlowV1) khi chỉ có ĐÚNG 1 route duy nhất cho giao thức đó
         if (internalTunnelId == 0L) {
@@ -373,6 +394,13 @@ class PlayitTunnelController(
             if (candidates.size == 1) return candidates.first()
         }
         return null
+    }
+
+    internal fun clearAllTunnelRoutes() {
+        routesByServerKey.clear()
+        routesByInternalTunnelId.clear()
+        routesByTunnelUuid.clear()
+        runCatching { prefs.edit().remove(KEY_SERVER_TUNNEL_ROUTES).apply() }
     }
 
     /**
@@ -556,6 +584,7 @@ class PlayitTunnelController(
             return
         }
         stop()
+        clearAllTunnelRoutes()
         prefs.edit()
             .remove(KEY_LAST_ADDRESS)
             .remove(KEY_LAST_BEDROCK_ADDRESS)
@@ -573,6 +602,7 @@ class PlayitTunnelController(
 
     fun resetSecretKey() {
         stop()
+        clearAllTunnelRoutes()
         prefs.edit()
             .remove(KEY_SECRET)
             .remove(KEY_LAST_ADDRESS)
@@ -618,11 +648,22 @@ class PlayitTunnelController(
 
         val activePort = resolveValidPort(currentPortProvider, 25565)
         val bedrockPort = resolveValidPort(currentBedrockPortProvider, 19132)
-        // Cập nhật cổng đích của đúng hostingServerId (không đụng tới các server khác!)
+        // Nếu Agent chỉ có duy nhất 1 route cho giao thức đó (từ server đã tắt trước đó), chuyển route đó sang hostingServerId đang bật
+        rebindSingleSharedRouteToHostingServer(hostingServerId, TunnelProtocol.JAVA_TCP, activePort)
+        rebindSingleSharedRouteToHostingServer(hostingServerId, TunnelProtocol.BEDROCK_UDP, bedrockPort)
+        // Cập nhật cổng đích của đúng hostingServerId (không đụng tới các server khác khi có nhiều tunnel!)
         updateServerRouteTargetPortIfBound(hostingServerId, TunnelProtocol.JAVA_TCP, activePort)
         updateServerRouteTargetPortIfBound(hostingServerId, TunnelProtocol.BEDROCK_UDP, bedrockPort)
 
         if (tunnelJob?.isActive == true && !forceRefresh) {
+            updateState {
+                it.copy(
+                    hostingServerId = hostingServerId,
+                    viewedServerId = viewedServerId,
+                    javaLocalPort = activePort,
+                    bedrockLocalPort = bedrockPort
+                )
+            }
             return
         }
 
@@ -653,6 +694,31 @@ class PlayitTunnelController(
 
         tunnelJob = sessScope.launch {
             runTunnelLoop(newGen, sessScope)
+        }
+    }
+
+    private fun rebindSingleSharedRouteToHostingServer(
+        serverId: String,
+        protocol: TunnelProtocol,
+        newPort: Int
+    ) {
+        val clean = serverId.trim().ifBlank { "default" }
+        if (routesByServerKey.containsKey(serverRouteKey(clean, protocol))) return
+        val existingForProto = routesByServerKey.values.filter { it.protocol == protocol }
+        if (existingForProto.size == 1) {
+            val single = existingForProto.first()
+            routesByServerKey.remove(serverRouteKey(single.serverId, protocol))
+            bindServerTunnelRoute(
+                serverId = clean,
+                tunnelId = single.tunnelId,
+                internalTunnelId = single.internalTunnelId,
+                protocol = protocol,
+                targetHost = single.targetHost,
+                targetPort = newPort,
+                publicAddress = single.publicAddress,
+                allocatedIpv4 = single.allocatedIpv4,
+                userEnabled = single.userEnabled
+            )
         }
     }
 
@@ -699,6 +765,7 @@ class PlayitTunnelController(
         udpDataSocket = null
         udpDataChannelAddr = null
         udpDataChannelToken = null
+        pendingRegisterPacketBytes = null
         firstUdpEstablishRxMs.set(0L)
         lastUdpEstablishRxMs.set(0L)
         val sockets = activeBridges.toList()
@@ -1077,15 +1144,18 @@ class PlayitTunnelController(
         secret: String
     ) {
         var registered = initialRegistered
-        var authClientIp = initialPong.clientAddr.address.hostAddress.orEmpty()
+        var authClientAddrStr = initialPong.clientAddrStr
         var authTunnelAddr = initialPong.tunnelAddrStr
+        var lastReceivedPong = initialPong
+        val loopStartedAtMs = System.currentTimeMillis()
         var lastPingMs = 0L
-        var lastPongReceivedMs = System.currentTimeMillis()
-        var lastKeepAliveMs = System.currentTimeMillis()
+        var lastPongReceivedMs = loopStartedAtMs
+        var lastKeepAliveMs = loopStartedAtMs
         var lastSetupUdpMs = 0L
-        var lastReauthMs = System.currentTimeMillis()
+        var lastReauthMs = loopStartedAtMs
+        var unregisteredSinceMs = 0L
         var lastRttMs: Int? = null
-        var sessionExpiresAtLocalMs = System.currentTimeMillis() + 30_000L
+        var sessionExpiresAtLocalMs = loopStartedAtMs + 30_000L
 
         val sendBuf = ByteBuffer.allocate(2048).order(ByteOrder.BIG_ENDIAN)
         val rxBuf = ByteArray(2048)
@@ -1162,7 +1232,7 @@ class PlayitTunnelController(
                 }
 
                 val timeUntilExpire = sessionExpiresAtLocalMs - now
-                if ((timeUntilExpire < 10_000L && now - lastKeepAliveMs >= 3_000L) || (now - lastKeepAliveMs >= 8_000L)) {
+                if ((timeUntilExpire < 15_000L && now - lastKeepAliveMs >= 3_000L) || (now - lastKeepAliveMs >= 8_000L)) {
                     lastKeepAliveMs = now
                     synchronized(sendBuf) {
                         sendBuf.clear()
@@ -1172,24 +1242,20 @@ class PlayitTunnelController(
                     }
                 }
 
-                // Nhánh Reauth 1: Phiên sắp hết hạn (< 4.5s) -> Gọi launchReauthForSession an toàn (có catch + giữ CancellationException)
-                if (timeUntilExpire < 4_500L && now - lastReauthMs >= 3_000L && reauthInFlight.compareAndSet(false, true)) {
+                // Nhánh Reauth 1: Phiên sắp hết hạn (< 5s) -> Gọi launchReauthForSession an toàn (có catch + giữ CancellationException + gửi lặp khi RequestQueued)
+                if (timeUntilExpire < 5_000L && now - lastReauthMs >= 3_500L && reauthInFlight.compareAndSet(false, true)) {
                     lastReauthMs = now
-                    val latestPong = PongMsg(
-                        requestId = 200L,
+                    val pongForAuth = lastReceivedPong.copy(
                         requestNow = now,
-                        serverNow = now,
-                        clientAddr = initialPong.clientAddr,
-                        clientAddrStr = _lastKnownClientAddrStr.ifBlank { initialPong.clientAddrStr },
-                        tunnelAddrStr = authTunnelAddr,
-                        sessionExpireAt = 0L
+                        clientAddrStr = _lastKnownClientAddrStr.ifBlank { lastReceivedPong.clientAddrStr },
+                        tunnelAddrStr = authTunnelAddr
                     )
                     launchReauthForSession(
                         sessionGen = sessionGen,
                         sessionScope = loopChildScope,
                         udpSocket = udpSocket,
                         controlAddr = controlAddr,
-                        pong = latestPong,
+                        pong = pongForAuth,
                         secret = secret,
                         reasonLabel = "ttl-expiring"
                     )
@@ -1216,19 +1282,20 @@ class PlayitTunnelController(
                 when (msg) {
                     is PongMsg -> {
                         lastPongReceivedMs = recvNow
+                        lastReceivedPong = msg
                         _lastKnownClientAddrStr = msg.clientAddrStr
                         if (msg.requestNow in 1..recvNow) {
                             lastRttMs = (recvNow - msg.requestNow).coerceIn(1L, 5_000L).toInt()
                         }
-                        val currentClientIp = msg.clientAddr.address.hostAddress.orEmpty()
-                        val flowChanged = (currentClientIp.isNotBlank() && currentClientIp != authClientIp) ||
-                            msg.tunnelAddrStr != authTunnelAddr
+                        // So sánh đầy đủ cả IP:Port của clientAddrStr và tunnelAddrStr theo chuẩn established_control.rs
+                        val flowChanged = (msg.clientAddrStr.isNotBlank() && msg.clientAddrStr != authClientAddrStr) ||
+                            (msg.tunnelAddrStr.isNotBlank() && msg.tunnelAddrStr != authTunnelAddr)
 
-                        // Nhánh Reauth 2: Thay đổi IP/Tunnel flow -> Gọi launchReauthForSession an toàn
+                        // Nhánh Reauth 2: Thay đổi IP/Port NAT hoặc Tunnel flow -> Gọi launchReauthForSession an toàn
                         if (flowChanged) {
                             if (reauthInFlight.compareAndSet(false, true)) {
                                 lastReauthMs = recvNow
-                                authClientIp = currentClientIp
+                                authClientAddrStr = msg.clientAddrStr
                                 authTunnelAddr = msg.tunnelAddrStr
                                 launchReauthForSession(
                                     sessionGen = sessionGen,
@@ -1241,6 +1308,7 @@ class PlayitTunnelController(
                                 )
                             }
                         } else if (msg.sessionExpireAt > 0L) {
+                            unregisteredSinceMs = 0L
                             val rtt = (lastRttMs ?: 50).toLong()
                             val serverTimeLeft = (msg.sessionExpireAt - msg.serverNow).coerceAtLeast(rtt) - rtt
                             val baseNow = if (msg.requestNow in 1..recvNow) msg.requestNow else recvNow
@@ -1252,9 +1320,42 @@ class PlayitTunnelController(
                                     controlSessionValid = true
                                 )
                             }
+                        } else if (recvNow - loopStartedAtMs > 2_500L) {
+                            // msg.sessionExpireAt == 0L (hasExpire == 0 -> SessionNotSetup trên máy chủ Playit!)
+                            sessionExpiresAtLocalMs = 0L
+                            if (unregisteredSinceMs == 0L) {
+                                unregisteredSinceMs = recvNow
+                            }
+                            if (recvNow - lastReauthMs >= 2_000L && reauthInFlight.compareAndSet(false, true)) {
+                                lastReauthMs = recvNow
+                                launchReauthForSession(
+                                    sessionGen = sessionGen,
+                                    sessionScope = loopChildScope,
+                                    udpSocket = udpSocket,
+                                    controlAddr = controlAddr,
+                                    pong = msg,
+                                    secret = secret,
+                                    reasonLabel = "session-expired"
+                                )
+                            }
+                            val unregDuration = recvNow - unregisteredSinceMs
+                            if (unregDuration >= 8_000L) {
+                                updateStateForSession(sessionGen) { cur ->
+                                    cur.copy(
+                                        isAgentOnline = false,
+                                        controlSessionValid = false,
+                                        phaseDetail = "Đang xác thực lại phiên UDP"
+                                    )
+                                }
+                            }
+                            if (unregDuration >= 16_000L) {
+                                throw SocketTimeoutException("Phiên UDP Playit hết hạn và không nhận được AgentRegistered sau 16 giây")
+                            }
                         }
                     }
                     is AgentRegisteredMsg -> {
+                        pendingRegisterPacketBytes = null
+                        unregisteredSinceMs = 0L
                         registered = msg
                         sessionExpiresAtLocalMs = System.currentTimeMillis() + 30_000L
                         val nowTimeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
@@ -1329,12 +1430,16 @@ class PlayitTunnelController(
                     }
                     is ControlErrorMsg -> {
                         if (msg.code == 3 || msg.code == 2) {
+                            pendingRegisterPacketBytes = null
                             sessionExpiresAtLocalMs = 0L
+                        } else if (msg.code == 4 || msg.code == 5) {
+                            // RequestQueued / TryAgainLater: sendControlRegisterRequestAsync đang giữ cùng gói tin để gửi lặp sau ~900ms
                         }
                     }
                 }
             }
         } finally {
+            pendingRegisterPacketBytes = null
             loopJob.cancel()
             rundataSyncJob.cancel()
             udpRelayJob.cancel()
@@ -1902,12 +2007,13 @@ class PlayitTunnelController(
             .put("version_minor", AGENT_VERSION_MINOR)
             .put("version_patch", AGENT_VERSION_PATCH)
 
-    internal fun sendControlRegisterRequestAsync(
+    internal suspend fun sendControlRegisterRequestAsync(
         sessionGen: Long,
         socket: DatagramSocket,
         controlAddr: InetSocketAddress,
         pong: PongMsg,
-        secret: String
+        secret: String,
+        postJsonFn: (path: String, body: String, secretKey: String?) -> JSONObject = ::postJson
     ) {
         if (!isSessionActive(sessionGen)) return
         val req = JSONObject()
@@ -1918,18 +2024,36 @@ class PlayitTunnelController(
             .put("client_addr", pong.clientAddrStr)
             .put("tunnel_addr", pong.tunnelAddrStr)
 
-        val resp = postJson("/proto/register", req.toString(), secret)
+        val resp = postJsonFn("/proto/register", req.toString(), secret)
+        checkApiAuthErrors(resp, "/proto/register")
         if (!isSessionActive(sessionGen) || socket.isClosed) return
         val keyHex = resp.optJSONObject("data")?.optString("key").orEmpty()
         if (keyHex.isBlank()) {
             throw JSONException("Phản hồi /proto/register thiếu trường data.key")
         }
         val registerBytes = decodeHex(keyHex)
-        val txBuf = ByteBuffer.allocate(16 + registerBytes.size).order(ByteOrder.BIG_ENDIAN)
+        val txBuf = ByteBuffer.allocate(8 + registerBytes.size).order(ByteOrder.BIG_ENDIAN)
         txBuf.putLong(100L)
         txBuf.put(registerBytes)
-        val txPacket = DatagramPacket(txBuf.array(), 0, txBuf.position(), controlAddr)
-        socket.send(txPacket)
+        val txBytes = txBuf.array()
+        pendingRegisterPacketBytes = txBytes
+        val txPacket = DatagramPacket(txBytes, 0, txBytes.size, controlAddr)
+
+        // Chuẩn connected_control.rs của playit-agent:
+        // Lần gửi UDP đầu tiên với khóa /proto/register thường nhận được ControlResponse::RequestQueued (code = 4).
+        // Phải giữ nguyên cùng gói chữ ký đã ký và gửi lặp lại sau ~900ms cho tới khi nhận được AgentRegisteredMsg
+        // (lúc đó pendingRegisterPacketBytes được xóa về null).
+        for (attempt in 1..5) {
+            if (!isSessionActive(sessionGen) || socket.isClosed) break
+            if (attempt > 1 && pendingRegisterPacketBytes !== txBytes) break
+            socket.send(txPacket)
+            for (step in 1..10) {
+                delay(90L)
+                if (!isSessionActive(sessionGen) || socket.isClosed || pendingRegisterPacketBytes !== txBytes) {
+                    return
+                }
+            }
+        }
     }
 
     /**
@@ -2172,6 +2296,63 @@ class PlayitTunnelController(
 
         // 1. Đọc danh sách tunnel của Agent hiện tại từ /v1/agents/rundata (CHỈ ĐỌC, không sửa origin!)
         val agentTunnels = runData.optJSONArray("tunnels")
+        val tunnels = listResp?.optJSONObject("data")?.optJSONArray("tunnels")
+        val allCurrentAgentTunnelIds = HashSet<String>()
+        val enabledJavaTunnelIds = HashSet<String>()
+        val enabledBedrockTunnelIds = HashSet<String>()
+
+        if (agentTunnels != null) {
+            for (i in 0 until agentTunnels.length()) {
+                val t = agentTunnels.optJSONObject(i) ?: continue
+                val tid = t.optString("id").trim()
+                if (tid.isBlank()) continue
+                allCurrentAgentTunnelIds.add(tid)
+                val disabledReason = t.optString("disabled_reason").takeIf { it.isNotBlank() && it != "null" }
+                if (disabledReason == null) {
+                    val tType = t.optString("tunnel_type")
+                    val pType = t.optString("port_type").ifBlank { t.optString("proto") }
+                    val isBedrock = tType == "minecraft-bedrock" || pType.equals("udp", ignoreCase = true)
+                    if (isBedrock) enabledBedrockTunnelIds.add(tid) else enabledJavaTunnelIds.add(tid)
+                }
+            }
+        }
+        if (tunnels != null) {
+            for (i in 0 until tunnels.length()) {
+                val t = tunnels.optJSONObject(i) ?: continue
+                val tid = t.optString("id").trim()
+                if (tid.isBlank()) continue
+                val originObj = t.optJSONObject("origin")
+                val originType = originObj?.optString("type").orEmpty()
+                val originDetails = originObj?.optJSONObject("details") ?: originObj?.optJSONObject("data")
+                val originAgentId = originDetails?.optString("agent_id").orEmpty()
+                val belongs = tid in allCurrentAgentTunnelIds || (agentId.isNotBlank() && originType == "agent" && originAgentId == agentId)
+                if (!belongs) continue
+                allCurrentAgentTunnelIds.add(tid)
+                val userEnabled = t.optBoolean("user_enabled", t.optBoolean("enabled", true))
+                val disabledReason = t.optString("disabled_reason").takeIf { it.isNotBlank() && it != "null" }
+                if (userEnabled && disabledReason == null) {
+                    val tType = t.optString("tunnel_type")
+                    val pType = t.optString("port_type")
+                    val isBedrock = tType == "minecraft-bedrock" || pType.equals("udp", ignoreCase = true)
+                    val isJava = tType == "minecraft-java" || pType.equals("tcp", ignoreCase = true)
+                    if (isBedrock) enabledBedrockTunnelIds.add(tid) else if (isJava) enabledJavaTunnelIds.add(tid)
+                }
+            }
+        }
+
+        if (allCurrentAgentTunnelIds.isNotEmpty()) {
+            val staleRoutes = routesByServerAndProto.values.filter { route ->
+                route.tunnelId.isNotBlank() && route.tunnelId !in allCurrentAgentTunnelIds
+            }
+            for (stale in staleRoutes) {
+                routesByServerAndProto.remove(routeKey(stale.serverId, stale.protocol))
+                routesByTunnelUuid.remove(stale.tunnelId)
+                if (stale.internalTunnelId != 0L) {
+                    routesByInternalTunnelId.remove(stale.internalTunnelId)
+                }
+            }
+        }
+
         if (agentTunnels != null) {
             for (i in 0 until agentTunnels.length()) {
                 val t = agentTunnels.optJSONObject(i) ?: continue
@@ -2185,6 +2366,7 @@ class PlayitTunnelController(
                 val pType = t.optString("port_type").ifBlank { t.optString("proto") }
                 val isBedrock = tType == "minecraft-bedrock" || pType.equals("udp", ignoreCase = true)
                 val proto = if (isBedrock) TunnelProtocol.BEDROCK_UDP else TunnelProtocol.JAVA_TCP
+                val enabledCountForProto = if (isBedrock) enabledBedrockTunnelIds.size else enabledJavaTunnelIds.size
 
                 var cfgIp = "127.0.0.1"
                 var cfgPort = -1
@@ -2205,28 +2387,37 @@ class PlayitTunnelController(
                     if (isBedrock) hasDisabledBedrockTunnel = true else hasDisabledJavaTunnel = true
                 }
 
-                // Tra cứu route hiện có của tunnel này (theo UUID hoặc internalId), giữ nguyên serverId & targetPort của nó!
                 val existingRoute = (if (tid.isNotBlank()) routesByTunnelUuid[tid] else null)
                     ?: (if (internalId != 0L) routesByInternalTunnelId[internalId] else null)
 
                 val disp = t.optString("display_address").trim()
 
                 val boundRoute = if (existingRoute != null) {
-                    // Giữ nguyên serverId và targetPort đã gắn cho server đó (không đổi sang server đang xem!)
+                    val shouldRebindSingleShared = userEnabled &&
+                        existingRoute.serverId != cleanDefaultServerId &&
+                        enabledCountForProto == 1 &&
+                        getRouteForServer(cleanDefaultServerId, proto) == null
+                    if (shouldRebindSingleShared) {
+                        routesByServerAndProto.remove(routeKey(existingRoute.serverId, proto))
+                    }
+                    val targetServerId = if (shouldRebindSingleShared) cleanDefaultServerId else existingRoute.serverId
+                    val targetPort = if (shouldRebindSingleShared) {
+                        if (cfgPort in 1..65535) cfgPort else if (isBedrock) localBedrockPort else localJavaPort
+                    } else {
+                        existingRoute.targetPort
+                    }
                     bindServerTunnelRoute(
-                        serverId = existingRoute.serverId,
+                        serverId = targetServerId,
                         tunnelId = tid.ifBlank { existingRoute.tunnelId },
                         internalTunnelId = if (internalId != 0L) internalId else existingRoute.internalTunnelId,
                         protocol = proto,
                         targetHost = existingRoute.targetHost,
-                        targetPort = existingRoute.targetPort,
+                        targetPort = targetPort,
                         publicAddress = disp.ifBlank { existingRoute.publicAddress },
                         allocatedIpv4 = existingRoute.allocatedIpv4,
                         userEnabled = userEnabled
                     )
                 } else {
-                    // Nếu chưa có route nào nhận tunnel này: chỉ gắn vào defaultServerId nếu defaultServerId chưa có tunnel cho giao thức đó,
-                    // và ưu tiên cổng được khai báo trong agent_config của chính tunnel đó (nếu hợp lệ) để không làm hỏng cấu hình trên web!
                     val defaultServerExisting = getRouteForServer(cleanDefaultServerId, proto)
                     val portToBind = if (cfgPort in 1..65535) cfgPort else if (isBedrock) localBedrockPort else localJavaPort
                     val targetServerId = if (defaultServerExisting == null || defaultServerExisting.tunnelId == tid) {
@@ -2259,7 +2450,6 @@ class PlayitTunnelController(
         }
 
         // 2. Đọc chi tiết từ /v1/tunnels/list (CHỈ ĐỌC, không tự bật lại tunnel tắt, không chiếm tunnel origin=not-set)
-        val tunnels = listResp?.optJSONObject("data")?.optJSONArray("tunnels")
         if (tunnels != null) {
             for (i in 0 until tunnels.length()) {
                 val t = tunnels.optJSONObject(i) ?: continue
@@ -2274,6 +2464,7 @@ class PlayitTunnelController(
                 val isBedrock = tType == "minecraft-bedrock" || pType.equals("udp", ignoreCase = true)
                 if (!isJava && !isBedrock) continue
                 val proto = if (isBedrock) TunnelProtocol.BEDROCK_UDP else TunnelProtocol.JAVA_TCP
+                val enabledCountForProto = if (isBedrock) enabledBedrockTunnelIds.size else enabledJavaTunnelIds.size
 
                 val originObj = t.optJSONObject("origin")
                 val originType = originObj?.optString("type").orEmpty()
@@ -2312,7 +2503,14 @@ class PlayitTunnelController(
                 val existingRoute = (if (tunnelId.isNotBlank()) routesByTunnelUuid[tunnelId] else null)
                     ?: (if (internalId != 0L) routesByInternalTunnelId[internalId] else null)
 
-                val matchesTargetServer = existingRoute == null || existingRoute.serverId == cleanDefaultServerId
+                val shouldRebindSingleShared = existingRoute != null &&
+                    existingRoute.serverId != cleanDefaultServerId &&
+                    enabledCountForProto == 1 &&
+                    getRouteForServer(cleanDefaultServerId, proto) == null
+
+                val matchesTargetServer = existingRoute == null ||
+                    existingRoute.serverId == cleanDefaultServerId ||
+                    shouldRebindSingleShared
                 var tunnelAllocIpv4 = ""
                 var tunnelPrimaryHost = ""
 
@@ -2419,15 +2617,43 @@ class PlayitTunnelController(
                 }
 
                 if (existingRoute != null) {
+                    if (shouldRebindSingleShared) {
+                        routesByServerAndProto.remove(routeKey(existingRoute.serverId, proto))
+                    }
+                    val targetServerId = if (shouldRebindSingleShared) cleanDefaultServerId else existingRoute.serverId
+                    val targetPort = if (shouldRebindSingleShared) {
+                        if (isBedrock) localBedrockPort else localJavaPort
+                    } else {
+                        existingRoute.targetPort
+                    }
                     bindServerTunnelRoute(
-                        serverId = existingRoute.serverId,
+                        serverId = targetServerId,
                         tunnelId = tunnelId.ifBlank { existingRoute.tunnelId },
                         internalTunnelId = if (internalId != 0L) internalId else existingRoute.internalTunnelId,
                         protocol = proto,
                         targetHost = existingRoute.targetHost,
-                        targetPort = existingRoute.targetPort,
+                        targetPort = targetPort,
                         publicAddress = tunnelPrimaryHost.ifBlank { existingRoute.publicAddress },
                         allocatedIpv4 = tunnelAllocIpv4.ifBlank { existingRoute.allocatedIpv4 },
+                        userEnabled = true
+                    )
+                } else {
+                    val defaultServerExisting = getRouteForServer(cleanDefaultServerId, proto)
+                    val portToBind = if (isBedrock) localBedrockPort else localJavaPort
+                    val targetServerId = if (defaultServerExisting == null || defaultServerExisting.tunnelId == tunnelId) {
+                        cleanDefaultServerId
+                    } else {
+                        "tunnel-${tunnelId.ifBlank { internalId.toString() }}"
+                    }
+                    bindServerTunnelRoute(
+                        serverId = targetServerId,
+                        tunnelId = tunnelId,
+                        internalTunnelId = internalId,
+                        protocol = proto,
+                        targetHost = "127.0.0.1",
+                        targetPort = portToBind,
+                        publicAddress = tunnelPrimaryHost,
+                        allocatedIpv4 = tunnelAllocIpv4,
                         userEnabled = true
                     )
                 }
@@ -2800,7 +3026,7 @@ class PlayitTunnelController(
                     when (val feed = parseControlFeed(inBuf)) {
                         is AgentRegisteredMsg -> return feed
                         is ControlErrorMsg -> {
-                            if (feed.code == 4) {
+                            if (feed.code == 4 || feed.code == 5) {
                                 Thread.sleep(800)
                                 break
                             }

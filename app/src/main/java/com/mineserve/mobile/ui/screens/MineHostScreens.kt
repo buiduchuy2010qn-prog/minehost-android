@@ -860,18 +860,22 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     }
                                 }
                             } else {
-                                // Chế độ Playit.gg: Ưu tiên hiển thị IPv4 Toàn Số (147.185.221.x:port) lên đầu để chống lỗi "Máy chủ không rõ"!
-                                val primaryPcAddr = playitPureIpv4Address ?: playitAddress
+                                // Chế độ Playit.gg: BẮT BUỘC hiển thị và chép Tên miền Playit kèm :port (ví dụ *.tun.ply.gg:port)
+                                // vì Playit.gg bật bộ lọc NoRawIp trên các tunnel Java miễn phí (nếu nhập IP số 147.185.221.x:port
+                                // vào Minecraft Java/Pojav thì gói Handshake thiếu tên miền và bị máy chủ Playit ngắt ngay!).
+                                val primaryPcAddr = playitAddress ?: playitPureIpv4Address
                                 Text(
                                     primaryPcAddr ?: "Chưa có địa chỉ (Hãy bấm Bật Đường Hầm Playit.gg)",
                                     style = MaterialTheme.typography.headlineSmall,
                                     fontWeight = FontWeight.ExtraBold,
                                     color = MaterialTheme.colorScheme.primary
                                 )
-                                if (playitPureIpv4Address != null && playitAddress != null) {
+                                if (playitAddress != null) {
                                     Text(
-                                        "✅ IPv4 Toàn Số Chuẩn (Khuyên nhập trên PC để KHÔNG bị lỗi 'Máy chủ không rõ'): $playitPureIpv4Address\n" +
-                                            "🌐 Tên miền Playit tương ứng: $playitAddress",
+                                        "✅ Địa chỉ chuẩn cho PC & PojavLauncher (Có sẵn :cổng & vượt bộ lọc NoRawIp của Playit): $playitAddress" +
+                                            if (playitPureIpv4Address != null && playitPureIpv4Address != playitAddress) {
+                                                "\nℹ️ Lưu ý quan trọng: Hãy dán đúng tên miền $playitAddress vào Minecraft Java (không nhập IP số trần $playitPureIpv4Address vì Playit chặn kết nối Java bằng IP thô)."
+                                            } else "",
                                         style = MaterialTheme.typography.bodySmall,
                                         fontSize = 11.5.sp,
                                         fontWeight = FontWeight.SemiBold
@@ -880,10 +884,10 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                                     Button(
                                         onClick = {
-                                            val toCopy = playitPureIpv4Address ?: playitAddress ?: return@Button
+                                            val toCopy = playitAddress ?: playitPureIpv4Address ?: return@Button
                                             clipboard.setText(AnnotatedString(toCopy))
-                                            lastCopiedTag = "pc_ipv4"
-                                            vm.notifyActionDone("🔢 Đã chép IPv4 Số cho PC: $toCopy (Dán thẳng vào Máy chủ Minecraft PC!)")
+                                            lastCopiedTag = "pc_domain"
+                                            vm.notifyActionDone("📋 Đã chép Địa chỉ Playit cho PC/Pojav: $toCopy (Dán thẳng vào Máy chủ Minecraft!)")
                                         },
                                         enabled = primaryPcAddr != null,
                                         shape = RoundedCornerShape(10.dp),
@@ -894,28 +898,28 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                         modifier = Modifier.weight(1f)
                                     ) {
                                         Text(
-                                            if (lastCopiedTag == "pc_ipv4") "✅ Đã chép IPv4 Số!" else "🔢 Chép IPv4 Số (Chuẩn PC)",
+                                            if (lastCopiedTag == "pc_domain") "✅ Đã chép Địa chỉ PC!" else "📋 Chép Địa Chỉ PC (Chuẩn Playit)",
                                             fontWeight = FontWeight.ExtraBold,
                                             fontSize = 11.5.sp
                                         )
                                     }
-                                    OutlinedButton(
-                                        onClick = {
-                                            playitAddress?.let {
-                                                clipboard.setText(AnnotatedString(it))
-                                                lastCopiedTag = "pc_domain"
-                                                vm.notifyActionDone("📋 Đã chép tên miền Playit: $it")
-                                            }
-                                        },
-                                        enabled = playitAddress != null,
-                                        shape = RoundedCornerShape(10.dp),
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        Text(
-                                            if (lastCopiedTag == "pc_domain") "✅ Đã chép!" else "📋 Chép Tên Miền",
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 11.5.sp
-                                        )
+                                    if (playitState.secondaryAddress.isNotBlank() && playitState.secondaryAddress != playitAddress) {
+                                        OutlinedButton(
+                                            onClick = {
+                                                val sec = playitState.secondaryAddress
+                                                clipboard.setText(AnnotatedString(sec))
+                                                lastCopiedTag = "pc_secondary"
+                                                vm.notifyActionDone("📋 Đã chép tên miền phụ Playit: $sec")
+                                            },
+                                            shape = RoundedCornerShape(10.dp),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Text(
+                                                if (lastCopiedTag == "pc_secondary") "✅ Đã chép!" else "🌐 Chép Tên Miền Phụ",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 11.5.sp
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -2137,7 +2141,7 @@ fun MineHostCrossplay(vm: McViewModel, onBack: () -> Unit) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text("🌍 B. KHI CHƠI QUA ĐƯỜNG HẦM PLAYIT.GG (4G / KHÁC WI-FI):", fontWeight = FontWeight.ExtraBold, fontSize = 12.5.sp, color = MaterialTheme.colorScheme.primary)
                         Text(
-                            "• Máy tính PC (Java - TCP): ${if (pcIpv4Host != null && pcTcpPort.isNotBlank()) "$pcIpv4Host:$pcTcpPort" else playitState.publicAddress.ifBlank { "Hãy bật Playit.gg ở Trang chủ" }}",
+                            "• Máy tính PC / Pojav (Java - TCP): ${playitState.publicAddress.ifBlank { if (pcIpv4Host != null && pcTcpPort.isNotBlank()) "$pcIpv4Host:$pcTcpPort" else "Hãy bật Playit.gg ở Trang chủ" }}",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold
                         )

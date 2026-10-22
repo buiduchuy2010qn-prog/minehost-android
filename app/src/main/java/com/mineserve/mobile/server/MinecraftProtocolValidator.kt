@@ -135,7 +135,12 @@ object MinecraftProtocolValidator {
     fun validateJavaStatusBytes(rawBytes: ByteArray): Pair<Boolean, String> =
         validateJavaStatusStream(ByteArrayInputStream(rawBytes))
 
-    fun probeJavaServerListPing(host: String, port: Int, timeoutMs: Int): Pair<Boolean, String> {
+    fun probeJavaServerListPing(
+        host: String,
+        port: Int,
+        timeoutMs: Int,
+        handshakeHost: String = host
+    ): Pair<Boolean, String> {
         return try {
             Socket().use { socket ->
                 socket.tcpNoDelay = true
@@ -143,7 +148,8 @@ object MinecraftProtocolValidator {
                 socket.connect(InetSocketAddress(host, port), timeoutMs)
                 val out = socket.getOutputStream()
                 val input = socket.getInputStream()
-                out.write(buildJavaStatusPingRequest(host, port))
+                val cleanHandshakeHost = handshakeHost.substringBeforeLast(":", handshakeHost).ifBlank { host }
+                out.write(buildJavaStatusPingRequest(cleanHandshakeHost, port))
                 out.flush()
                 validateJavaStatusStream(input)
             }
