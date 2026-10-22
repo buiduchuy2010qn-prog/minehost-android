@@ -51,7 +51,7 @@ jobs:
       - name: Fast optimized ARM64 release APK
         run: |
           chmod +x gradlew
-          ./gradlew :app:assembleRelease -x lint -x lintVitalRelease --build-cache --parallel --max-workers=4 -Dorg.gradle.jvmargs="-Xmx5g -XX:+UseParallelGC -Dfile.encoding=UTF-8"
+          ./gradlew :app:assembleRelease --build-cache --parallel --max-workers=4 -Dorg.gradle.jvmargs="-Xmx4g -Dfile.encoding=UTF-8"
       - name: Verify signing identity and non-debuggable manifest
         run: |
           set -euo pipefail
