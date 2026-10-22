@@ -1221,7 +1221,9 @@ class PlayitTunnelController(
                 mcSocket = candidate
             } catch (e: Exception) {
                 runCatching { candidate.close() }
-                appendLog("⚠️ [TCP Bước 3/4] Người chơi ($peerIp) đã tới điện thoại qua Playit, nhưng Minecraft Server chưa mở cổng 127.0.0.1:$localPort (${e.message}). Hãy chắc chắn Server đã báo ' Sẵn sàng (Done)'!")
+                val msg = "Người chơi ($peerIp) vừa kết nối tới Playit nhưng Server Minecraft trên điện thoại đang DỪNG (chưa mở cổng $localPort). Hãy bấm [▶️ Bật Server] để vào game!"
+                updateState { it.copy(errorMessage = msg) }
+                appendLog("⚠️ [TCP Bước 3/4] $msg (${e.message})")
                 return
             }
             activeBridges.add(mcSocket)
@@ -1234,7 +1236,8 @@ class PlayitTunnelController(
             updateState {
                 it.copy(
                     activeConnections = count,
-                    phaseDetail = "Đang chuyển tiếp"
+                    phaseDetail = "Đang chuyển tiếp",
+                    errorMessage = if (it.errorMessage.contains("chưa mở cổng")) "" else it.errorMessage
                 )
             }
             appendLog("✅ [TCP Bước 4/4] Đã nối người chơi ($peerIp) <-> Minecraft Server 127.0.0.1:$localPort (Đang kết nối: $count)")

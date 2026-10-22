@@ -84,6 +84,10 @@ object CrossplayCompat {
 
     /** Danh sách các bản Minecraft PE/Bedrock đã phát hành (để chọn & hiển thị). */
     val KNOWN_PE: List<String> = listOf(
+        "1.20.80", "1.20.81",
+        "1.21.0", "1.21.1", "1.21.2", "1.21.3", "1.21.20", "1.21.21", "1.21.22", "1.21.23",
+        "1.21.30", "1.21.31", "1.21.40", "1.21.41", "1.21.43", "1.21.44",
+        "1.21.50", "1.21.51", "1.21.60", "1.21.61", "1.21.62",
         "1.21.70", "1.21.71", "1.21.72", "1.21.73", "1.21.80", "1.21.81", "1.21.82", "1.21.83", "1.21.84",
         "1.21.90", "1.21.92", "1.21.93", "1.21.94", "1.21.100", "1.21.101",
         "1.21.110", "1.21.111", "1.21.112", "1.21.113", "1.21.114",
@@ -103,6 +107,29 @@ object CrossplayCompat {
      * Một bản Geyser phát hành lúc T hỗ trợ dải PE của mốc gần nhất <= T.
      */
     private val SNAPSHOTS: List<Pair<String, List<Pair<String, String>>>> = listOf(
+        "2024-08-09T00:15:08Z" to listOf(r("1.20.80", "1.21.3")),
+        "2024-08-09T05:32:49Z" to listOf(r("1.20.80", "1.21.20")),
+        "2024-08-21T07:36:23Z" to listOf(r("1.20.80", "1.21.21")),
+        "2024-09-23T03:06:22Z" to listOf(r("1.20.80", "1.21.30")),
+        "2024-10-22T16:41:55Z" to listOf(r("1.20.80", "1.21.40")),
+        "2024-10-22T22:10:27Z" to listOf(r("1.20.80", "1.21.41")),
+        "2024-10-31T00:11:34Z" to listOf(r("1.20.80", "1.21.43")),
+        "2024-11-01T18:48:07Z" to listOf(r("1.20.80", "1.21.44")),
+        "2024-12-03T12:37:05Z" to listOf(r("1.21.40", "1.21.50")),
+        "2025-02-12T14:21:47Z" to listOf(r("1.21.40", "1.21.60")),
+        "2025-02-27T14:29:58Z" to listOf(r("1.21.40", "1.21.61")),
+        "2025-02-27T18:58:08Z" to listOf(r("1.21.40", "1.21.62")),
+        "2025-03-25T15:34:00Z" to listOf(r("1.21.40", "1.21.70")),
+        "2025-03-31T22:22:50Z" to listOf(r("1.21.50", "1.21.70")),
+        "2025-04-01T17:01:07Z" to listOf(r("1.21.50", "1.21.71")),
+        "2025-04-11T16:26:24Z" to listOf(r("1.21.50", "1.21.72")),
+        "2025-05-06T17:12:45Z" to listOf(r("1.21.50", "1.21.80")),
+        "2025-06-01T12:28:35Z" to listOf(r("1.21.50", "1.21.82")),
+        "2025-06-17T01:23:53Z" to listOf(r("1.21.50", "1.21.90")),
+        "2025-06-17T18:34:33Z" to listOf(r("1.21.70", "1.21.90")),
+        "2025-06-30T21:08:24Z" to listOf(r("1.21.70", "1.21.92")),
+        "2025-07-03T19:22:51Z" to listOf(r("1.21.70", "1.21.93")),
+        "2025-07-26T19:40:53Z" to listOf(r("1.21.70", "1.21.94")),
         "2025-08-05T14:25:23Z" to listOf(r("1.21.70", "1.21.100")),
         "2025-08-14T11:42:13Z" to listOf(r("1.21.70", "1.21.101")),
         "2025-09-21T20:40:52Z" to listOf(r("1.21.90", "1.21.110")),
@@ -129,6 +156,24 @@ object CrossplayCompat {
         "2026-08-20T15:00:35Z" to singles("26.0", "26.1", "26.2", "26.3", "26.10", "26.20", "26.21", "26.22", "26.23", "26.30", "26.31", "26.32", "26.33", "26.34", "26.40", "26.41", "26.42", "26.43", "26.44", "26.45"),
         "2026-09-15T23:46:24Z" to singles("26.30", "26.31", "26.32", "26.33", "26.34", "26.40", "26.41", "26.42", "26.43", "26.44", "26.45", "26.50", "26.51"),
         "2026-10-06T09:29:40Z" to singles("26.30", "26.31", "26.32", "26.33", "26.34", "26.40", "26.41", "26.42", "26.43", "26.44", "26.45", "26.50", "26.51", "26.52")
+    )
+
+    /**
+     * Bảng dự phòng cho Geyser bản Mod (Fabric/NeoForge/Quilt) theo từng phiên bản Java phổ biến
+     * khi chưa truy vấn kịp Modrinth: Triple(geyserBuildLabel, defaultRanges, minPeWithOlderBuilds).
+     */
+    private val MOD_FALLBACK_BY_MC: Map<String, Triple<String, List<Pair<String, String>>, String>> = mapOf(
+        "1.21.11" to Triple("2.9.6-b1133", listOf(r("1.21.130", "1.21.132")) + singles("26.0", "26.1", "26.2", "26.3", "26.10", "26.20"), "1.21.111"),
+        "1.21.10" to Triple("2.9.2-b1008", listOf(r("1.21.111", "1.21.130")), "1.21.90"),
+        "1.21.8" to Triple("2.8.4-b948", listOf(r("1.21.90", "1.21.110")), "1.21.70"),
+        "1.21.7" to Triple("2.8.3-b936", listOf(r("1.21.70", "1.21.101")), "1.21.70"),
+        "1.21.6" to Triple("2.8.0-b894", listOf(r("1.21.70", "1.21.90")), "1.21.50"),
+        "1.21.5" to Triple("2.7.2-b862", listOf(r("1.21.70", "1.21.90")), "1.21.50"),
+        "1.21.4" to Triple("2.6.2-b796", listOf(r("1.21.40", "1.21.70")), "1.21.40"),
+        "1.21.3" to Triple("2.5.1-b736", listOf(r("1.21.40", "1.21.50")), "1.20.80"),
+        "1.21.2" to Triple("2.5.1-b736", listOf(r("1.21.40", "1.21.50")), "1.20.80"),
+        "1.21.1" to Triple("2.4.4-b705", listOf(r("1.20.80", "1.21.44")), "1.20.80"),
+        "1.21" to Triple("2.4.4-b705", listOf(r("1.20.80", "1.21.44")), "1.20.80")
     )
 
     private fun parseInstant(s: String): java.time.Instant? = runCatching { java.time.Instant.parse(s) }.getOrNull()
@@ -325,6 +370,12 @@ object CrossplayCompat {
                 headline = "✅ PE $pe VÀO ĐƯỢC: Java $mcVersion ↔ PE ${info.bedrockRangeText}"
             )
         }
+        if (auto.supported && auto.peRangesOverride != null && inRanges(auto.peRangesOverride, pe)) {
+            return auto.copy(
+                targetPe = pe,
+                headline = "✅ PE $pe VÀO ĐƯỢC: ${core.displayName} $mcVersion ↔ PE ${auto.bedrockRangeText}"
+            )
+        }
         val loaders = if (loader == "paper") listOf("paper", "spigot") else listOf(loader)
         val versions = modrinthGeyserVersions(loaders, mcVersion)
         fun fail(headline: String, details: List<String>, suggestion: String?, sugMc: String? = null) = Result(
@@ -486,7 +537,8 @@ object CrossplayCompat {
 
         // Kiểm tra trực tuyến bản Geyser mới nhất dành cho loader + phiên bản này
         val loaders = if (loader == "paper") listOf("paper", "spigot") else listOf(loader)
-        val newest = if (info.live) newestModrinthGeyserFor(loaders, mcVersion) else null
+        val modVersions = if (info.live) modrinthGeyserVersions(loaders, mcVersion) else null
+        val newest = modVersions?.let { it.firstOrNull()?.number ?: "" }
         val latestPrefix = info.geyserVersion
         val compatibleByLive: Boolean? = when {
             newest == null -> null                    // không kiểm tra được -> dùng quy tắc dự phòng
@@ -500,6 +552,71 @@ object CrossplayCompat {
         }
 
         if (!compatible) {
+            // Với Fabric / NeoForge / Quilt (hoặc Paper đời cũ), nếu có bản Geyser trên Modrinth (hoặc trong bảng dự phòng)
+            // dành cho đúng phiên bản Java này (VD: Fabric 1.21.11 có Geyser 2.9.6-b1133 hỗ trợ PE 1.21.130 → 26.20,
+            // và các bản Geyser 1.21.11 trước đó hỗ trợ từ PE 1.21.111):
+            // Tự động chọn bản Geyser đó, hiển thị rõ dải phiên bản Bedrock/PE tương ứng và CHO PHÉP CÀI ĐẶT NGAY!
+            val candidate = modVersions?.firstOrNull { it.url.isNotBlank() }
+            val fallbackEntry = if (loader != "paper") MOD_FALLBACK_BY_MC[mcVersion] else null
+            val resolvedRanges = candidate?.instant?.let { rangesAt(it) } ?: fallbackEntry?.second
+            if (candidate != null || (modVersions == null && fallbackEntry != null)) {
+                val buildLabel = candidate?.number ?: fallbackEntry?.first ?: "Geyser-$mcVersion"
+                val ranges = resolvedRanges ?: fallbackEntry?.second ?: listOf(r("1.21.111", "26.3"))
+                val rangeTxt = rangesText(ranges)
+                val earliestPeForMc = modVersions
+                    ?.mapNotNull { v -> v.instant?.let(::rangesAt) }
+                    ?.flatten()
+                    ?.minOfOrNull { it.first }
+                    ?: fallbackEntry?.third
+                val paperOk = loader != "paper" && compareVersions(mcVersion, PAPER_MIN_FALLBACK) >= 0
+                val tools = buildList {
+                    add("GeyserMC $buildLabel")
+                    add("Floodgate")
+                    if (loader == "paper") {
+                        add("ViaVersion")
+                        add("ViaBackwards")
+                    } else if (loader == "fabric") {
+                        add("Fabric API")
+                    }
+                }
+                val details = buildList {
+                    add("Với ${core.displayName} $mcVersion, bản GeyserMC tương thích mới nhất là $buildLabel → điện thoại cài Minecraft PE (Bedrock) phiên bản $rangeTxt vào chơi chung được ngay.")
+                    if (earliestPeForMc != null && compareVersions(earliestPeForMc, expandRanges(ranges).firstOrNull() ?: earliestPeForMc) < 0) {
+                        add("Nếu điện thoại dùng PE cũ hơn (từ $earliestPeForMc trở lên): chọn đúng số bản PE ở mục 'Phiên bản PE của điện thoại' để app tự cài bản Geyser tương ứng.")
+                    }
+                    add("Sẽ tự cài: ${tools.joinToString(" + ")}.")
+                    if (paperOk) {
+                        add("Mẹo: Nếu điện thoại đã tự cập nhật lên PE mới nhất trên CH Play ($pe), bạn có thể chuyển sang Paper $mcVersion (nhận cả Java $mcVersion lẫn PE $pe) hoặc ${core.displayName} ${info.javaTarget}.")
+                    }
+                    if (loader != "paper") {
+                        add("Người chơi PC dùng đúng ${core.displayName} $mcVersion và cùng bộ mod của server; PE chỉ hiển thị các khối/vật phẩm Vanilla.")
+                    }
+                }
+                return Result(
+                    verdict = Verdict.SUPPORTED,
+                    core = core,
+                    mcVersion = mcVersion,
+                    info = info,
+                    needsViaVersion = loader == "paper",
+                    headline = "✅ CHƠI CHUNG ĐƯỢC: ${core.displayName} $mcVersion ↔ PE $rangeTxt",
+                    pcLine = if (loader == "paper") {
+                        "💻 PC (Java): Minecraft Java $mcVersion (kèm ViaVersion/ViaBackwards)"
+                    } else {
+                        "💻 PC (Java): Minecraft Java $mcVersion + đúng bộ mod của server"
+                    },
+                    peLine = "📱 PE (Bedrock) chơi chung được: $rangeTxt" +
+                        (if (earliestPeForMc != null && compareVersions(earliestPeForMc, expandRanges(ranges).firstOrNull() ?: earliestPeForMc) < 0) " (hoặc từ $earliestPeForMc khi chọn bản PE)" else ""),
+                    details = details,
+                    suggestion = if (paperOk) "Nếu điện thoại đang ở PE mới nhất CH Play ($pe): dùng Paper $mcVersion hoặc ${core.displayName} ${info.javaTarget}." else null,
+                    suggestedCore = if (paperOk) ServerCore.Paper else null,
+                    suggestedMcVersion = if (paperOk) mcVersion else null,
+                    geyserUrl = candidate?.url,
+                    geyserFileName = candidate?.fileName?.ifBlank { null },
+                    geyserBuildLabel = buildLabel,
+                    peRangesOverride = ranges
+                )
+            }
+
             val old = newest?.takeIf { it.isNotBlank() }
             return if (loader == "paper") {
                 notSupported(
@@ -515,19 +632,17 @@ object CrossplayCompat {
             } else {
                 val paperOk = compareVersions(mcVersion, PAPER_MIN_FALLBACK) >= 0
                 notSupported(
-                    headline = "❌ ${core.displayName} $mcVersion KHÔNG chơi chung với PE hiện nay",
-                    details = listOfNotNull(
-                        "Geyser bản Mod phải đúng y phiên bản Minecraft của server. Bản Geyser mới nhất (${info.buildLabel}) chỉ có cho ${core.displayName} ${info.javaTarget}.",
-                        old?.let { "Với $mcVersion chỉ còn Geyser cũ $it — chỉ PE đời cũ vào được, PE trên điện thoại (tự cập nhật lên $pe) sẽ báo phiên bản không khớp." }
-                            ?: "Không có bản Geyser nào cho ${core.displayName} $mcVersion."
+                    headline = "❌ ${core.displayName} $mcVersion chưa có bản GeyserMC hỗ trợ",
+                    details = listOf(
+                        "Không tìm thấy bản GeyserMC cho ${core.displayName} $mcVersion trên Modrinth."
                     ),
                     suggestion = if (paperOk) {
-                        "Chọn ${core.displayName} ${info.javaTarget}, hoặc dùng Paper $mcVersion (plugin thay cho mod)."
+                        "Chọn ${core.displayName} 1.21.11 / ${info.javaTarget}, hoặc dùng Paper $mcVersion (plugin thay cho mod)."
                     } else {
-                        "Chọn ${core.displayName} ${info.javaTarget}."
+                        "Chọn ${core.displayName} 1.21.11 hoặc ${info.javaTarget}."
                     },
                     suggestedCore = core,
-                    suggestedMc = info.javaTarget
+                    suggestedMc = "1.21.11"
                 )
             }
         }

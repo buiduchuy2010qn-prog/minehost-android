@@ -696,6 +696,10 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Text(
                                     when {
+                                        playitState.isRunning && playitAddress != null && !state.isRunning ->
+                                            "🟡 Đường hầm Playit.gg đã sẵn sàng (${playitState.agentName.ifBlank { "Agent Online" }}), NHƯNG Server '${active.name}' ĐANG DỪNG — Bấm [▶️ Bật Server] bên dưới để PC/PE vào được!"
+                                        playitState.isRunning && playitAddress != null && state.startupPhase != StartupPhase.Ready ->
+                                            "⏳ Đường hầm Playit.gg đã sẵn sàng • Đang chờ Server '${active.name}' khởi động xong..."
                                         playitState.isRunning && playitAddress != null ->
                                             "🟢 Đường hầm Playit.gg ĐANG CHUYỂN TIẾP (${playitState.agentName.ifBlank { "Agent Online" }}) • Nối cổng TCP $port" +
                                                 (if (playitState.bedrockAddress.isNotBlank()) " & UDP 19132 (PE)" else "")
@@ -709,11 +713,27 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     style = MaterialTheme.typography.bodySmall,
                                     fontWeight = FontWeight.Bold,
                                     color = when {
+                                        playitState.isRunning && playitAddress != null && !state.isRunning -> Color(0xFFF59E0B)
                                         playitState.isRunning && playitAddress != null -> Color(0xFF10B981)
                                         playitState.stage == com.mineserve.mobile.ui.PlayitStage.Error -> MaterialTheme.colorScheme.error
                                         else -> MaterialTheme.colorScheme.primary
                                     }
                                 )
+                                if (playitState.isRunning && !state.isRunning) {
+                                    Button(
+                                        onClick = { vm.startServer() },
+                                        enabled = !stopping,
+                                        shape = RoundedCornerShape(10.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(
+                                            "▶️ Bật Server '${active.name}' Ngay Để Vào Game",
+                                            fontWeight = FontWeight.ExtraBold,
+                                            fontSize = 12.sp
+                                        )
+                                    }
+                                }
                                 if (playitState.errorMessage.isNotBlank()) {
                                     Text(
                                         "⚠️ ${playitState.errorMessage}",

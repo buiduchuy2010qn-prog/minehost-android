@@ -2246,6 +2246,10 @@ class PluginManager(
                 "Không thể tải GeyserMC tương thích với ${core.displayName} ($targetMc). Hãy kiểm tra mạng hoặc chuyển sang lõi Paper / Fabric."
             }
 
+            modsDir.listFiles()?.filter {
+                val n = it.name.lowercase(Locale.ROOT)
+                n.startsWith("floodgate") && (n.endsWith(".jar") || n.endsWith(".jar.disabled"))
+            }?.forEach { it.delete() }
             var floodgateInstalled = false
             runCatching {
                 val fgDeps = resolveModrinthDownloadWithDeps("floodgate", targetMc, loader)
@@ -2255,9 +2259,15 @@ class PluginManager(
                         if (fn !in installedNames) installedNames += fn
                     }
                     floodgateInstalled = true
+                } else {
+                    resolveSingleModrinthSlug("floodgate", targetMc, loader)?.let { (url, fn) ->
+                        installModPackJarFromUrl(url, fn, dirName)
+                        if (fn !in installedNames) installedNames += fn
+                        floodgateInstalled = true
+                    }
                 }
             }
-            if (!floodgateInstalled && (loader == "fabric" || loader == "quilt")) {
+            if (!floodgateInstalled && isGeyserJavaTarget && (loader == "fabric" || loader == "quilt")) {
                 val floodgateUrl = "https://download.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest/downloads/fabric"
                 runCatching {
                     val f = installModPackJarFromUrl(floodgateUrl, "Floodgate-Fabric.jar", dirName)
