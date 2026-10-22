@@ -3024,10 +3024,11 @@ class McViewModel(
                 if (_autoBackupOnStop.value || config.value.stopAutoBackup) {
                     val dirName = activeDirName() ?: return@launch
                     val path = withContext(Dispatchers.IO) {
+                        val keepAutoCount = if (config.value.maxSnapshots == 10) 2 else config.value.maxSnapshots.coerceIn(1, 20)
                         backupManager.backupWorldToExternal(
                             dirName = dirName,
                             origin = BackupManager.BackupOrigin.Automatic,
-                            maxAutomaticBackups = config.value.maxSnapshots.coerceAtLeast(5),
+                            maxAutomaticBackups = keepAutoCount,
                             includeMods = true
                         )
                     }
@@ -5038,7 +5039,8 @@ class McViewModel(
             _errorFlow.tryEmit("Đang có tác vụ cài đặt/khôi phục khác đang chạy. Vui lòng đợi hoàn tất.")
             return
         }
-        val file = java.io.File(com.mineserve.mobile.server.ExternalBackupStore.rootDir, zipName)
+        val file = com.mineserve.mobile.server.ExternalBackupStore.findBackupFile(zipName)
+            ?: java.io.File(com.mineserve.mobile.server.ExternalBackupStore.rootDir, zipName)
         viewModelScope.launch {
             _isRestoringBackup.value = true
             try {
@@ -5197,7 +5199,8 @@ class McViewModel(
             _errorFlow.tryEmit("Đang có tác vụ cài đặt/khôi phục khác đang chạy. Vui lòng đợi hoàn tất.")
             return
         }
-        val file = java.io.File(com.mineserve.mobile.server.ExternalBackupStore.rootDir, zipName)
+        val file = com.mineserve.mobile.server.ExternalBackupStore.findBackupFile(zipName)
+            ?: java.io.File(com.mineserve.mobile.server.ExternalBackupStore.rootDir, zipName)
         viewModelScope.launch {
             _isRestoringBackup.value = true
             try {
@@ -5251,7 +5254,8 @@ class McViewModel(
             _errorFlow.tryEmit("Đang có tác vụ cài đặt/khôi phục khác đang chạy. Vui lòng đợi hoàn tất.")
             return
         }
-        val file = java.io.File(com.mineserve.mobile.server.ExternalBackupStore.rootDir, zipName)
+        val file = com.mineserve.mobile.server.ExternalBackupStore.findBackupFile(zipName)
+            ?: java.io.File(com.mineserve.mobile.server.ExternalBackupStore.rootDir, zipName)
         viewModelScope.launch {
             _isRestoringBackup.value = true
             try {
@@ -6734,12 +6738,36 @@ class McViewModel(
         val serverName: String? = null, val error: String? = null,
         val modsInstalled: Int = 0, val configsInstalled: Int = 0
     )
+    enum class ArchiveCategory(val badgeLabel: String) {
+        MAP_DOWNLOAD("📥 Tệp Map trong máy"),
+        WORLD_BACKUP("🗺️ Sao lưu Map + Mod"),
+        MODS_BACKUP("📦 Sao lưu Bộ Mod"),
+        SERVER_BACKUP("🖥️ Sao lưu Server")
+    }
     data class LocalArchiveItem(
         val name: String,
         val path: String,
         val sizeBytes: Long,
         val folderLabel: String,
-        val lastModified: Long
+        val lastModified: Long,
+        val category: ArchiveCategory = ArchiveCategory.MAP_DOWNLOAD,
+        val displayTitle: String = name,
+        val serverLabel: String? = null,
+        val isAutoBackup: Boolean = false,
+        val formattedTime: String = ""
+    )
+    data class ServerWorldSummary(
+        val serverName: String,
+        val serverDirName: String,
+        val coreDisplay: String,
+        val mcVersion: String,
+        val worldName: String,
+        val worldPath: String,
+        val kind: com.mineserve.mobile.server.Worlds.Kind,
+        val sizeBytes: Long,
+        val sizeTruncated: Boolean,
+        val isActiveWorld: Boolean,
+        val isCurrentServer: Boolean
     )
     private val _worldImportBusy = MutableStateFlow(false)
     val worldImportBusy = _worldImportBusy.asStateFlow()
@@ -6747,6 +6775,8 @@ class McViewModel(
     val worldImportStatus = _worldImportStatus.asStateFlow()
     private val _localWorldArchives = MutableStateFlow<List<LocalArchiveItem>>(emptyList())
     val localWorldArchives = _localWorldArchives.asStateFlow()
+    private val _allServerWorlds = MutableStateFlow<List<ServerWorldSummary>>(emptyList())
+    val allServerWorlds = _allServerWorlds.asStateFlow()
     private val _worldModCount = MutableStateFlow(0)
     val worldModCount = _worldModCount.asStateFlow()
     private val _worldModBusy = MutableStateFlow(false)
@@ -6754,40 +6784,271 @@ class McViewModel(
     private val _worldModStatus = MutableStateFlow<String?>(null)
     val worldModStatus = _worldModStatus.asStateFlow()
 
+    private fun buildLocalArchiveItem(file: java.io.File, folderLabel: String): LocalArchiveItem {
+        val name = file.name
+        val modTime = file.lastModified()
+        val lower = name.lowercase(java.util.Locale.ROOT)
+        val isBackupFolder = folderLabel.contains("Sao lưu", ignoreCase = true) || folderLabel.contains("Map đã xuất", ignoreCase = true)
+        val isBackupPattern = lower.startsWith("world_") || lower.startsWith("mods_") || lower.startsWith("server_") || name.startsWith("世界_")
+        val info = backupManager.parseExternalBackup(name, modTime)
+        val effectiveTime = info.createdTime.takeIf { it > 0L } ?: modTime
+        val timeFmt = java.text.SimpleDateFormat("dd/MM/yyyy HH:mm", java.util.Locale.getDefault())
+        val formattedTime = if (effectiveTime > 0L) timeFmt.format(java.util.Date(effectiveTime)) else "Không rõ ngày"
+        val isAuto = info.origin == BackupManager.BackupOrigin.Automatic ||
+            name.contains("_自动") || name.contains("_TuDong", ignoreCase = true)
+
+        val category: ArchiveCategory
+        val displayTitle: String
+        val serverLabel: String?
+
+        when {
+            lower.startsWith("mods_") -> {
+                category = ArchiveCategory.MODS_BACKUP
+                val srv = backupManager.cleanServerDisplay(info.dirName)
+                serverLabel = srv
+                displayTitle = "📦 Bộ Mod • $srv"
+            }
+            lower.startsWith("server_") -> {
+                category = ArchiveCategory.SERVER_BACKUP
+                val srv = backupManager.cleanServerDisplay(info.dirName)
+                serverLabel = srv
+                displayTitle = "🖥️ Toàn bộ Server • $srv"
+            }
+            lower.startsWith("world_") || name.startsWith("世界_") || isBackupFolder -> {
+                category = ArchiveCategory.WORLD_BACKUP
+                val srv = if (name.startsWith("世界_")) {
+                    name.removePrefix("世界_").removeSuffix(".zip")
+                } else {
+                    backupManager.cleanServerDisplay(info.dirName)
+                }
+                serverLabel = srv
+                val badge = if (isAuto) "Tự động" else "Thủ công"
+                displayTitle = "🗺️ Bản sao lưu Map ($badge) • $srv"
+            }
+            else -> {
+                category = ArchiveCategory.MAP_DOWNLOAD
+                serverLabel = null
+                val cleanStem = name.replace(Regex("(?i)\\.(zip|mcworld)$"), "")
+                displayTitle = "🌍 Map: $cleanStem"
+            }
+        }
+        return LocalArchiveItem(
+            name = name,
+            path = file.absolutePath,
+            sizeBytes = file.length(),
+            folderLabel = folderLabel,
+            lastModified = effectiveTime.coerceAtLeast(modTime),
+            category = category,
+            displayTitle = displayTitle,
+            serverLabel = serverLabel,
+            isAutoBackup = isAuto,
+            formattedTime = formattedTime
+        )
+    }
+
     fun refreshLocalWorldArchives() {
         viewModelScope.launch(Dispatchers.IO) {
             val found = java.util.LinkedHashMap<String, LocalArchiveItem>()
-            val roots = listOf(
-                java.io.File("/storage/emulated/0/Download") to "Download",
-                java.io.File("/storage/emulated/0/Downloads") to "Downloads",
-                java.io.File("/storage/emulated/0/Documents") to "Documents",
-                java.io.File("/storage/emulated/0/MineHost_SaoLuu") to "Sao lưu",
-                java.io.File("/storage/emulated/0/世界与服务器的备份") to "Sao lưu",
-                java.io.File("/storage/emulated/0") to "Bộ nhớ máy"
-            )
+            val snapshotDir = runCatching { java.io.File(repo.termuxRuntime.installer.rootDir, "home/snapshots") }.getOrNull()
+            val roots = buildList {
+                add(java.io.File("/storage/emulated/0/Download") to "Download")
+                add(java.io.File("/storage/emulated/0/Downloads") to "Downloads")
+                add(java.io.File("/storage/emulated/0/Documents") to "Documents")
+                add(java.io.File("/storage/emulated/0/MineHost_SaoLuu") to "Sao lưu")
+                add(java.io.File("/storage/emulated/0/MineHost_SaoLuu/世界导出") to "Map đã xuất")
+                add(java.io.File("/storage/emulated/0/世界与服务器的备份") to "Sao lưu")
+                add(java.io.File("/storage/emulated/0/世界与服务器的备份/世界导出") to "Map đã xuất")
+                add(java.io.File("/storage/emulated/0/Download/MineHost_Backups") to "Sao lưu")
+                add(java.io.File("/storage/emulated/0/games/com.mojang/minecraftWorlds") to "Minecraft PE Worlds")
+                add(java.io.File("/storage/emulated/0") to "Bộ nhớ máy")
+                if (snapshotDir != null) add(snapshotDir to "Sao lưu nội bộ")
+            }
+            fun addIfArchive(f: java.io.File, label: String) {
+                if (!f.isFile || f.length() <= 0L) return
+                if (!f.name.endsWith(".zip", true) && !f.name.endsWith(".mcworld", true)) return
+                val key = runCatching { f.canonicalPath }.getOrDefault(f.absolutePath)
+                if (!found.containsKey(key)) {
+                    found[key] = buildLocalArchiveItem(f, label)
+                }
+            }
             for ((dir, label) in roots) {
                 if (!dir.isDirectory || !dir.canRead()) continue
                 val children = dir.listFiles() ?: continue
                 for (child in children) {
-                    if (child.isFile && (child.name.endsWith(".zip", true) || child.name.endsWith(".mcworld", true)) && child.length() > 0L) {
-                        val key = runCatching { child.canonicalPath }.getOrDefault(child.absolutePath)
-                        if (!found.containsKey(key)) {
-                            found[key] = LocalArchiveItem(child.name, child.absolutePath, child.length(), label, child.lastModified())
-                        }
-                    } else if (child.isDirectory && label == "Download" && !child.name.startsWith(".")) {
+                    if (child.isFile) {
+                        addIfArchive(child, label)
+                    } else if (child.isDirectory && (label == "Download" || label == "Downloads" || label == "Documents") && !child.name.startsWith(".")) {
+                        val subLabel = if (child.name.equals("MineHost_Backups", true)) "Sao lưu" else "$label/${child.name}"
                         val subFiles = child.listFiles() ?: continue
                         for (sub in subFiles) {
-                            if (sub.isFile && (sub.name.endsWith(".zip", true) || sub.name.endsWith(".mcworld", true)) && sub.length() > 0L) {
-                                val key = runCatching { sub.canonicalPath }.getOrDefault(sub.absolutePath)
-                                if (!found.containsKey(key)) {
-                                    found[key] = LocalArchiveItem(sub.name, sub.absolutePath, sub.length(), "Download/${child.name}", sub.lastModified())
+                            if (sub.isFile) {
+                                addIfArchive(sub, subLabel)
+                            } else if (sub.isDirectory && !sub.name.startsWith(".")) {
+                                sub.listFiles()?.forEach { deep ->
+                                    if (deep.isFile) addIfArchive(deep, "$subLabel/${sub.name}")
                                 }
                             }
                         }
                     }
                 }
             }
-            _localWorldArchives.value = found.values.sortedByDescending { it.lastModified }.take(30)
+            _localWorldArchives.value = found.values.sortedByDescending { it.lastModified }.take(500)
+        }
+    }
+
+    /** Quét tất cả thế giới (world) bên trong mọi Server đã cài trên máy để quản lý & xóa giảm dung lượng */
+    fun refreshAllServerWorlds() {
+        if (!isBootstrapped.value) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val activeCoreName = config.value.activeCoreName
+            val cores = config.value.installedCores
+            val list = mutableListOf<ServerWorldSummary>()
+            for (core in cores) {
+                val worldsInCore = runCatching { worldManager.listWorlds(core.dirName) }.getOrDefault(emptyList())
+                val isCurrent = core.name == activeCoreName
+                for (w in worldsInCore) {
+                    list += ServerWorldSummary(
+                        serverName = core.name,
+                        serverDirName = core.dirName,
+                        coreDisplay = core.core.displayName,
+                        mcVersion = core.version,
+                        worldName = w.name,
+                        worldPath = w.dir.absolutePath,
+                        kind = w.kind,
+                        sizeBytes = w.sizeBytes,
+                        sizeTruncated = w.sizeTruncated,
+                        isActiveWorld = w.isActive,
+                        isCurrentServer = isCurrent
+                    )
+                }
+            }
+            _allServerWorlds.value = list.sortedWith(
+                compareByDescending<ServerWorldSummary> { it.isCurrentServer }
+                    .thenByDescending { it.isActiveWorld }
+                    .thenByDescending { it.sizeBytes }
+            )
+        }
+    }
+
+    /** Xóa vĩnh viễn 1 tệp Map (.zip / .mcworld) hoặc Bản sao lưu khỏi bộ nhớ máy để giải phóng dung lượng */
+    fun deleteLocalArchiveFile(path: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val f = java.io.File(path)
+            val size = if (f.exists()) f.length() else 0L
+            val name = f.name
+            val deleted = runCatching { f.exists() && f.isFile && f.delete() }.getOrDefault(false)
+            if (deleted) {
+                _messageFlow.tryEmit("🗑️ Đã xóa '$name' khỏi máy — Giải phóng ${com.mineserve.mobile.server.Worlds.formatSize(size)}!")
+                refreshLocalWorldArchives()
+                loadSnapshots()
+            } else {
+                _errorFlow.tryEmit("Không thể xóa tệp '$name'. Hãy kiểm tra quyền truy cập tất cả tệp.")
+            }
+        }
+    }
+
+    /** Xóa nhiều tệp Map / Bản sao lưu cùng lúc */
+    fun deleteMultipleLocalArchives(paths: Collection<String>) {
+        if (paths.isEmpty()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            var count = 0
+            var freed = 0L
+            for (p in paths) {
+                val f = java.io.File(p)
+                if (f.exists() && f.isFile) {
+                    val sz = f.length()
+                    if (runCatching { f.delete() }.getOrDefault(false)) {
+                        count++
+                        freed += sz
+                    }
+                }
+            }
+            if (count > 0) {
+                _messageFlow.tryEmit("🗑️ Đã xóa $count tệp Map/Sao lưu — Giải phóng ${com.mineserve.mobile.server.Worlds.formatSize(freed)} bộ nhớ máy!")
+                refreshLocalWorldArchives()
+                loadSnapshots()
+            } else {
+                _errorFlow.tryEmit("Không xóa được tệp đã chọn. Hãy cấp quyền truy cập bộ nhớ.")
+            }
+        }
+    }
+
+    /**
+     * Dọn dẹp thông minh các bản sao lưu tự động cũ:
+     * @param keepPerServer Số bản sao lưu tự động mới nhất giữ lại cho mỗi Server (0 = xóa tất cả bản sao lưu tự động).
+     */
+    fun smartCleanupAutoBackups(keepPerServer: Int = 1) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val currentList = _localWorldArchives.value
+            val autoItems = currentList.filter { it.isAutoBackup }
+            if (autoItems.isEmpty()) {
+                _messageFlow.tryEmit("✅ Không có bản sao lưu tự động dư thừa nào cần dọn dẹp.")
+                return@launch
+            }
+            val toDelete = if (keepPerServer <= 0) {
+                autoItems
+            } else {
+                autoItems
+                    .groupBy { it.serverLabel ?: "default" }
+                    .values
+                    .flatMap { group ->
+                        group.sortedByDescending { it.lastModified }.drop(keepPerServer)
+                    }
+            }
+            if (toDelete.isEmpty()) {
+                _messageFlow.tryEmit("✅ Mỗi Server hiện chỉ có tối đa $keepPerServer bản sao lưu tự động mới nhất, không có bản cũ dư thừa.")
+                return@launch
+            }
+            var count = 0
+            var freed = 0L
+            for (item in toDelete) {
+                val f = java.io.File(item.path)
+                if (f.exists() && f.isFile) {
+                    val sz = f.length()
+                    if (runCatching { f.delete() }.getOrDefault(false)) {
+                        count++
+                        freed += sz
+                    }
+                }
+            }
+            refreshLocalWorldArchives()
+            loadSnapshots()
+            if (count > 0) {
+                _messageFlow.tryEmit("🧹 Đã dọn dẹp $count bản sao lưu tự động cũ — Giải phóng ${com.mineserve.mobile.server.Worlds.formatSize(freed)} bộ nhớ máy!")
+            } else {
+                _errorFlow.tryEmit("Không thể xóa các bản sao lưu cũ. Hãy kiểm tra quyền bộ nhớ.")
+            }
+        }
+    }
+
+    /**
+     * Xóa hẳn một thư mục thế giới (kèm chiều _nether / _the_end) khỏi Server mà KHÔNG tạo thêm bản ZIP sao lưu
+     * (dùng khi người dùng muốn giải phóng dung lượng máy ngay lập tức).
+     */
+    fun deleteWorldDirectlyFromServer(serverDirName: String, worldName: String) {
+        if (!isBootstrapped.value) { _errorFlow.tryEmit(str(R.string.s192)); return }
+        if (!requireServerStopped("xóa thế giới khỏi máy")) return
+        viewModelScope.launch {
+            try {
+                val currentWorlds = withContext(Dispatchers.IO) { worldManager.listWorlds(serverDirName) }
+                val targetInfo = currentWorlds.firstOrNull { it.name == worldName }
+                val freedBytes = targetInfo?.sizeBytes ?: 0L
+                val result = withContext(Dispatchers.IO) {
+                    worldManager.resetWorld(serverDirName, worldName, backupFirst = false)
+                }
+                if (result.success) {
+                    _messageFlow.tryEmit(
+                        "🗑️ Đã xóa vĩnh viễn thế giới '$worldName' — Giải phóng ${com.mineserve.mobile.server.Worlds.formatSize(freedBytes)} bộ nhớ máy!"
+                    )
+                    loadWorlds()
+                    refreshAllServerWorlds()
+                    refreshServerStorage()
+                } else {
+                    _errorFlow.tryEmit("Không tìm thấy hoặc không thể xóa thư mục thế giới '$worldName'.")
+                }
+            } catch (e: Exception) {
+                _errorFlow.tryEmit("Lỗi khi xóa thế giới: ${e.message}")
+            }
         }
     }
 

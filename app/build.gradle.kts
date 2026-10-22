@@ -27,8 +27,8 @@ android {
         applicationId = "vn.minehost.android"
         minSdk = 26
         targetSdk = 28
-        versionCode = 29
-        versionName = "2.6.2"
+        versionCode = 30
+        versionName = "2.6.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
@@ -104,6 +104,7 @@ android {
     }
     lint {
         abortOnError = false
+        checkReleaseBuilds = false
         disable += "ExpiredTargetSdkVersion"
     }
     testOptions {

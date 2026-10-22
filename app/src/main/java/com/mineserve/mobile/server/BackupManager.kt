@@ -26,7 +26,7 @@ import java.util.zip.ZipInputStream
 class BackupManager(private val termux: TermuxRuntime) {
 
     enum class BackupKind { World, Server, Mods }
-    enum class BackupOrigin(val label: String) { Manual("手动"), Automatic("自动") }
+    enum class BackupOrigin(val label: String) { Manual("ThuCong"), Automatic("TuDong") }
 
     data class ExternalBackupInfo(
         val kind: BackupKind,
@@ -547,7 +547,7 @@ class BackupManager(private val termux: TermuxRuntime) {
                 kind = kind,
                 dirName = newMatch.groupValues[2],
                 coreTag = newMatch.groupValues[4].ifBlank { null },
-                origin = if (newMatch.groupValues[5] == BackupOrigin.Automatic.label) BackupOrigin.Automatic else BackupOrigin.Manual,
+                origin = if (newMatch.groupValues[5] == "自动" || newMatch.groupValues[5] == BackupOrigin.Automatic.label) BackupOrigin.Automatic else BackupOrigin.Manual,
                 createdTime = timestamp
             )
         }
@@ -598,9 +598,17 @@ class BackupManager(private val termux: TermuxRuntime) {
         files.drop(keepCount).forEach { (file, _) -> file.delete() }
     }
 
+    /** Làm sạch tên thư mục Server để hiển thị đẹp (bỏ mã hash cuối như -5caf91d5d29d) */
+    fun cleanServerDisplay(rawDir: String?): String {
+        val raw = rawDir?.trim().orEmpty()
+        if (raw.isBlank()) return "Server"
+        val noHash = raw.replace(Regex("-[0-9a-fA-F]{8,16}$"), "")
+        return noHash.replace('_', '.').replace('-', ' ').trim().ifBlank { raw }
+    }
+
     /** 删除外部备份文件 */
     fun deleteExternalBackup(name: String): Boolean {
-        val f = File(ExternalBackupStore.rootDir, name)
+        val f = ExternalBackupStore.findBackupFile(name) ?: File(ExternalBackupStore.rootDir, name)
         return f.exists() && f.isFile && f.delete()
     }
 
@@ -609,15 +617,15 @@ class BackupManager(private val termux: TermuxRuntime) {
         val trimmed = newName.trim()
         if (trimmed.isBlank() || !trimmed.endsWith(".zip", ignoreCase = true)) return false
         val safeNew = safeSegment(trimmed)
-        val src = File(ExternalBackupStore.rootDir, oldName)
-        val dst = File(ExternalBackupStore.rootDir, safeNew)
+        val src = ExternalBackupStore.findBackupFile(oldName) ?: File(ExternalBackupStore.rootDir, oldName)
+        val dst = File(src.parentFile ?: ExternalBackupStore.rootDir, safeNew)
         if (!src.exists() || !src.isFile || dst.exists()) return false
         return src.renameTo(dst)
     }
 
     /** 校验 zip 完整性：遍历全部条目并读取数据（触发 CRC 校验），损坏返回 false */
     fun validateZip(name: String): Boolean =
-        validateZipFile(File(ExternalBackupStore.rootDir, name))
+        validateZipFile(ExternalBackupStore.findBackupFile(name) ?: File(ExternalBackupStore.rootDir, name))
 
     /**
      * 同 [validateZip]，但直接针对文件对象。
@@ -781,7 +789,7 @@ class BackupManager(private val termux: TermuxRuntime) {
         const val TAG = "BackupManager"
         const val NEW_TIME = "yyyy-MM-dd_HH-mm-ss"
         const val LEGACY_TIME = "yyyyMMdd_HHmmss"
-        val NEW_BACKUP = Regex("^(world|server|mods)_(.+)_(\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2})(?:_(.*))?_(手动|自动)$")
+        val NEW_BACKUP = Regex("^(world|server|mods)_(.+)_(\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2})(?:_(.*))?_(手动|自动|ThuCong|TuDong)$")
         val LEGACY_WORLD = Regex("^world_(?:(.+)_)?(\\d{8}_\\d{6})$")
         val LEGACY_SERVER = Regex("^server_(.+)_(\\d{8}_\\d{6})(?:__(.*))?$")
     }

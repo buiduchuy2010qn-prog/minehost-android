@@ -194,11 +194,16 @@ object Worlds {
      * 所以：只有期望名确实带着本应用的导出前缀时，才改用压缩包里**真正的世界目录名**
      * （[inspectZip] 的 primary）；其余情况尊重调用方给的期望名，不做任何猜测。
      */
+    private val BACKUP_WORLD_FILENAME = Regex("""^world_.+_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}.*$""", RegexOption.IGNORE_CASE)
+
     fun importedWorldName(zip: File, preferred: String): String {
         val trimmed = preferred.trim()
-        if (!trimmed.startsWith(EXPORT_PREFIX)) return sanitize(trimmed)
+        val isAppExportOrBackup = trimmed.startsWith(EXPORT_PREFIX) || BACKUP_WORLD_FILENAME.matches(trimmed)
+        if (!isAppExportOrBackup) return sanitize(trimmed)
         val primary = inspectZip(zip).primary?.takeIf { it.isNotBlank() }
-        return sanitize(primary ?: exportStem(trimmed))
+        if (primary != null) return sanitize(primary)
+        if (BACKUP_WORLD_FILENAME.matches(trimmed)) return "world"
+        return sanitize(exportStem(trimmed))
     }
 
     /**

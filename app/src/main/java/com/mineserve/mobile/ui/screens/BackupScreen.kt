@@ -457,6 +457,47 @@ fun BackupScreen(vm: McViewModel, onBack: () -> Unit = {}) {
                 if (extBackups.isEmpty()) {
                     EmptyHint(icon = Icons.Outlined.Archive, text = stringResource(R.string.backup_ext_list_empty))
                 } else {
+                    val totalExtBytes = extBackups.sumOf { it.length() }
+                    Text(
+                        "💾 Tổng dung lượng ${extBackups.size} bản sao lưu: ${formatBytesCompat(totalExtBytes)}",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Indigo
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(
+                            onClick = {
+                                vm.refreshLocalWorldArchives()
+                                scope.launch {
+                                    delay(300)
+                                    vm.smartCleanupAutoBackups(keepPerServer = 1)
+                                    delay(500)
+                                    refreshExtBackups()
+                                }
+                            },
+                            shape = McShape.ControlCompact,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("🧹 Giữ 1 bản tự động mới nhất/SV", color = Indigo, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                vm.refreshLocalWorldArchives()
+                                scope.launch {
+                                    delay(300)
+                                    vm.smartCleanupAutoBackups(keepPerServer = 0)
+                                    delay(500)
+                                    refreshExtBackups()
+                                }
+                            },
+                            shape = McShape.ControlCompact,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("🗑️ Xóa hết sao lưu tự động", color = Coral, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
                     extBackups.forEachIndexed { i, f ->
                         if (i > 0) Spacer(Modifier.height(6.dp))
                         val info = vm.externalBackupInfo(f)

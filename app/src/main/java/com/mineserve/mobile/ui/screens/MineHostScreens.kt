@@ -1336,8 +1336,8 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
             ) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     QuickPixelTile(
-                        title = "Thế Giới & Sao Lưu",
-                        subtitle = activeStorage?.let { "💾 ${vm.formatStorageBytes(it.worldBytes)} • Map & ZIP" } ?: "Nhập Map / Sao lưu",
+                        title = "Quản Lý Map & Sao Lưu",
+                        subtitle = activeStorage?.let { "💾 ${vm.formatStorageBytes(it.worldBytes)} • Xóa nhẹ máy" } ?: "Tất cả Map & Sao lưu",
                         artKind = MinecraftArtKind.GRASS,
                         modifier = Modifier.weight(1f)
                     ) { navigate(SubPage.WorldManage) }
@@ -1607,20 +1607,27 @@ fun MineHostManage(vm: McViewModel, navigate: (SubPage) -> Unit) {
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     Button(
-                        onClick = { vm.backupWorldToExternal(shareToDrive = true) },
-                        enabled = ready,
+                        onClick = { navigate(SubPage.WorldManage) },
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("☁️ Lưu Map + Mod lên Drive", fontWeight = FontWeight.ExtraBold, fontSize = 11.5.sp)
+                        Text("🌍 Quản lý Map & Xóa Sao Lưu", fontWeight = FontWeight.ExtraBold, fontSize = 11.5.sp)
                     }
                     OutlinedButton(
                         onClick = { navigate(SubPage.Backup) },
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("📂 Quản lý Bản Sao Lưu", fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
+                        Text("📂 Cài đặt Sao Lưu", fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
                     }
+                }
+                OutlinedButton(
+                    onClick = { vm.backupWorldToExternal(shareToDrive = true) },
+                    enabled = ready,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("☁️ Sao lưu nhanh Map + Mod hiện tại lên Google Drive", fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
                 }
             }
         }

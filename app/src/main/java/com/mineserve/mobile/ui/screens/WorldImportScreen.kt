@@ -6,18 +6,26 @@ import android.net.Uri
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.mineserve.mobile.server.ExternalBackupStore
 import com.mineserve.mobile.server.Worlds
 import com.mineserve.mobile.ui.McViewModel
+import com.mineserve.mobile.ui.theme.Coral
+import com.mineserve.mobile.ui.theme.Indigo
+import com.mineserve.mobile.ui.theme.McShape
+import com.mineserve.mobile.ui.theme.Mint
+import com.mineserve.mobile.ui.theme.Muted
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 
@@ -29,6 +37,7 @@ private class LocalOnlyOpenDocument : ActivityResultContracts.OpenDocument() {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun WorldImportScreen(vm: McViewModel, onBack: () -> Unit, onWorlds: () -> Unit) {
     val context = LocalContext.current
@@ -48,9 +57,13 @@ fun WorldImportScreen(vm: McViewModel, onBack: () -> Unit, onWorlds: () -> Unit)
     var pendingFolderTreeUri by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingLocalPath by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingLocalName by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingDeleteArchive by remember { mutableStateOf<McViewModel.LocalArchiveItem?>(null) }
+    var confirmCleanupAllAuto by remember { mutableStateOf(false) }
     var pickerServer by rememberSaveable { mutableStateOf<String?>(null) }
     var name by rememberSaveable { mutableStateOf("") }
     var confirmWorld by remember { mutableStateOf<String?>(null) }
+    var filterTab by rememberSaveable { mutableStateOf(0) } // 0 = Tất cả, 1 = Map tải về (Download), 2 = Bản sao lưu Map
+    var searchQuery by rememberSaveable { mutableStateOf("") }
 
     val openPermissionSettings: () -> Unit = {
         try {
@@ -84,17 +97,58 @@ fun WorldImportScreen(vm: McViewModel, onBack: () -> Unit, onWorlds: () -> Unit)
         if (uris.isNotEmpty()) vm.importWorldModsFromUris(uris)
     }
 
+    val downloadItems = remember(localArchives) {
+        localArchives.filter { it.category == McViewModel.ArchiveCategory.MAP_DOWNLOAD }
+    }
+    val backupItems = remember(localArchives) {
+        localArchives.filter { it.category != McViewModel.ArchiveCategory.MAP_DOWNLOAD }
+    }
+    val autoBackupItems = remember(localArchives) {
+        localArchives.filter { it.isAutoBackup }
+    }
+    val totalArchiveBytes = remember(localArchives) { localArchives.sumOf { it.sizeBytes } }
+    val autoBackupBytes = remember(autoBackupItems) { autoBackupItems.sumOf { it.sizeBytes } }
+
+    val filteredArchives = remember(localArchives, downloadItems, backupItems, filterTab, searchQuery) {
+        val base = when (filterTab) {
+            1 -> downloadItems
+            2 -> backupItems
+            else -> localArchives
+        }
+        val q = searchQuery.trim().lowercase()
+        if (q.isEmpty()) base
+        else base.filter {
+            it.name.lowercase().contains(q) ||
+                it.displayTitle.lowercase().contains(q) ||
+                it.folderLabel.lowercase().contains(q)
+        }
+    }
+
     HostPage(
-        "Nhập thế giới (Map) & Mod đi kèm",
-        "Hỗ trợ nhập cả Map thường lẫn Map có sẵn Mod (.jar / mods.zip). Giữ nguyên world cũ và tự động cấu hình."
+        "Nhập & Quản lý Tệp Map trên Điện Thoại",
+        "Hiển thị TOÀN BỘ file Map (.zip / .mcworld) và Bản sao lưu hiện có trên điện thoại — Hỗ trợ nhập ngay hoặc xóa khỏi máy đỡ nặng."
     ) {
-        item { TextButton(onClick = onBack) { Text("← Quay lại") } }
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(onClick = onBack) { Text("← Quay lại") }
+                OutlinedButton(
+                    onClick = onWorlds,
+                    shape = McShape.ControlCompact
+                ) {
+                    Text("🌍 Mở Quản lý Thế giới & Sao lưu", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
 
         item {
             HostCard("📖 Hướng dẫn chạy Map có sẵn Mod & Tránh lỗi Cello error 8") {
-                Text("• Bước 1 (Chọn đúng Core): Map có Mod bắt buộc phải chạy trên Core Forge, Fabric hoặc NeoForge có cùng phiên bản Minecraft với Map (cài tại mục Tải xuống).", style = MaterialTheme.typography.bodySmall)
-                Text("• Bước 2 (Chọn tệp ZIP từ Bộ nhớ máy / Download): Khuyên dùng danh sách 'Chọn nhanh tệp ZIP có sẵn trong máy (Download)' ở mục số 2 bên dưới để đọc trực tiếp từ bộ nhớ điện thoại — KHÔNG chọn tệp trên Google Drive đám mây (tránh lỗi tbd: Cello error 8).", style = MaterialTheme.typography.bodySmall)
-                Text("• Bước 3 (Tự động cài Mod đi kèm): Nếu trong file .zip của Map đã có sẵn thư mục mods/ và config/, MineHost sẽ TỰ ĐỘNG cài toàn bộ Mod vào máy chủ! Nếu Mod để rời, hãy dùng mục số 3 bên dưới.", style = MaterialTheme.typography.bodySmall)
+                Text("• Bước 1 (Chọn đúng Core): Map có Mod bắt buộc phải chạy trên Core Forge, Fabric hoặc NeoForge có cùng phiên bản Minecraft với Map.", style = MaterialTheme.typography.bodySmall)
+                Text("• Bước 2 (Chọn tệp ZIP trực tiếp từ danh sách bên dưới): Đọc trực tiếp từ bộ nhớ điện thoại — KHÔNG chọn tệp trên Google Drive đám mây (tránh lỗi tbd: Cello error 8).", style = MaterialTheme.typography.bodySmall)
+                Text("• Bước 3 (Tự động cài Mod đi kèm): Nếu trong file .zip của Map đã có sẵn thư mục mods/ và config/, MineHost sẽ TỰ ĐỘNG cài toàn bộ Mod vào máy chủ!", style = MaterialTheme.typography.bodySmall)
             }
         }
 
@@ -126,10 +180,7 @@ fun WorldImportScreen(vm: McViewModel, onBack: () -> Unit, onWorlds: () -> Unit)
         }
 
         item {
-            HostCard("2 · Chọn tệp Map (.zip — Hỗ trợ cả gói Map kèm sẵn mods/)") {
-                Text("• Định dạng hỗ trợ: Tệp .zip chứa level.dat ở gốc, trong thư mục world/ hoặc lồng trong thư mục giải nén (kèm world_nether/, world_the_end/, mods/, config/).")
-                Text("• Cách tránh lỗi 'tbd: Cello error 8': Lỗi Cello error 8 xảy ra khi bạn chọn tệp .zip đang nằm trên Google Drive đám mây chưa tải về máy. Hãy chọn tệp trực tiếp từ danh sách thư mục Download bên dưới!", style = MaterialTheme.typography.bodySmall)
-
+            HostCard("2 · Tất cả File Map (.zip / .mcworld) & Bản Sao Lưu trên Điện Thoại") {
                 if (!hasStoragePerm) {
                     Surface(
                         color = MaterialTheme.colorScheme.secondaryContainer,
@@ -138,11 +189,11 @@ fun WorldImportScreen(vm: McViewModel, onBack: () -> Unit, onWorlds: () -> Unit)
                     ) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text(
-                                "🔓 Cấp quyền đọc thư mục Download (Khuyên dùng)",
+                                "🔓 Cấp quyền đọc Bộ nhớ máy (Khuyên dùng)",
                                 fontWeight = FontWeight.SemiBold
                             )
                             Text(
-                                "Cấp quyền 'Truy cập tất cả tệp' để ứng dụng quét và liệt kê sẵn các tệp Map (.zip) trong thư mục Download của bạn — bấm 1 chạm là nhập ngay, không bị lỗi Google Drive Cello error 8!",
+                                "Cấp quyền 'Truy cập tất cả tệp' để ứng dụng quét và liệt kê toàn bộ tệp Map (.zip / .mcworld) và Bản sao lưu trên điện thoại — có thể nhập 1 chạm hoặc xóa tệp thừa cho nhẹ máy!",
                                 style = MaterialTheme.typography.bodySmall
                             )
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -159,54 +210,194 @@ fun WorldImportScreen(vm: McViewModel, onBack: () -> Unit, onWorlds: () -> Unit)
                         }
                     }
                 } else {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                    // Thống kê tổng dung lượng & Dọn dẹp nhanh bản sao lưu tự động
+                    Surface(
+                        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.65f),
+                        shape = McShape.ControlCompact,
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text(
-                            "📱 Tệp ZIP tìm thấy trong máy (Download / Bộ nhớ):",
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.weight(1f)
-                        )
-                        TextButton(onClick = {
-                            hasStoragePerm = ExternalBackupStore.hasPermission(context)
-                            vm.refreshLocalWorldArchives()
-                        }) {
-                            Text("🔄 Làm mới")
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        "📊 Tìm thấy ${localArchives.size} tệp Map & Sao lưu (${Worlds.formatSize(totalArchiveBytes)})",
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontSize = 13.sp,
+                                        color = Indigo
+                                    )
+                                    Text(
+                                        "📥 Map tải về: ${downloadItems.size} tệp • 🗺️ Bản sao lưu: ${backupItems.size} tệp",
+                                        fontSize = 11.5.sp,
+                                        color = Muted
+                                    )
+                                }
+                                TextButton(onClick = {
+                                    hasStoragePerm = ExternalBackupStore.hasPermission(context)
+                                    vm.refreshLocalWorldArchives()
+                                }) {
+                                    Text("🔄 Làm mới", fontWeight = FontWeight.Bold)
+                                }
+                            }
+
+                            if (autoBackupItems.isNotEmpty()) {
+                                HorizontalDivider()
+                                Text(
+                                    "🧹 Có ${autoBackupItems.size} bản sao lưu tự động đang chiếm ${Worlds.formatSize(autoBackupBytes)} bộ nhớ máy:",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Coral
+                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Button(
+                                        onClick = { vm.smartCleanupAutoBackups(keepPerServer = 1) },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Indigo),
+                                        shape = McShape.ControlCompact,
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text("🧹 Chỉ giữ 1 bản mới nhất/SV", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                    OutlinedButton(
+                                        onClick = { confirmCleanupAllAuto = true },
+                                        shape = McShape.ControlCompact,
+                                        border = BorderStroke(1.dp, Coral),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text("🗑️ Xóa hết sao lưu tự động", color = Coral, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
                         }
                     }
-                    if (localArchives.isEmpty()) {
+
+                    Spacer(Modifier.height(8.dp))
+
+                    // Bộ lọc phân loại rõ ràng
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        FilterChip(
+                            selected = filterTab == 0,
+                            onClick = { filterTab = 0 },
+                            label = { Text("📦 Tất cả (${localArchives.size})", fontSize = 11.5.sp) }
+                        )
+                        FilterChip(
+                            selected = filterTab == 1,
+                            onClick = { filterTab = 1 },
+                            label = { Text("📥 File Map trong Download (${downloadItems.size})", fontSize = 11.5.sp) }
+                        )
+                        FilterChip(
+                            selected = filterTab == 2,
+                            onClick = { filterTab = 2 },
+                            label = { Text("🗺️ Bản sao lưu Map (${backupItems.size})", fontSize = 11.5.sp) }
+                        )
+                    }
+
+                    if (localArchives.size > 4) {
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            label = { Text("🔍 Tìm tên Map hoặc tên Server...") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
+                    if (filteredArchives.isEmpty()) {
                         Text(
-                            "Chưa tìm thấy tệp .zip hoặc .mcworld nào trong thư mục Download. Hãy tải tệp ZIP của Map về thư mục Download rồi bấm '🔄 Làm mới', hoặc dùng nút chọn tệp bên dưới.",
-                            style = MaterialTheme.typography.bodySmall
+                            if (filterTab == 1) {
+                                "Chưa có tệp Map (.zip / .mcworld) nào trong thư mục Download. Bạn có thể chuyển sang tab '📦 Tất cả' để xem các Bản sao lưu hoặc tải file ZIP của Map về thư mục Download rồi bấm '🔄 Làm mới'."
+                            } else {
+                                "Không tìm thấy tệp .zip hoặc .mcworld nào khớp bộ lọc."
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Muted
                         )
                     } else {
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            localArchives.take(10).forEach { item ->
-                                OutlinedCard(modifier = Modifier.fillMaxWidth()) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth().padding(10.dp),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            filteredArchives.forEach { item ->
+                                OutlinedCard(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    border = BorderStroke(
+                                        1.dp,
+                                        if (item.category == McViewModel.ArchiveCategory.MAP_DOWNLOAD)
+                                            Indigo.copy(alpha = 0.45f)
+                                        else
+                                            MaterialTheme.colorScheme.outlineVariant
+                                    )
+                                ) {
+                                    Column(
+                                        modifier = Modifier.fillMaxWidth().padding(12.dp),
+                                        verticalArrangement = Arrangement.spacedBy(6.dp)
                                     ) {
-                                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-                                            Text(item.name, fontWeight = FontWeight.SemiBold)
-                                            Text(
-                                                "${item.folderLabel} • ${Worlds.formatSize(item.sizeBytes)}",
-                                                style = MaterialTheme.typography.bodySmall
-                                            )
-                                        }
-                                        Button(
-                                            onClick = {
-                                                pickerServer = config.activeCoreName
-                                                name = ""
-                                                pendingLocalName = item.name
-                                                pendingLocalPath = item.path
-                                            },
-                                            enabled = ready && selected != null && !running && !busy && !modBusy
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.Top
                                         ) {
-                                            Text("Nhập ngay")
+                                            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                                                Text(
+                                                    item.displayTitle,
+                                                    fontWeight = FontWeight.ExtraBold,
+                                                    fontSize = 13.sp,
+                                                    color = if (item.category == McViewModel.ArchiveCategory.MAP_DOWNLOAD) Indigo else MaterialTheme.colorScheme.onSurface
+                                                )
+                                                Text(
+                                                    item.name,
+                                                    fontSize = 11.sp,
+                                                    color = Muted
+                                                )
+                                                Text(
+                                                    "📁 ${item.folderLabel} • 🕒 ${item.formattedTime} • 💾 ${Worlds.formatSize(item.sizeBytes)}",
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = MaterialTheme.colorScheme.primary
+                                                )
+                                            }
+                                        }
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Button(
+                                                onClick = {
+                                                    pickerServer = config.activeCoreName
+                                                    name = ""
+                                                    pendingLocalName = item.name
+                                                    pendingLocalPath = item.path
+                                                },
+                                                enabled = ready && selected != null && !running && !busy && !modBusy,
+                                                colors = ButtonDefaults.buttonColors(containerColor = Indigo),
+                                                shape = McShape.ControlCompact,
+                                                modifier = Modifier.weight(1f)
+                                            ) {
+                                                Text("📥 Nhập vào Server", color = Color.White, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                            OutlinedButton(
+                                                onClick = { vm.requestShareBackupToGoogleDrive(item.path) },
+                                                shape = McShape.ControlCompact
+                                            ) {
+                                                Text("☁️ Drive", color = Mint, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                            OutlinedButton(
+                                                onClick = { pendingDeleteArchive = item },
+                                                shape = McShape.ControlCompact,
+                                                border = BorderStroke(1.dp, Coral)
+                                            ) {
+                                                Text("🗑️ Xóa", color = Coral, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                                            }
                                         }
                                     }
                                 }
@@ -305,7 +496,7 @@ fun WorldImportScreen(vm: McViewModel, onBack: () -> Unit, onWorlds: () -> Unit)
 
         item {
             OutlinedButton(onClick = onWorlds, modifier = Modifier.fillMaxWidth()) {
-                Text("Quản lý danh sách các thế giới (Map)")
+                Text("🌍 Quản lý danh sách các thế giới (Map) & Bản sao lưu")
             }
         }
         item {
@@ -314,6 +505,66 @@ fun WorldImportScreen(vm: McViewModel, onBack: () -> Unit, onWorlds: () -> Unit)
                 style = MaterialTheme.typography.bodySmall
             )
         }
+    }
+
+    pendingDeleteArchive?.let { item ->
+        AlertDialog(
+            onDismissRequest = { pendingDeleteArchive = null },
+            title = { Text("🗑️ Xóa tệp này khỏi điện thoại?", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(item.displayTitle, fontWeight = FontWeight.Bold, color = Indigo)
+                    Text("Tên tệp: ${item.name}", fontSize = 12.sp)
+                    Text("Vị trí: ${item.folderLabel}", fontSize = 12.sp, color = Muted)
+                    Text(
+                        "💾 Sẽ giải phóng ngay: ${Worlds.formatSize(item.sizeBytes)} bộ nhớ máy.",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = Coral
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val path = item.path
+                        pendingDeleteArchive = null
+                        vm.deleteLocalArchiveFile(path)
+                    }
+                ) {
+                    Text("🗑️ Xóa vĩnh viễn", color = Coral, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDeleteArchive = null }) { Text("Hủy") }
+            }
+        )
+    }
+
+    if (confirmCleanupAllAuto) {
+        AlertDialog(
+            onDismissRequest = { confirmCleanupAllAuto = false },
+            title = { Text("🗑️ Xóa tất cả bản sao lưu tự động?", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "Sẽ xóa toàn bộ ${autoBackupItems.size} bản sao lưu tự động (_自动 / _TuDong) trên điện thoại và giải phóng ${Worlds.formatSize(autoBackupBytes)}.\n\n" +
+                        "Các thế giới đang chơi bên trong Server và các tệp Map bạn tải về trong Download vẫn được giữ nguyên an toàn 100%!"
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmCleanupAllAuto = false
+                        vm.smartCleanupAutoBackups(keepPerServer = 0)
+                    }
+                ) {
+                    Text("🗑️ Xóa tất cả (${Worlds.formatSize(autoBackupBytes)})", color = Coral, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmCleanupAllAuto = false }) { Text("Hủy") }
+            }
+        )
     }
 
     pendingLocalPath?.let { localPath ->
@@ -327,7 +578,7 @@ fun WorldImportScreen(vm: McViewModel, onBack: () -> Unit, onWorlds: () -> Unit)
                     OutlinedTextField(
                         value = name,
                         onValueChange = { name = it.take(80) },
-                        label = { Text("Tên world (để trống sẽ lấy theo tên tệp ZIP)") },
+                        label = { Text("Tên world (để trống sẽ lấy theo tên Map trong ZIP)") },
                         singleLine = true
                     )
                 }
