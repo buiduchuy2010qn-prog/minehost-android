@@ -56,11 +56,120 @@ object CrossplayCompat {
         val details: List<String>,
         val suggestion: String? = null,
         val suggestedCore: ServerCore? = null,
-        val suggestedMcVersion: String? = null
+        val suggestedMcVersion: String? = null,
+        /** Bản PE người dùng chọn (null = tự động theo Geyser mới nhất) */
+        val targetPe: String? = null,
+        /** Khi phải dùng Geyser CŨ cho PE đời cũ: link tải đúng bản Geyser đó (null = bản mới nhất) */
+        val geyserUrl: String? = null,
+        val geyserFileName: String? = null,
+        val geyserBuildLabel: String? = null,
+        /** Dải PE thật của bản Geyser cũ được chọn */
+        val peRangesOverride: List<Pair<String, String>>? = null
     ) {
         val supported: Boolean get() = verdict == Verdict.SUPPORTED
-        val bedrockVersions: List<String> get() = if (supported) info.bedrockVersions else emptyList()
-        val bedrockRangeText: String get() = if (supported) info.bedrockRangeText else "Không có"
+        val usesOlderGeyser: Boolean get() = geyserUrl != null
+        val bedrockVersions: List<String>
+            get() = when {
+                !supported -> emptyList()
+                peRangesOverride != null -> CrossplayCompat.expandRanges(peRangesOverride)
+                else -> info.bedrockVersions
+            }
+        val bedrockRangeText: String
+            get() = when {
+                !supported -> "Không có"
+                peRangesOverride != null -> CrossplayCompat.rangesText(peRangesOverride)
+                else -> info.bedrockRangeText
+            }
+    }
+
+    /** Danh sách các bản Minecraft PE/Bedrock đã phát hành (để chọn & hiển thị). */
+    val KNOWN_PE: List<String> = listOf(
+        "1.21.70", "1.21.71", "1.21.72", "1.21.73", "1.21.80", "1.21.81", "1.21.82", "1.21.83", "1.21.84",
+        "1.21.90", "1.21.92", "1.21.93", "1.21.94", "1.21.100", "1.21.101",
+        "1.21.110", "1.21.111", "1.21.112", "1.21.113", "1.21.114",
+        "1.21.120", "1.21.121", "1.21.122", "1.21.123", "1.21.124",
+        "1.21.130", "1.21.131", "1.21.132",
+        "26.0", "26.1", "26.2", "26.3", "26.10", "26.20", "26.21", "26.22", "26.23",
+        "26.30", "26.31", "26.32", "26.33", "26.34",
+        "26.40", "26.41", "26.42", "26.43", "26.44", "26.45",
+        "26.50", "26.51", "26.52"
+    )
+
+    private fun r(lo: String, hi: String = lo) = lo to hi
+    private fun singles(vararg v: String) = v.map { it to it }
+
+    /**
+     * Lịch sử dải PE mà GeyserMC hỗ trợ theo thời gian (lấy từ lịch sử README của GeyserMC).
+     * Một bản Geyser phát hành lúc T hỗ trợ dải PE của mốc gần nhất <= T.
+     */
+    private val SNAPSHOTS: List<Pair<String, List<Pair<String, String>>>> = listOf(
+        "2025-08-05T14:25:23Z" to listOf(r("1.21.70", "1.21.100")),
+        "2025-08-14T11:42:13Z" to listOf(r("1.21.70", "1.21.101")),
+        "2025-09-21T20:40:52Z" to listOf(r("1.21.90", "1.21.110")),
+        "2025-10-12T11:34:29Z" to listOf(r("1.21.90", "1.21.113")),
+        "2025-10-19T06:53:58Z" to listOf(r("1.21.90", "1.21.114")),
+        "2025-10-28T14:33:32Z" to listOf(r("1.21.90", "1.21.120")),
+        "2025-11-20T13:52:56Z" to listOf(r("1.21.90", "1.21.124")),
+        "2025-12-09T12:05:55Z" to listOf(r("1.21.90", "1.21.130")),
+        "2025-12-15T11:04:17Z" to listOf(r("1.21.111", "1.21.130")),
+        "2026-01-25T02:48:22Z" to listOf(r("1.21.111", "1.21.132")),
+        "2026-02-06T13:36:04Z" to listOf(r("1.21.111", "1.21.114"), r("1.21.120", "1.21.124"), r("1.21.130", "1.21.132")) + singles("26.0"),
+        "2026-02-23T09:46:16Z" to listOf(r("1.21.111", "1.21.114"), r("1.21.120", "1.21.124"), r("1.21.130", "1.21.132")) + singles("26.0", "26.1"),
+        "2026-02-26T03:21:28Z" to listOf(r("1.21.111", "1.21.114"), r("1.21.120", "1.21.124"), r("1.21.130", "1.21.132")) + singles("26.0", "26.1", "26.2"),
+        "2026-03-03T20:48:50Z" to listOf(r("1.21.111", "1.21.114"), r("1.21.120", "1.21.124"), r("1.21.130", "1.21.132")) + singles("26.0", "26.1", "26.2", "26.3"),
+        "2026-03-20T20:45:55Z" to listOf(r("1.21.130", "1.21.132")) + singles("26.0", "26.1", "26.2", "26.3", "26.10"),
+        "2026-05-03T20:46:05Z" to listOf(r("1.21.130", "1.21.132")) + singles("26.0", "26.1", "26.2", "26.3", "26.10", "26.20"),
+        "2026-05-29T21:25:55Z" to listOf(r("1.21.130", "1.21.132")) + singles("26.0", "26.1", "26.2", "26.3", "26.10", "26.20", "26.21", "26.22", "26.23"),
+        "2026-06-10T21:29:53Z" to singles("26.0", "26.1", "26.2", "26.3", "26.10", "26.20", "26.21", "26.22", "26.23", "26.30"),
+        "2026-06-26T13:39:12Z" to singles("26.0", "26.1", "26.2", "26.3", "26.10", "26.20", "26.21", "26.22", "26.23", "26.30", "26.31", "26.32"),
+        "2026-07-10T06:51:38Z" to singles("26.0", "26.1", "26.2", "26.3", "26.10", "26.20", "26.21", "26.22", "26.23", "26.30", "26.31", "26.32", "26.33"),
+        "2026-08-04T15:26:41Z" to singles("26.0", "26.1", "26.2", "26.3", "26.10", "26.20", "26.21", "26.22", "26.23", "26.30", "26.31", "26.32", "26.33", "26.40"),
+        "2026-08-04T15:50:41Z" to singles("26.0", "26.1", "26.2", "26.3", "26.10", "26.20", "26.21", "26.22", "26.23", "26.30", "26.31", "26.32", "26.33", "26.34", "26.40"),
+        "2026-08-14T19:53:43Z" to singles("26.0", "26.1", "26.2", "26.3", "26.10", "26.20", "26.21", "26.22", "26.23", "26.30", "26.31", "26.32", "26.33", "26.34", "26.40", "26.41", "26.42", "26.43", "26.44"),
+        "2026-08-20T15:00:35Z" to singles("26.0", "26.1", "26.2", "26.3", "26.10", "26.20", "26.21", "26.22", "26.23", "26.30", "26.31", "26.32", "26.33", "26.34", "26.40", "26.41", "26.42", "26.43", "26.44", "26.45"),
+        "2026-09-15T23:46:24Z" to singles("26.30", "26.31", "26.32", "26.33", "26.34", "26.40", "26.41", "26.42", "26.43", "26.44", "26.45", "26.50", "26.51"),
+        "2026-10-06T09:29:40Z" to singles("26.30", "26.31", "26.32", "26.33", "26.34", "26.40", "26.41", "26.42", "26.43", "26.44", "26.45", "26.50", "26.51", "26.52")
+    )
+
+    private fun parseInstant(s: String): java.time.Instant? = runCatching { java.time.Instant.parse(s) }.getOrNull()
+
+    /** Dải PE mà bản Geyser phát hành lúc [instant] hỗ trợ (null nếu trước mốc lịch sử sớm nhất). */
+    private fun rangesAt(instant: java.time.Instant): List<Pair<String, String>>? {
+        val last = SNAPSHOTS.lastOrNull { (d, _) -> parseInstant(d)?.let { !it.isAfter(instant) } == true }?.second
+        // Bản phát hành sau mốc cuối cùng đã lưu: dùng README trực tuyến (nếu có)
+        val lastSnapDate = parseInstant(SNAPSHOTS.last().first)
+        val live = cachedInfo?.takeIf { it.live }
+        if (live != null && lastSnapDate != null && instant.isAfter(lastSnapDate)) {
+            return live.bedrockVersions.map { it to it }
+        }
+        return last
+    }
+
+    private fun inRanges(ranges: List<Pair<String, String>>, pe: String): Boolean =
+        ranges.any { (lo, hi) -> compareVersions(pe, lo) >= 0 && compareVersions(pe, hi) <= 0 }
+
+    fun expandRanges(ranges: List<Pair<String, String>>): List<String> {
+        val all = (KNOWN_PE + (cachedInfo?.bedrockVersions ?: emptyList())).distinct()
+            .sortedWith(Comparator { a, b -> compareVersions(a, b) })
+        val fromKnown = all.filter { inRanges(ranges, it) }
+        return fromKnown.ifEmpty { ranges.flatMap { listOf(it.first, it.second) }.distinct() }
+    }
+
+    fun rangesText(ranges: List<Pair<String, String>>): String {
+        val v = expandRanges(ranges)
+        return when {
+            v.isEmpty() -> "?"
+            v.size == 1 -> v.first()
+            else -> "${v.first()} → ${v.last()}"
+        }
+    }
+
+    /** "", "1.21", "26", "auto" = tự động (Geyser mới nhất); còn lại là số phiên bản PE cụ thể. */
+    fun normalizeTargetPe(raw: String?): String? {
+        val s = raw?.trim()?.removePrefix("v")?.removePrefix("V").orEmpty()
+        if (s.isBlank() || s == "1.21" || s == "26" || s.equals("auto", true)) return null
+        if (!s.matches(Regex("""\d+\.\d+(\.\d+)?"""))) return null
+        return s
     }
 
     /** Bảng dự phòng khi mất mạng (đúng theo README GeyserMC 2.12.0-b1268). */
@@ -139,40 +248,168 @@ object CrossplayCompat {
         info
     }
 
-    /** Trả về newest Geyser version_number (VD "2.12.0-b1268") trên Modrinth cho loader + phiên bản MC, hoặc "" nếu không có; null nếu lỗi mạng. */
-    private fun newestModrinthGeyserFor(loaders: List<String>, mcVersion: String): String? {
+    private data class MrVersion(val number: String, val date: String, val instant: java.time.Instant?, val url: String, val fileName: String)
+
+    private val mrVersionsCache = ConcurrentHashMap<String, Pair<Long, List<MrVersion>>>()
+
+    /** Toàn bộ bản Geyser trên Modrinth cho loader + phiên bản MC (mới nhất trước); null nếu lỗi mạng. */
+    private fun modrinthGeyserVersions(loaders: List<String>, mcVersion: String): List<MrVersion>? {
+        val key = loaders.joinToString(",") + "|" + mcVersion
+        val now = System.currentTimeMillis()
+        mrVersionsCache[key]?.let { (at, list) -> if (now - at < RESULT_TTL_MS) return list }
         val loadersParam = URLEncoder.encode(JSONArray(loaders).toString(), "UTF-8")
         val gvParam = URLEncoder.encode(JSONArray(listOf(mcVersion)).toString(), "UTF-8")
         val body = fetchText(
             "https://api.modrinth.com/v2/project/geyser/version?loaders=$loadersParam&game_versions=$gvParam&include_changelog=false"
         ) ?: return null
-        return runCatching {
+        val list = runCatching {
             val arr = JSONArray(body)
-            var bestDate = ""
-            var best = ""
+            val out = ArrayList<MrVersion>(arr.length())
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
-                val date = o.optString("date_published")
-                if (date > bestDate) {
-                    bestDate = date
-                    best = o.optString("version_number")
+                val files = o.optJSONArray("files") ?: JSONArray()
+                var url = ""
+                var fileName = ""
+                for (j in 0 until files.length()) {
+                    val f = files.getJSONObject(j)
+                    if (url.isBlank() || f.optBoolean("primary")) {
+                        url = f.optString("url")
+                        fileName = f.optString("filename")
+                    }
                 }
+                val date = o.optString("date_published")
+                out += MrVersion(o.optString("version_number"), date, parseInstant(date), url, fileName)
             }
-            best
-        }.getOrNull()
+            out.sortedByDescending { it.date }
+        }.getOrNull() ?: return null
+        mrVersionsCache[key] = now to list
+        return list
     }
 
-    suspend fun evaluate(core: ServerCore, mcVersionRaw: String, force: Boolean = false): Result = withContext(Dispatchers.IO) {
+    private fun newestModrinthGeyserFor(loaders: List<String>, mcVersion: String): String? =
+        modrinthGeyserVersions(loaders, mcVersion)?.let { it.firstOrNull()?.number ?: "" }
+
+    suspend fun evaluate(
+        core: ServerCore,
+        mcVersionRaw: String,
+        targetPeRaw: String? = null,
+        force: Boolean = false
+    ): Result = withContext(Dispatchers.IO) {
         val mcVersion = mcVersionRaw.trim()
-        val key = "${core.name}:$mcVersion"
+        val targetPe = normalizeTargetPe(targetPeRaw)
+        val key = "${core.name}:$mcVersion:${targetPe.orEmpty()}"
         val now = System.currentTimeMillis()
         if (!force) {
             resultCache[key]?.let { (at, r) -> if (r.info.live && now - at < RESULT_TTL_MS) return@withContext r }
         }
+        if (force) mrVersionsCache.clear()
         val info = geyserInfo(force)
-        val result = evaluateWith(core, mcVersion, info)
+        val auto = evaluateWith(core, mcVersion, info)
+        val result = if (targetPe == null) auto else evaluateForPe(core, mcVersion, info, targetPe, auto)
         resultCache[key] = now to result
+        if (targetPe == null) resultCache["${core.name}:$mcVersion"] = now to result
         result
+    }
+
+    /**
+     * Người chơi dùng PE đời cũ (báo "Outdated Bedrock client"): tìm bản Geyser mới nhất VẪN nhận PE đó
+     * và chạy được trên đúng core + phiên bản Java của server.
+     */
+    private fun evaluateForPe(core: ServerCore, mcVersion: String, info: GeyserInfo, pe: String, auto: Result): Result {
+        val loader = loaderFor(core) ?: return auto.copy(targetPe = pe)
+        if (core.isBedrock) return auto.copy(targetPe = pe)
+        // PE nằm trong dải của Geyser mới nhất -> dùng bản mới nhất như bình thường
+        if (auto.supported && auto.peRangesOverride == null && inRanges(info.bedrockVersions.map { it to it }, pe)) {
+            return auto.copy(
+                targetPe = pe,
+                headline = "✅ PE $pe VÀO ĐƯỢC: Java $mcVersion ↔ PE ${info.bedrockRangeText}"
+            )
+        }
+        val loaders = if (loader == "paper") listOf("paper", "spigot") else listOf(loader)
+        val versions = modrinthGeyserVersions(loaders, mcVersion)
+        fun fail(headline: String, details: List<String>, suggestion: String?, sugMc: String? = null) = Result(
+            verdict = Verdict.NOT_SUPPORTED,
+            core = core,
+            mcVersion = mcVersion,
+            info = info,
+            needsViaVersion = false,
+            headline = headline,
+            pcLine = "💻 PC (Java): vào được bằng Minecraft Java $mcVersion",
+            peLine = "📱 PE $pe: KHÔNG vào được",
+            details = details,
+            suggestion = suggestion,
+            suggestedCore = if (sugMc != null) core else null,
+            suggestedMcVersion = sugMc,
+            targetPe = pe
+        )
+        if (versions == null) {
+            return fail(
+                "⚠️ Cần mạng để tìm bản Geyser cho PE $pe",
+                listOf("Không kết nối được Modrinth để tìm bản Geyser cũ phù hợp với PE $pe."),
+                "Bật mạng rồi bấm Kiểm tra lại, hoặc cập nhật Minecraft PE lên ${info.bedrockVersions.firstOrNull() ?: "bản mới nhất"} trở lên."
+            )
+        }
+        val minKnown = SNAPSHOTS.first().second.minOfOrNull { it.first } ?: "1.21.70"
+        if (compareVersions(pe, minKnown) < 0) {
+            return fail(
+                "❌ PE $pe quá cũ, không còn bản Geyser nào hỗ trợ",
+                listOf("App chỉ tìm được Geyser cho PE từ $minKnown trở lên."),
+                "Cập nhật Minecraft PE trên CH Play / App Store lên ${info.bedrockVersions.firstOrNull() ?: "bản mới nhất"} trở lên."
+            )
+        }
+        val margin = java.time.Duration.ofDays(3)
+        val candidate = versions.firstOrNull { v ->
+            val at = v.instant ?: return@firstOrNull false
+            if (v.url.isBlank()) return@firstOrNull false
+            val nowRanges = rangesAt(at) ?: return@firstOrNull false
+            val laterRanges = rangesAt(at.plus(margin)) ?: nowRanges
+            inRanges(nowRanges, pe) && inRanges(laterRanges, pe)
+        }
+        if (candidate == null) {
+            val paperHint = if (loader == "paper" && mcVersion != "1.21.11") "1.21.11" else null
+            return fail(
+                "❌ ${core.displayName} $mcVersion KHÔNG có bản Geyser nào nhận PE $pe",
+                listOf(
+                    "Các bản Geyser chạy được trên ${core.displayName} $mcVersion đều không nhận PE $pe.",
+                    "Geyser mới nhất nhận PE ${info.bedrockRangeText}."
+                ),
+                if (paperHint != null) {
+                    "Thử server Paper 1.21.11 (hợp với nhiều đời PE nhất), hoặc cập nhật Minecraft PE lên ${info.bedrockVersions.firstOrNull() ?: "bản mới nhất"}+."
+                } else {
+                    "Cập nhật Minecraft PE lên ${info.bedrockVersions.firstOrNull() ?: "bản mới nhất"} trở lên (khuyên dùng)."
+                },
+                paperHint
+            )
+        }
+        val ranges = rangesAt(candidate.instant!!) ?: emptyList()
+        val rangeTxt = rangesText(ranges)
+        val details = buildList {
+            add("PE $pe cũ hơn bản Geyser mới nhất hỗ trợ (${info.bedrockRangeText}), nên app sẽ cài Geyser CŨ ${candidate.number} — bản mới nhất vẫn nhận PE $pe và chạy được trên ${core.displayName} $mcVersion.")
+            add("Với Geyser này, các bản PE vào được: $rangeTxt. Bạn bè dùng PE mới hơn (${info.bedrockRangeText}) có thể KHÔNG vào được — mọi người nên dùng cùng đời PE.")
+            if (loader == "paper") add("Sẽ tự cài: GeyserMC ${candidate.number} + Floodgate + ViaVersion + ViaBackwards (giúp Geyser cũ nói chuyện với server $mcVersion).")
+            else add("Sẽ tự cài: GeyserMC ${candidate.number} (đúng bản cho ${core.displayName} $mcVersion).")
+            add("Geyser cũ không nhận bản sửa lỗi mới. Khi điện thoại cập nhật Minecraft PE, hãy chọn lại \"Mới nhất\" và cài lại.")
+        }
+        return Result(
+            verdict = Verdict.SUPPORTED,
+            core = core,
+            mcVersion = mcVersion,
+            info = info,
+            needsViaVersion = loader == "paper",
+            headline = "✅ PE $pe VÀO ĐƯỢC (dùng Geyser cũ ${candidate.number})",
+            pcLine = if (loader == "paper") {
+                "💻 PC (Java): Minecraft Java $mcVersion (ViaVersion/ViaBackwards cho thêm bản Java gần đó)"
+            } else {
+                "💻 PC (Java): Minecraft Java $mcVersion + đúng bộ mod của server"
+            },
+            peLine = "📱 PE (Bedrock): $rangeTxt",
+            details = details,
+            targetPe = pe,
+            geyserUrl = candidate.url,
+            geyserFileName = candidate.fileName.ifBlank { null },
+            geyserBuildLabel = candidate.number,
+            peRangesOverride = ranges
+        )
     }
 
     private fun evaluateWith(core: ServerCore, mcVersion: String, info: GeyserInfo): Result {

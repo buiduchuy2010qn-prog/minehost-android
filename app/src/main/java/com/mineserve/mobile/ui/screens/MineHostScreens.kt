@@ -914,7 +914,10 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             }
 
                             // Trạng thái cài đặt GeyserMC + Floodgate + ViaVersion ngay tại chỗ
-                            val homeCrossCheck = com.mineserve.mobile.ui.rememberCrossplayCheck(active.core, active.version)
+                            val homeMarker = remember(active.dirName, installing) { vm.crossplayMarker(active.dirName) }
+                            var homePe by remember(active.dirName) { mutableStateOf(vm.crossplayMarker(active.dirName)["targetPe"].orEmpty()) }
+                            var showHomePePicker by remember { mutableStateOf(false) }
+                            val homeCrossCheck = com.mineserve.mobile.ui.rememberCrossplayCheck(active.core, active.version, targetPe = homePe)
                             if (!hasGeyserInstalled) {
                                 Surface(
                                     color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.9f),
@@ -940,8 +943,9 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                             fontWeight = FontWeight.SemiBold,
                                             color = MaterialTheme.colorScheme.onErrorContainer
                                         )
+                                        com.mineserve.mobile.ui.PeVersionPicker(selected = homePe, onSelect = { homePe = it })
                                         Button(
-                                            onClick = { vm.installCrossplayGeyserPack("1.21", startAfterInstall = true) },
+                                            onClick = { vm.installCrossplayGeyserPack(homePe, startAfterInstall = true) },
                                             enabled = !installing && !stopping && homeCrossCheck?.supported == true,
                                             shape = RoundedCornerShape(8.dp),
                                             modifier = Modifier.fillMaxWidth()
@@ -969,23 +973,49 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                             fontWeight = FontWeight.Bold,
                                             color = Color(0xFF2DD4BF)
                                         )
+                                        val installedRange = homeMarker["peRange"]
                                         Text(
-                                            when {
-                                                homeCrossCheck == null -> "🔎 Đang kiểm tra bản PE vào được..."
-                                                homeCrossCheck.supported -> "💻 PC: Minecraft Java ${active.version}   •   📱 PE: ${homeCrossCheck.bedrockRangeText}\nNếu PE báo 'Phiên bản không khớp': cập nhật Minecraft PE trên CH Play, hoặc bấm Cài lại Geyser để lấy bản mới nhất."
-                                                else -> "${homeCrossCheck.headline}\n👉 ${homeCrossCheck.suggestion.orEmpty()}"
+                                            buildString {
+                                                append("💻 PC: Minecraft Java ${active.version}")
+                                                if (!installedRange.isNullOrBlank()) {
+                                                    append("   •   📱 PE vào được (Geyser ${homeMarker["build"].orEmpty()} đang cài): $installedRange")
+                                                }
+                                                append("\nNếu PE báo \"Outdated Bedrock client\": PE của bạn cũ hơn → chọn đúng bản PE bên dưới rồi bấm Cài lại. Nếu báo \"Outdated server\": bấm Cài lại với \"Mới nhất\".")
                                             },
                                             fontSize = 10.5.sp,
                                             lineHeight = 14.sp,
                                             color = MaterialTheme.colorScheme.onSurface
                                         )
-                                        if (homeCrossCheck?.supported == true) {
-                                            TextButton(
-                                                onClick = { vm.installCrossplayGeyserPack("1.21", startAfterInstall = false) },
-                                                enabled = !installing && !stopping,
-                                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
+                                        TextButton(
+                                            onClick = { showHomePePicker = !showHomePePicker },
+                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
+                                        ) {
+                                            Text(
+                                                if (showHomePePicker) "▲ Ẩn chọn bản PE" else "📱 Chọn bản PE của điện thoại / Cài lại Geyser ▼",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color(0xFF2DD4BF)
+                                            )
+                                        }
+                                        if (showHomePePicker) {
+                                            com.mineserve.mobile.ui.PeVersionPicker(selected = homePe, onSelect = { homePe = it })
+                                            com.mineserve.mobile.ui.CrossplayCompatCard(
+                                                core = active.core,
+                                                mcVersion = active.version,
+                                                result = homeCrossCheck
+                                            )
+                                            Button(
+                                                onClick = { vm.installCrossplayGeyserPack(homePe, startAfterInstall = false) },
+                                                enabled = !installing && !stopping && homeCrossCheck?.supported == true,
+                                                shape = RoundedCornerShape(8.dp),
+                                                modifier = Modifier.fillMaxWidth()
                                             ) {
-                                                Text("🔄 Cài lại Geyser mới nhất", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2DD4BF))
+                                                Text(
+                                                    if (installing || stopping) "⏳ Đang cài lại Geyser..."
+                                                    else "🔄 Cài lại Geyser cho PE ${com.mineserve.mobile.server.CrossplayCompat.normalizeTargetPe(homePe) ?: "mới nhất"}",
+                                                    fontSize = 11.5.sp,
+                                                    fontWeight = FontWeight.ExtraBold
+                                                )
                                             }
                                         }
                                     }
@@ -1647,12 +1677,13 @@ fun MineHostCrossplay(vm: McViewModel, onBack: () -> Unit) {
     var selectedCrossCore by remember { mutableStateOf(com.mineserve.mobile.data.ServerCore.Paper) }
     var selectedCrossVer by remember { mutableStateOf("1.21.11") }
     var crossRefreshKey by remember { mutableStateOf(0) }
-    val crossCheck = com.mineserve.mobile.ui.rememberCrossplayCheck(selectedCrossCore, selectedCrossVer, refreshKey = crossRefreshKey)
+    val crossCheck = com.mineserve.mobile.ui.rememberCrossplayCheck(selectedCrossCore, selectedCrossVer, refreshKey = crossRefreshKey, targetPe = selectedBedrockBranch)
     val activeCrossCheck = com.mineserve.mobile.ui.rememberCrossplayCheck(
         core = active?.core ?: com.mineserve.mobile.data.ServerCore.Paper,
         mcVersion = active?.version.orEmpty(),
         enabled = active != null,
-        refreshKey = crossRefreshKey
+        refreshKey = crossRefreshKey,
+        targetPe = selectedBedrockBranch
     )
     var customCrossVerInput by remember { mutableStateOf("") }
     var selectedBedrockBranch by remember { mutableStateOf("1.21") }
@@ -1709,6 +1740,10 @@ fun MineHostCrossplay(vm: McViewModel, onBack: () -> Unit) {
                 artKind = MinecraftArtKind.COMMAND_BLOCK,
                 badgeText = "Tự động 100%"
             ) {
+                com.mineserve.mobile.ui.PeVersionPicker(
+                    selected = selectedBedrockBranch,
+                    onSelect = { selectedBedrockBranch = it }
+                )
                 if (active != null) {
                     com.mineserve.mobile.ui.CrossplayCompatCard(
                         core = active.core,

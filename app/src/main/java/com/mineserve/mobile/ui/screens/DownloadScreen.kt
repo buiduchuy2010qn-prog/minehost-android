@@ -132,7 +132,8 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
         core = config.selectedCore,
         mcVersion = config.mcVersion,
         enabled = crossplayWanted,
-        refreshKey = crossplayRefreshKey
+        refreshKey = crossplayRefreshKey,
+        targetPe = flexibleBedrockBranch
     )
     val crossplayBlocked = crossplayWanted && crossplayCheck?.supported != true
     val freeStorageMb = remember { (context.filesDir.usableSpace / (1024L * 1024L)).coerceAtLeast(0L) }
@@ -448,6 +449,11 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                             }
 
                             if (crossplayWanted) {
+                                Spacer(Modifier.height(4.dp))
+                                com.mineserve.mobile.ui.PeVersionPicker(
+                                    selected = flexibleBedrockBranch,
+                                    onSelect = { flexibleBedrockBranch = it }
+                                )
                                 Spacer(Modifier.height(4.dp))
                                 com.mineserve.mobile.ui.CrossplayCompatCard(
                                     core = config.selectedCore,

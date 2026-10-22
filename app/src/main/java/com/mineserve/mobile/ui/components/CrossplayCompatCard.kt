@@ -15,6 +15,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -42,20 +43,93 @@ import com.mineserve.mobile.ui.theme.Muted
  * Trả về null khi đang kiểm tra (hoặc khi [enabled] = false).
  */
 @Composable
-fun rememberCrossplayCheck(core: ServerCore, mcVersion: String, enabled: Boolean = true, refreshKey: Int = 0): CrossplayCompat.Result? {
+fun rememberCrossplayCheck(
+    core: ServerCore,
+    mcVersion: String,
+    enabled: Boolean = true,
+    refreshKey: Int = 0,
+    targetPe: String? = null
+): CrossplayCompat.Result? {
+    val pe = CrossplayCompat.normalizeTargetPe(targetPe)
     val state by produceState<CrossplayCompat.Result?>(
-        if (enabled) CrossplayCompat.cachedResult(core, mcVersion) else null,
-        core, mcVersion, enabled, refreshKey
+        if (enabled && pe == null) CrossplayCompat.cachedResult(core, mcVersion) else null,
+        core, mcVersion, enabled, refreshKey, pe
     ) {
         if (!enabled || mcVersion.isBlank()) {
             value = null
             return@produceState
         }
-        val cached = CrossplayCompat.cachedResult(core, mcVersion)
-        value = cached
-        value = runCatching { CrossplayCompat.evaluate(core, mcVersion, force = refreshKey > 0) }.getOrNull() ?: cached
+        value = null
+        value = runCatching { CrossplayCompat.evaluate(core, mcVersion, pe, force = refreshKey > 0) }.getOrNull()
+            ?: if (pe == null) CrossplayCompat.cachedResult(core, mcVersion) else null
     }
     return state
+}
+
+/**
+ * Chọn bản Minecraft PE đang dùng trên điện thoại. "" = tự động (Geyser mới nhất).
+ * Dùng khi PE báo "Outdated Bedrock client" (PE cũ hơn Geyser mới nhất).
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun PeVersionPicker(
+    selected: String,
+    onSelect: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val current = CrossplayCompat.normalizeTargetPe(selected)
+    var showOld by remember { mutableStateOf(current != null && current.startsWith("1.")) }
+    var custom by remember { mutableStateOf("") }
+    val latestFirst = CrossplayCompat.lastKnownInfo().bedrockVersions.firstOrNull() ?: "26.30"
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(Indigo.copy(alpha = 0.08f))
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(5.dp)
+    ) {
+        Text("📱 Điện thoại bạn đang dùng Minecraft PE bản nào?", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+        Text(
+            "Xem số phiên bản ở góc dưới bên phải màn hình chính Minecraft PE. Nếu vào server bị báo \"Outdated Bedrock client\" nghĩa là PE của bạn cũ hơn $latestFirst → chọn đúng bản PE ở đây, app sẽ cài bản Geyser phù hợp.",
+            fontSize = 10.sp,
+            color = Muted,
+            lineHeight = 13.sp
+        )
+        val all = CrossplayCompat.KNOWN_PE.sortedWith(Comparator { a, b -> CrossplayCompat.compareVersions(b, a) })
+        val newer = all.filter { !it.startsWith("1.") }
+        val older = all.filter { it.startsWith("1.") }
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp)
+        ) {
+            SegPill(text = "🔄 Mới nhất ($latestFirst+)", selected = current == null, compact = true, onClick = { onSelect("") })
+            newer.forEach { v -> SegPill(text = v, selected = current == v, compact = true, onClick = { onSelect(v) }) }
+            if (showOld) {
+                older.forEach { v -> SegPill(text = v, selected = current == v, compact = true, onClick = { onSelect(v) }) }
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            TextButton(onClick = { showOld = !showOld }) {
+                Text(if (showOld) "Ẩn bản 1.21.x ▲" else "Bản cũ 1.21.x ▼", fontSize = 11.sp, color = Indigo)
+            }
+            OutlinedTextField(
+                value = custom,
+                onValueChange = { custom = it.take(10) },
+                placeholder = { Text("Nhập: 1.21.95", fontSize = 11.sp) },
+                singleLine = true,
+                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp),
+                modifier = Modifier.weight(1f)
+            )
+            TextButton(
+                onClick = { CrossplayCompat.normalizeTargetPe(custom)?.let { onSelect(it) } },
+                enabled = CrossplayCompat.normalizeTargetPe(custom) != null
+            ) { Text("Chọn", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+        }
+        if (current != null && current !in all) {
+            Text("Đang chọn PE $current", fontSize = 10.5.sp, color = Indigo, fontWeight = FontWeight.Bold)
+        }
+    }
 }
 
 /**
@@ -87,7 +161,8 @@ fun CrossplayCompatCard(
         verticalArrangement = Arrangement.spacedBy(5.dp)
     ) {
         Text(
-            "🔎 Kiểm tra chơi chung: ${core.displayName} Java $mcVersion ↔ Minecraft PE",
+            "🔎 Kiểm tra chơi chung: ${core.displayName} Java $mcVersion ↔ Minecraft PE" +
+                (CrossplayCompat.normalizeTargetPe(result?.targetPe)?.let { " $it" } ?: ""),
             fontSize = 11.5.sp,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface

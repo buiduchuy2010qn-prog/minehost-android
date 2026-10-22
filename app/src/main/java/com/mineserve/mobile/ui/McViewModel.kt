@@ -4169,6 +4169,9 @@ class McViewModel(
         }
     }
 
+    /** Bản Geyser + dải PE đã cài cho server (đọc từ tệp đánh dấu, không gọi mạng). */
+    fun crossplayMarker(dirName: String): Map<String, String> = pluginManager.readCrossplayMarker(dirName)
+
     fun userScreenshot56ModItems(): List<PluginManager.UserScreenshotModItem> =
         pluginManager.USER_SCREENSHOT_56_MOD_ITEMS
 
@@ -7959,7 +7962,7 @@ class McViewModel(
             try {
                 // Kiểm tra THẬT trước khi dừng server / tải file: chỉ cài khi PE hiện nay chắc chắn vào được
                 _messageFlow.tryEmit("🔎 Đang kiểm tra GeyserMC: ${core.displayName} $mcVer có cho Minecraft PE vào được không...")
-                val compat = com.mineserve.mobile.server.CrossplayCompat.evaluate(core, mcVer)
+                val compat = com.mineserve.mobile.server.CrossplayCompat.evaluate(core, mcVer, bedrockBranch)
                 if (!compat.supported) {
                     _errorFlow.tryEmit(
                         listOfNotNull(compat.headline, compat.details.firstOrNull(), compat.suggestion?.let { "👉 $it" }).joinToString("\n")
@@ -8057,7 +8060,7 @@ class McViewModel(
             _downloadProgress.value = DownloadProgress()
             try {
                 // Kiểm tra THẬT khả năng chơi chung trước khi tải Core (tránh tải xong mới biết PE không vào được)
-                val compat = com.mineserve.mobile.server.CrossplayCompat.evaluate(core, mcVersion)
+                val compat = com.mineserve.mobile.server.CrossplayCompat.evaluate(core, mcVersion, bedrockBranch)
                 if (!compat.supported) {
                     _errorFlow.tryEmit(
                         listOfNotNull(compat.headline, compat.details.firstOrNull(), compat.suggestion?.let { "👉 $it" }).joinToString("\n")
@@ -8101,7 +8104,7 @@ class McViewModel(
                     refreshServerPropertiesNow()
                     if (core.supportsMods) refreshMods() else refreshInstalledPlugins()
                     refreshServerStorage()
-                    _messageFlow.tryEmit("🎉 Đã tạo xong Server Chơi Chung '$targetServerName' (PC Java $mcVersion + PE ${com.mineserve.mobile.server.CrossplayCompat.cachedResult(core, mcVersion)?.bedrockRangeText ?: "Bedrock"})!")
+                    _messageFlow.tryEmit("🎉 Đã tạo xong Server Chơi Chung '$targetServerName' (PC Java $mcVersion + PE ${pluginManager.readCrossplayMarker(dirName)["peRange"] ?: "Bedrock"})!")
                     _coreDownloadCompletedFlow.tryEmit(targetServerName)
                 }
             } catch (e: Exception) {
@@ -8194,7 +8197,7 @@ class McViewModel(
                 val trimmedName = customName.trim()
                 if (installCrossplayPack && !selectedCoreSnap.isBedrock) {
                     // Kiểm tra THẬT trước khi tải Core: chỉ tạo server chơi chung khi PE hiện nay vào được
-                    val compat = com.mineserve.mobile.server.CrossplayCompat.evaluate(selectedCoreSnap, selectedVerSnap)
+                    val compat = com.mineserve.mobile.server.CrossplayCompat.evaluate(selectedCoreSnap, selectedVerSnap, crossplayBedrockBranch)
                     if (!compat.supported) {
                         _errorFlow.tryEmit(
                             listOfNotNull(compat.headline, compat.details.firstOrNull(), compat.suggestion?.let { "👉 $it" }).joinToString("\n")

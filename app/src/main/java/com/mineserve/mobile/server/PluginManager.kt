@@ -107,6 +107,7 @@ class PluginManager(
             }
             return false
         }
+        private const val CROSSPLAY_MARKER_FILE = "minehost-crossplay.properties"
         private const val UPDATE_CHECK_COOLDOWN_MS = 5 * 60 * 1000L  // 更新检测冷却 5 分钟
     }
 
@@ -2170,7 +2171,7 @@ class PluginManager(
         val installedNames = mutableListOf<String>()
         val targetMc = mcVersion.ifBlank { "1.21.4" }
         // Kiểm tra THẬT trước khi tải: chỉ cài khi chắc chắn PE (Bedrock) hiện nay vào được server này
-        val compat = CrossplayCompat.evaluate(core, targetMc)
+        val compat = CrossplayCompat.evaluate(core, targetMc, bedrockBranch)
         check(compat.supported) {
             listOfNotNull(compat.headline, compat.details.firstOrNull(), compat.suggestion?.let { "👉 $it" }).joinToString("\n")
         }
@@ -2195,8 +2196,24 @@ class PluginManager(
                     }
                 }
             }
+            // Xóa Geyser cũ trong mods/ để không bao giờ có 2 bản Geyser cùng lúc
+            modsDir.listFiles()?.filter {
+                val n = it.name.lowercase(Locale.ROOT)
+                n.startsWith("geyser") && (n.endsWith(".jar") || n.endsWith(".jar.disabled"))
+            }?.forEach { it.delete() }
             var geyserInstalled = false
-            runCatching {
+            val pinnedGeyserUrl = compat.geyserUrl
+            if (pinnedGeyserUrl != null) {
+                // PE đời cũ: cài đúng bản Geyser cũ đã được kiểm tra là nhận PE đó
+                runCatching {
+                    val fn = compat.geyserFileName ?: "Geyser-$loader.jar"
+                    val f = installModPackJarFromUrl(pinnedGeyserUrl, fn, dirName)
+                    if (f.exists() && f.length() > 1024L) {
+                        installedNames += fn
+                        geyserInstalled = true
+                    }
+                }
+            } else runCatching {
                 val geyserDeps = resolveModrinthDownloadWithDeps("geyser", targetMc, loader)
                 if (geyserDeps.isNotEmpty()) {
                     geyserDeps.forEach { (url, fn) ->
@@ -2207,7 +2224,7 @@ class PluginManager(
                 }
             }
             // Chỉ dùng bản "latest" từ GeyserMC khi server đúng phiên bản Java mà Geyser mới nhất nhắm tới (tránh nạp sai bản gây crash)
-            if (!geyserInstalled && isGeyserJavaTarget) {
+            if (!geyserInstalled && isGeyserJavaTarget && compat.geyserUrl == null) {
                 val geyserPlatformAndFile: Pair<String, String>? = when (loader) {
                     "fabric", "quilt" -> "fabric" to "Geyser-Fabric.jar"
                     "neoforge" -> "neoforge" to "Geyser-NeoForge.jar"
@@ -2269,7 +2286,9 @@ class PluginManager(
             }
         } else {
             var geyserInstalled = false
-            val geyserUrl = "https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot"
+            // PE đời cũ -> bản Geyser cũ đã kiểm tra; còn lại -> bản mới nhất từ GeyserMC
+            val geyserUrl = compat.geyserUrl
+                ?: "https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot"
             runCatching {
                 val f = installFromUrl(geyserUrl, "Geyser-Spigot.jar", dirName) { _, _, _ -> }
                 if (f.exists() && f.length() > 1024L) {
@@ -2277,7 +2296,7 @@ class PluginManager(
                     geyserInstalled = true
                 }
             }.onFailure {
-                runCatching {
+                if (compat.geyserUrl == null) runCatching {
                     resolveSingleModrinthSlug("geyser", targetMc, "paper")?.let { (url, _) ->
                         val f = installFromUrl(url, "Geyser-Spigot.jar", dirName) { _, _, _ -> }
                         if (f.exists() && f.length() > 1024L) {
@@ -2327,8 +2346,31 @@ class PluginManager(
             bedrockPort = 19132,
             forceAuthType = if (forceOfflineAuth) "offline" else null
         )
+        // Ghi lại bản Geyser đã cài + dải PE thật để Trang chủ hiển thị đúng và "Cài lại" giữ đúng đời PE
+        runCatching {
+            val marker = File(modsDirOf(dirName).parentFile, CROSSPLAY_MARKER_FILE)
+            marker.writeText(
+                buildString {
+                    appendLine("build=${compat.geyserBuildLabel ?: compat.info.buildLabel}")
+                    appendLine("targetPe=${compat.targetPe.orEmpty()}")
+                    appendLine("peRange=${compat.bedrockRangeText}")
+                    appendLine("mc=$targetMc")
+                },
+                Charsets.UTF_8
+            )
+        }
         installedNames
     }
+
+    /** Thông tin bản Geyser đã cài cho server (build, targetPe, peRange) hoặc rỗng nếu chưa cài qua app. */
+    fun readCrossplayMarker(dirName: String): Map<String, String> = runCatching {
+        val marker = File(modsDirOf(dirName).parentFile, CROSSPLAY_MARKER_FILE)
+        if (!marker.isFile) return@runCatching emptyMap<String, String>()
+        marker.readLines(Charsets.UTF_8).mapNotNull { line ->
+            val i = line.indexOf('=')
+            if (i <= 0) null else line.substring(0, i).trim() to line.substring(i + 1).trim()
+        }.toMap()
+    }.getOrDefault(emptyMap())
 
     /**
      * Mô tả 1 Mod trong Gói Mod Tối Ưu Server Cực Mạnh Lưu Sẵn (100% Server-Side — Người chơi không cần cài mod vẫn vào được).
