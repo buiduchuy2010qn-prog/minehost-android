@@ -26,7 +26,7 @@ import kotlinx.coroutines.withContext
  * Bộ nạp biểu tượng Mod & Plugin thông minh:
  * 1. Bộ nhớ đệm RAM (LruCache 8MB) + Bộ nhớ đệm đĩa (.png) phản hồi <1ms.
  * 2. Trích xuất trực tiếp tệp ảnh biểu tượng nhúng bên trong tệp .jar (fabric.mod.json, quilt.mod.json,
- *    META-INF/mods.toml, META-INF/neoforge.mods.toml, mcmod.info, assets/*/icon.png, logo.png, pack.png).
+ *    META-INF/mods.toml, META-INF/neoforge.mods.toml, mcmod.info, assets/<modid>/icon.png, logo.png, pack.png).
  * 3. Bảng ánh xạ sẵn 70+ Mod & Plugin thông dụng trên Modrinth + tra cứu tự động theo mã băm SHA-1 / Slug Modrinth.
  */
 internal object AddonIconLoader {
