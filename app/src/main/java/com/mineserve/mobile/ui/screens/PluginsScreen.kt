@@ -585,6 +585,13 @@ fun PluginsScreen(vm: McViewModel) {
                                     .padding(horizontal = 9.dp, vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
+                                AddonJarIcon(
+                                    baseName = item.displayName,
+                                    slugHint = item.slugs.firstOrNull() ?: item.id,
+                                    isEnabled = isEnabledNow,
+                                    size = 34.dp
+                                )
+                                Spacer(Modifier.size(9.dp))
                                 Column(modifier = Modifier.weight(1f)) {
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
@@ -1105,20 +1112,13 @@ private fun InstalledPluginRow(
             .padding(10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier
-                .size(32.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(if (plugin.isEnabled) Indigo else Muted),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                plugin.baseName.take(2).uppercase(),
-                color = Color.White,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold
-            )
-        }
+        AddonJarIcon(
+            jarPath = plugin.filePath,
+            baseName = plugin.meta?.name ?: plugin.baseName,
+            slugHint = plugin.meta?.name ?: plugin.baseName,
+            isEnabled = plugin.isEnabled,
+            size = 36.dp
+        )
         Spacer(Modifier.size(10.dp))
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1542,7 +1542,8 @@ private fun ModsTab(
             }
             val matchQuery = installedModSearch.isBlank() ||
                 mod.baseName.contains(installedModSearch, ignoreCase = true) ||
-                mod.fileName.contains(installedModSearch, ignoreCase = true)
+                mod.fileName.contains(installedModSearch, ignoreCase = true) ||
+                (mod.displayName?.contains(installedModSearch, ignoreCase = true) == true)
             matchFilter && matchQuery
         }
     }
@@ -1729,30 +1730,35 @@ private fun ModsTab(
                             .padding(10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(34.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(if (mod.isEnabled) Mint else Coral),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(mod.baseName.take(2).uppercase(), color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                        }
+                        AddonJarIcon(
+                            jarPath = mod.filePath,
+                            baseName = mod.baseName,
+                            slugHint = mod.modId ?: mod.baseName,
+                            modIdHint = mod.modId,
+                            isEnabled = mod.isEnabled,
+                            size = 38.dp
+                        )
                         Spacer(Modifier.size(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
+                            val titleText = mod.displayName?.takeIf { it.isNotBlank() } ?: mod.baseName
                             Text(
-                                mod.baseName,
-                                fontSize = 12.sp,
+                                titleText,
+                                fontSize = 12.5.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
                             val statusText = if (mod.isEnabled) "🟢 Đang bật" else "⏸ Đang tắt (.disabled)"
+                            val fileSub = if (mod.displayName != null && !mod.displayName.equals(mod.baseName, ignoreCase = true)) {
+                                " · ${mod.baseName}"
+                            } else ""
                             Text(
-                                "$statusText · 💾 ${mod.sizeText}",
+                                "$statusText · 💾 ${mod.sizeText}$fileSub",
                                 color = if (mod.isEnabled) Mint else Coral,
                                 fontSize = 10.sp,
-                                fontWeight = FontWeight.SemiBold
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                         // Công tắc Bật / Tắt có cảnh báo xác nhận
@@ -2115,6 +2121,7 @@ private fun ModsTab(
                         .clickable { detailHit = hit },
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    AddonIconLoader.registerKnownIcon(hit.slug, hit.title, hit.icon_url)
                     ModrinthIcon(hit.icon_url)
                     Spacer(Modifier.size(8.dp))
                     Column(modifier = Modifier.weight(1f)) {
@@ -2381,6 +2388,7 @@ private fun PluginModrinthCard(
                         .clickable { detailHit = hit },
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    AddonIconLoader.registerKnownIcon(hit.slug, hit.title, hit.icon_url)
                     ModrinthIcon(hit.icon_url)
                     Spacer(Modifier.size(8.dp))
                     Column(modifier = Modifier.weight(1f)) {
@@ -2589,6 +2597,58 @@ private fun ModrinthIcon(url: String, size: Dp = 32.dp) {
             )
         } else {
             Text("🟦", fontSize = 14.sp)
+        }
+    }
+}
+
+@Composable
+private fun AddonJarIcon(
+    jarPath: String? = null,
+    baseName: String,
+    slugHint: String? = null,
+    modIdHint: String? = null,
+    iconUrlHint: String? = null,
+    isEnabled: Boolean = true,
+    size: Dp = 36.dp
+) {
+    var bitmap by remember(jarPath, baseName, slugHint, modIdHint, iconUrlHint) { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(jarPath, baseName, slugHint, modIdHint, iconUrlHint) {
+        bitmap = AddonIconLoader.loadForAddon(
+            jarPath = jarPath,
+            baseName = baseName,
+            slugHint = slugHint,
+            modIdHint = modIdHint,
+            iconUrlHint = iconUrlHint
+        )
+    }
+    val borderColor = if (isEnabled) Mint.copy(alpha = 0.65f) else Coral.copy(alpha = 0.65f)
+    Box(
+        modifier = Modifier
+            .size(size)
+            .clip(RoundedCornerShape(9.dp))
+            .background(if (isEnabled) IndigoSoft else CoralSoft)
+            .border(1.dp, borderColor, RoundedCornerShape(9.dp)),
+        contentAlignment = Alignment.Center
+    ) {
+        val bmp = bitmap
+        if (bmp != null) {
+            val imageBitmap = remember(bmp) { bmp.asImageBitmap() }
+            Image(
+                bitmap = imageBitmap,
+                contentDescription = baseName,
+                modifier = Modifier.size(size),
+                contentScale = ContentScale.Crop
+            )
+        } else {
+            val initials = remember(baseName) {
+                baseName.removePrefix("-").take(2).uppercase()
+            }
+            Text(
+                initials,
+                color = if (isEnabled) Indigo else Coral,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.ExtraBold
+            )
         }
     }
 }
@@ -3179,17 +3239,18 @@ private fun ModPackDecoderAndTransferCard(
                                     .padding(horizontal = 10.dp, vertical = 9.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(
-                                    "#${item.index}",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isInstalled) Mint else Indigo,
-                                    modifier = Modifier.size(width = 32.dp, height = 20.dp)
+                                AddonJarIcon(
+                                    jarPath = matchedMod?.filePath,
+                                    baseName = item.title,
+                                    slugHint = item.slug,
+                                    isEnabled = matchedMod?.isEnabled ?: true,
+                                    size = 38.dp
                                 )
+                                Spacer(Modifier.size(10.dp))
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        item.title,
-                                        fontSize = 14.sp,
+                                        "#${item.index} · ${item.title}",
+                                        fontSize = 13.5.sp,
                                         fontWeight = FontWeight.Bold,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis

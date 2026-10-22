@@ -700,12 +700,10 @@ fun MinecraftPixelArtIcon(
 }
 
 /**
- * Logo thương hiệu chính thức (Official Vector Brand Logo) cho từng loại Core Minecraft:
- * PaperMC (Máy bay giấy), Purpur (Khối Purpur tím), Fabric (Cuộn vải kem),
- * Forge (Đe rèn sắt), NeoForge (Đầu cáo cam), Spigot (Vòi nước vàng),
- * Vanilla (Khối cỏ 3D), Quilt (Chăn ghép 4 thoi), PowerNukkitX (Nguyên tử hạt nhân),
- * Velocity / BungeeCord / PocketMine-MP / Allay / Leaves / Leaf.
- * Sử dụng drawWithCache để khởi tạo Path 1 lần duy nhất, cuộn mượt 60–120 FPS (0 cấp phát bộ nhớ khi cuộn).
+ * Logo thương hiệu chính thức (Official Brand Logo PNG 64x64) cho từng loại Core Minecraft:
+ * Fabric, PaperMC, NeoForge, Forge, Purpur, PowerNukkitX, Spigot, CraftBukkit,
+ * Quilt, Leaves, Leaf, Velocity, BungeeCord, PocketMine-MP, Allay, Vanilla.
+ * Được giải mã 1 lần duy nhất vào bộ nhớ đệm EnumMap<ServerCore, ImageBitmap>, cuộn mượt 120 FPS (0 cấp phát bộ nhớ khi cuộn).
  */
 @Composable
 fun CoreBrandLogo(
@@ -713,351 +711,46 @@ fun CoreBrandLogo(
     size: androidx.compose.ui.unit.Dp = 36.dp,
     modifier: Modifier = Modifier
 ) {
-    val bgBrush = remember(core) {
-        when (core) {
-            com.mineserve.mobile.data.ServerCore.Paper -> Brush.linearGradient(listOf(Color(0xFF0284C7), Color(0xFF0EA5E9)))
-            com.mineserve.mobile.data.ServerCore.Purpur -> Brush.linearGradient(listOf(Color(0xFF581C87), Color(0xFF9333EA)))
-            com.mineserve.mobile.data.ServerCore.Fabric -> Brush.linearGradient(listOf(Color(0xFFFEF3C7), Color(0xFFD6D3C4)))
-            com.mineserve.mobile.data.ServerCore.Forge -> Brush.linearGradient(listOf(Color(0xFF1E293B), Color(0xFF0F172A)))
-            com.mineserve.mobile.data.ServerCore.NeoForge -> Brush.linearGradient(listOf(Color(0xFF7C2D12), Color(0xFFEA580C)))
-            com.mineserve.mobile.data.ServerCore.Spigot -> Brush.linearGradient(listOf(Color(0xFF451A03), Color(0xFF92400E)))
-            com.mineserve.mobile.data.ServerCore.CraftBukkit -> Brush.linearGradient(listOf(Color(0xFF1E3A8A), Color(0xFF2563EB)))
-            com.mineserve.mobile.data.ServerCore.Vanilla -> Brush.linearGradient(listOf(Color(0xFF14532D), Color(0xFF16A34A)))
-            com.mineserve.mobile.data.ServerCore.Quilt -> Brush.linearGradient(listOf(Color(0xFF4C1D95), Color(0xFF831843)))
-            com.mineserve.mobile.data.ServerCore.Leaves,
-            com.mineserve.mobile.data.ServerCore.Leaf -> Brush.linearGradient(listOf(Color(0xFF064E3B), Color(0xFF059669)))
-            com.mineserve.mobile.data.ServerCore.Velocity -> Brush.linearGradient(listOf(Color(0xFF083344), Color(0xFF0284C7)))
-            com.mineserve.mobile.data.ServerCore.BungeeCord -> Brush.linearGradient(listOf(Color(0xFF422006), Color(0xFFA16207)))
-            com.mineserve.mobile.data.ServerCore.PowerNukkitX -> Brush.linearGradient(listOf(Color(0xFF042F2E), Color(0xFF0D9488)))
-            com.mineserve.mobile.data.ServerCore.PocketMine -> Brush.linearGradient(listOf(Color(0xFF0C4A6E), Color(0xFF0284C7)))
-            com.mineserve.mobile.data.ServerCore.Allay -> Brush.linearGradient(listOf(Color(0xFF083344), Color(0xFF06B6D4)))
-            com.mineserve.mobile.data.ServerCore.Unknown -> Brush.linearGradient(listOf(Color(0xFF1E293B), Color(0xFF334155)))
-        }
-    }
+    val officialBitmap = remember(core) { OfficialCoreLogos.bitmapFor(core) }
     val borderColor = remember(core) {
         when (core) {
             com.mineserve.mobile.data.ServerCore.Paper -> Color(0xFF38BDF8)
             com.mineserve.mobile.data.ServerCore.Purpur -> Color(0xFFC084FC)
-            com.mineserve.mobile.data.ServerCore.Fabric -> Color(0xFFD97706)
+            com.mineserve.mobile.data.ServerCore.Fabric -> Color(0xFFD6D3C4)
             com.mineserve.mobile.data.ServerCore.Forge -> Color(0xFFF59E0B)
             com.mineserve.mobile.data.ServerCore.NeoForge -> Color(0xFFFB923C)
             com.mineserve.mobile.data.ServerCore.Spigot -> Color(0xFFFBBF24)
             com.mineserve.mobile.data.ServerCore.CraftBukkit -> Color(0xFF60A5FA)
-            com.mineserve.mobile.data.ServerCore.Vanilla -> Color(0xFF4ADE80)
+            com.mineserve.mobile.data.ServerCore.Vanilla -> Color(0xFFEF4444)
             com.mineserve.mobile.data.ServerCore.Quilt -> Color(0xFFF472B6)
             com.mineserve.mobile.data.ServerCore.Leaves,
             com.mineserve.mobile.data.ServerCore.Leaf -> Color(0xFF34D399)
             com.mineserve.mobile.data.ServerCore.Velocity -> Color(0xFF22D3EE)
             com.mineserve.mobile.data.ServerCore.BungeeCord -> Color(0xFFFACC15)
-            com.mineserve.mobile.data.ServerCore.PowerNukkitX -> Color(0xFF2DD4BF)
+            com.mineserve.mobile.data.ServerCore.PowerNukkitX -> Color(0xFF4ADE80)
             com.mineserve.mobile.data.ServerCore.PocketMine -> Color(0xFF38BDF8)
             com.mineserve.mobile.data.ServerCore.Allay -> Color(0xFF67E8F9)
             com.mineserve.mobile.data.ServerCore.Unknown -> Color(0xFF64748B)
         }
     }
-    Spacer(
-        modifier = modifier
-            .size(size)
-            .clip(RoundedCornerShape(9.dp))
-            .background(bgBrush)
-            .border(1.2.dp, borderColor.copy(alpha = 0.7f), RoundedCornerShape(9.dp))
-            .drawWithCache {
-                val w = this.size.width
-                val h = this.size.height
-                    // Khởi tạo trước tất cả Path theo kích thước 1 lần duy nhất (0 tốn CPU khi cuộn)
-                    val path1 = androidx.compose.ui.graphics.Path()
-                    val path2 = androidx.compose.ui.graphics.Path()
-                    val path3 = androidx.compose.ui.graphics.Path()
-                    val path4 = androidx.compose.ui.graphics.Path()
-                    when (core) {
-                        com.mineserve.mobile.data.ServerCore.Paper -> {
-                            path1.apply {
-                                moveTo(w * 0.84f, h * 0.16f)
-                                lineTo(w * 0.14f, h * 0.48f)
-                                lineTo(w * 0.42f, h * 0.58f)
-                                lineTo(w * 0.84f, h * 0.16f)
-                                close()
-                            }
-                            path2.apply {
-                                moveTo(w * 0.84f, h * 0.16f)
-                                lineTo(w * 0.42f, h * 0.58f)
-                                lineTo(w * 0.47f, h * 0.82f)
-                                lineTo(w * 0.84f, h * 0.16f)
-                                close()
-                            }
-                            path3.apply {
-                                moveTo(w * 0.84f, h * 0.16f)
-                                lineTo(w * 0.52f, h * 0.64f)
-                                lineTo(w * 0.72f, h * 0.84f)
-                                lineTo(w * 0.84f, h * 0.16f)
-                                close()
-                            }
-                        }
-                        com.mineserve.mobile.data.ServerCore.Purpur -> {
-                            path1.apply {
-                                moveTo(w * 0.50f, h * 0.16f)
-                                lineTo(w * 0.82f, h * 0.34f)
-                                lineTo(w * 0.50f, h * 0.52f)
-                                lineTo(w * 0.18f, h * 0.34f)
-                                close()
-                            }
-                            path2.apply {
-                                moveTo(w * 0.18f, h * 0.34f)
-                                lineTo(w * 0.50f, h * 0.52f)
-                                lineTo(w * 0.50f, h * 0.84f)
-                                lineTo(w * 0.18f, h * 0.66f)
-                                close()
-                            }
-                            path3.apply {
-                                moveTo(w * 0.50f, h * 0.52f)
-                                lineTo(w * 0.82f, h * 0.34f)
-                                lineTo(w * 0.82f, h * 0.66f)
-                                lineTo(w * 0.50f, h * 0.84f)
-                                close()
-                            }
-                        }
-                        com.mineserve.mobile.data.ServerCore.Forge -> {
-                            path1.apply {
-                                moveTo(w * 0.14f, h * 0.34f)
-                                lineTo(w * 0.84f, h * 0.34f)
-                                lineTo(w * 0.74f, h * 0.48f)
-                                lineTo(w * 0.28f, h * 0.48f)
-                                close()
-                            }
-                        }
-                        com.mineserve.mobile.data.ServerCore.NeoForge -> {
-                            path1.apply {
-                                moveTo(w * 0.20f, h * 0.16f)
-                                lineTo(w * 0.42f, h * 0.34f)
-                                lineTo(w * 0.22f, h * 0.48f)
-                                close()
-                            }
-                            path2.apply {
-                                moveTo(w * 0.80f, h * 0.16f)
-                                lineTo(w * 0.58f, h * 0.34f)
-                                lineTo(w * 0.78f, h * 0.48f)
-                                close()
-                            }
-                            path3.apply {
-                                moveTo(w * 0.20f, h * 0.44f)
-                                lineTo(w * 0.50f, h * 0.30f)
-                                lineTo(w * 0.80f, h * 0.44f)
-                                lineTo(w * 0.50f, h * 0.84f)
-                                close()
-                            }
-                            path4.apply {
-                                moveTo(w * 0.36f, h * 0.56f)
-                                lineTo(w * 0.50f, h * 0.84f)
-                                lineTo(w * 0.64f, h * 0.56f)
-                                close()
-                            }
-                        }
-                        com.mineserve.mobile.data.ServerCore.Vanilla -> {
-                            path1.apply {
-                                moveTo(w * 0.50f, h * 0.15f)
-                                lineTo(w * 0.82f, h * 0.33f)
-                                lineTo(w * 0.50f, h * 0.50f)
-                                lineTo(w * 0.18f, h * 0.33f)
-                                close()
-                            }
-                            path2.apply {
-                                moveTo(w * 0.18f, h * 0.33f)
-                                lineTo(w * 0.50f, h * 0.50f)
-                                lineTo(w * 0.50f, h * 0.84f)
-                                lineTo(w * 0.18f, h * 0.66f)
-                                close()
-                            }
-                            path3.apply {
-                                moveTo(w * 0.50f, h * 0.50f)
-                                lineTo(w * 0.82f, h * 0.33f)
-                                lineTo(w * 0.82f, h * 0.66f)
-                                lineTo(w * 0.50f, h * 0.84f)
-                                close()
-                            }
-                        }
-                        com.mineserve.mobile.data.ServerCore.Velocity -> {
-                            path1.apply {
-                                moveTo(w * 0.20f, h * 0.24f)
-                                lineTo(w * 0.38f, h * 0.24f)
-                                lineTo(w * 0.52f, h * 0.62f)
-                                lineTo(w * 0.68f, h * 0.24f)
-                                lineTo(w * 0.84f, h * 0.24f)
-                                lineTo(w * 0.56f, h * 0.80f)
-                                lineTo(w * 0.44f, h * 0.80f)
-                                close()
-                            }
-                        }
-                        com.mineserve.mobile.data.ServerCore.Leaves,
-                        com.mineserve.mobile.data.ServerCore.Leaf -> {
-                            path1.apply {
-                                moveTo(w * 0.78f, h * 0.20f)
-                                lineTo(w * 0.34f, h * 0.30f)
-                                lineTo(w * 0.22f, h * 0.76f)
-                                lineTo(w * 0.68f, h * 0.64f)
-                                close()
-                            }
-                        }
-                        else -> {
-                            path1.apply {
-                                moveTo(w * 0.50f, h * 0.18f)
-                                lineTo(w * 0.80f, h * 0.35f)
-                                lineTo(w * 0.80f, h * 0.65f)
-                                lineTo(w * 0.50f, h * 0.82f)
-                                lineTo(w * 0.20f, h * 0.65f)
-                                lineTo(w * 0.20f, h * 0.35f)
-                                close()
-                            }
-                        }
-                    }
-                    val pnxStroke = androidx.compose.ui.graphics.drawscope.Stroke(width = w * 0.06f)
-                    onDrawBehind {
-                        when (core) {
-                            com.mineserve.mobile.data.ServerCore.Paper -> {
-                                drawPath(path2, Color(0xFFBAE6FD))
-                                drawPath(path1, Color.White)
-                                drawPath(path3, Color(0xFFE0F2FE))
-                            }
-                            com.mineserve.mobile.data.ServerCore.Purpur -> {
-                                drawPath(path1, Color(0xFFF3E8FF))
-                                drawPath(path2, Color(0xFFD8B4FE))
-                                drawPath(path3, Color(0xFFA855F7))
-                            }
-                            com.mineserve.mobile.data.ServerCore.Fabric -> {
-                                drawRoundRect(
-                                    color = Color(0xFF78350F),
-                                    topLeft = androidx.compose.ui.geometry.Offset(w * 0.18f, h * 0.20f),
-                                    size = androidx.compose.ui.geometry.Size(w * 0.64f, h * 0.60f),
-                                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(w * 0.08f, w * 0.08f)
-                                )
-                                drawRoundRect(
-                                    color = Color(0xFFD97706),
-                                    topLeft = androidx.compose.ui.geometry.Offset(w * 0.24f, h * 0.26f),
-                                    size = androidx.compose.ui.geometry.Size(w * 0.52f, h * 0.48f),
-                                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(w * 0.05f, w * 0.05f)
-                                )
-                                drawRect(
-                                    color = Color(0xFFFEF3C7),
-                                    topLeft = androidx.compose.ui.geometry.Offset(w * 0.34f, h * 0.33f),
-                                    size = androidx.compose.ui.geometry.Size(w * 0.10f, h * 0.34f)
-                                )
-                                drawRect(
-                                    color = Color(0xFFFEF3C7),
-                                    topLeft = androidx.compose.ui.geometry.Offset(w * 0.34f, h * 0.33f),
-                                    size = androidx.compose.ui.geometry.Size(w * 0.32f, h * 0.09f)
-                                )
-                                drawRect(
-                                    color = Color(0xFFFDE68A),
-                                    topLeft = androidx.compose.ui.geometry.Offset(w * 0.34f, h * 0.47f),
-                                    size = androidx.compose.ui.geometry.Size(w * 0.24f, h * 0.08f)
-                                )
-                            }
-                            com.mineserve.mobile.data.ServerCore.Forge -> {
-                                drawPath(path1, Color(0xFFFBBF24))
-                                drawRect(
-                                    color = Color(0xFFD97706),
-                                    topLeft = androidx.compose.ui.geometry.Offset(w * 0.38f, h * 0.48f),
-                                    size = androidx.compose.ui.geometry.Size(w * 0.26f, h * 0.20f)
-                                )
-                                drawRoundRect(
-                                    color = Color(0xFFF59E0B),
-                                    topLeft = androidx.compose.ui.geometry.Offset(w * 0.22f, h * 0.66f),
-                                    size = androidx.compose.ui.geometry.Size(w * 0.58f, h * 0.14f),
-                                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(w * 0.04f, w * 0.04f)
-                                )
-                            }
-                            com.mineserve.mobile.data.ServerCore.NeoForge -> {
-                                drawPath(path1, Color(0xFFFDE047))
-                                drawPath(path2, Color(0xFFFDE047))
-                                drawPath(path3, Color(0xFFFB923C))
-                                drawPath(path4, Color(0xFFFFF7ED))
-                                drawCircle(Color(0xFF1E293B), radius = w * 0.045f, center = androidx.compose.ui.geometry.Offset(w * 0.50f, h * 0.80f))
-                            }
-                            com.mineserve.mobile.data.ServerCore.Spigot -> {
-                                drawRoundRect(
-                                    color = Color(0xFFFBBF24),
-                                    topLeft = androidx.compose.ui.geometry.Offset(w * 0.36f, h * 0.18f),
-                                    size = androidx.compose.ui.geometry.Size(w * 0.28f, h * 0.09f),
-                                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(4f, 4f)
-                                )
-                                drawRect(
-                                    color = Color(0xFFD97706),
-                                    topLeft = androidx.compose.ui.geometry.Offset(w * 0.45f, h * 0.27f),
-                                    size = androidx.compose.ui.geometry.Size(w * 0.10f, h * 0.15f)
-                                )
-                                drawRoundRect(
-                                    color = Color(0xFFF59E0B),
-                                    topLeft = androidx.compose.ui.geometry.Offset(w * 0.22f, h * 0.40f),
-                                    size = androidx.compose.ui.geometry.Size(w * 0.56f, h * 0.16f),
-                                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(6f, 6f)
-                                )
-                                drawRect(
-                                    color = Color(0xFFF59E0B),
-                                    topLeft = androidx.compose.ui.geometry.Offset(w * 0.62f, h * 0.52f),
-                                    size = androidx.compose.ui.geometry.Size(w * 0.16f, h * 0.14f)
-                                )
-                                drawCircle(
-                                    color = Color(0xFF38BDF8),
-                                    radius = w * 0.08f,
-                                    center = androidx.compose.ui.geometry.Offset(w * 0.70f, h * 0.78f)
-                                )
-                            }
-                            com.mineserve.mobile.data.ServerCore.Vanilla -> {
-                                drawPath(path2, Color(0xFF92400E))
-                                drawPath(path3, Color(0xFF78350F))
-                                drawPath(path1, Color(0xFF4ADE80))
-                            }
-                            com.mineserve.mobile.data.ServerCore.Quilt -> {
-                                drawRect(Color(0xFFF472B6), topLeft = androidx.compose.ui.geometry.Offset(w * 0.22f, h * 0.22f), size = androidx.compose.ui.geometry.Size(w * 0.26f, h * 0.26f))
-                                drawRect(Color(0xFF38BDF8), topLeft = androidx.compose.ui.geometry.Offset(w * 0.52f, h * 0.22f), size = androidx.compose.ui.geometry.Size(w * 0.26f, h * 0.26f))
-                                drawRect(Color(0xFFFBBF24), topLeft = androidx.compose.ui.geometry.Offset(w * 0.22f, h * 0.52f), size = androidx.compose.ui.geometry.Size(w * 0.26f, h * 0.26f))
-                                drawRect(Color(0xFFA855F7), topLeft = androidx.compose.ui.geometry.Offset(w * 0.52f, h * 0.52f), size = androidx.compose.ui.geometry.Size(w * 0.26f, h * 0.26f))
-                            }
-                            com.mineserve.mobile.data.ServerCore.PowerNukkitX -> {
-                                drawCircle(
-                                    color = Color(0xFF5EEAD4),
-                                    radius = w * 0.30f,
-                                    center = androidx.compose.ui.geometry.Offset(w * 0.50f, h * 0.50f),
-                                    style = pnxStroke
-                                )
-                                drawLine(
-                                    color = Color(0xFF99F6E4),
-                                    start = androidx.compose.ui.geometry.Offset(w * 0.22f, h * 0.22f),
-                                    end = androidx.compose.ui.geometry.Offset(w * 0.78f, h * 0.78f),
-                                    strokeWidth = w * 0.06f
-                                )
-                                drawLine(
-                                    color = Color(0xFF99F6E4),
-                                    start = androidx.compose.ui.geometry.Offset(w * 0.78f, h * 0.22f),
-                                    end = androidx.compose.ui.geometry.Offset(w * 0.22f, h * 0.78f),
-                                    strokeWidth = w * 0.06f
-                                )
-                                drawCircle(
-                                    color = Color(0xFFFACC15),
-                                    radius = w * 0.13f,
-                                    center = androidx.compose.ui.geometry.Offset(w * 0.50f, h * 0.50f)
-                                )
-                            }
-                            com.mineserve.mobile.data.ServerCore.Velocity -> {
-                                drawPath(path1, Color(0xFF67E8F9))
-                            }
-                            com.mineserve.mobile.data.ServerCore.Leaves,
-                            com.mineserve.mobile.data.ServerCore.Leaf -> {
-                                drawPath(path1, Color(0xFF6EE7B7))
-                                drawLine(
-                                    color = Color(0xFF064E3B),
-                                    start = androidx.compose.ui.geometry.Offset(w * 0.24f, h * 0.74f),
-                                    end = androidx.compose.ui.geometry.Offset(w * 0.72f, h * 0.26f),
-                                    strokeWidth = w * 0.06f
-                                )
-                            }
-                            else -> {
-                                drawPath(path1, borderColor.copy(alpha = 0.35f))
-                                drawCircle(Color.White, radius = w * 0.16f, center = androidx.compose.ui.geometry.Offset(w * 0.50f, h * 0.50f))
-                            }
-                        }
-                    }
-            }
-    )
+    if (officialBitmap != null) {
+        androidx.compose.foundation.Image(
+            bitmap = officialBitmap,
+            contentDescription = core.displayName,
+            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+            filterQuality = androidx.compose.ui.graphics.FilterQuality.Medium,
+            modifier = modifier
+                .size(size)
+                .clip(RoundedCornerShape(9.dp))
+                .border(1.2.dp, borderColor.copy(alpha = 0.72f), RoundedCornerShape(9.dp))
+        )
+    } else {
+        MinecraftPixelArtIcon(
+            kind = MinecraftArtKind.GRASS,
+            size = size,
+            modifier = modifier
+        )
+    }
 }
 
 fun createMinecraftPixelArtBitmap(kind: MinecraftArtKind, sizePx: Int = 64): android.graphics.Bitmap {

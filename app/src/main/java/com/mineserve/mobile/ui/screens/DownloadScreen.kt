@@ -689,12 +689,12 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                     Spacer(Modifier.height(8.dp))
                     val featuredCores = remember {
                         listOf(
-                            Triple(ServerCore.Fabric, "🧵 Fabric (Chơi Mod Nhẹ Mượt)", "Khởi động nhanh • Hỗ trợ mọi bản Mod từ 1.14 → 1.21.11 / 26.x"),
-                            Triple(ServerCore.Paper, "📜 Paper (Sinh Tồn & Plugin)", "Siêu mượt 20 TPS • Hỗ trợ Plugin & GeyserMC chơi chung PC + PE"),
-                            Triple(ServerCore.NeoForge, "⚒️ NeoForge (Modpack Hiện Đại)", "Chạy các gói Modpack lớn 1.20.4–1.21+ (Cần RAM ≥ 4GB)"),
-                            Triple(ServerCore.Forge, "🛡️ Forge (Modpack Cổ Điển)", "Hỗ trợ các Modpack lớn kinh điển 1.7.10 / 1.12.2 / 1.16.5 / 1.20.1"),
-                            Triple(ServerCore.Purpur, "🔮 Purpur (Sinh Tồn Mở Rộng)", "Nhánh nâng cấp của Paper với hàng trăm tùy chỉnh thú vị"),
-                            Triple(ServerCore.PowerNukkitX, "📱 PowerNukkitX (Minecraft PE)", "Máy chủ thuần cho điện thoại Minecraft Bedrock / PE (UDP 19132)")
+                            Triple(ServerCore.Fabric, "Fabric (Chơi Mod Nhẹ Mượt)", "Khởi động nhanh • Hỗ trợ mọi bản Mod từ 1.14 → 1.21.11 / 26.x"),
+                            Triple(ServerCore.Paper, "Paper (Sinh Tồn & Plugin)", "Siêu mượt 20 TPS • Hỗ trợ Plugin & GeyserMC chơi chung PC + PE"),
+                            Triple(ServerCore.NeoForge, "NeoForge (Modpack Hiện Đại)", "Chạy các gói Modpack lớn 1.20.4–1.21+ (Cần RAM ≥ 4GB)"),
+                            Triple(ServerCore.Forge, "Forge (Modpack Cổ Điển)", "Hỗ trợ các Modpack lớn kinh điển 1.7.10 / 1.12.2 / 1.16.5 / 1.20.1"),
+                            Triple(ServerCore.Purpur, "Purpur (Sinh Tồn Mở Rộng)", "Nhánh nâng cấp của Paper với hàng trăm tùy chỉnh thú vị"),
+                            Triple(ServerCore.PowerNukkitX, "PowerNukkitX (Minecraft PE)", "Máy chủ thuần cho điện thoại Minecraft Bedrock / PE (UDP 19132)")
                         )
                     }
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -719,7 +719,7 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                                     .padding(10.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                com.mineserve.mobile.ui.CoreBrandLogo(core = core, size = 36.dp)
+                                com.mineserve.mobile.ui.CoreBrandLogo(core = core, size = 40.dp)
                                 Spacer(Modifier.size(10.dp))
                                 Column(modifier = Modifier.weight(1f)) {
                                     Row(
@@ -771,21 +771,39 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                             verticalArrangement = Arrangement.spacedBy(6.dp),
                             modifier = Modifier.padding(top = 4.dp)
                         ) {
-                            ServerCore.values().forEach { core ->
+                            ServerCore.values().filter { it != ServerCore.Unknown }.forEach { core ->
                                 val countForCore = installedCoreCounts[core] ?: 0
-                                SegPill(
-                                    text = if (countForCore > 0) "✅ ${core.displayName} ($countForCore)" else core.displayName,
-                                    selected = config.selectedCore == core,
-                                    compact = true,
-                                    unselectedBackground = if (countForCore > 0) Mint.copy(alpha = 0.16f) else if (core.isBedrock) Coral.copy(alpha = 0.16f) else com.mineserve.mobile.ui.theme.FieldGray,
-                                    onClick = {
-                                        customCoreName = ""
-                                        vm.selectCore(core)
-                                        scope.launch {
-                                            snackbarHostState.showInstantSnackbar("✅ Đã chọn phần mềm Core: ${core.displayName}")
+                                val isSelCore = config.selectedCore == core
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier
+                                        .clip(McShape.Row)
+                                        .background(
+                                            when {
+                                                isSelCore -> Indigo
+                                                countForCore > 0 -> Mint.copy(alpha = 0.16f)
+                                                core.isBedrock -> Coral.copy(alpha = 0.16f)
+                                                else -> com.mineserve.mobile.ui.theme.FieldGray
+                                            }
+                                        )
+                                        .clickable {
+                                            customCoreName = ""
+                                            vm.selectCore(core)
+                                            scope.launch {
+                                                snackbarHostState.showInstantSnackbar("✅ Đã chọn phần mềm Core: ${core.displayName}")
+                                            }
                                         }
-                                    }
-                                )
+                                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                                ) {
+                                    com.mineserve.mobile.ui.CoreBrandLogo(core = core, size = 22.dp)
+                                    Text(
+                                        text = if (countForCore > 0) "${core.displayName} ($countForCore)" else core.displayName,
+                                        color = if (isSelCore) Color.White else MaterialTheme.colorScheme.onSurface,
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isSelCore) FontWeight.ExtraBold else FontWeight.SemiBold
+                                    )
+                                }
                             }
                         }
                     }

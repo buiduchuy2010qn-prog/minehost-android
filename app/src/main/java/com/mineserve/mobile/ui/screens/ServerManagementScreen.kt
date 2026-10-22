@@ -196,9 +196,9 @@ fun ServerManagementScreen(
                                     modifier = Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    com.mineserve.mobile.ui.MinecraftPixelArtIcon(
-                                        kind = if (srv.core.supportsMods) com.mineserve.mobile.ui.MinecraftArtKind.COMMAND_BLOCK else com.mineserve.mobile.ui.MinecraftArtKind.GRASS,
-                                        size = 38.dp
+                                    com.mineserve.mobile.ui.CoreBrandLogo(
+                                        core = srv.core,
+                                        size = 40.dp
                                     )
                                     Spacer(Modifier.size(10.dp))
                                     Column(modifier = Modifier.weight(1f)) {

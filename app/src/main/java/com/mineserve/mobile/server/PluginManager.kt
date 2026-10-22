@@ -160,7 +160,8 @@ class PluginManager(
         val lastModifiedText: String,
         val isEnabled: Boolean,
         val sourceTag: String,          // "精选" / "本地"
-        val meta: PluginMeta?           // plugin.yml 解析结果，可能为空（非插件 jar）
+        val meta: PluginMeta?,          // plugin.yml 解析结果，可能为空（非插件 jar）
+        val filePath: String = ""
     )
 
     /**
@@ -456,7 +457,8 @@ class PluginManager(
             lastModifiedText = formatTime(f.lastModified()),
             isEnabled = isEnabled,
             sourceTag = sourceTag,
-            meta = meta
+            meta = meta,
+            filePath = f.absolutePath
         )
     }
 
@@ -720,14 +722,58 @@ class PluginManager(
     fun modsDirOf(dirName: String): File =
         File(termux.installer.rootDir, "home/servers/$dirName/mods")
 
-    /** 已安装模组条目（简化，不解析 jar 内元信息） */
+    /** Mục Mod đã cài đặt kèm đường dẫn tệp JAR & tên hiển thị trích xuất từ fabric.mod.json / mods.toml */
     data class ModEntry(
         val fileName: String,
         val baseName: String,
         val sizeText: String,
         val isEnabled: Boolean,
-        val sizeBytes: Long = 0L
+        val sizeBytes: Long = 0L,
+        val filePath: String = "",
+        val displayName: String? = null,
+        val version: String? = null,
+        val modId: String? = null
     )
+
+    private data class ModJarMeta(
+        val displayName: String?,
+        val version: String?,
+        val modId: String?
+    )
+
+    private val modMetaCache = ConcurrentHashMap<String, Pair<Long, ModJarMeta>>()
+
+    private fun readModMetaCached(f: File): ModJarMeta {
+        val lastMod = f.lastModified()
+        modMetaCache[f.absolutePath]?.let { (ts, cached) ->
+            if (ts == lastMod) return cached
+        }
+        val parsed = runCatching {
+            JarFile(f).use { jar ->
+                val fabricEntry = jar.getJarEntry("fabric.mod.json") ?: jar.getJarEntry("quilt.mod.json")
+                if (fabricEntry != null) {
+                    val jsonText = jar.getInputStream(fabricEntry).bufferedReader().use { it.readText() }
+                    val id = Regex(""""id"\s*:\s*"([^"]+)"""").find(jsonText)?.groupValues?.get(1)?.trim()
+                    val name = Regex(""""name"\s*:\s*"([^"]+)"""").find(jsonText)?.groupValues?.get(1)?.trim()
+                    val ver = Regex(""""version"\s*:\s*"([^"]+)"""").find(jsonText)?.groupValues?.get(1)?.trim()
+                        ?.takeIf { !it.startsWith("\${") }
+                    return@use ModJarMeta(name?.takeIf { it.isNotBlank() }, ver, id?.takeIf { it.isNotBlank() })
+                }
+                val tomlEntry = jar.getJarEntry("META-INF/neoforge.mods.toml") ?: jar.getJarEntry("META-INF/mods.toml")
+                if (tomlEntry != null) {
+                    val tomlText = jar.getInputStream(tomlEntry).bufferedReader().use { it.readText() }
+                    val id = Regex("""modId\s*=\s*"([^"]+)"""").find(tomlText)?.groupValues?.get(1)?.trim()
+                    val name = Regex("""displayName\s*=\s*"([^"]+)"""").find(tomlText)?.groupValues?.get(1)?.trim()
+                    val ver = Regex("""version\s*=\s*"([^"]+)"""").find(tomlText)?.groupValues?.get(1)?.trim()
+                        ?.takeIf { !it.startsWith("\${") }
+                    return@use ModJarMeta(name?.takeIf { it.isNotBlank() }, ver, id?.takeIf { it.isNotBlank() })
+                }
+                ModJarMeta(null, null, null)
+            }
+        }.getOrElse { ModJarMeta(null, null, null) }
+        modMetaCache[f.absolutePath] = lastMod to parsed
+        return parsed
+    }
 
     /** 读取 mods/ 目录下的模组列表。除标准 .jar/.jar.disabled 外，还识别历史版本
      *  遗留的禁用形态（.disabled、`-` 前缀、无后缀的 jar 文件），避免条目凭空消失。 */
@@ -738,7 +784,18 @@ class PluginManager(
             ?.sortedBy { it.name.lowercase() }
             ?.map { f ->
                 val (baseName, isEnabled) = parseModFileName(f.name)
-                ModEntry(f.name, baseName, formatSize(f.length()), isEnabled, f.length())
+                val meta = readModMetaCached(f)
+                ModEntry(
+                    fileName = f.name,
+                    baseName = baseName,
+                    sizeText = formatSize(f.length()),
+                    isEnabled = isEnabled,
+                    sizeBytes = f.length(),
+                    filePath = f.absolutePath,
+                    displayName = meta.displayName,
+                    version = meta.version,
+                    modId = meta.modId
+                )
             } ?: emptyList()
     }
 
