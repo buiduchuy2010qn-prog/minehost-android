@@ -628,7 +628,7 @@ class PlayitTunnelController(
     }
 
     fun isSessionActive(gen: Long): Boolean =
-        sessionGeneration.get() == gen && scope.isActive && tunnelJob?.isActive == true
+        sessionGeneration.get() == gen && scope.isActive && (tunnelJob?.isActive ?: (gen == 0L))
 
     fun start(
         localPortProvider: () -> Int,
