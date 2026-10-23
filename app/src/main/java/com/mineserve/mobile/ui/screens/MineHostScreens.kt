@@ -2064,7 +2064,7 @@ fun MineHostManage(vm: McViewModel, navigate: (SubPage) -> Unit) {
         item(key = "about_card") {
             HostCard("🇻🇳 MineHost v${com.mineserve.mobile.BuildConfig.VERSION_NAME} • Bản Cộng Đồng Minecraft Việt Nam", artKind = MinecraftArtKind.CREEPER) {
                 Text("Giao diện trực quan không trùng lặp, định tuyến IPv4 Playit.gg chống lỗi 'Máy chủ không rõ', Chơi chung PC + PE (tự kiểm tra bản PE vào được) qua GeyserMC + Floodgate + ViaVersion & Gói 14 Mod Tối Ưu Server 1 chạm.")
-                TextButton(onClick = { uri.openUri("https://github.com/duchilocket-oss/minehost-android") }) {
+                TextButton(onClick = { uri.openUri("https://github.com/buiduchuy2010qn-prog/minehost-android") }) {
                     Text("Mã nguồn & bản build trên GitHub")
                 }
             }
