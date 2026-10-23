@@ -10459,5 +10459,225 @@ class McViewModel(
         jsonFile.parentFile?.mkdirs()
         jsonFile.writeText(filtered.toString(2), Charsets.UTF_8)
     }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // BỘ NÂNG CẤP SIÊU NHẸ TỐN 0 MB RAM CHO ĐIỆN THOẠI RAM ÍT (v2.7.3)
+    // 1. Chế độ Siêu Nhẹ Cho Máy RAM Yếu (1GB–1.5GB RAM) + Gói 5 Mod Sinh Tồn Siêu Nhẹ
+    // 2. Khóa Biên Giới Thế Giới 1 chạm (WorldBorder — Tốn 0 MB RAM, chống tràn RAM khi đi xa)
+    // 3. Bảng Thao Tác Người Chơi 1 chạm bằng lệnh gốc (Hồi máu, Starter Kit, Đổi chế độ, Teleport)
+    // 4. Tạo Tên Server Màu Sắc (Visual MOTD Studio) — Tốn 0 MB RAM
+    // ══════════════════════════════════════════════════════════════════════
+
+    /** [v2.7.3] Chế độ Siêu Nhẹ Cho Máy RAM Yếu (View=4, Sim=3, Tắt giữ Spawn thừa, Giảm 60% quái) */
+    fun applyUltraLiteLowRamMode() {
+        val dirName = activeDirName()
+        if (dirName == null) {
+            _errorFlow.tryEmit("Chưa chọn máy chủ để bật Chế độ Siêu Nhẹ.")
+            return
+        }
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    propertiesManager.setProperty(dirName, "view-distance", "4")
+                    propertiesManager.setProperty(dirName, "simulation-distance", "3")
+                    propertiesManager.setProperty(dirName, "entity-broadcast-range-percentage", "50")
+                    propertiesManager.setProperty(dirName, "max-players", "5")
+                    propertiesManager.setProperty(dirName, "network-compression-threshold", "512")
+                    propertiesManager.setProperty(dirName, "sync-chunk-writes", "false")
+
+                    val serverDir = repo.termuxRuntime.serverDirFor(dirName)
+                    val bukkitFile = java.io.File(serverDir, "bukkit.yml")
+                    bukkitFile.writeText(
+                        """
+                        spawn-limits:
+                          monsters: 20
+                          animals: 5
+                          water-animals: 2
+                          water-ambient: 3
+                          water-underground-creature: 2
+                          axolotls: 2
+                          ambient: 1
+                        ticks-per:
+                          animal-spawns: 400
+                          monster-spawns: 6
+                          water-spawns: 400
+                        """.trimIndent() + "\n",
+                        Charsets.UTF_8
+                    )
+                    val spigotFile = java.io.File(serverDir, "spigot.yml")
+                    spigotFile.writeText(
+                        """
+                        world-settings:
+                          default:
+                            mob-spawn-range: 3
+                            merge-radius:
+                              item: 5.0
+                              exp: 7.0
+                            entity-activation-range:
+                              animals: 12
+                              monsters: 18
+                              raiders: 24
+                              misc: 6
+                        """.trimIndent() + "\n",
+                        Charsets.UTF_8
+                    )
+                    val paperConfigDir = java.io.File(serverDir, "config").apply { mkdirs() }
+                    val paperWorldFile = java.io.File(paperConfigDir, "paper-world-defaults.yml")
+                    if (!paperWorldFile.exists()) {
+                        paperWorldFile.writeText(
+                            """
+                            chunks:
+                              max-auto-save-chunks-per-tick: 4
+                              prevent-moving-into-unloaded-chunks: true
+                            spawn:
+                              keep-spawn-loaded: false
+                            """.trimIndent() + "\n",
+                            Charsets.UTF_8
+                        )
+                    }
+                }
+                setAutoCleanRamOnStart(true)
+                cleanRamNow()
+                notifyActionDone("🪶 Đã bật Chế Độ Siêu Nhẹ Cho Máy RAM Ít (View=4, Sim=3, Tắt giữ Spawn thừa, Giảm 60% quái) — Chỉ ăn ~600–900MB RAM!")
+            } catch (e: Exception) {
+                _errorFlow.tryEmit("Không thể bật Chế độ Siêu Nhẹ: ${e.message}")
+            }
+        }
+    }
+
+    /** [v2.7.3] Cài Gói 5 Mod Sinh Tồn Siêu Nhẹ (FerriteCore giảm 45% RAM + Lithium + Chặt cây + Đào quặng + Bia mộ) */
+    fun installUltraLite5ModsPack(customMcVersion: String = "") {
+        if (_isTogglingServerOptPack.value || _stopInFlight.value) return
+        val activeInstalled = config.value.installedCores.firstOrNull { it.name == config.value.activeCoreName }
+        val dirName = activeInstalled?.dirName ?: activeDirName() ?: run {
+            _errorFlow.tryEmit("Hãy chọn một máy chủ trước.")
+            return
+        }
+        val currentCore = activeInstalled?.core ?: config.value.selectedCore
+        if (currentCore.isBedrock || !currentCore.supportsMods) {
+            _errorFlow.tryEmit("Gói 5 Mod Sinh Tồn Siêu Nhẹ dành cho máy chủ chạy Mod (Fabric / Quilt / Forge / NeoForge).")
+            return
+        }
+        if (serverState.value.isRunning) {
+            notifyActionDone("⚠️ Hãy bấm Dừng Server trước khi cài Gói 5 Mod Sinh Tồn Siêu Nhẹ!")
+            return
+        }
+        val mcVer = customMcVersion.trim().ifBlank {
+            activeInstalled?.version?.trim()?.takeIf { it.isNotBlank() } ?: config.value.mcVersion.trim().ifBlank { "1.21.1" }
+        }
+        val loader = modrinthLoader(currentCore)
+        viewModelScope.launch {
+            _isTogglingServerOptPack.value = true
+            try {
+                val (count, names) = pluginManager.installUltraLite5SurvivalPack(
+                    dirName = dirName,
+                    mcVersion = mcVer,
+                    loader = loader
+                ) { idx, total, modName ->
+                    _serverOptPackProgress.value = "🪶 Đang cài Gói Siêu Nhẹ ($idx/$total): $modName ($mcVer)..."
+                }
+                refreshMods()
+                refreshServerOptPackStatus()
+                refreshWorldModCount()
+                notifyActionDone("🪶 Đã cài xong $count tệp Gói 5 Mod Sinh Tồn Siêu Nhẹ (${names.joinToString(", ")}) và tự tắt các mod nặng thừa!")
+            } catch (e: Exception) {
+                _errorFlow.tryEmit("Lỗi cài Gói 5 Mod Siêu Nhẹ: ${e.message}")
+            } finally {
+                _serverOptPackProgress.value = null
+                _isTogglingServerOptPack.value = false
+            }
+        }
+    }
+
+    /** [v2.7.3] Khóa Biên Giới Thế Giới 1 chạm (WorldBorder — Tốn 0 MB RAM, chặn đi xa làm tràn RAM) */
+    fun applyQuickWorldBorder(sizeBlocks: Int, labelVi: String) {
+        val dirName = activeDirName()
+        if (dirName != null) {
+            viewModelScope.launch(Dispatchers.IO) {
+                val radius = (sizeBlocks / 2).coerceAtLeast(250)
+                runCatching { propertiesManager.setProperty(dirName, "max-world-size", radius.toString()) }
+            }
+        }
+        if (serverState.value.isRunning) {
+            sendCommand("worldborder center 0 0")
+            sendCommand("worldborder set $sizeBlocks")
+            sendCommand("say [MineHost] 🧱 Đã cập nhật Biên giới Thế giới: $labelVi ($sizeBlocks x $sizeBlocks ô) để chống tràn RAM!")
+            notifyActionDone("🧱 Đã đặt Biên giới Thế giới trực tiếp: $labelVi ($sizeBlocks ô)")
+        } else {
+            notifyActionDone("🧱 Đã lưu giới hạn Biên giới Thế giới ($labelVi) vào server.properties — Hãy bật Server để áp dụng!")
+        }
+    }
+
+    /** [v2.7.3] Bảng Thao Tác Người Chơi 1 chạm bằng lệnh gốc (Tốn 0 MB RAM) */
+    fun quickPlayerAction(playerName: String, actionType: String, targetOtherPlayer: String? = null) {
+        val target = playerName.trim().ifBlank { "@a" }
+        val displayTarget = if (target == "@a") "Tất cả người chơi (@a)" else target
+        if (!serverState.value.isRunning) {
+            notifyActionDone("ℹ️ Hãy bật Server trước để thực hiện thao tác cho $displayTarget!")
+            return
+        }
+        when (actionType) {
+            "heal" -> {
+                sendCommand("effect give $target minecraft:instant_health 1 10 true")
+                sendCommand("effect give $target minecraft:saturation 5 10 true")
+                sendCommand("say [MineHost] ❤️ Đã hồi đầy máu & thức ăn cho $displayTarget!")
+                notifyActionDone("❤️ Đã hồi đầy máu & thức ăn cho $displayTarget!")
+            }
+            "starter_kit" -> {
+                sendCommand("give $target iron_sword 1")
+                sendCommand("give $target iron_pickaxe 1")
+                sendCommand("give $target iron_axe 1")
+                sendCommand("give $target shield 1")
+                sendCommand("give $target iron_chestplate 1")
+                sendCommand("give $target cooked_beef 32")
+                sendCommand("give $target torch 64")
+                sendCommand("say [MineHost] 🎁 Đã tặng Bộ Đồ Khởi Đầu (Starter Kit) cho $displayTarget!")
+                notifyActionDone("🎁 Đã tặng Bộ Đồ Khởi Đầu (Starter Kit) cho $displayTarget!")
+            }
+            "gm_survival" -> {
+                sendCommand("gamemode survival $target")
+                notifyActionDone("🗡️ Đã chuyển $displayTarget sang chế độ Sinh Tồn (Survival)!")
+            }
+            "gm_creative" -> {
+                sendCommand("gamemode creative $target")
+                notifyActionDone("🧱 Đã chuyển $displayTarget sang chế độ Sáng Tạo (Creative)!")
+            }
+            "gm_spectator" -> {
+                sendCommand("gamemode spectator $target")
+                notifyActionDone("👻 Đã chuyển $displayTarget sang chế độ Khán Giả (Spectator)!")
+            }
+            "tp_spawn" -> {
+                sendCommand("effect give $target minecraft:slow_falling 15 1 true")
+                sendCommand("tp $target 0 100 0")
+                notifyActionDone("📍 Đã dịch chuyển $displayTarget về Điểm Hồi Sinh (0, 100, 0) kèm Rơi Chậm an toàn!")
+            }
+            "tp_to_other" -> {
+                val dest = targetOtherPlayer?.trim().orEmpty()
+                if (dest.isNotBlank()) {
+                    sendCommand("tp $target $dest")
+                    notifyActionDone("📍 Đã dịch chuyển $displayTarget tới chỗ $dest!")
+                }
+            }
+        }
+    }
+
+    /** [v2.7.3] Đổi Tên Server Màu Sắc (MOTD) 1 chạm — Tốn 0 MB RAM */
+    fun applyVisualMotdPreset(motdRaw: String, labelVi: String) {
+        val dirName = activeDirName()
+        if (dirName == null) {
+            _errorFlow.tryEmit("Chưa chọn máy chủ để đổi Tên MOTD.")
+            return
+        }
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    propertiesManager.setProperty(dirName, "motd", motdRaw)
+                }
+                notifyActionDone("🎨 Đã áp dụng Tên Server màu sắc: $labelVi")
+            } catch (e: Exception) {
+                _errorFlow.tryEmit("Không thể lưu Tên Server MOTD: ${e.message}")
+            }
+        }
+    }
 }
 

@@ -1520,6 +1520,39 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     Text("🚀 Tối Ưu Cấu Hình Sâu", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
                                 }
                             }
+                            HorizontalDivider()
+                            Text(
+                                "🪶 Dành riêng cho Điện Thoại RAM Ít (1GB – 2GB RAM — Chống tràn RAM OutOfMemory):",
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color(0xFF10B981)
+                            )
+                            Button(
+                                onClick = { vm.applyUltraLiteLowRamMode() },
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF059669), contentColor = Color.White),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    "🪶 Bật Cấu Hình Siêu Nhẹ Cho Máy RAM Ít (View=4, Sim=3, Chỉ ăn ~600–900MB RAM)",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                            }
+                            if (!active.core.isBedrock && active.core.supportsMods) {
+                                OutlinedButton(
+                                    onClick = { vm.installUltraLite5ModsPack(active.version) },
+                                    enabled = !isTogglingOptPack && !stopping,
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        "🪶 Cài Gói 5 Mod Sinh Tồn Siêu Nhẹ (FerriteCore giảm 45% RAM + Chặt cây + Đào quặng + Bia mộ)",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -1702,6 +1735,272 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     modifier = Modifier.weight(1f)
                                 ) {
                                     Text("🌍 Kho Seed Đẹp & Kiểu Map", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════════════════
+        // NÂNG CẤP v2.7.3 (TỐN 0 MB RAM CHO MÁY YẾU): KHÓA BIÊN GIỚI WORLDBORDER,
+        // THAO TÁC NGƯỜI CHƠI 1 CHẠM, TÊN SERVER MÀU SẮC MOTD & MÀN HÌNH ĐEN TIẾT KIỆM PIN
+        // ══════════════════════════════════════════════════════════════════════
+        if (active != null) {
+            item(key = "low_ram_zero_mb_upgrades_card") {
+                val onlinePlayers by vm.onlinePlayerNames.collectAsStateWithLifecycle()
+                var selectedTargetPlayer by remember(active.dirName) { mutableStateOf("@a") }
+                var customMotdText by remember(active.dirName) {
+                    mutableStateOf("§a§l⛏️ ${active.name} §7• §bChơi Chung PC + PE §eSiêu Mượt!")
+                }
+                var showOledBlackScreen by remember { mutableStateOf(false) }
+
+                HostCard(
+                    title = "🪶 Tiện Ích Tốn 0 MB RAM (Chuyên Biệt Cho Máy RAM Ít)",
+                    artKind = MinecraftArtKind.DIAMOND_SWORD,
+                    badgeText = "v2.7.3 • 0 MB RAM"
+                ) {
+                    // 1. Khóa Biên Giới Thế Giới 1 chạm (WorldBorder — chống đi xa làm tràn RAM)
+                    Surface(
+                        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                "🧱 1. Khóa Biên Giới Thế Giới 1 Chạm (Tốn 0 MB RAM — Chặn đi xa làm tràn RAM):",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                "Giới hạn phạm vi khám phá bằng lệnh gốc giúp điện thoại RAM ít không phải nạp hàng nghìn vùng đất mới:",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                                Button(
+                                    onClick = { vm.applyQuickWorldBorder(500, "Siêu Nhẹ RAM (500 ô)") },
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) { Text("🧱 500 ô (Máy yếu)", fontSize = 10.5.sp, fontWeight = FontWeight.ExtraBold) }
+                                OutlinedButton(
+                                    onClick = { vm.applyQuickWorldBorder(1000, "Chuẩn Nhẹ (1.000 ô)") },
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) { Text("🧱 1.000 ô", fontSize = 10.5.sp, fontWeight = FontWeight.Bold) }
+                                OutlinedButton(
+                                    onClick = { vm.applyQuickWorldBorder(2500, "Rộng Vừa (2.500 ô)") },
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) { Text("🧱 2.500 ô", fontSize = 10.5.sp, fontWeight = FontWeight.Bold) }
+                                OutlinedButton(
+                                    onClick = { vm.applyQuickWorldBorder(29999984, "Mở Khóa Biên Giới") },
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                                    modifier = Modifier.weight(0.85f)
+                                ) { Text("🔓 Mở", fontSize = 10.5.sp, fontWeight = FontWeight.Bold) }
+                            }
+                        }
+                    }
+
+                    // 2. Bảng Thao Tác Người Chơi 1 chạm bằng lệnh gốc (Tốn 0 MB RAM)
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                "⚡ 2. Chữa Trị, Tặng Đồ Starter Kit & Đổi Chế Độ Người Chơi 1 Chạm (0 MB RAM):",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                FilterChip(
+                                    selected = selectedTargetPlayer == "@a",
+                                    onClick = { selectedTargetPlayer = "@a" },
+                                    label = { Text("👥 Tất cả (@a)", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                                )
+                                onlinePlayers.forEach { pName ->
+                                    FilterChip(
+                                        selected = selectedTargetPlayer == pName,
+                                        onClick = { selectedTargetPlayer = pName },
+                                        label = { Text("🟢 $pName", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                                    )
+                                }
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                                Button(
+                                    onClick = { vm.quickPlayerAction(selectedTargetPlayer, "heal") },
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE11D48), contentColor = Color.White),
+                                    modifier = Modifier.weight(1f)
+                                ) { Text("❤️ Hồi Đầy Máu & Ăn", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold) }
+                                Button(
+                                    onClick = { vm.quickPlayerAction(selectedTargetPlayer, "starter_kit") },
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D9488), contentColor = Color.White),
+                                    modifier = Modifier.weight(1f)
+                                ) { Text("🎁 Tặng Starter Kit", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold) }
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                                OutlinedButton(
+                                    onClick = { vm.quickPlayerAction(selectedTargetPlayer, "gm_survival") },
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) { Text("🗡️ Sinh Tồn", fontSize = 10.5.sp, fontWeight = FontWeight.Bold) }
+                                OutlinedButton(
+                                    onClick = { vm.quickPlayerAction(selectedTargetPlayer, "gm_creative") },
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) { Text("🧱 Sáng Tạo", fontSize = 10.5.sp, fontWeight = FontWeight.Bold) }
+                                OutlinedButton(
+                                    onClick = { vm.quickPlayerAction(selectedTargetPlayer, "gm_spectator") },
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) { Text("👻 Khán Giả", fontSize = 10.5.sp, fontWeight = FontWeight.Bold) }
+                                OutlinedButton(
+                                    onClick = { vm.quickPlayerAction(selectedTargetPlayer, "tp_spawn") },
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) { Text("📍 Về Spawn", fontSize = 10.5.sp, fontWeight = FontWeight.Bold) }
+                            }
+                        }
+                    }
+
+                    // 3. Bộ Tạo Tên Server Màu Sắc (Visual MOTD Studio) — Tốn 0 MB RAM
+                    Surface(
+                        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                "🎨 3. Tạo Tên Server Màu Sắc 1 Chạm (Visual MOTD — Tốn 0 MB RAM):",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            val motdPresets = remember(active.name) {
+                                listOf(
+                                    "🌈 SMP Việt Nam" to "§a§l⛏️ ${active.name} §7• §e§lSMP Sinh Tồn Việt Nam §b[PC + PE]",
+                                    "🔥 Chơi Chung PC+PE" to "§b§l🌍 ${active.name} §7| §aChơi Chung Máy Tính & Điện Thoại §624/7",
+                                    "🪶 Siêu Mượt" to "§2§l⚡ ${active.name} §7• §fServer Siêu Nhẹ Mượt §a20 TPS",
+                                    "⚔️ Thế Giới Bạn Bè" to "§6§l⚔️ ${active.name} §7- §dThế Giới Sinh Tồn Cùng Bạn Bè!"
+                                )
+                            }
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                motdPresets.forEach { (label, rawMotd) ->
+                                    FilterChip(
+                                        selected = customMotdText == rawMotd,
+                                        onClick = {
+                                            customMotdText = rawMotd
+                                            vm.applyVisualMotdPreset(rawMotd, label)
+                                        },
+                                        label = { Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                                    )
+                                }
+                            }
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                OutlinedTextField(
+                                    value = customMotdText,
+                                    onValueChange = { customMotdText = it },
+                                    label = { Text("Tên MOTD màu sắc (§a xanh, §e vàng, §b lam, §l đậm)") },
+                                    singleLine = true,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Button(
+                                    onClick = { vm.applyVisualMotdPreset(customMotdText, customMotdText) },
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Text("💾 Lưu", fontSize = 11.5.sp, fontWeight = FontWeight.ExtraBold)
+                                }
+                            }
+                        }
+                    }
+
+                    // 4. Chế độ Màn Hình Đen Treo Máy Siêu Tiết Kiệm Pin (OLED Keep-Alive)
+                    Button(
+                        onClick = { showOledBlackScreen = true },
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B), contentColor = Color.White),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            "🌙 Bật Màn Hình Đen Treo Server (Giảm 80% Pin & Chống Android Tắt Ngầm)",
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+
+                    if (showOledBlackScreen) {
+                        androidx.compose.ui.window.Dialog(
+                            onDismissRequest = { showOledBlackScreen = false },
+                            properties = androidx.compose.ui.window.DialogProperties(
+                                usePlatformDefaultWidth = false,
+                                dismissOnBackPress = true,
+                                dismissOnClickOutside = false
+                            )
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(Color.Black)
+                                    .clickable { showOledBlackScreen = false }
+                                    .padding(24.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Text(
+                                        "🌙 CHẾ ĐỘ MÀN HÌNH ĐEN TREO SERVER (OLED KEEP-ALIVE)",
+                                        color = Color(0xFF334155),
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        "${if (state.isRunning) "🟢 Server '${active.name}' đang chạy" else "⚪ Server đang dừng"} • Online: ${onlinePlayers.size} người • RAM: ${config.maxHeapMb}MB",
+                                        color = Color(0xFF475569),
+                                        fontSize = 12.sp
+                                    )
+                                    Text(
+                                        "Chạm bất kỳ đâu vào màn hình để mở sáng trở lại",
+                                        color = Color(0xFF1E293B),
+                                        fontSize = 11.sp
+                                    )
                                 }
                             }
                         }

@@ -3648,4 +3648,85 @@ class PluginManager(
         writeOptPackOwnedBaseNames(modsDir, ownedBaseNames)
         enabledModNames.size to enabledModNames
     }
+
+    /**
+     * Gói 5 Mod Sinh Tồn Siêu Nhẹ Cho Máy RAM Ít (FerriteCore giảm 45% RAM + Lithium + TreeHarvester + Veinminer + Graves):
+     * Tự động tắt bớt các mod nặng ngoài danh sách để điện thoại RAM yếu (1GB–2GB) không bị tràn RAM (OutOfMemory).
+     */
+    suspend fun installUltraLite5SurvivalPack(
+        dirName: String,
+        mcVersion: String,
+        loader: String = "fabric",
+        onProgress: (index: Int, total: Int, modName: String) -> Unit = { _, _, _ -> }
+    ): Pair<Int, List<String>> = withContext(Dispatchers.IO) {
+        check(!termux.isMcRunning()) { "Hãy dừng server trước khi cài Gói 5 Mod Siêu Nhẹ." }
+        val modsDir = modsDirOf(dirName).apply { mkdirs() }
+        val cleanVer = mcVersion.trim().ifBlank { "1.21.1" }
+        val cleanLoader = loader.trim().lowercase(Locale.ROOT).ifBlank { "fabric" }
+
+        // Danh sách 5 Mod siêu nhẹ + 2 thư viện lõi bắt buộc (fabric-api, collective)
+        val liteItems = listOf(
+            "Fabric API (Thư viện lõi)" to listOf("fabric-api"),
+            "Collective (Thư viện nhẹ)" to listOf("collective"),
+            "1. FerriteCore (Giảm 45% RAM)" to listOf("ferrite-core"),
+            "2. Lithium (Tăng gấp đôi TPS)" to listOf("lithium", "radium", "canary"),
+            "3. Tree Harvester (Chặt cây 1 phát)" to listOf("tree-harvester", "fallingtree"),
+            "4. Veinminer (Đào quặng cả mạch)" to listOf("veinmining", "veinminer"),
+            "5. Universal Graves (Bia mộ giữ đồ)" to listOf("universal-graves", "youre-in-grave-danger")
+        )
+        val allowedPrefixes = listOf(
+            "fabric-api", "collective", "ferritecore", "ferrite-core", "lithium", "radium", "canary",
+            "treeharvester", "tree-harvester", "fallingtree", "veinmining", "veinminer",
+            "universal-graves", "graves", "youre-in-grave-danger", "yigd"
+        )
+
+        // Tạm tắt các mod nặng ngoài gói 5 mod siêu nhẹ để giải phóng RAM cho máy yếu
+        modsDir.listFiles()?.filter { it.isFile && isModCandidate(it) }?.forEach { f ->
+            val (baseName, isEnabled) = parseModFileName(f.name)
+            val norm = baseName.lowercase(Locale.ROOT)
+            if (isEnabled && allowedPrefixes.none { norm.contains(it) }) {
+                val disabledTarget = File(modsDir, modToggleTarget(f.name, false))
+                runCatching { f.renameTo(disabledTarget) }
+            }
+        }
+
+        val installedNames = mutableListOf<String>()
+        val total = liteItems.size
+        for ((idx, pair) in liteItems.withIndex()) {
+            val (label, slugs) = pair
+            if (slugs.first() == "fabric-api" && cleanLoader != "fabric" && cleanLoader != "quilt") continue
+            onProgress(idx + 1, total, label)
+
+            // Nếu đã có trong mods/ thì bật lại ngay
+            val existingMatch = modsDir.listFiles()?.firstOrNull { f ->
+                val norm = f.name.lowercase(Locale.ROOT)
+                slugs.any { s -> norm.contains(s.replace("-", "")) || norm.contains(s) }
+            }
+            if (existingMatch != null && existingMatch.length() > 1024L) {
+                val (_, isEn) = parseModFileName(existingMatch.name)
+                if (!isEn) {
+                    val enFile = File(modsDir, modToggleTarget(existingMatch.name, true))
+                    runCatching { existingMatch.renameTo(enFile) }
+                }
+                installedNames += label
+                continue
+            }
+
+            // Tải bản siêu nhẹ từ Modrinth
+            var resolved: Pair<String, String>? = null
+            for (slug in slugs) {
+                resolved = runCatching { resolveSingleModrinthSlug(slug, cleanVer, cleanLoader) }.getOrNull()
+                if (resolved != null) break
+            }
+            if (resolved != null) {
+                runCatching {
+                    val f = installModPackJarFromUrl(resolved.first, resolved.second, dirName)
+                    if (f.exists() && f.length() > 1024L) {
+                        installedNames += label
+                    }
+                }
+            }
+        }
+        installedNames.size to installedNames
+    }
 }
