@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="crash_run_log">Nhật ký đầy đủ</string>
+    <string name="crash_run_log_title">Nhật ký lần chạy này</string>
+    <string name="crash_run_log_empty">Chưa có nhật ký cho lần chạy này.</string>
+    <string name="dl_desc_pocketmine">PocketMine-MP: server Bedrock dùng PHP, cổng mặc định UDP 19132. Bản thử nghiệm ưu tiên Paper/Fabric.</string>
+    <string name="dl_desc_allay">Allay: server Bedrock dùng Java 21 trở lên, cổng mặc định UDP 19132. Chưa kiểm thử trên điện thoại này.</string>
+    <string name="props_pnx_source">Cấu hình lấy từ pnx.yml. Cổng được đồng bộ sang server.properties; các mục khác được giữ nguyên.</string>
+    <string name="msg_scan_skipped_empty">Đã bỏ qua %1$d thư mục trống. Có thể quản lý trong mục Tệp.</string>
+    <string name="env_tab_php">PHP</string>
+    <string name="frpc_engine_title">Môi trường frpc</string>
+    <string name="frpc_engine_hint">Các tunnel frp dùng chung libfrpc.so ARM64. Chỉ nhập thư viện từ nguồn tin cậy; đây là mã thực thi.</string>
+    <string name="frpc_engine_installed">Đã cài</string>
+    <string name="frpc_engine_missing">Chưa cài</string>
+    <string name="frpc_engine_import">Nhập thư viện</string>
+    <string name="frpc_engine_download">Tải thư viện</string>
+    <string name="frpc_engine_reinstall">Tải lại</string>
+    <string name="frpc_engine_downloading">Đang tải…</string>
+    <string name="frpc_engine_replace">Thay thư viện</string>
+    <string name="frpc_engine_uninstall">Gỡ cài đặt</string>
+    <string name="frpc_engine_uninstall_confirm">Sau khi gỡ, tunnel frp sẽ không chạy cho đến khi cài lại thư viện. Tiếp tục?</string>
+    <string name="frpc_engine_where">Xem tài liệu upstream để lấy hoặc biên dịch libfrpc.so tương thích cho ARM64. Không nhập tệp ngẫu nhiên từ Internet.</string>
+</resources>

@@ -1,0 +1,211 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- 网络访问：bootstrap 下载、服务端核心下载、内网穿透 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <!-- 外部存储备份：/storage/emulated/0/世界与服务器的备份/ -->
+    <!-- Android 11+ 写固定外部路径需「所有文件访问」；低版本用传统存储权限 -->
+    <uses-permission
+        android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="29" />
+
+    <!-- 前台服务常驻通知（Android 9-） -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- Android 13+：specialUse 类型需配套权限 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- Android 13+：通知运行时权限 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- 保活：唤醒锁防止 CPU 休眠 -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- 保活：Wi-Fi 锁防止网络断开 -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <!-- 保活：开机自启（可选） -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Android 12+：精确闹钟（用于自动恢复，回退方案用非精确闹钟） -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+
+    <!-- 后台启动 Service 所需（用于自动恢复路径） -->
+    <uses-permission android:name="android.permission.START_FOREGROUND_SERVICES_FROM_BACKGROUND" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- 可选运行状态悬浮窗，未授权时自动降级，不影响服务器。 -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    <!--
+        extractNativeLibs 必须为 true。
+
+        NativeLibraryBundler 依赖它：jniLibs 下随 APK 打包的 Termux 依赖库
+        （libandroid-glob / libtalloc / libiconv 等）需要被系统「解压成真实文件」
+        到 nativeLibraryDir，App 才能把它们复制进 Termux 的库目录。
+
+        targetSdk = 28 时这本来就是默认行为，但 Android 10（API 29）起默认变成
+        false —— 那种情况下 .so 只以 mmap 形式供 dlopen 使用，磁盘上拿不到可读
+        文件，复制会静默失败、退回「缺库」状态且不报错。显式写死以杜绝这种隐患。
+    -->
+    <application
+        android:name=".McApplication"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.MineServeMobile"
+        android:largeHeap="true"
+        android:requestLegacyExternalStorage="false"
+        tools:targetApi="34"
+        android:extractNativeLibs="true">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize|keyboardHidden|uiMode"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.MineServeMobile">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- 前台服务：MC 进程托管 + 日志 socket 服务端 -->
+        <service
+            android:name=".service.McForegroundService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="specialUse|dataSync">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Run a user-managed Minecraft Java server process inside the app's own proot namespace; the server keeps accepting connections only while this foreground service is alive." />
+        </service>
+
+        <!-- 进程被杀后由 WorkManager 触发的重启检测任务 -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup"
+                tools:node="remove" />
+        </provider>
+
+        <!-- MTDataFilesProvider：免Root读写data目录 -->
+        <provider
+            android:name="bin.mt.file.content.MTDataFilesProvider"
+            android:authorities="${applicationId}.MTDataFilesProvider"
+            android:exported="true"
+            android:grantUriPermissions="true"
+            android:permission="android.permission.MANAGE_DOCUMENTS">
+            <intent-filter>
+                <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
+            </intent-filter>
+        </provider>
+
+        <!-- 软件更新：下载 APK 后通过 FileProvider 交给系统安装器 -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+        <receiver
+            android:name=".BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".service.ScheduleAlarmReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".service.AutomationAlarmReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".widget.OverviewWidget"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_overview_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.EventLogWidget"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_event_log_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.ConsoleWidget"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_console_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.ModPluginWidget"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_mod_plugin_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.WidgetActionReceiver"
+            android:exported="false" />
+
+        <service
+            android:name=".widget.EventLogWidgetService"
+            android:exported="false"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
+
+        <service
+            android:name=".widget.ModPluginWidgetService"
+            android:exported="false"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
+
+        <activity
+            android:name="bin.mt.file.content.MTDataFilesWakeUpActivity"
+            android:taskAffinity="${applicationId}.MTDataFilesWakeUp"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:noHistory="true" />
+
+    </application>
+</manifest>

@@ -1,0 +1,26 @@
+name: Import reviewed upstream
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Import pinned GPL source without upstream workflows
+        env:
+          PIN: d66af822822e7538f8520fd79378eecc93f3ab57
+        run: |
+          set -euo pipefail
+          test ! -f app/build.gradle.kts
+          git fetch --depth=1 https://github.com/lovehutaocute/Minexa.git "$PIN"
+          test "$(git rev-parse FETCH_HEAD)" = "$PIN"
+          git restore --source="$PIN" -- app gradle gradlew gradlew.bat build.gradle.kts settings.gradle.kts gradle.properties LICENSE NOTICE .gitignore
+          chmod +x gradlew
+          git add app gradle gradlew gradlew.bat build.gradle.kts settings.gradle.kts gradle.properties LICENSE NOTICE .gitignore
+          git -c user.name="MineHost Automation" -c user.email="actions@users.noreply.github.com" commit -m "Import Minexa GPL-3.0-or-later baseline at $PIN"
+          git push origin HEAD:main

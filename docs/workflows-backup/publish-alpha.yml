@@ -1,0 +1,108 @@
+name: Publish verified MineHost alpha APK
+on:
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: write
+concurrency:
+  group: publish-minehost-alpha-2
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      SOURCE_SHA: c7efcb33e08ce5a59268e9e4a725622762b5e3d7
+      BUILD_RUN: '39399060717'
+      RELEASE_TAG: v0.1.0-alpha.2
+      DRAFT_RELEASE_ID: '418228286'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: c7efcb33e08ce5a59268e9e4a725622762b5e3d7
+          persist-credentials: false
+      - name: Download verified release build on runner
+        run: |
+          test "$(gh api "repos/$GH_REPO/actions/runs/$BUILD_RUN" --jq '.conclusion')" = "success"
+          test "$(gh api "repos/$GH_REPO/actions/runs/$BUILD_RUN" --jq '.head_sha')" = "$SOURCE_SHA"
+          gh run download "$BUILD_RUN" --name MineHost-ARM64-release --dir publish
+          gh run download "$BUILD_RUN" --name test-and-lint-reports --dir reports
+      - name: Verify source and checksum, prepare APK and notes
+        run: |
+          python3 - <<'PY'
+          import hashlib, os, json, xml.etree.ElementTree as ET
+          from pathlib import Path
+          root = Path("publish")
+          assert (root / "SOURCE-COMMIT.txt").read_text().strip() == os.environ["SOURCE_SHA"]
+          apks = list(root.glob("*.apk"))
+          assert len(apks) == 1
+          apk = apks[0]
+          expected = [line.split()[0] for line in (root / "SHA256SUMS.txt").read_text().splitlines()
+              if Path(line.split(maxsplit=1)[1]).name == apk.name]
+          digest = hashlib.sha256(apk.read_bytes()).hexdigest()
+          assert expected == [digest]
+          renamed = root / "MineHost-0.1.0-alpha.2-arm64.apk"
+          apk.rename(renamed)
+          (root / "SHA256SUMS.txt").write_text(digest + "  " + renamed.name + "\n")
+          totals = {"tests": 0, "failures": 0, "errors": 0, "skipped": 0, "suites": 0}
+          new_suites = []
+          for report in Path("reports").rglob("TEST-*.xml"):
+              suite = ET.parse(report).getroot()
+              if suite.tag != "testsuite":
+                  continue
+              totals["suites"] += 1
+              for field in ("tests", "failures", "errors", "skipped"):
+                  totals[field] += int(suite.get(field, 0))
+              if any(name in suite.get("name", "") for name in ("DeviceProfileTest", "WorldArchiveTest", "MineHostSafetyTest")):
+                  new_suites.append({"name": suite.get("name"), "tests": int(suite.get("tests", 0))})
+          assert totals["tests"] > 0 and totals["failures"] == totals["errors"] == 0, totals
+          assert len(new_suites) == 3, new_suites
+          lint = {}
+          new_errors = []
+          for report in Path("reports").rglob("lint-results-release.xml"):
+              for issue in ET.parse(report).getroot().findall("issue"):
+                  severity = issue.get("severity")
+                  lint[severity] = lint.get(severity, 0) + 1
+                  if severity in ("Error", "Fatal") and any(
+                      any(name in loc.get("file", "") for name in
+                          ("DeviceProfile.kt", "DeviceMemory.kt", "WorldArchive.kt", "WorldImportScreen.kt", "MineHostScreens.kt", "WorldsScreen.kt"))
+                      for loc in issue.findall("location")):
+                      new_errors.append({"id": issue.get("id"), "message": issue.get("message")})
+          assert not new_errors, new_errors
+          verification = dict(totals, source=os.environ["SOURCE_SHA"], build_run=os.environ["BUILD_RUN"], sha256=digest,
+              new_suites=new_suites, lint=lint, new_file_lint_errors=new_errors, device_tested=False)
+          (root / "VERIFICATION.json").write_text(json.dumps(verification, ensure_ascii=False, indent=2), encoding="utf-8")
+          print("VERIFICATION=" + json.dumps(verification, ensure_ascii=False))
+          Path("release-notes.md").write_text("""APK Android 8+ ARM64, bản thử nghiệm tối ưu. Tải tệp APK ở Assets; repo riêng tư cần đăng nhập GitHub có quyền truy cập.
+
+          - RAM tự động theo bộ nhớ hệ thống và RAM trống khi bật; vẫn có chỉnh tay.
+          - Cấu hình nhẹ theo máy: view-distance, simulation-distance, số người chơi; lưu cấu hình cũ trước khi áp dụng.
+          - Nhập thế giới có sẵn ngay Tổng quan/Quản lý: ZIP, tiến trình, tránh ghi đè, chọn world sau khi nhập.
+          - Bớt tác vụ lúc server tắt; giao diện cuộn lazy; APK release không debuggable và có R8/resource shrinking.
+
+          UPDATES: Từ alpha.2 dùng khóa ký cố định, giữ cùng applicationId để hỗ trợ cập nhật đè các bản sau. Alpha.1 dùng khóa tạm cũ đã mất nên KHÔNG cài đè lần chuyển này. Đọc MIGRATION.md: dừng server, xuất và kiểm tra world/toàn server ngoài dữ liệu app trước khi gỡ alpha.1.
+
+          TESTS_PLACEHOLDER kiểm thử đạt trên GitHub Actions. CI kiểm tra chữ ký và manifest không debuggable. Lint upstream còn lỗi; chưa kiểm thử trên điện thoại, chưa đo FPS/TPS, không cam kết hết lag. Chưa Việt hóa toàn bộ; Geyser/Floodgate và dependency mod vẫn cài thủ công.
+
+          Dựa trên Minexa, GPL-3.0-or-later. Mã nguồn tương ứng ở tag và Source code bên dưới.
+          """.replace("TESTS_PLACEHOLDER", str(totals["tests"])), encoding="utf-8")
+          PY
+      - name: Upload only to the verified empty draft
+        run: |
+          gh api "repos/$GH_REPO/releases/$DRAFT_RELEASE_ID" > draft.json
+          jq -e --arg tag "$RELEASE_TAG" --arg source "$SOURCE_SHA" --argjson id "$DRAFT_RELEASE_ID" \
+            '.id == $id and .tag_name == $tag and .target_commitish == $source and .draft == true and .prerelease == true and (.assets | length) == 0' draft.json
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/$RELEASE_TAG" --jq '.object.sha')" = "$SOURCE_SHA"
+          for asset in \
+            publish/MineHost-0.1.0-alpha.2-arm64.apk publish/SHA256SUMS.txt \
+            publish/SOURCE-COMMIT.txt publish/READ-ME-FIRST.txt \
+            publish/SIGNATURE.txt publish/APK-INFO.txt publish/VERIFICATION.json MIGRATION.md LICENSE NOTICE; do
+            gh api --method POST \
+              "https://uploads.github.com/repos/$GH_REPO/releases/$DRAFT_RELEASE_ID/assets?name=$(basename "$asset")" \
+              -H "Content-Type: application/octet-stream" --input "$asset" --jq '.name'
+          done
+          gh api "repos/$GH_REPO/releases/$DRAFT_RELEASE_ID" > uploaded.json
+          jq -e --arg tag "$RELEASE_TAG" --arg source "$SOURCE_SHA" \
+            '.tag_name == $tag and .target_commitish == $source and .draft == true and .prerelease == true and (.assets | length) == 10 and all(.assets[]; .state == "uploaded" and .size > 0)' uploaded.json

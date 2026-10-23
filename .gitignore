@@ -1,0 +1,45 @@
+*.iml
+.gradle/
+/local.properties
+/.idea/
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+/app/build/
+*.apk
+*.aab
+*.keystore
+!debug.keystore
+
+# 发布签名私钥（signing/debug.keystore）：上面的 !debug.keystore 会把它重新放行，
+# 本仓库为 public，私钥绝不可提交，故整个目录重新忽略。
+signing/
+
+# Kotlin
+*.kotlin_metadata
+.kotlin/
+
+
+cloudflare/.wrangler/
+.git-backup.log
+
+# 工作区测试产物（若被复制进仓库）
+666/
+666.zip
+*.log
+phone-*.png
+crash_error.log
+crash_log.txt
+.reasonix/
+
+# 性能诊断产物（工作区临时文件）
+.device-*.png
+mineserve-*.txt
+perf-diagnostics/
+.gradle-user/
+
+signing/minehost.p12
+local.properties

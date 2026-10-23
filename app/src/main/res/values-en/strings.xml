@@ -1,0 +1,1366 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name" formatted="false">MineHost</string>
+    <string name="notif_channel_id" formatted="false">mc_server_runtime</string>
+    <string name="notif_channel_name" formatted="false">Minexa Service Runtime</string>
+    <string name="notif_channel_desc" formatted="false">Displays Minecraft server running status. Disabling this notification will cause the service to be killed by the system</string>
+    <string name="notif_title_running" formatted="false">MC Service Running</string>
+    <string name="notif_text_running" formatted="false">Tap to view real-time status</string>
+    <string name="tab_dashboard" formatted="false">Overview</string>
+    <string name="tab_download" formatted="false">Download</string>
+    <string name="tab_players" formatted="false">Players</string>
+    <string name="tab_files" formatted="false">Files</string>
+    <string name="tab_settings" formatted="false">Settings</string>
+
+    <string name="s3" formatted="false">Crash time: %1$s</string>
+    <string name="s4" formatted="false">Thread: %1$s</string>
+    <string name="s5" formatted="false">Exception: %1$s: %2$s</string>
+    <string name="s7" formatted="false">Unknown error</string>
+    <string name="s8" formatted="false">Initialization failed, please check your network and retry</string>
+    <string name="s70" formatted="false">Downloading Linux filesystem</string>
+    <string name="s71" formatted="false">Extracting filesystem</string>
+    <string name="s72" formatted="false">Initializing configuration</string>
+    <string name="s73" formatted="false">Done</string>
+    <string name="s127" formatted="false">Local</string>
+    <string name="s128" formatted="false">Downloaded file too small or empty (%1$s bytes), URL may be invalid</string>
+    <string name="s129" formatted="false">Unable to open file Uri: %1$s</string>
+    <string name="s130" formatted="false">File too small, upload may have failed</string>
+    <string name="s131" formatted="false">Unknown</string>
+    <string name="s186" formatted="false">Settings</string>
+    <string name="s187" formatted="false">Unable to get LAN IP, please confirm WiFi is connected</string>
+    <string name="s188" formatted="false">Copied: %1$s</string>
+    <string name="s189" formatted="false">Joined</string>
+    <string name="s191" formatted="false">Configuration save failed: %1$s</string>
+    <string name="s192" formatted="false">Termux environment is still initializing, please wait…</string>
+    <string name="s193" formatted="false">Dependency installation complete</string>
+    <string name="s194" formatted="false">Dependency installation failed, please check the logs</string>
+    <string name="s195" formatted="false">Dependency installation failed: %1$s</string>
+    <string name="s196" formatted="false">Server start command sent</string>
+    <string name="s197" formatted="false">Server start failed: %1$s</string>
+    <string name="s198" formatted="false">Server stop command sent</string>
+    <string name="s199" formatted="false">Server stop failed: %1$s</string>
+    <string name="s200" formatted="false">Tunnel is starting, please wait…</string>
+    <string name="s203" formatted="false">Tunnel is starting, please check the logs…</string>
+    <string name="s204" formatted="false">Tunnel start failed: %1$s</string>
+    <string name="s205" formatted="false">Tunnel command sent</string>
+    <string name="s206" formatted="false">Tunnel startup failed: %1$s</string>
+    <string name="s207" formatted="false">Tunnel stopped</string>
+    <string name="s208" formatted="false">Tunnel stop failed: %1$s</string>
+    <string name="s209" formatted="false">No public address yet, please start the tunnel first</string>
+    <string name="s210" formatted="false">Copied: %1$s</string>
+    <string name="s211" formatted="false">Command send failed: %1$s</string>
+    <string name="s212" formatted="false">No server core selected</string>
+    <string name="s213" formatted="false">Failed to scan plugin directory: %1$s</string>
+    <string name="s214" formatted="false">Failed to scan mod directory: %1$s</string>
+    <string name="s215" formatted="false">Failed to toggle mod state: %1$s</string>
+    <string name="s216" formatted="false">Mod deleted: %1$s</string>
+    <string name="s217" formatted="false">Failed to delete mod: %1$s</string>
+    <string name="s218" formatted="false">Mod upload complete: %1$s</string>
+    <string name="s219" formatted="false">Mod upload failed: %1$s</string>
+    <string name="s221" formatted="false">%1$s installation complete</string>
+    <string name="s222" formatted="false">%1$s installation failed: %2$s</string>
+    <string name="s223" formatted="false">No matching mods found, please try other keywords or filters</string>
+    <string name="s225" formatted="false">%1$s installation complete</string>
+    <string name="s226" formatted="false">%1$s installation failed: %2$s</string>
+    <string name="s227" formatted="false">%1$s is downloading, please wait</string>
+    <string name="s229" formatted="false">%1$s installation complete</string>
+    <string name="s230" formatted="false">%1$s installation failed: %2$s</string>
+    <string name="s231" formatted="false">Plugin %1$s uploaded successfully</string>
+    <string name="s232" formatted="false">Plugin upload failed: %1$s</string>
+    <string name="s235" formatted="false">Delete failed: file does not exist or is in use</string>
+    <string name="s236" formatted="false">Delete failed: %1$s</string>
+    <string name="s237" formatted="false">Disabled</string>
+    <string name="s238" formatted="false">Enabled</string>
+    <string name="s239" formatted="false">Failed to toggle state: file does not exist</string>
+    <string name="s240" formatted="false">Failed to toggle state: %1$s</string>
+    <string name="s243" formatted="false">Update check failed: %1$s</string>
+    <string name="s244" formatted="false">URL and filename cannot be empty</string>
+    <string name="s245" formatted="false">A download task is already in progress, please wait</string>
+    <string name="s246" formatted="false">%1$s download and installation complete</string>
+    <string name="s247" formatted="false">Custom URL download failed: %1$s</string>
+    <string name="s248" formatted="false">Failed to load snapshot list: %1$s</string>
+    <string name="s249" formatted="false">No server core selected for operation</string>
+    <string name="s250" formatted="false">Restoring snapshot, server will stop…</string>
+    <string name="s251" formatted="false">Snapshot restored successfully, please restart the server</string>
+    <string name="s252" formatted="false">Snapshot restore failed</string>
+    <string name="s253" formatted="false">Failed to restore snapshot: %1$s</string>
+    <string name="s254" formatted="false">Snapshot file does not exist</string>
+    <string name="s256" formatted="false">Snapshot exported: %1$s</string>
+    <string name="s257" formatted="false">Export failed: %1$s</string>
+    <string name="s258" formatted="false">Snapshot deleted: %1$s</string>
+    <string name="s259" formatted="false">Failed to delete snapshot: file does not exist</string>
+    <string name="s260" formatted="false">Failed to delete snapshot: %1$s</string>
+    <string name="s261" formatted="false">Failed to read server.properties: %1$s</string>
+    <string name="s262" formatted="false">server.properties saved successfully</string>
+    <string name="s263" formatted="false">Failed to save server.properties</string>
+    <string name="s264" formatted="false">Failed to save server.properties: %1$s</string>
+    <string name="s265" formatted="false">Failed to refresh player data: %1$s</string>
+    <string name="s266" formatted="false">Server is not running, cannot send command</string>
+    <string name="s272" formatted="false">Whitelist enabled</string>
+    <string name="s273" formatted="false">Whitelist disabled</string>
+    <string name="s274" formatted="false">Server is not running, cannot toggle whitelist</string>
+    <string name="s279" formatted="false">Online player list requested, results will be shown in the log</string>
+    <string name="s280" formatted="false">Server is not running</string>
+    <string name="s281" formatted="false">Survival</string>
+    <string name="s282" formatted="false">Creative</string>
+    <string name="s283" formatted="false">Adventure</string>
+    <string name="s284" formatted="false">Spectator</string>
+    <string name="s285" formatted="false">Set %1$s to %2$s mode</string>
+    <string name="s287" formatted="false">Failed to load crash report: %1$s</string>
+    <string name="s288" formatted="false">Failed to read crash report: file does not exist</string>
+    <string name="s289" formatted="false">Failed to read crash report: %1$s</string>
+    <string name="s290" formatted="false">Crash report deleted: %1$s</string>
+    <string name="s291" formatted="false">Failed to delete crash report: %1$s</string>
+    <string name="s292" formatted="false">Cleared %1$s crash reports</string>
+    <string name="s293" formatted="false">Failed to clear crash reports: %1$s</string>
+    <string name="s294" formatted="false">Failed to get version list: %1$s</string>
+    <string name="s295" formatted="false">Please enter core name</string>
+    <string name="s296" formatted="false">Server core \"%1$s\" download complete</string>
+    <string name="s297" formatted="false">Server core download failed: %1$s</string>
+    <string name="s299" formatted="false">Failed to delete core folder: %1$s</string>
+    <string name="s300" formatted="false">Core \"%1$s\" deleted</string>
+    <string name="s301" formatted="false">Failed to delete core: %1$s</string>
+    <string name="s302" formatted="false">Failed to read directory: %1$s</string>
+    <string name="s303" formatted="false">MC terminal ready, type help for available commands</string>
+    <string name="s304" formatted="false">Deleted: %1$s</string>
+    <string name="s305" formatted="false">Delete failed: %1$s</string>
+    <string name="s307" formatted="false">File uploaded successfully</string>
+    <string name="s308" formatted="false">Upload failed: %1$s</string>
+    <string name="s309" formatted="false">Export complete</string>
+    <string name="s310" formatted="false">Server directory does not exist</string>
+    <string name="s311" formatted="false">Directory created: %1$s</string>
+    <string name="s312" formatted="false">Failed to create directory (may already exist)</string>
+    <string name="s313" formatted="false">Failed to create directory: %1$s</string>
+    <string name="s314" formatted="false">Failed to start keep-alive service: %1$s</string>
+    <string name="s318" formatted="false">Online</string>
+    <string name="s324" formatted="false">Backup &amp; Restore</string>
+    <string name="s327" formatted="false">save-all sent</string>
+    <string name="s328" formatted="false">Save</string>
+    <string name="s329" formatted="false">Created: %1$s</string>
+    <string name="s330" formatted="false">Creation failed</string>
+    <string name="s331" formatted="false">New Backup</string>
+    <string name="s333" formatted="false">Refresh</string>
+    <string name="s334" formatted="false">No backups yet</string>
+    <string name="s335" formatted="false">Export</string>
+    <string name="s336" formatted="false">Restore started</string>
+    <string name="s337" formatted="false">Restore</string>
+    <string name="s338" formatted="false">Deleted %1$s</string>
+    <string name="s339" formatted="false">Delete</string>
+    <string name="s340" formatted="false">Cloud Panel</string>
+    <string name="s351" formatted="false">Initialize Runtime Environment</string>
+    <string name="s352" formatted="false">Downloading and extracting Termux environment (%1$s%%)</string>
+    <string name="s353" formatted="false">Download Termux runtime environment (approx. 50MB)</string>
+    <string name="s354" formatted="false">Initialization failed</string>
+    <string name="s355" formatted="false">Retry</string>
+    <string name="s356" formatted="false">Downloading and extracting Termux runtime environment, please wait…</string>
+    <string name="s357" formatted="false">One-click Install Dependencies</string>
+    <string name="s358" formatted="false">View Logs</string>
+    <string name="s359" formatted="false">Downloading JDK / wget / frp via apt</string>
+    <string name="s360" formatted="false">Install openjdk / wget / frp and other dependencies via apt</string>
+    <string name="s361" formatted="false">Completed</string>
+    <string name="s362" formatted="false">In Progress</string>
+    <string name="s363" formatted="false">Pending</string>
+    <string name="s364" formatted="false">Initializing environment…</string>
+    <string name="s365" formatted="false">Installing…</string>
+    <string name="s366" formatted="false">Start Installation</string>
+    <string name="s368" formatted="false">Start Server</string>
+    <string name="s369" formatted="false">Server core not yet downloaded</string>
+    <string name="s370" formatted="false">Please switch to the \"Download\" tab to download the server core</string>
+    <string name="s371" formatted="false">Select Server Core</string>
+    <string name="s372" formatted="false">Current core: %1$s (%2$s %3$s)</string>
+    <string name="s373" formatted="false">No core selected! Please select one using the button below before starting</string>
+    <string name="s374" formatted="false">Switch server core: %1$s</string>
+    <string name="s375" formatted="false">▼ Select Server Core</string>
+    <string name="s376" formatted="false">Selected \"%1$s\"</string>
+    <string name="s378" formatted="false">Startup Settings</string>
+    <string name="s379" formatted="false">Starting…</string>
+    <string name="s380" formatted="false">Start</string>
+    <string name="s381" formatted="false">Stopping…</string>
+    <string name="s382" formatted="false">Stop</string>
+    <string name="s385" formatted="false">First startup requires downloading runtime files, please wait</string>
+    <string name="s386" formatted="false">Server Address</string>
+    <string name="s387" formatted="false">LAN</string>
+    <string name="s388" formatted="false">Copy</string>
+    <string name="s390" formatted="false">Installed Plugins</string>
+    <string name="s391" formatted="false">No installed plugins</string>
+    <string name="s392" formatted="false">%1$s plugins installed</string>
+    <string name="s395" formatted="false">Server Startup Settings</string>
+    <string name="s396" formatted="false">Auto-restart on Crash</string>
+    <string name="s397" formatted="false">Auto-restart when MC process exits abnormally (disabled by default to save power)</string>
+    <string name="s398" formatted="false">JVM memory limit: %1$s MB (modify in Settings)</string>
+    <string name="s401" formatted="false">Confirm Delete</string>
+    <string name="s402" formatted="false">Cancel</string>
+    <string name="s403" formatted="false">Slow download? View solutions →</string>
+    <string name="s404" formatted="false">Back</string>
+    <string name="s405" formatted="false">Slow download? What to do?</string>
+    <string name="s406" formatted="false">Why are downloads slow?</string>
+    <string name="s407" formatted="false">This app needs to download the runtime environment (approx. 50MB) and server core (approx. 50MB) from GitHub. GitHub servers are overseas, and access from within the country may be very slow or even fail. Several solutions are provided below, listed in order of recommendation.</string>
+    <string name="s408" formatted="false">Recommended</string>
+    <string name="s409" formatted="false">Solution 1: Switch Termux environment download source</string>
+    <string name="s410" formatted="false">This app includes several GitHub mirror sources (ghfast.top, gh-proxy.com, cdn.gh-proxy.com, ghproxy.net, etc.) that can automatically speed up GitHub downloads. Switch and re-initialize to take effect.</string>
+    <string name="s411" formatted="false">Go to the \"Settings\" tab</string>
+    <string name="s412" formatted="false">Find the \"Download Source\" option</string>
+    <string name="s413" formatted="false">Select a mirror source (recommended: gh-proxy.com or ghfast.top)</string>
+    <string name="s414" formatted="false">Return to the \"Overview\" page, tap \"Delete Termux Runtime Environment\"</string>
+    <string name="s415" formatted="false">Wait for re-initialization, download speed will improve significantly</string>
+    <string name="s416" formatted="false">Solution 2: Switch dependency package download source (apt mirror)</string>
+    <string name="s417" formatted="false">Dependency packages such as JDK, wget, and frp are downloaded from the official Termux source, which may be very slow domestically. Switching to a domestic mirror can greatly improve speed.</string>
+    <string name="s418" formatted="false">Find the \"Software Source (apt)\" option</string>
+    <string name="s419" formatted="false">Select a domestic mirror (recommended: Tsinghua TUNA or Alibaba Cloud)</string>
+    <string name="s420" formatted="false">Return to the \"Overview\" page, delete the runtime environment and re-initialize</string>
+    <string name="s421" formatted="false">Free</string>
+    <string name="s422" formatted="false">Solution 3: Switch network environment</string>
+    <string name="s423" formatted="false">Different ISPs have vastly different routing quality to GitHub. Switching networks may produce immediate results.</string>
+    <string name="s424" formatted="false">Try switching between WiFi and mobile data</string>
+    <string name="s425" formatted="false">If using WiFi, try switching to 5G/4G data network</string>
+    <string name="s426" formatted="false">Different ISPs have different base station routes, try China Mobile/Unicom/Telecom</string>
+    <string name="s427" formatted="false">Downloads are usually faster during early morning or off-peak hours</string>
+    <string name="s428" formatted="false">Advanced</string>
+    <string name="s429" formatted="false">Solution 4: Use a network proxy (VPN)</string>
+    <string name="s430" formatted="false">Use proxy tools to accelerate GitHub access. This is the most thorough solution but requires additional tools.</string>
+    <string name="s431" formatted="false">Launch a proxy tool on your phone (supports global or per-app proxy)</string>
+    <string name="s432" formatted="false">Ensure the proxy node has low latency (recommended: Japan, Singapore, or US nodes)</string>
+    <string name="s433" formatted="false">Return to this app to re-download or initialize</string>
+    <string name="s434" formatted="false">Note: Some proxy tools may intercept large file downloads. It is recommended to switch to PAC mode or whitelist this app</string>
+    <string name="s435" formatted="false">Manual</string>
+    <string name="s436" formatted="false">Solution 5: Download on PC then transfer to phone</string>
+    <string name="s437" formatted="false">If your phone network really doesn\'t work, you can download on a PC and transfer to your phone via a file manager.</string>
+    <string name="s438" formatted="false">Open the GitHub release page in a PC browser to download the required files</string>
+    <string name="s439" formatted="false">Place the Termux environment ZIP in the app\'s internal storage files/home/ directory</string>
+    <string name="s440" formatted="false">Place the server core JAR in the files/home/home/servers/{core name}/ directory</string>
+    <string name="s441" formatted="false">Restart the app, the environment will automatically detect existing files and skip downloading</string>
+    <string name="s442" formatted="false">How to determine current speed?</string>
+    <string name="s443" formatted="false">During download, this app displays real-time download speed (e.g. 2.35 MB/s). Generally:</string>
+    <string name="s445" formatted="false">Very fast (direct connection or quality proxy)</string>
+    <string name="s446" formatted="false">Fast (mirror source acceleration)</string>
+    <string name="s447" formatted="false">Normal (normal domestic access)</string>
+    <string name="s448" formatted="false">Slow, recommend switching download source</string>
+    <string name="s449" formatted="false">Tip: If speed is below 100 KB/s or stuck for a long time, it means your current network has difficulty accessing GitHub. Please try the solutions above.</string>
+    <string name="s450" formatted="false">Server Core Download</string>
+    <string name="s451" formatted="false">Installed Core List</string>
+    <string name="s452" formatted="false">No server core downloaded yet</string>
+    <string name="s453" formatted="false">Currently Selected</string>
+    <string name="s455" formatted="false">Select</string>
+    <string name="s456" formatted="false">Download path: home/servers/{name}/server.jar (each core has its own directory)</string>
+    <string name="s457" formatted="false">1. Select Core Type</string>
+    <string name="s467" formatted="false">✓ Supports plugins</string>
+    <string name="s468" formatted="false">✗ No plugin support</string>
+    <string name="s469" formatted="false">✓ Supports mods</string>
+    <string name="s470" formatted="false">✗ No mod support</string>
+    <string name="s471" formatted="false">2. Select Game Version</string>
+    <string name="s472" formatted="false">Fetching version list from official API…</string>
+    <string name="s473" formatted="false">No versions available, please use the custom version input below</string>
+    <string name="s474" formatted="false">Custom Version</string>
+    <string name="s475" formatted="false">e.g. 1.20.4</string>
+    <string name="s476" formatted="false">Version set to %1$s</string>
+    <string name="s477" formatted="false">OK</string>
+    <string name="s478" formatted="false">Current selection: %1$s</string>
+    <string name="s479" formatted="false">3. Download Server Core</string>
+    <string name="s480" formatted="false">Download server JAR from official source</string>
+    <string name="s482" formatted="false">Will download %1$s %2$s to a separate directory</string>
+    <string name="s483" formatted="false">Core name (for distinguishing different cores)</string>
+    <string name="s484" formatted="false">e.g. Survival-1.20.4</string>
+    <string name="s485" formatted="false">Downloading…</string>
+    <string name="s486" formatted="false">Start Download</string>
+    <string name="s487" formatted="false">Download Log:</string>
+    <string name="s488" formatted="false">File Management</string>
+    <string name="s489" formatted="false">📁 Manage files with MT Manager</string>
+    <string name="s490" formatted="false">Server Export.zip</string>
+    <string name="s491" formatted="false">Export Server</string>
+    <string name="s492" formatted="false">📺 MT Manager tutorial video</string>
+    <string name="s493" formatted="false">Current Path</string>
+    <string name="s494" formatted="false">Parent Directory</string>
+    <string name="s495" formatted="false">Back to Parent</string>
+    <string name="s496" formatted="false">Parent</string>
+    <string name="s497" formatted="false">Upload</string>
+    <string name="s498" formatted="false">New Folder</string>
+    <string name="s499" formatted="false">New</string>
+    <string name="s500" formatted="false">File List</string>
+    <string name="s501" formatted="false">Loading…</string>
+    <string name="s502" formatted="false">Directory is empty</string>
+    <string name="s503" formatted="false">About to delete folder:\n</string>
+    <string name="s504" formatted="false">\n\nAll contents under this folder will be deleted together.</string>
+    <string name="s505" formatted="false">\n\nThis action cannot be undone.</string>
+    <string name="s506" formatted="false">Folder name</string>
+    <string name="s507" formatted="false">Create</string>
+    <string name="s508" formatted="false">Server core file</string>
+    <string name="s509" formatted="false">Server core configuration file</string>
+    <string name="s510" formatted="false">OP (Admin) list</string>
+    <string name="s511" formatted="false">Whitelist</string>
+    <string name="s512" formatted="false">Banned players list</string>
+    <string name="s513" formatted="false">Banned IP list</string>
+    <string name="s514" formatted="false">End User License Agreement (EULA)</string>
+    <string name="s515" formatted="false">Player UUID cache</string>
+    <string name="s516" formatted="false">Username cache</string>
+    <string name="s517" formatted="false">Permissions configuration</string>
+    <string name="s518" formatted="false">Help command configuration</string>
+    <string name="s519" formatted="false">Bukkit plugin server configuration</string>
+    <string name="s520" formatted="false">Spigot server configuration</string>
+    <string name="s521" formatted="false">Paper server configuration</string>
+    <string name="s522" formatted="false">Command alias configuration</string>
+    <string name="s523" formatted="false">World seed cache</string>
+    <string name="s524" formatted="false">Version history</string>
+    <string name="s525" formatted="false">Latest run log</string>
+    <string name="s526" formatted="false">Debug log</string>
+    <string name="s527" formatted="false">Overworld save folder</string>
+    <string name="s528" formatted="false">Nether save folder</string>
+    <string name="s529" formatted="false">The End save folder</string>
+    <string name="s530" formatted="false">Server run log folder</string>
+    <string name="s531" formatted="false">Server log folder (legacy)</string>
+    <string name="s532" formatted="false">Plugins folder</string>
+    <string name="s533" formatted="false">Plugin configuration folder</string>
+    <string name="s534" formatted="false">Server version folder</string>
+    <string name="s535" formatted="false">Server libraries folder</string>
+    <string name="s536" formatted="false">Crash reports folder</string>
+    <string name="s537" formatted="false">Cache folder</string>
+    <string name="s538" formatted="false">Generated data folder</string>
+    <string name="s539" formatted="false">Data packs folder</string>
+    <string name="s540" formatted="false">World backup folder</string>
+    <string name="s541" formatted="false">Back to Settings</string>
+    <string name="s542" formatted="false">Background Keep-Alive</string>
+    <string name="s543" formatted="false">Service status</string>
+    <string name="s544" formatted="false">Keep-alive service running</string>
+    <string name="s545" formatted="false">Keep-alive service not running</string>
+    <string name="s546" formatted="false">Start service</string>
+    <string name="s547" formatted="false">Stop service</string>
+    <string name="s548" formatted="false">Keep-Alive Switches</string>
+    <string name="s549" formatted="false">Auto-start on boot</string>
+    <string name="s550" formatted="false">Automatically start the background service on device boot, no need to manually open the app (requires auto-start permission)</string>
+    <string name="s551" formatted="false">Periodic background keep-alive</string>
+    <string name="s552" formatted="false">Check every 15 minutes if the keep-alive service is alive, automatically restart if killed by the system (WorkManager)</string>
+    <string name="s553" formatted="false">Auto-restart MC server process on abnormal exit (disabled by default to save power)</string>
+    <string name="s554" formatted="false">Notes</string>
+    <string name="s556" formatted="false">A persistent foreground service notification can significantly reduce the chance of being killed; do not restrict this app\'s background running in system settings.</string>
+    <string name="s557" formatted="false">Console Log</string>
+    <string name="s558" formatted="false">Copied %1$s lines of log</string>
+    <string name="s559" formatted="false">No logs to copy</string>
+    <string name="s560" formatted="false">Copy Log</string>
+    <string name="s561" formatted="false">No log output yet\nStart the MC server to see the real-time console stream here</string>
+    <string name="s562" formatted="false">Send command to console (e.g. /say hello)</string>
+    <string name="s563" formatted="false">Send</string>
+    <string name="s564" formatted="false">Manage files with MT Manager</string>
+    <string name="s565" formatted="false">Download MT Manager</string>
+    <string name="s566" formatted="false">MT Manager is a powerful Android file management tool that supports browsing app private data directories without Root.</string>
+    <string name="s567" formatted="false">📥 Go to MT Manager official website to download</string>
+    <string name="s568" formatted="false">Tutorial</string>
+    <string name="s569" formatted="false">Install MT Manager</string>
+    <string name="s570" formatted="false">Download and install MT Manager from the official website (agree to the user agreement on first launch).</string>
+    <string name="s571" formatted="false">Open the side panel</string>
+    <string name="s572" formatted="false">Enter MT Manager\'s main screen, swipe right to open the side panel, or tap the menu icon in the top-left corner.</string>
+    <string name="s573" formatted="false">Add local storage</string>
+    <string name="s574" formatted="false">Find the \"Add local storage\" option in the side panel and tap it.</string>
+    <string name="s575" formatted="false">Select this app</string>
+    <string name="s576" formatted="false">In the popup list, find and check \"Minexa\", then tap OK.</string>
+    <string name="s577" formatted="false">Start managing files</string>
+    <string name="s578" formatted="false">Return to MT Manager\'s main screen. This app\'s entry will appear in the side panel — tap it to browse files.</string>
+    <string name="s579" formatted="false">Find server files</string>
+    <string name="s580" formatted="false">Navigate to data → files → home → home → servers folder to see all Minecraft server files (including plugins, configs, world saves, etc.).</string>
+    <string name="s581" formatted="false">Tip</string>
+    <string name="s582" formatted="false">After modifying server configuration files, you need to restart the server for changes to take effect. Do not delete the world folder, or your saves will be lost.</string>
+    <string name="s583" formatted="false">How It Works</string>
+    <string name="s584" formatted="false">This app includes a custom DocumentsProvider (MTDataFilesProvider) that exposes file operation interfaces for the data directory. MT Manager connects to this Provider through Android\'s standard file access interface, enabling direct reading and writing of this app\'s private data in MT Manager — no Root access required.</string>
+    <string name="s585" formatted="false">Port &amp; NAT Traversal</string>
+    <string name="s586" formatted="false">Local Connection Address</string>
+    <string name="s587" formatted="false">Server is running</string>
+    <string name="s588" formatted="false">Localhost address</string>
+    <string name="s589" formatted="false">Use this address when testing with the MC client on the same phone</string>
+    <string name="s590" formatted="false">LAN IP</string>
+    <string name="s591" formatted="false">Refresh IP</string>
+    <string name="s592" formatted="false">Port</string>
+    <string name="s594" formatted="false">Paste this in Minecraft Java Edition \"Multiplayer\" → \"Direct Connect\" to join (same LAN only)</string>
+    <string name="s599" formatted="false">frpc.toml configuration</string>
+    <string name="s600" formatted="false">Paste complete frpc.toml content…</string>
+    <string name="s601" formatted="false">Paste the complete frpc.toml configuration text, or import from file manager</string>
+    <string name="s618" formatted="false">Tunnel log (%1$s entries)</string>
+    <string name="s619" formatted="false">No tunnel logs yet</string>
+    <string name="s620" formatted="false">Close</string>
+    <string name="s621" formatted="false">Operation Guide</string>
+    <string name="s622" formatted="false">Tap %1$s for detailed configuration guide</string>
+    <string name="s623" formatted="false">Expand</string>
+    <string name="s654" formatted="false">Free FRP Platforms</string>
+    <string name="s655" formatted="false">Don\'t want to self-host? Register on any of the free frp platforms below: tap "Create FRP profile" above, pick the matching platform and enter your access token.</string>
+    <string name="s656" formatted="false">Open official website</string>
+    <string name="s657" formatted="false">Online Players</string>
+    <string name="s658" formatted="false">OP List</string>
+    <string name="s659" formatted="false">Whitelist</string>
+    <string name="s660" formatted="false">Ban List</string>
+    <string name="s661" formatted="false">Permanent</string>
+    <string name="s662" formatted="false">30 minutes</string>
+    <string name="s663" formatted="false">1 hour</string>
+    <string name="s664" formatted="false">6 hours</string>
+    <string name="s665" formatted="false">1 day</string>
+    <string name="s666" formatted="false">7 days</string>
+    <string name="s667" formatted="false">30 days</string>
+    <string name="s668" formatted="false">1 - Lowest (basic commands only)</string>
+    <string name="s669" formatted="false">2 - Medium (includes ban/kick)</string>
+    <string name="s670" formatted="false">3 - High (includes stop/reload)</string>
+    <string name="s671" formatted="false">4 - Highest (full permissions)</string>
+    <string name="s672" formatted="false">Player Management</string>
+    <string name="s673" formatted="false">Player History</string>
+    <string name="s675" formatted="false">Admin kick</string>
+    <string name="s676" formatted="false">Admin ban</string>
+    <string name="s677" formatted="false">Player join/leave records</string>
+    <string name="s678" formatted="false">No history yet</string>
+    <string name="s679" formatted="false">Server Status</string>
+    <string name="s680" formatted="false">Termux environment not ready, please initialize first</string>
+    <string name="s681" formatted="false">No server core selected, please choose one on the \"Overview\" page</string>
+    <string name="s682" formatted="false">Server not running · All command operations unavailable, please start the server first</string>
+    <string name="s683" formatted="false">Server running · Online %1$s / %2$s</string>
+    <string name="s684" formatted="false">Server not running, no online players</string>
+    <string name="s685" formatted="false">No players online</string>
+    <string name="s686" formatted="false">Refresh online list</string>
+    <string name="s687" formatted="false">Copy player name</string>
+    <string name="s688" formatted="false">Kick</string>
+    <string name="s689" formatted="false">Switch game mode</string>
+    <string name="s690" formatted="false">OP Management</string>
+    <string name="s691" formatted="false">OPs have admin privileges; higher levels unlock more commands. Recommended only for trusted players.</string>
+    <string name="s692" formatted="false">Search OP player name…</string>
+    <string name="s693" formatted="false">No OP players yet</string>
+    <string name="s694" formatted="false">No matching OP players</string>
+    <string name="s695" formatted="false">Level %1$s · %2$s…</string>
+    <string name="s696" formatted="false">Add OP</string>
+    <string name="s697" formatted="false">Player name</string>
+    <string name="s699" formatted="false">Server not running, cannot add OP</string>
+    <string name="s700" formatted="false">Add OP (Level %1$s)</string>
+    <string name="s703" formatted="false">Only whitelisted players can join</string>
+    <string name="s704" formatted="false">All players can join (restrict after enabling)</string>
+    <string name="s705" formatted="false">Search whitelisted player…</string>
+    <string name="s706" formatted="false">Whitelist is empty</string>
+    <string name="s707" formatted="false">No matching whitelisted players</string>
+    <string name="s708" formatted="false">Add to whitelist</string>
+    <string name="s709" formatted="false">Add</string>
+    <string name="s710" formatted="false">No banned players</string>
+    <string name="s711" formatted="false">Search banned player…</string>
+    <string name="s712" formatted="false">No matching banned players</string>
+    <string name="s713" formatted="false">Temporary until %1$s</string>
+    <string name="s714" formatted="false">Permanent ban</string>
+    <string name="s715" formatted="false">Temporary</string>
+    <string name="s716" formatted="false">Ban player</string>
+    <string name="s717" formatted="false">Ban reason (optional)</string>
+    <string name="s718" formatted="false">Server not running, cannot execute ban</string>
+    <string name="s719" formatted="false">Temporary ban (%1$s)</string>
+    <string name="s720" formatted="false">Player Details</string>
+    <string name="s721" formatted="false">OP level</string>
+    <string name="s722" formatted="false">Ban reason</string>
+    <string name="s723" formatted="false">Not specified</string>
+    <string name="s724" formatted="false">Expiration time</string>
+    <string name="s725" formatted="false">Source</string>
+    <string name="s726" formatted="false">Server not running, command operations unavailable</string>
+    <string name="s727" formatted="false">Quick Actions</string>
+    <string name="s728" formatted="false">Ban</string>
+    <string name="s729" formatted="false">Remove OP</string>
+    <string name="s730" formatted="false">Game Mode</string>
+    <string name="s731" formatted="false">Only online players can switch; offline players must be online first</string>
+    <string name="s732" formatted="false">Remove from whitelist</string>
+    <string name="s733" formatted="false">Unban</string>
+    <string name="s734" formatted="false">Details</string>
+    <string name="s735" formatted="false">Installed</string>
+    <string name="s736" formatted="false">Local Upload</string>
+    <string name="s737" formatted="false">Plugins</string>
+    <string name="s738" formatted="false">Mods</string>
+    <string name="s739" formatted="false">A well-established large plugin resource platform, the primary release site for most Bukkit/Spigot plugins, with both free and paid resources (all in English; slow access from China)</string>
+    <string name="s741" formatted="false">Paper\'s official platform, aimed at Paper / Velocity / Waterfall, with a clean interface and comprehensive filtering</string>
+    <string name="s742" formatted="false">BuiltByBit (formerly MC-Market)</string>
+    <string name="s744" formatted="false">CurseForge Bukkit section</string>
+    <string name="s746" formatted="false">All</string>
+    <string name="s747" formatted="false">Enabled</string>
+    <string name="s748" formatted="false">Disabled</string>
+    <string name="s749" formatted="false">Plugin Management</string>
+    <string name="s750" formatted="false">Current Server Core</string>
+    <string name="s751" formatted="false">Current Server Core</string>
+    <string name="s752" formatted="false">Plugin list refreshed</string>
+    <string name="s753" formatted="false">Please select a server core first</string>
+    <string name="s754" formatted="false">No server core selected yet, please select one on the Overview page</string>
+    <string name="s755" formatted="false">Plugin directory: %1$s</string>
+    <string name="s756" formatted="false">%1$s plugins installed</string>
+    <string name="s757" formatted="false">(%1$s disabled)</string>
+    <string name="s758" formatted="false">Current core (%1$s) does not support plugins or mods</string>
+    <string name="s759" formatted="false">Plugin Hot Reload</string>
+    <string name="s760" formatted="false">Server is running, you can send the reload command to reload all plugins</string>
+    <string name="s761" formatted="false">Server is not running, hot reload button unavailable. Please start the server on the Overview page first</string>
+    <string name="s762" formatted="false">Reload command sent</string>
+    <string name="s763" formatted="false">Send reload command</string>
+    <string name="s764" formatted="false">For plugin-related configuration, please modify the config files in the corresponding configuration folder.</string>
+    <string name="s765" formatted="false">Plugin Resource Sites</string>
+    <string name="s766" formatted="false">Quality plugin/mod download platform, click to visit the official site</string>
+    <string name="s767" formatted="false">Open</string>
+    <string name="s768" formatted="false">Confirm Delete Mod</string>
+    <string name="s769" formatted="false">About to delete mod:\n%1$s\n\nThis action cannot be undone.</string>
+    <string name="s770" formatted="false">Please select a server core on the Overview page first</string>
+    <string name="s771" formatted="false">No plugins installed for the current core, go to Featured Recommendations or Local Upload to install</string>
+    <string name="s772" formatted="false">Search plugin name…</string>
+    <string name="s773" formatted="false">No plugins match the filter criteria</string>
+    <string name="s792" formatted="false">Local Plugin Upload</string>
+    <string name="s793" formatted="false">Support uploading Bukkit / Spigot / Paper server plugins (.jar format)</string>
+    <string name="s794" formatted="false">Uploaded plugins are copied to the current core\'s plugins/ directory; reload or restart to take effect</string>
+    <string name="s795" formatted="false">Click to select a .jar file</string>
+    <string name="s796" formatted="false">Supports .jar files from any source</string>
+    <string name="s797" formatted="false">or</string>
+    <string name="s798" formatted="false">Custom URL Download</string>
+    <string name="s799" formatted="false">Paste the direct download URL of a .jar file (e.g., direct links from SpigotMC, Modrinth)</string>
+    <string name="s800" formatted="false">Download URL</string>
+    <string name="s801" formatted="false">Save filename (with or without .jar)</string>
+    <string name="s802" formatted="false">View Installed List</string>
+    <string name="s803" formatted="false">Delete Plugin</string>
+    <string name="s804" formatted="false">Confirm deletion of the following plugin?</string>
+    <string name="s805" formatted="false">Size: %1$s  ·  Modified: %2$s</string>
+    <string name="s806" formatted="false">Cannot be restored after deletion. To keep it, disable it instead.</string>
+    <string name="s807" formatted="false">Also delete plugin data directory</string>
+    <string name="s808" formatted="false">Will delete config and data under plugins/%1$s/</string>
+    <string name="s809" formatted="false">Will delete config and data under the plugin\'s same-name directory</string>
+    <string name="s810" formatted="false">Plugin Details</string>
+    <string name="s811" formatted="false">Filename</string>
+    <string name="s812" formatted="false">Display Name</string>
+    <string name="s813" formatted="false">Plugin Name</string>
+    <string name="s814" formatted="false">Version</string>
+    <string name="s815" formatted="false">Main Class</string>
+    <string name="s816" formatted="false">Authors</string>
+    <string name="s817" formatted="false">API Version</string>
+    <string name="s818" formatted="false">Description</string>
+    <string name="s819" formatted="false">Dependencies</string>
+    <string name="s820" formatted="false">Soft Dependencies</string>
+    <string name="s821" formatted="false">Failed to parse plugin.yml metadata (may be a non-standard plugin or incompatible format)</string>
+    <string name="s822" formatted="false">File Size</string>
+    <string name="s823" formatted="false">Modified Time</string>
+    <string name="s824" formatted="false">Status</string>
+    <string name="s825" formatted="false">By Downloads</string>
+    <string name="s826" formatted="false">By Relevance</string>
+    <string name="s827" formatted="false">By Newest</string>
+    <string name="s828" formatted="false">Installed Mods</string>
+    <string name="s829" formatted="false">No installed mods yet</string>
+    <string name="s830" formatted="false">Upload Mod (.jar)</string>
+    <string name="s831" formatted="false">Get Mods (Modrinth)</string>
+    <string name="s832" formatted="false">Search and install mods from the Modrinth open platform with one click</string>
+    <string name="s833" formatted="false">Search mods, e.g. sodium</string>
+    <string name="s834" formatted="false">Search</string>
+    <string name="s835" formatted="false">Loader filter (multi-select, leave unselected for all)</string>
+    <string name="s836" formatted="false">⚠ This mod does not match the current core (%1$s)</string>
+    <string name="s837" formatted="false">Install</string>
+    <string name="s838" formatted="false">%.1fM downloads</string>
+    <string name="s839" formatted="false">%.1fK downloads</string>
+    <string name="s840" formatted="false">%1$s downloads</string>
+    <string name="s841" formatted="false">Basic Configuration</string>
+    <string name="s842" formatted="false">Advanced Configuration</string>
+    <string name="s843" formatted="false">Difficulty</string>
+    <string name="s844" formatted="false">Monster strength and hunger mechanics</string>
+    <string name="s845" formatted="false">Peaceful</string>
+    <string name="s846" formatted="false">Easy</string>
+    <string name="s847" formatted="false">Normal</string>
+    <string name="s848" formatted="false">Hard</string>
+    <string name="s849" formatted="false">Default game mode for new players</string>
+    <string name="s850" formatted="false">Allow players to attack each other</string>
+    <string name="s851" formatted="false">Online Mode</string>
+    <string name="s852" formatted="false">Enable to require premium authentication, disable to allow offline clients to join</string>
+    <string name="s853" formatted="false">Enforce Whitelist</string>
+    <string name="s854" formatted="false">When whitelist is enabled, OPs are also restricted</string>
+    <string name="s855" formatted="false">Max Players</string>
+    <string name="s856" formatted="false">Maximum concurrent online players</string>
+    <string name="s857" formatted="false">Server Port</string>
+    <string name="s858" formatted="false">Minecraft service listening port</string>
+    <string name="s859" formatted="false">Server IP</string>
+    <string name="s860" formatted="false">Leave empty to listen on all network interfaces</string>
+    <string name="s861" formatted="false">Server Description (MOTD)</string>
+    <string name="s862" formatted="false">Tagline displayed in the server list</string>
+    <string name="s863" formatted="false">View Distance</string>
+    <string name="s864" formatted="false">Chunk distance visible to clients (3-32)</string>
+    <string name="s865" formatted="false">Simulation Distance</string>
+    <string name="s866" formatted="false">Chunk distance simulated by the server (3-32)</string>
+    <string name="s867" formatted="false">Max World Size</string>
+    <string name="s868" formatted="false">World border radius (blocks)</string>
+    <string name="s869" formatted="false">Spawn Protection</string>
+    <string name="s870" formatted="false">Non-breakable radius near spawn point (0-16)</string>
+    <string name="s871" formatted="false">Hardcore Mode</string>
+    <string name="s872" formatted="false">Players are permanently banned after death</string>
+    <string name="s873" formatted="false">Command Blocks</string>
+    <string name="s874" formatted="false">Allow use of command blocks</string>
+    <string name="s875" formatted="false">Allow Flight</string>
+    <string name="s876" formatted="false">Allow flying in survival mode (prevents kick)</string>
+    <string name="s877" formatted="false">Allow Nether</string>
+    <string name="s878" formatted="false">Generate Nether portals and Nether dimension</string>
+    <string name="s879" formatted="false">Spawn Animals</string>
+    <string name="s880" formatted="false">Spawn animal entities</string>
+    <string name="s881" formatted="false">Spawn Monsters</string>
+    <string name="s882" formatted="false">Spawn hostile monster entities</string>
+    <string name="s883" formatted="false">Spawn NPCs</string>
+    <string name="s884" formatted="false">Spawn villager and other NPC entities</string>
+    <string name="s885" formatted="false">Generate Structures</string>
+    <string name="s886" formatted="false">Generate villages/temples and other structures</string>
+    <string name="s887" formatted="false">World Name</string>
+    <string name="s888" formatted="false">World folder name</string>
+    <string name="s889" formatted="false">World Seed</string>
+    <string name="s890" formatted="false">Leave empty for random generation</string>
+    <string name="s891" formatted="false">World Type</string>
+    <string name="s892" formatted="false">Terrain generation method</string>
+    <string name="s893" formatted="false">Superflat</string>
+    <string name="s894" formatted="false">Large Biomes</string>
+    <string name="s895" formatted="false">Amplified</string>
+    <string name="s896" formatted="false">Single Biome</string>
+    <string name="s897" formatted="false">Force Game Mode</string>
+    <string name="s898" formatted="false">Force default game mode on player rejoin</string>
+    <string name="s899" formatted="false">Max Tick Time</string>
+    <string name="s900" formatted="false">Server will trigger crash protection when lag exceeds this many milliseconds</string>
+    <string name="s901" formatted="false">Server List Status</string>
+    <string name="s902" formatted="false">Show online status in multiplayer list</string>
+    <string name="s903" formatted="false">Hide Online Players</string>
+    <string name="s904" formatted="false">Don\'t show online players in server list</string>
+    <string name="s905" formatted="false">OP Permission Level</string>
+    <string name="s906" formatted="false">OP command permission level (1-4)</string>
+    <string name="s907" formatted="false">Function Permission Level</string>
+    <string name="s908" formatted="false">Datapack function permission level (1-4)</string>
+    <string name="s909" formatted="false">Rate Limit</string>
+    <string name="s910" formatted="false">0 means unlimited</string>
+    <string name="s911" formatted="false">Force Resource Pack</string>
+    <string name="s912" formatted="false">Players who decline the resource pack will be kicked</string>
+    <string name="s913" formatted="false">Resource Pack URL</string>
+    <string name="s914" formatted="false">Resource pack URL prompted for download when players join</string>
+    <string name="s915" formatted="false">Player Idle Timeout</string>
+    <string name="s916" formatted="false">Kick after idle for this many minutes, 0 to disable</string>
+    <string name="s917" formatted="false">Network Compression Threshold</string>
+    <string name="s918" formatted="false">Compress network packets exceeding this many bytes, -1 to disable</string>
+    <string name="s919" formatted="false">Chain Neighbor Update Limit</string>
+    <string name="s920" formatted="false">Prevent performance issues caused by high-frequency redstone updates</string>
+    <string name="s921" formatted="false">Accept Transfers</string>
+    <string name="s922" formatted="false">Accept players transferred from other servers</string>
+    <string name="s923" formatted="false">Console Broadcast to OPs</string>
+    <string name="s924" formatted="false">Broadcast console commands to online OPs</string>
+    <string name="s925" formatted="false">RCON Broadcast to OPs</string>
+    <string name="s926" formatted="false">Broadcast RCON commands to online OPs</string>
+    <string name="s927" formatted="false">Bug Report Link</string>
+    <string name="s928" formatted="false">Link displayed on the crash report page</string>
+    <string name="s929" formatted="false">Chat Spam Threshold</string>
+    <string name="s930" formatted="false">Chat message interval threshold (seconds)</string>
+    <string name="s931" formatted="false">Command Spam Threshold</string>
+    <string name="s932" formatted="false">Command send interval threshold (seconds)</string>
+    <string name="s933" formatted="false">Debug Mode</string>
+    <string name="s934" formatted="false">Output verbose debug logs</string>
+    <string name="s935" formatted="false">EULA Prompt</string>
+    <string name="s936" formatted="false">Enable Microsoft EULA functionality</string>
+    <string name="s937" formatted="false">JMX Monitoring</string>
+    <string name="s938" formatted="false">Enable JMX remote monitoring</string>
+    <string name="s939" formatted="false">Enable Query</string>
+    <string name="s940" formatted="false">GameSpy4 Query protocol</string>
+    <string name="s941" formatted="false">Enable RCON</string>
+    <string name="s942" formatted="false">Remote control protocol</string>
+    <string name="s943" formatted="false">Entity Broadcast Range</string>
+    <string name="s944" formatted="false">Entity sync distance percentage (10-1000)</string>
+    <string name="s945" formatted="false">Generator Settings</string>
+    <string name="s946" formatted="false">Custom terrain generation JSON</string>
+    <string name="s947" formatted="false">Initial Disabled Datapacks</string>
+    <string name="s948" formatted="false">List of datapacks disabled at startup</string>
+    <string name="s949" formatted="false">Initial Enabled Datapacks</string>
+    <string name="s950" formatted="false">List of datapacks enabled at startup</string>
+    <string name="s951" formatted="false">Log Player IPs</string>
+    <string name="s952" formatted="false">Log player IP addresses in logs</string>
+    <string name="s953" formatted="false">Managed Server Source</string>
+    <string name="s954" formatted="false">Allow sources connecting to manage the server</string>
+    <string name="s955" formatted="false">Enable Managed Server</string>
+    <string name="s956" formatted="false">Enable managed server (JMX new interface)</string>
+    <string name="s957" formatted="false">Managed Server Host</string>
+    <string name="s958" formatted="false">Managed server listening address</string>
+    <string name="s959" formatted="false">Managed Server Port</string>
+    <string name="s960" formatted="false">0 means auto-assign</string>
+    <string name="s961" formatted="false">Managed Server Secret Key</string>
+    <string name="s962" formatted="false">Managed server authentication secret key</string>
+    <string name="s963" formatted="false">Managed Server TLS</string>
+    <string name="s964" formatted="false">Enable TLS encrypted connection</string>
+    <string name="s965" formatted="false">Managed Server Keystore</string>
+    <string name="s966" formatted="false">TLS keystore path</string>
+    <string name="s967" formatted="false">Managed Server Keystore Password</string>
+    <string name="s968" formatted="false">TLS keystore password</string>
+    <string name="s969" formatted="false">Pause When Empty</string>
+    <string name="s970" formatted="false">Pause after no players for this many seconds, -1 to disable</string>
+    <string name="s971" formatted="false">Prevent Proxy Connections</string>
+    <string name="s972" formatted="false">Prevent players from connecting via proxies/VPNs</string>
+    <string name="s973" formatted="false">Query Port</string>
+    <string name="s974" formatted="false">GameSpy4 query port</string>
+    <string name="s975" formatted="false">RCON Password</string>
+    <string name="s976" formatted="false">Remote control password, leave empty to disable</string>
+    <string name="s977" formatted="false">RCON Port</string>
+    <string name="s978" formatted="false">Remote control port</string>
+    <string name="s979" formatted="false">Region File Compression</string>
+    <string name="s980" formatted="false">Chunk file compression algorithm</string>
+    <string name="s981" formatted="false">Resource Pack ID</string>
+    <string name="s982" formatted="false">Resource pack UUID</string>
+    <string name="s983" formatted="false">Resource Pack Prompt</string>
+    <string name="s984" formatted="false">Prompt text when declining the resource pack</string>
+    <string name="s985" formatted="false">Resource Pack SHA1</string>
+    <string name="s986" formatted="false">Resource pack checksum</string>
+    <string name="s987" formatted="false">Status Heartbeat Interval</string>
+    <string name="s988" formatted="false">Status heartbeat send interval (seconds)</string>
+    <string name="s989" formatted="false">Sync Chunk Writes</string>
+    <string name="s990" formatted="false">Write chunk data synchronously</string>
+    <string name="s991" formatted="false">Text Filter Config</string>
+    <string name="s992" formatted="false">Chat text filter configuration</string>
+    <string name="s993" formatted="false">Text Filter Version</string>
+    <string name="s994" formatted="false">Text filter protocol version</string>
+    <string name="s995" formatted="false">Native Transport</string>
+    <string name="s996" formatted="false">Use Linux native network transport</string>
+    <string name="s997" formatted="false">Server Properties</string>
+    <string name="s998" formatted="false">Current core: %1$s · Each server core has independent configuration</string>
+    <string name="s999" formatted="false">Not selected</string>
+    <string name="s1000" formatted="false">Other parameters (new server versions)</string>
+    <string name="s1001" formatted="false">Some properties require a server restart to take effect. Continue?</string>
+    <string name="s1002" formatted="false">Continue</string>
+    <string name="s1003" formatted="false">JVM Memory Limit</string>
+    <string name="s1004" formatted="false">Allocate -Xmx for the MC process, recommended no more than 60% of available RAM.</string>
+    <string name="s1005" formatted="false">Requires server restart to take effect after modification (-Xmx is a JVM startup parameter)</string>
+    <string name="s1006" formatted="false">Max Heap (MB)</string>
+    <string name="s1007" formatted="false">Download Source Settings</string>
+    <string name="s1009" formatted="false">Termux Download Source</string>
+    <string name="s1010" formatted="false">APT Software Source</string>
+    <string name="s1011" formatted="false">Affects download speed of apt-installed dependencies (JDK/wget/frp/proot)</string>
+    <string name="s1012" formatted="false">APT Mirror</string>
+    <string name="st_mirror_test" formatted="false">Try Sources in Order</string>
+    <string name="st_mirror_test_running" formatted="false">Testing…</string>
+    <string name="s1013" formatted="false">Keep-Alive &amp; Recovery</string>
+    <string name="s1014" formatted="false">Keep Wi-Fi Connected</string>
+    <string name="s1015" formatted="false">Prevent Wi-Fi from entering low power when screen is off</string>
+    <string name="s1016" formatted="false">Keep CPU Awake</string>
+    <string name="s1017" formatted="false">Prevent CPU sleep from causing TPS drops</string>
+    <string name="s1018" formatted="false">Auto-start on boot / Background periodic keep-alive / Crash auto-restart</string>
+    <string name="s1019" formatted="false">Enter background keep-alive settings</string>
+    <string name="s1020" formatted="false">Quick Access</string>
+    <string name="s1021" formatted="false">Download Help</string>
+    <string name="s1022" formatted="false">Slow download? View solutions</string>
+    <string name="s1023" formatted="false">About</string>
+    <string name="s1025" formatted="false">Based on Termux open-source components with secondary packaging, proot-distro for rootless operation.</string>
+    <string name="s1026" formatted="false">Feedback</string>
+    <string name="s1027" formatted="false">Encountered a problem or have a suggestion? Feel free to send email feedback, we will process it as soon as possible.</string>
+    <string name="s1029" formatted="false">Send email feedback (167245484@qq.com)</string>
+    <string name="s1030" formatted="false">Delete file:\n</string>
+    <!-- OP level selection -->
+    <string name="s1031" formatted="false">Use default OP level from config (no restart needed)</string>
+    <string name="s1032" formatted="false">Go to config</string>
+    <string name="s1033" formatted="false">Takes effect after next server restart</string>
+    <string name="s1034" formatted="false">Don\'t want to restart?</string>
+    <string name="s1035" formatted="false">Add OP (default level)</string>
+    <string name="s1036" formatted="false">Manually specifying a level writes to ops.json, which requires a server restart to take effect</string>
+    <!-- OP level guide page -->
+    <string name="s1037" formatted="false">OP Level Guide</string>
+    <string name="s1038" formatted="false">About OP Levels</string>
+    <string name="s1039" formatted="false">Vanilla Minecraft\'s /op command doesn\'t support specifying a level. The new OP\'s level is determined by op-permission-level in server.properties (default 4). To set different levels for different players, choose:</string>
+    <string name="s1040" formatted="false">Option 1: Use default config level</string>
+    <string name="s1041" formatted="false">Check "Use default OP level from config", all new OPs will use the op-permission-level value from server.properties. Changing this value requires a server restart.</string>
+    <string name="s1042" formatted="false">Go to server.properties config</string>
+    <string name="s1043" formatted="false">Option 2: Install permission plugin</string>
+    <string name="s1044" formatted="false">Install permission management plugins like LuckPerms for fine-grained permission control without restarting.</string>
+    <string name="s1045" formatted="false">Go to plugins</string>
+    <string name="s1046" formatted="false">OP Level Description</string>
+    <string name="s1047" formatted="false">Level 1: Bypass spawn protection only, no extra commands</string>
+    <string name="s1048" formatted="false">Level 2: Singleplayer cheat commands (/gamemode, /give, /tp, etc.)</string>
+    <string name="s1049" formatted="false">Level 3: Multiplayer admin commands (/op, /deop, /kick, /ban, etc.)</string>
+    <string name="s1050" formatted="false">Level 4: All commands (including /stop, /save-all, etc., default level)</string>
+    <!-- QQ group -->
+    <string name="s1051" formatted="false">QQ Group</string>
+    <string name="s1052" formatted="false">Group: 593682033</string>
+    <string name="s1053" formatted="false">Click to join the QQ group for latest updates, feedback, and help</string>
+    <string name="s1054" formatted="false">Join Group</string>
+    <string name="s1055">Added OP for %1$s (default level)</string>
+    <string name="s1056">Set OP for %1$s (level %2$s), effective after restart</string>
+    <string name="s1057">Current mirror: %1$s</string>
+    <string name="s1058">Switch to next mirror</string>
+    <string name="s1059">Current default OP level: %1$s</string>
+    <string name="s1060">Not configured (default 4)</string>
+
+    <string name="update_already_latest">You are already on the latest version</string>
+    <string name="update_download_failed">Download failed</string>
+    <string name="update_notif_title">New version %1$s available</string>
+    <string name="update_notif_text">Tap to view changelog and install</string>
+    <string name="update_check">Check for Updates</string>
+    <string name="update_current_version">Current version</string>
+    <string name="update_backup_done">World backed up: %1$s</string>
+    <string name="update_backup_empty">No world save found, skipped backup</string>
+    <string name="backup_ext_perm_title">External Backup Permission</string>
+    <string name="backup_ext_perm_content">Backups are saved to /storage/emulated/0/MineHost_SaoLuu/ (kept after uninstall or app update). Requires "All files access" permission.</string>
+    <string name="backup_ext_perm_action">Grant</string>
+    <string name="backup_ext_title">External Backup</string>
+    <string name="backup_ext_hint">Saved to /storage/emulated/0/MineHost_SaoLuu/ (kept after uninstall or app update)</string>
+    <string name="backup_ext_rename_rule">⚠️ The core-type field in the filename (server_dir_time__core.zip) is used to identify the server core on restore. It is NOT recommended to modify it; if renamed, keep this format, otherwise the core type will show as Unknown.</string>
+    <string name="backup_ext_world">Backup World</string>
+    <string name="backup_ext_server">Backup Server</string>
+    <string name="backup_ext_refresh_hint">Tap refresh (top-right) after backup to see files</string>
+    <string name="backup_ext_list_title">External Backups (%1$d)</string>
+    <string name="backup_ext_list_empty">No backups in external directory</string>
+    <string name="backup_ext_restore">Restore</string>
+    <string name="backup_ext_import">Import Backup</string>
+    <string name="backup_ext_delete">Delete</string>
+    <string name="backup_ext_delete_title">Delete Backup File</string>
+    <string name="backup_ext_delete_content">Delete backup file "%1$s"? This cannot be undone.</string>
+    <string name="backup_conflict_title">Duplicate Server Detected</string>
+    <string name="backup_conflict_content">Server directory "%1$s" already exists. Restoring will overwrite it (current world and configs will be lost). Overwrite?</string>
+    <string name="backup_conflict_overwrite">Overwrite &amp; Restore</string>
+    <string name="update_available">New version %1$s available</string>
+    <string name="update_check_failed">Check failed (network error)</string>
+    <string name="mirror_switch_requested">Switch mirror requested</string>
+    <string name="mirror_switching">Switching…</string>
+    <string name="eyebrow_dashboard">Local Server</string>
+    <string name="eyebrow_settings">Settings</string>
+    <string name="eyebrow_backup">Backup &amp; Restore</string>
+    <string name="eyebrow_download">Core Download</string>
+    <string name="eyebrow_files">File Manager</string>
+    <string name="eyebrow_plugins">Plugin Manager</string>
+    <string name="eyebrow_network">Networking</string>
+    <string name="eyebrow_properties">Server Properties</string>
+    <string name="eyebrow_keepalive">Keep Alive</string>
+    <string name="eyebrow_tools">Tools</string>
+    <string name="eyebrow_help">Help</string>
+    <string name="eyebrow_players">Player Management</string>
+    <string name="hero_starting">Starting server · %1$s</string>
+    <string name="hero_running">Server running · %1$s</string>
+    <string name="hero_stopped">Server not running</string>
+    <string name="hero_tps">TPS</string>
+    <string name="hero_online">Online</string>
+    <string name="hero_memory">Memory</string>
+    <string name="hero_uptime">Uptime</string>
+    <string name="hero_cpu">CPU usage</string>
+    <string name="hero_refresh">Refresh status</string>
+    <string name="widget_refresh_cd">Refresh status</string>
+    <string name="hero_online_mode_warning">Online authentication is enabled; offline players cannot join.</string>
+    <string name="hero_whitelist_on">Whitelist is on · only listed players can join</string>
+    <string name="s1061">Version</string>
+    <string name="s1062">No versions</string>
+    <string name="s1063" formatted="false">Selected version %1$s does not match current server version %2$s, may fail to load</string>
+    <string name="s1064">Download settings</string>
+    <string name="s1065">Multi-thread download</string>
+    <string name="s1066">Use the built-in multi-thread chunk download engine for parallel downloads (environment, server core, mods, plugins), on by default. No root needed; splits via HTTP Range and merges.</string>
+    <string name="s1067">Download threads</string>
+    <string name="s1068">Find plugins (Modrinth)</string>
+    <string name="s1069">Search and install plugins from the Modrinth open platform</string>
+    <string name="s1070">Search plugin, e.g. EssentialsX</string>
+    <string name="s1071">This plugin is not compatible with the bukkit loader</string>
+    <string name="ui_loader_selected">%1$d selected</string>
+<string name="ui_world_delete">Delete World Folders</string>
+<string name="ui_world_delete_hint">Permanently deletes world / world_nether / world_the_end of the current core. Cannot be undone; create a backup first.</string>
+<string name="ui_world_deleted">Deleted %1$d world folder(s)</string>
+<string name="ui_world_delete_failed">Failed to delete world folders</string>
+<string name="ui_battery_title">Battery Optimization Exemption</string>
+<string name="ui_battery_hint">Guide the system to exempt this app from battery optimization to avoid background kills</string>
+<string name="ui_battery_btn">Open Battery Settings</string>
+<string name="ui_battery_ok">Battery optimization already exempted</string>
+<string name="ui_autostart_title">Auto-Start Guide</string>
+<string name="ui_autostart_hint">Guide to enable system auto-start permission (different entries per vendor, auto-routed by device)</string>
+<string name="ui_autostart_btn">Enable Auto-Start</string>
+<string name="cmd_time_day">Day</string>
+<string name="cmd_time_night">Night</string>
+<string name="cmd_weather_clear">Clear</string>
+<string name="cmd_weather_rain">Rain</string>
+<string name="cmd_weather_thunder">Thunder</string>
+<string name="cmd_gamemode_survival">Survival</string>
+<string name="cmd_gamemode_creative">Creative</string>
+<string name="cmd_list">Players</string>
+<string name="cmd_tps">TPS</string>
+<string name="cmd_save_all">Save</string>
+<string name="cmd_say">Say</string>
+<string name="cmd_kick">Kick</string>
+    <string name="ui_log_localize">Localize Logs</string>
+    <string name="ui_log_localize_hint">Show common logs (join/leave/online count/world save/startup) in Chinese</string>
+    <string name="ui_installing">Installing…</string>
+
+    <string name="ui_server_icon">Server Icon</string>
+    <string name="ui_server_icon_change">Change Icon</string>
+    <string name="ui_server_icon_reset">Reset</string>
+    <string name="ui_server_icon_updated">Server icon updated. Restart the server to take effect.</string>
+    <string name="ui_server_icon_reset_done">Default icon restored.</string>
+    <string name="ui_server_icon_fail">Failed to update icon: %1$s</string>
+    <string name="mc_terminal">MC Terminal</string>
+    <string name="termux_terminal">Termux Terminal</string>
+    <string name="termux_hint">Type a command, e.g. ls, pkg update</string>
+    <string name="termux_placeholder">Type a command to start</string>
+
+    <!-- Server event notifications -->
+    <string name="notif_events_channel_name">Server events</string>
+    <string name="notif_events_channel_desc">Server started, player join/leave and abnormal exit alerts</string>
+    <string name="notif_server_started_title">Server started</string>
+    <string name="notif_server_started_text">Server is ready, players can join now.</string>
+    <string name="notif_server_stopped_title">Server stopped</string>
+    <string name="notif_server_stopped_text">Server has stopped.</string>
+    <string name="notif_server_crashed_title">Server exited abnormally</string>
+    <string name="notif_server_crashed_text">Exit code %1$s. Check the crash report inside the app.</string>
+    <string name="notif_player_joined_title">%1$s joined the game</string>
+    <string name="notif_player_joined_text">Online player count updated.</string>
+    <string name="notif_player_left_title">%1$s left the game</string>
+    <string name="notif_player_left_text">Online player count updated.</string>
+
+    <!-- Settings: event notifications -->
+    <string name="set_notify_title">Event notifications</string>
+    <string name="set_notify_hint">Get alerts when the server finishes starting, stops, or exits abnormally; All also includes player join/leave.</string>
+    <string name="set_notify_off">Off</string>
+    <string name="set_notify_important">Important</string>
+    <string name="set_notify_all">All</string>
+
+    <!-- Settings: automation (daily schedule & stop backup) -->
+    <string name="set_schedule_title">Automation</string>
+    <string name="set_schedule_hint">Start/stop the server automatically every day at the set time; failures raise an event notification.</string>
+    <string name="set_daily_start">Daily auto start</string>
+    <string name="set_daily_start_hint">Starts the selected server automatically.</string>
+    <string name="set_daily_stop">Daily auto stop</string>
+    <string name="set_daily_stop_hint">Stops the server automatically (skipped when not running).</string>
+    <string name="set_schedule_start_time">Start time</string>
+    <string name="set_schedule_stop_time">Stop time</string>
+    <string name="set_stop_backup">Backup on stop</string>
+    <string name="set_stop_backup_hint">Saves a world snapshot after the server stops (respects the automatic backup retention count).</string>
+    <string name="msg_stop_backup_done">Server stopped and the world snapshot was backed up automatically.</string>
+    <string name="notif_schedule_start_fail_title">Scheduled start failed</string>
+    <string name="notif_schedule_start_fail_text">Reason: %1$s. Check the server configuration in the app.</string>
+
+    <!-- More: automation (scheduled tasks) -->
+    <string name="more_automation">Automation</string>
+    <string name="more_automation_desc">Scheduled backups, restarts and broadcasts</string>
+    <string name="eyebrow_automation">Automation</string>
+    <string name="automation_title">Automation</string>
+    <string name="automation_tasks_title">Scheduled tasks</string>
+    <string name="automation_tasks_hint">Run backups, restarts, broadcasts or custom commands on a schedule; system alarms still fire after the app is cleared from recents.</string>
+    <string name="automation_task_empty">No scheduled tasks yet</string>
+    <string name="automation_add_task">Add task</string>
+    <string name="automation_new_task">New scheduled task</string>
+    <string name="automation_edit_task">Edit scheduled task</string>
+    <string name="automation_run_now">Run now</string>
+    <string name="automation_edit">Edit</string>
+    <string name="automation_delete">Delete</string>
+    <string name="automation_save">Save</string>
+    <string name="automation_cancel">Cancel</string>
+    <string name="automation_section_action">Action</string>
+    <string name="automation_section_timing">Schedule</string>
+    <string name="automation_resolved">Resolves to: %1$s</string>
+    <string name="automation_field_name">Task name</string>
+    <string name="automation_field_command">Console command</string>
+    <string name="automation_field_command_broadcast">Message (or /say ...)</string>
+    <string name="automation_retention">Backup retention</string>
+    <string name="automation_keep_all">Keep all</string>
+    <string name="automation_keep_n">Keep %1$d</string>
+    <string name="automation_repeat_every">Repeat every</string>
+    <string name="automation_value">Value</string>
+    <string name="automation_unit_minutes">Minutes</string>
+    <string name="automation_unit_hours">Hours</string>
+    <string name="automation_day_interval">Day interval</string>
+    <string name="automation_every_n_days">Every N days</string>
+    <string name="automation_daily">Daily</string>
+    <string name="automation_days_of_week">Days of week</string>
+    <string name="automation_week_cadence">Week cadence</string>
+    <string name="automation_every_n_weeks">Every N weeks</string>
+    <string name="automation_weekly">Weekly</string>
+    <string name="automation_biweekly">Bi-weekly</string>
+    <string name="automation_weekdays">Weekdays</string>
+    <string name="automation_weekends">Weekends</string>
+    <string name="automation_cron_expr">Cron expression</string>
+    <string name="automation_cron_valid">✓ Valid cron expression</string>
+    <string name="automation_cron_invalid">⚠ Invalid syntax: minute hour day month weekday</string>
+    <string name="automation_time">Execution time</string>
+    <string name="automation_last_run">Last run: %1$s</string>
+    <string name="automation_freq_interval">Interval</string>
+    <string name="automation_freq_days">Every N days</string>
+    <string name="automation_freq_weekly">Weekly</string>
+    <string name="automation_freq_cron">Cron</string>
+    <string name="auto_type_start">Start server</string>
+    <string name="auto_type_stop">Stop server</string>
+    <string name="auto_type_world_backup">World backup</string>
+    <string name="auto_type_full_backup">Full backup</string>
+    <string name="auto_type_restart">Restart server</string>
+    <string name="auto_type_broadcast">In-game broadcast</string>
+    <string name="auto_type_command">Custom command</string>
+    <string name="auto_day_sun">Sun</string>
+    <string name="auto_day_mon">Mon</string>
+    <string name="auto_day_tue">Tue</string>
+    <string name="auto_day_wed">Wed</string>
+    <string name="auto_day_thu">Thu</string>
+    <string name="auto_day_fri">Fri</string>
+    <string name="auto_day_sat">Sat</string>
+    <string name="auto_desc_interval_hours">Every %1$d hours</string>
+    <string name="auto_desc_interval_minutes">Every %1$d minutes</string>
+    <string name="auto_desc_daily">Daily at %1$s</string>
+    <string name="auto_desc_every_n_days">Every %1$d days at %2$s</string>
+    <string name="auto_desc_weekly">Weekly on %1$s at %2$s</string>
+    <string name="auto_desc_every_n_weeks">Every %1$d weeks on %2$s at %3$s</string>
+    <string name="auto_desc_cron">Cron: %1$s</string>
+    <string name="auto_restart_warning">Server will restart automatically in 10 seconds</string>
+    <string name="auto_no_core">No server core selected; cannot run this task</string>
+    <string name="auto_backup_fail_title">Scheduled backup failed</string>
+    <string name="auto_backup_fail_text">Task "%1$s" backup failed: external storage is not writable or there is no data to back up.</string>
+    <string name="notif_schedule_fail_title">Scheduled task failed</string>
+    <string name="notif_schedule_fail_text">Task "%1$s" failed: %2$s</string>
+
+    <!-- Home screen widgets -->
+    <string name="widget_status_running">Server running</string>
+    <string name="widget_status_stopped">Server stopped</string>
+    <string name="widget_status_starting">Server starting…</string>
+    <string name="widget_status_failed">Start failed</string>
+    <string name="widget_btn_start">Start</string>
+    <string name="widget_btn_stop">Stop</string>
+    <string name="widget_btn_save">Save world</string>
+    <string name="widget_btn_backup">Backup</string>
+    <string name="widget_overview_desc">Server key metrics overview</string>
+    <string name="widget_event_title">Event log</string>
+    <string name="widget_event_desc">Player join/leave and chat announcements</string>
+    <string name="widget_event_empty">No events yet</string>
+    <string name="widget_event_join">%1$s joined the game</string>
+    <string name="widget_event_leave">%1$s left the game</string>
+    <string name="widget_console_title">Console</string>
+    <string name="widget_console_desc">Server selection, start/stop and backup</string>
+    <string name="widget_console_server">Server</string>
+    <string name="widget_console_java">Java version</string>
+    <string name="widget_console_no_core">No core selected</string>
+    <string name="widget_mod_plugin_title">Mods &amp; plugins</string>
+    <string name="widget_mod_plugin_desc">Installed mods and plugins preview</string>
+    <string name="widget_mod_plugin_empty">No mods or plugins installed</string>
+    <string name="widget_mod_label">Mods</string>
+    <string name="widget_plugin_label">Plugins</string>
+    <string name="widget_mod_count">%1$d installed</string>
+    <string name="widget_plugin_count">%1$d installed</string>
+    <string name="widget_status_enabled">Enabled</string>
+    <string name="widget_status_disabled">Disabled</string>
+    <string name="widget_backup_done_title">World snapshot backed up</string>
+    <string name="widget_backup_done_text">File: %1$s</string>
+    <string name="widget_backup_failed_title">World backup failed</string>
+    <string name="widget_backup_failed_text">External storage is not writable or there is no data to back up</string>
+    <!-- MCP server -->
+    <string name="more_mcp">MCP Service</string>
+    <string name="more_mcp_desc">Let AI assistants manage the server via MCP</string>
+    <string name="mcp_title">MCP Service</string>
+    <string name="mcp_intro">Built-in Model Context Protocol server: AI assistants on the LAN (Claude, ZCode and other MCP clients) can query status, start/stop and switch servers, send console and Termux commands, manage server files, install Modrinth mods, and read console logs.</string>
+    <string name="mcp_enable">Enable MCP service</string>
+    <string name="mcp_enable_desc">Exposes an MCP endpoint over HTTP on the LAN, protected by an access token</string>
+    <string name="mcp_status_running">Running</string>
+    <string name="mcp_status_stopped">Stopped</string>
+    <string name="mcp_status_error">Failed to start: %1$s</string>
+    <string name="mcp_port">Listen port</string>
+    <string name="mcp_port_hint">The service restarts automatically when the port changes; the address is the phone\'s LAN IP</string>
+    <string name="mcp_port_invalid">Port must be between 1024 and 65535</string>
+    <string name="mcp_token">Access token</string>
+    <string name="mcp_token_desc">Clients must send the header Authorization: Bearer &lt;token&gt;; regenerating invalidates the old token immediately</string>
+    <string name="mcp_token_regenerate">Regenerate</string>
+    <string name="mcp_copy">Copy</string>
+    <string name="mcp_copied">Copied to clipboard</string>
+    <string name="mcp_endpoint">MCP endpoint</string>
+    <string name="mcp_client_config">Client configuration example</string>
+    <string name="mcp_client_config_desc">Add the snippet below to your MCP client configuration (use the phone\'s LAN IP and stay on the same network)</string>
+    <string name="mcp_tools">Available tools</string>
+    <string name="mcp_tools_hint">AI assistants can call the following tools:</string>
+    <string name="mcp_security_note">Security note: the access token grants full server control — keep it private. Use only on trusted networks and turn the service off when not needed.</string>
+    <string name="msg_scan_registered">Found %1$d unregistered server folder(s); they were added to the server list automatically</string>
+    <!-- Dependencies & environment manager -->
+    <string name="msg_java_op_deleting">Uninstalling %1$s…</string>
+    <string name="msg_java_deleted">%1$s uninstalled</string>
+    <string name="err_java_delete_fail">Failed to uninstall %1$s (possibly in use by the server)</string>
+    <string name="msg_deps_deleted">Uninstalled %1$d dependency component(s)</string>
+    <string name="env_title">Dependencies &amp; Environment</string>
+    <string name="env_entry_desc">Manage dependencies &amp; environment</string>
+    <string name="env_tab_java">Java</string>
+    <string name="env_tab_deps">Dependencies</string>
+    <string name="env_tab_termux">Termux</string>
+    <string name="env_uninstall">Uninstall</string>
+    <string name="env_reinstall">Reinstall</string>
+    <string name="env_install">Install</string>
+    <string name="env_busy">Operation in progress…</string>
+    <string name="env_cancel">Cancel</string>
+    <string name="env_confirm_title">Confirm uninstall</string>
+    <string name="env_confirm_ok">Uninstall</string>
+    <string name="env_java_hint">Tap a version row to switch the target; actions apply to the selected version</string>
+    <string name="env_java_not_installed">Not installed</string>
+    <string name="env_java_running_block">The server is running; stop it before changing the Java runtime</string>
+    <string name="env_java_need">%1$s is required to start the server; please install it first</string>
+    <string name="env_java_install_btn">Install Java</string>
+    <string name="env_deps_hint">wget / frp / rclone / proot (required by the server and tunneling)</string>
+    <string name="env_deps_none_installed">All dependencies are uninstalled</string>
+    <string name="env_deps_uninstall_confirm">This deletes wget, frp, rclone and proot files (Termux and Java are not affected). Reinstall when needed. This cannot be undone.</string>
+    <string name="env_deps_need_bootstrap">Dependencies can be installed once the Termux environment is ready</string>
+    <string name="env_termux_ready">Environment is ready</string>
+    <string name="env_termux_missing">Not initialized</string>
+    <string name="env_termux_error">Initialization failed: %1$s</string>
+    <string name="env_termux_uninstall_confirm">This deletes the whole Termux runtime and all dependencies (including Java). Worlds and configs are kept, nothing is reinstalled automatically. This cannot be undone.</string>
+    <string name="env_termux_reinstall_confirm">This deletes and re-initializes the Termux runtime (worlds and configs are kept).</string>
+    <string name="env_running_block">Server is running; stop it before these operations</string>
+    <string name="env_go_install">Install now</string>
+    <!-- FTP file manager -->
+    <string name="more_ftp">FTP Files</string>
+    <string name="more_ftp_desc">Manage phone server files from a PC over LAN</string>
+    <string name="ftp_title">FTP File Manager</string>
+    <string name="ftp_intro">Enter the FTP address in your desktop file manager to manage server files (worlds, plugins, mods, configs) directly. Anonymous access supported.</string>
+    <string name="ftp_status_running">Running · port %1$d</string>
+    <string name="ftp_status_stopped">Stopped</string>
+    <string name="ftp_root_hint">Shared root: app server directory (all servers and snapshots)</string>
+    <string name="ftp_copy_address">Copy full URL</string>
+    <string name="ftp_copy_host">Copy host IP</string>
+    <string name="ftp_host_hint">For MT Manager and similar clients fill separately: host %1$s, port %2$d — do not paste the whole ftp:// URL into the host field</string>
+    <string name="ftp_start">Start FTP service</string>
+    <string name="ftp_stop">Stop FTP service</string>
+    <string name="ftp_started">FTP service started (port %1$d)</string>
+    <string name="ftp_stopped">FTP service stopped</string>
+    <string name="ftp_start_fail">Failed to start FTP: %1$s</string>
+    <string name="ftp_settings_title">Access settings</string>
+    <string name="ftp_anonymous">Anonymous access</string>
+    <string name="ftp_anonymous_hint">Clients log in with username anonymous (any password) — just tick "Anonymous" in MT Manager and similar</string>
+    <string name="ftp_username">Username</string>
+    <string name="ftp_password">Password</string>
+    <string name="ftp_writable">Allow writes</string>
+    <string name="ftp_writable_hint">Read-only (no upload/delete) when disabled</string>
+    <string name="ftp_port">Listen port</string>
+    <string name="ftp_running_lock">Toggling switches restarts the FTP service automatically</string>
+    <string name="ftp_port_lock">Stop the service before changing the port</string>
+    <string name="ftp_port_invalid">Port must be between 1024 and 65535</string>
+    <string name="ftp_security_note">Security note: FTP is plaintext and anonymous mode has no auth — use only on trusted LANs and stop it when done. Keep the app alive (keep-alive service) to maintain FTP access.</string>
+    <string name="props_not_generated_title">Configuration not generated yet</string>
+    <string name="props_not_generated_desc">server.properties is created automatically on the first server startup. There is nothing to edit yet.</string>
+    <string name="props_not_generated_hint">Start the server once first, then come back to edit. This avoids mismatches between your manual settings and the server own defaults.</string>
+    <string name="props_not_generated_running">Server is running. Once the configuration is generated, tap refresh below.</string>
+    <string name="props_not_generated_start">Start server now</string>
+    <string name="props_not_generated_refresh">Refresh status</string>
+
+    <!-- duplicate core name guard -->
+    <string name="dl_duplicate_name">A server named %1$s already exists. Please pick another name. Duplicate names cannot be told apart and may overwrite the same folder.</string>
+
+    <!-- PNX config not generated yet -->
+    <string name="props_pnx_not_generated_desc">pnx.yml is created automatically when PowerNukkitX starts for the first time. There is nothing to edit yet.</string>
+    <string name="props_pnx_not_generated_hint">Start the server once first, then come back to edit. This avoids mismatches between your manual settings and the server own defaults.</string>
+
+    <!-- installed cores collapse -->
+    <string name="dl_installed_expand">Expand</string>
+    <string name="dl_installed_collapse">Collapse</string>
+
+    <!-- files top actions collapsed -->
+    <string name="files_actions_collapsed_hint">Guide / MT Manager / Export are hidden</string>
+
+    <!-- PHP runtime for PocketMine-MP -->
+    <string name="env_php_title">PHP runtime</string>
+    <string name="env_php_hint">PocketMine-MP runs on PHP, not Java. The runtime is a native Android build (aarch64, with the extensions PMMP requires) shared by every PocketMine server.</string>
+    <string name="env_php_installed">Installed</string>
+    <string name="env_php_not_installed">Not installed</string>
+    <string name="env_php_running_block">The server is running. Stop it before touching the PHP runtime.</string>
+    <string name="env_php_uninstall_confirm">This deletes the PHP runtime under home/php-pmmp. PocketMine downloads it again (about 10MB) on next start. This cannot be undone.</string>
+    <string name="msg_php_op_installing">Installing the PHP runtime</string>
+    <string name="msg_php_op_deleting">Removing the PHP runtime</string>
+    <string name="msg_php_installed">%1$s runtime installed</string>
+    <string name="msg_php_deleted">%1$s runtime removed</string>
+    <string name="msg_php_running">The server is running, cannot touch the PHP runtime</string>
+    <string name="err_php_install_fail">%1$s runtime install failed, check your network and retry</string>
+    <string name="err_php_delete_fail">%1$s runtime removal failed</string>
+
+    <!-- PHP version picker -->
+    <string name="env_php_version_title">Choose PHP version</string>
+    <string name="env_php_version_desc">PocketMine-MP requires a specific PHP build. Only the builds listed below are available upstream.</string>
+    <string name="php_note_pmmp_required">Required by PocketMine-MP 5 (bundles pmmp/ext-encoding 0.4.x)</string>
+
+    <!-- Runtime -->
+    <string name="dash_runtime_env">Runtime</string>
+    <string name="dash_runtime_java">Java</string>
+    <string name="dash_runtime_php">PHP</string>
+    <string name="dash_php_not_installed_note">The PHP runtime is not installed yet. It will be downloaded when PocketMine starts.</string>
+
+    <!-- Server control card: Java runtime vendors -->
+    <string name="java_group_termux">Termux JDK</string>
+    <string name="java_group_fcl">Pojav JRE</string>
+    <string name="java_group_termux_note">Openjdk inside the Termux environment, installed via apt and running directly in Termux (Java 8 is not listed here; it belongs to the PRoot container below)</string>
+    <string name="java_group_fcl_note">Android-native JRE built by PojavLauncher, downloaded in-app (~37–62 MB); IPv6 supported out of the box</string>
+    <string name="java_note_proot_java8">Only Ubuntu 20.04 (focal) provides this; it is unavailable after switching the distro to 22.04</string>
+    <string name="java_group_proot">PRoot container</string>
+    <string name="java_note_proot_unavailable">Not provided by this container</string>
+    <string name="java_group_proot_note">A standard glibc Linux container (Ubuntu 20.04 / 22.04): the rootfs is downloaded in-app and the JDK is installed with apt. Does not grant root.</string>
+    <string name="java_group_selected">Selected: %1$s</string>
+    <string name="java_note_proot_container">glibc guest: no IPv6 listening, and installable versions depend on the chosen distro</string>
+    <string name="java_vendor_termux">Termux</string>
+    <string name="java_vendor_fcl">Pojav</string>
+    <string name="java_vendor_proot">PRoot</string>
+
+    <!-- Runtime picker dialog -->
+    <string name="err_runtime_kind_mismatch">Core %1$s needs the %2$s runtime. Switch it in "Runtime" and try again.</string>
+
+    <!-- Download: delete core confirmation -->
+    <string name="dl_core_delete_title">Delete server core</string>
+    <string name="dl_core_delete_content">Delete the core &quot;%1$s&quot;? This removes its world saves, plugins and config and cannot be undone.</string>
+    <string name="dl_core_delete_running">The server is running. Stop it before deleting a core.</string>
+
+    <!-- Backup: private snapshot restore / delete confirmation -->
+    <string name="backup_snapshot_restore_title">Restore snapshot</string>
+    <string name="backup_snapshot_restore_content">Restore snapshot &quot;%1$s&quot;? The old snapshot will overwrite the current server data and cannot be undone.</string>
+    <string name="backup_snapshot_delete_title">Delete snapshot</string>
+    <string name="backup_snapshot_delete_content">Delete snapshot &quot;%1$s&quot;? This cannot be undone.</string>
+
+    <!-- Environment and dependencies: uninstall / reinstall confirmation -->
+    <string name="env_java_uninstall_confirm">This uninstalls %1$s only. The other vendor, the other Java versions and your worlds are untouched. This cannot be undone.</string>
+    <string name="env_java_reinstall_confirm">This first uninstalls the currently selected Java build, then downloads and installs it again; other versions are kept. This cannot be undone.</string>
+    <string name="env_proot_delete_container_confirm">This deletes the whole %1$s container, including every Java version installed inside it, and frees about %2$s. Your server worlds live outside the container and are untouched. This cannot be undone.</string>
+    <string name="msg_proot_container_deleted">%1$s container deleted</string>
+    <string name="err_proot_container_delete_fail">Failed to delete the %1$s container</string>
+    <string name="env_proot_delete_container_action">Delete container</string>
+
+    <!-- Diagnostics: PRoot container layer-by-layer state -->
+    <string name="diag_check_proot_container">PRoot container (%1$s)</string>
+    <string name="diag_proot_none">No PRoot container is installed</string>
+    <string name="diag_proot_rootfs_missing">The rootfs has not been downloaded or was deleted; install it from Environment &amp; dependency management</string>
+    <string name="diag_proot_shell_broken">The rootfs exists but has no usable shell (incomplete extraction or damaged files); reinstall this container</string>
+    <string name="diag_proot_ready_installed">Container is usable; installed Java: %1$s</string>
+    <string name="diag_proot_ready_empty">Container is usable, but no Java version is installed yet</string>
+    <string name="env_deps_reinstall_confirm">This first deletes the existing dependency files, then reinstalls them. This cannot be undone.</string>
+    <string name="env_php_delete_action">Delete (auto reinstall on next start)</string>
+
+    <!-- Range validation hints -->
+    <string name="set_max_heap_range_hint">Max heap must be between 256 and 65536 MB. Adjusted automatically.</string>
+    <string name="fm_new_dir_invalid_name">The name cannot contain slashes, backslashes or .., and cannot start or end with spaces.</string>
+
+    <!-- FTP: anonymous access risk warning -->
+    <string name="ftp_anonymous_risk">Risk: anonymous users can access and modify the server directory without a password. Only enable this on a trusted LAN.</string>
+
+    <!-- Plugins / mods: blocked while the server is running -->
+    <string name="pl_running_block">The server is running. Stop it before enabling/disabling or deleting plugins or mods.</string>
+
+    <!-- QQ group -->
+    <string name="qq_group_label">QQ Group ID</string>
+    <string name="qq_copy_group">Copy</string>
+
+    <!-- World switch: distinguish "target instance running" from "config not writable" -->
+    <string name="world_switch_blocked_running">That server is running. Stop it before switching worlds.</string>
+    <string name="world_switch_failed">Failed to switch world: the configuration file is not writable.</string>
+
+    <!-- MCP: AI skill export -->
+    <string name="mcp_skill">AI Skill</string>
+    <string name="mcp_skill_desc">Export this app\'s AI manual (SKILL.md): hand it to an AI client and it can drive the servers on this phone over MCP. The file contains the endpoint and access token, so share it only with clients you trust.</string>
+    <string name="mcp_skill_export">Export SKILL.md</string>
+    <string name="mcp_skill_copy">Copy content</string>
+    <string name="mcp_skill_exported">SKILL.md exported — you can hand it to an AI client now</string>
+    <string name="mcp_skill_export_failed">Export failed: %1$s</string>
+    <string name="mcp_skill_open_failed">Cannot open the selected location</string>
+
+    <!-- Update: APK signature mismatch -->
+    <string name="err_apk_sig_mismatch">The update APK is signed differently from this app, so it was rejected (the download may have been tampered with — download it again).</string>
+    <!-- Start card: full-width start/stop bar + start-settings bottom sheet -->
+    <string name="dash_env_termux_java">Termux Java</string>
+    <string name="dash_env_fcl_java">Pojav JRE</string>
+    <string name="dash_env_proot_java">PRoot Linux container</string>
+    <string name="dash_env_php">PHP</string>
+    <string name="dash_env_version_termux_java">Termux Java version</string>
+    <string name="dash_env_version_fcl_java">Pojav JRE version</string>
+    <string name="dash_env_version_proot_java">Java version in container</string>
+    <string name="dash_env_version_php">PHP version</string>
+    <string name="dash_env_distro_label">Linux distro</string>
+    <string name="dash_env_distro_note">Determines which Java versions and packages this container can install</string>
+    <string name="dash_current_env">Current runtime</string>
+    <string name="dash_start_settings_subtitle">Changes apply to the next start and never interrupt a running server</string>
+    <string name="dash_custom_command_title">Use a custom start command</string>
+    <string name="dash_custom_command_note">When off, the app generates the start command automatically</string>
+    <string name="dash_custom_command_label">Full start command</string>
+    <string name="dash_custom_command_placeholder">java -Xmx1024M -jar server.jar nogui</string>
+    <string name="dash_skip_startup_progress">Skip startup progress</string>
+    <string name="dash_skip_startup_progress_note">Hide the startup phase progress on the overview page and show the running layout right away</string>
+    <string name="dash_force_stop">Force stop</string>
+    <string name="dash_force_stop_confirm_title">Force stop the server?</string>
+    <string name="dash_force_stop_confirm_msg">Force stop terminates the server process immediately; world data not yet written to disk may be lost. Prefer "Stop" and let it shut down normally.</string>
+    <string name="dash_force_stop_confirm_ok">Force stop</string>
+    <string name="dash_force_stop_done">Server force-stopped</string>
+    <string name="dash_stop_timeout_hint">The server is still shutting down. Tap "Force stop" to end it now (risk of losing unsaved data).</string>
+
+    <!-- Network mapping page revamp (layout borrowed from EdgeCube's port mapping page) -->
+    <string name="net_section_log">Tunnel Log</string>
+    <string name="net_status_running">Running</string>
+    <string name="net_status_starting">Starting</string>
+    <string name="net_status_failed">Failed</string>
+    <string name="net_status_stopped">Stopped</string>
+    <string name="net_status_idle">Not started</string>
+    <string name="net_stats_connections">Forwarded connections: %1$d</string>
+    <string name="net_log_connection">Connection Log</string>
+    <string name="net_log_connection_hint">This method does not report a separate connection log; see the tunnel log above for runtime output</string>
+    <string name="net_log_expand">Show full log</string>
+    <!-- STUN config -->
+    <string name="stun_target_port">Target port</string>
+    <string name="stun_follow_local_port">Follow server port (%1$d)</string>
+    <string name="stun_target_port_hint">e.g. 25565</string>
+    <string name="stun_keepalive">Keep-alive interval (seconds)</string>
+    <string name="stun_keepalive_hint">Periodically probes the STUN server to hold the NAT mapping open and detect public address changes. Below 5 seconds is not recommended.</string>
+    <string name="stun_max_conn">Max concurrent connections</string>
+    <string name="stun_show_conn_log">Log connections (each inbound connect/disconnect)</string>
+    <string name="stun_proxy_protocol">Enable PROXY protocol v2 (let the server see real player IPs)</string>
+    <string name="stun_proxy_protocol_warn">The server must have PROXY protocol support enabled itself, or players will be unable to join. Only enable once you have confirmed the server is configured for it.</string>
+    <string name="stun_servers">Custom STUN servers</string>
+    <string name="stun_servers_hint">One per line, e.g. stun.example.com or stun.example.com:3478</string>
+    <string name="stun_servers_note">Leave empty to use the built-in list (all verified to support TCP 3478). Note: STUN servers that only support UDP will not work here.</string>
+
+    <!-- STUN direct-connection card -->
+    <string name="stun_card_title">STUN Direct</string>
+    <string name="stun_card_address">Public direct address</string>
+    <string name="stun_card_address_hint">Assigned by your ISP; it stops working after a reconnect or network switch.</string>
+    <string name="stun_card_address_drift">Public address changed %1$d time(s): the port changes on every rebuild, so the new address must be sent to players again.</string>
+    <string name="stun_card_start">Start STUN</string>
+    <string name="stun_card_stop">Stop</string>
+    <string name="stun_stat_conn">Active connections %1$d</string>
+    <string name="stun_stat_idle">Idle connections reclaimed %1$d (connected but sent nothing)</string>
+    <string name="stun_stat_limit">Rejected at concurrency cap %1$d</string>
+    <string name="stun_advanced">Advanced settings</string>
+    <string name="stun_advanced_hide">Hide settings</string>
+    <string name="net_log_empty">No tunnel log yet. Tap "Start tunnel" and runtime output will show up here</string>
+    <!-- STUN direct connection -->
+    <string name="net_tunnel_server_stopped">The server is not running. Start it from the Overview page before tapping "Start tunnel", or players will reach the public address but never get in</string>
+    <string name="net_public_url_unknown">Cannot display the public address; check it on your FRP platform.</string>
+
+    <!-- ── Network page rebuild: separate FRP / STUN cards + multi-profile FRP ── -->
+
+    <!-- FRP card -->
+    <string name="net_frp_card_title">FRP</string>
+    <string name="net_frp_profile_label">Current profile</string>
+    <string name="net_frp_no_profile">No FRP profile yet. Create one first, then start.</string>
+    <string name="net_frp_port_mismatch">This profile forwards to local port %1$d, but the game server actually listens on %2$d. Starting aligns it to %2$d (this run only — your saved text is not modified).</string>
+    <string name="net_frp_port_ambiguous">This profile has several different forwarding ports, so it cannot be aligned automatically. Set the proxy that should reach the game to %1$d.</string>
+    <string name="net_frp_create">Create FRP profile</string>
+    <string name="msg_frp_profile_required">Create and select an FRP profile on the FRP card first</string>
+    <string name="net_frp_switch_hint">Tap to switch FRP profile</string>
+    <string name="net_frp_address">Public address</string>
+    <string name="net_frp_start">Start FRP</string>
+    <string name="net_frp_stop">Stop</string>
+    <string name="net_frp_dialog_title">Choose FRP profile</string>
+    <string name="net_frp_dialog_edit">Edit</string>
+    <string name="net_frp_dialog_delete">Delete</string>
+    <string name="net_frp_delete_title">Delete profile</string>
+    <string name="net_frp_delete_message">Delete "%1$s"? This cannot be undone.</string>
+
+    <!-- FRP profile editor -->
+    <string name="net_frp_edit_title_new">New FRP profile</string>
+    <string name="net_frp_edit_title_edit">Edit FRP profile</string>
+    <string name="net_frp_edit_name">Profile name</string>
+    <string name="net_frp_edit_name_hint">Used to tell profiles apart, e.g. "Home server"</string>
+    <string name="net_frp_edit_name_dup">A profile with this name already exists; consider renaming</string>
+    <string name="net_frp_edit_kind">Profile type</string>
+    <string name="net_frp_edit_kind_toml">Self-hosted frp</string>
+    <string name="net_frp_edit_kind_sakura">SakuraFrp</string>
+    <string name="net_frp_edit_kind_me">ME Frp</string>
+    <string name="net_frp_edit_section_basic">Name and type</string>
+    <string name="net_frp_edit_toml_note">remotePort in the config is the port players connect to; localPort must be the server port (%1$d).</string>
+    <string name="net_frp_edit_token">Access token</string>
+    <string name="net_frp_edit_token_hint_sakura">Get it from your natfrp.com user panel</string>
+    <string name="net_frp_edit_token_hint_me">Copy it from your mefrp.com user center</string>
+    <string name="net_frp_edit_fetch">Fetch tunnel list</string>
+    <string name="net_frp_edit_create_tunnel">Create tunnel</string>
+    <string name="net_frp_edit_empty_sakura">No tunnels yet. Tap "Create tunnel" to add one; you must select one before starting</string>
+    <string name="net_frp_edit_empty_me">No tunnels yet. Create a TCP tunnel on mefrp.com first (local address 127.0.0.1, local port = server port), then come back and fetch.</string>
+    <string name="net_frp_edit_account">Account: %1$s (%2$s) · Tunnels %3$s</string>
+    <string name="net_frp_edit_selected"> (selected)</string>
+    <string name="net_frp_edit_save">Save</string>
+    <string name="net_frp_edit_delete">Delete this profile</string>
+    <string name="net_frp_edit_sakura_title">Create SakuraFrp tunnel</string>
+    <string name="net_frp_edit_sakura_node">Node</string>
+    <string name="net_frp_edit_sakura_node_pick">Select a node</string>
+    <string name="net_frp_edit_sakura_node_empty">Node list is empty: close this dialog and tap "Create tunnel" again to fetch nodes</string>
+    <string name="net_frp_edit_sakura_name">Tunnel name</string>
+    <string name="net_frp_edit_sakura_port">Local port (MC server port)</string>
+    <string name="net_frp_edit_sakura_create">Create</string>
+    <string name="net_frp_edit_sakura_offline"> · offline</string>
+
+    <!-- STUN card additions -->
+    <string name="net_stun_ip_warning">This exposes your home IP; prefer FRP in general.</string>
+    <string name="net_stun_idle_hint">The public address will appear here once started.</string>
+
+    <!-- Operation guide (rewritten) -->
+    <string name="net_guide_intro">This page has two independent channels: FRP and STUN. Each has its own start/stop button and they can run at the same time.</string>
+    <string name="net_guide_frp_t">Create an FRP profile</string>
+    <string name="net_guide_frp_d">Tap "Create FRP profile" on the FRP card and pick a type: for self-hosted frp paste frpc.toml; for SakuraFrp / ME Frp enter the token, fetch the tunnel list and select one. Name it and save.</string>
+    <string name="net_guide_switch_t">Switch FRP profile</string>
+    <string name="net_guide_switch_d">Tap the profile name on the FRP card to open the picker: tapping any entry selects it and closes the dialog automatically, then tap "Start FRP". You can also create, edit or delete profiles there.</string>
+    <string name="net_guide_frp_run_t">Start FRP and read the public address</string>
+    <string name="net_guide_frp_run_d">Tap "Start FRP". While running, the public address is shown - tap copy and send it to players. The address is hidden when stopped so you never hand out a dead address.</string>
+    <string name="net_guide_stun_t">Start STUN direct</string>
+    <string name="net_guide_stun_d">STUN needs no server, but it exposes your home IP directly to players, and it does not work on most home broadband (no public address from the ISP). Prefer FRP in general.</string>
+    <string name="net_guide_both_t">Run both channels at once</string>
+    <string name="net_guide_both_d">FRP and STUN can be started together without interfering - effectively two entrances for players. Note: the FRP family (self-hosted frp / SakuraFrp / ME Frp) shares one engine process, so only one of them can run at a time.</string>
+    <string name="net_guide_stop_t">Stop</string>
+    <string name="net_guide_stop_d">Each Stop button only shuts down its own channel and leaves the other one alone.</string>
+
+    <!-- Overview: one address row per channel -->
+    <string name="net_dash_frp_address">FRP public address</string>
+    <string name="net_dash_stun_address">STUN public address</string>
+</resources>
