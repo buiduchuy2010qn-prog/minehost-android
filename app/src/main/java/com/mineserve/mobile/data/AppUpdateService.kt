@@ -27,8 +27,8 @@ data class AppRelease(val tag: String, val notes: String, val apkUrls: List<Stri
 @Serializable internal data class AssetDto(val name: String = "", val browser_download_url: String = "")
 
 object AppUpdateService {
-    private const val API = "https://api.github.com/repos/duchilocket-oss/minehost-android/releases/latest"
-    const val PROJECT_URL = "https://github.com/duchilocket-oss/minehost-android"
+    private const val API = "https://api.github.com/repos/buiduchuy2010qn-prog/minehost-android/releases/latest"
+    const val PROJECT_URL = "https://github.com/buiduchuy2010qn-prog/minehost-android"
     private const val APK_NAME = "MineHost-arm64-v8a-release.apk"
     // coerceInputValues：把上游写成 null 的字段归一到默认值，避免个别字段为 null 就整包解析失败。
     private val json = Json {
