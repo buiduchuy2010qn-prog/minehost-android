@@ -65,6 +65,9 @@ class McForegroundService : Service() {
     /** 是否已调用过 startForeground（幂等护栏，见 [ensureForeground]） */
     @Volatile private var foregroundStarted = false
     private val watchdogStarted = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val guardShutdownRunning = java.util.concurrent.atomic.AtomicBoolean(false)
+    @Volatile private var lastNotifUpdateMs = 0L
+    @Volatile private var lastThermalCleanMs = 0L
     private val chatRegex = Regex("<([A-Za-z0-9_]{1,16})>\\s*(.+)$")
     private val joinRegex = Regex(":\\s*([A-Za-z0-9_]{1,16})(?:\\[[^\\]]*\\])?\\s+(?:has\\s+)?joined the game")
     private val leaveRegex = Regex(":\\s*([A-Za-z0-9_]{1,16})(?:\\[[^\\]]*\\])?\\s+(?:has\\s+)?left the game")
@@ -84,8 +87,11 @@ class McForegroundService : Service() {
         }
         scope.launch {
             val app = McApplication.get(this@McForegroundService)
-            combine(app.repository.configFlow, app.repository.serverState) { config, state -> config.keepStatusOverlay to state }
-                .collect { (enabled, state) -> if (enabled) StatusOverlay.update(state.cpuPercent, state.usedMemoryMb) }
+            combine(app.repository.configFlow, app.repository.serverState) { config, state -> config to state }
+                .collect { (config, state) ->
+                    if (config.keepStatusOverlay) StatusOverlay.update(state.cpuPercent, state.usedMemoryMb)
+                    refreshLiveNotification(config, state, force = false)
+                }
         }
         scope.launch {
             McApplication.get(this@McForegroundService).repository.configFlow
@@ -200,6 +206,21 @@ class McForegroundService : Service() {
                 val taskId = intent.getStringExtra(EXTRA_AUTOMATION_TASK_ID)
                 scope.launch { runAutomationTask(taskId) }
             }
+            ACTION_QUICK_COPY_IP -> {
+                ensureForeground()
+                val ipToCopy = resolveCurrentShareAddress()
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    runCatching {
+                        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                        cm?.setPrimaryClip(android.content.ClipData.newPlainText("MineHost Server IP", ipToCopy))
+                        android.widget.Toast.makeText(
+                            applicationContext,
+                            "📋 Đã sao chép IP Server: $ipToCopy",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+            }
             ACTION_QUICK_CLEAR_LAG -> {
                 ensureForeground()
                 scope.launch {
@@ -209,6 +230,14 @@ class McForegroundService : Service() {
                         termux.sendCommand("kill @e[type=arrow]")
                         termux.sendCommand("save-all")
                         termux.sendCommand("say [MineHost] Da don sach vat pham rac & luu map tu thanh thong bao!")
+                        System.gc()
+                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                            android.widget.Toast.makeText(
+                                applicationContext,
+                                "🧹 Đã dọn sạch vật phẩm rác & lưu Map!",
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                        }
                     }
                 }
             }
@@ -226,6 +255,13 @@ class McForegroundService : Service() {
                 ensureForeground()
                 scope.launch {
                     runCatching {
+                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                            android.widget.Toast.makeText(
+                                applicationContext,
+                                "🛑 Đang lưu Map (save-all) và tắt Server an toàn...",
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                        }
                         termux.sendCommand("say [MineHost] Dang luu map va tat Server an toan...")
                         termux.sendCommand("save-all")
                         kotlinx.coroutines.delay(1500L)
@@ -500,10 +536,91 @@ class McForegroundService : Service() {
                     // 字段 diff 钩子驱动刷新，这里不刷新也不会漏掉状态变化。
                     if (alive) {
                         com.mineserve.mobile.data.WidgetUpdater.refresh(this@McForegroundService)
+                        checkSmartBatteryAndThermalGuard()
+                    }
+                    val cfg = runCatching { app.repository.configFlow.first() }.getOrNull()
+                    if (cfg != null) {
+                        refreshLiveNotification(cfg, app.repository.serverState.value, force = true)
                     }
                 }
                 tick++
                 kotlinx.coroutines.delay(30_000L)
+            }
+        }
+    }
+
+    /**
+     * [v2.8.2] Bảo vệ Map tự động khi Pin yếu (<10%, không sạc) hoặc Máy quá nhiệt (>=45.0°C)
+     * Chạy ngay trong ForegroundService nên hoạt động 100% kể cả khi đã tắt màn hình / thoát App.
+     */
+    private fun checkSmartBatteryAndThermalGuard() {
+        if (guardShutdownRunning.get()) return
+        val proPrefs = getSharedPreferences("minehost_pro_prefs", Context.MODE_PRIVATE)
+        val batteryGuardEnabled = proPrefs.getBoolean("auto_battery_shutdown_guard", true)
+        val thermalGuardEnabled = proPrefs.getBoolean("auto_thermal_guard", true)
+        val overheatShutdownEnabled = proPrefs.getBoolean("auto_overheat_shutdown_guard", true)
+
+        val thermal = com.mineserve.mobile.server.ProHostFeatures.readDeviceThermalInfo(this)
+        val now = System.currentTimeMillis()
+
+        // 1. Khi máy ấm nóng >= 42.5°C -> Tự động dọn rác giảm tải mỗi 3 phút
+        if (thermalGuardEnabled && thermal.isOverheating && !thermal.isCriticalOverheat) {
+            if (now - lastThermalCleanMs > 180_000L) {
+                lastThermalCleanMs = now
+                runCatching {
+                    termux.sendCommand("kill @e[type=item]")
+                    termux.sendCommand("kill @e[type=experience_orb]")
+                    termux.sendCommand("say [MineHost Thermal Guard] Dien thoai dang nong (${String.format(java.util.Locale.US, "%.1f", thermal.tempCelsius)}C) -> Tu dong don rac giam tai!")
+                    System.gc()
+                }
+            }
+        }
+
+        // 2. Khi Pin yếu nguy hiểm (<= 10% và không cắm sạc) hoặc Quá nhiệt nguy hiểm (>= 45.0°C)
+        val isCriticalBat = batteryGuardEnabled && thermal.isCriticalLowBattery
+        val isCriticalTemp = overheatShutdownEnabled && thermal.isCriticalOverheat
+        if (!isCriticalBat && !isCriticalTemp) return
+
+        if (!guardShutdownRunning.compareAndSet(false, true)) return
+        val reasonVi = if (isCriticalBat) {
+            "Pin điện thoại yếu còn ${thermal.batteryPercent}% (chưa cắm sạc)"
+        } else {
+            "Nhiệt độ máy đạt mức nguy hiểm ${String.format(java.util.Locale.US, "%.1f", thermal.tempCelsius)}°C"
+        }
+
+        scope.launch {
+            try {
+                proPrefs.edit().putString(
+                    "last_guard_shutdown_event",
+                    "🛡️ Đã tự động Lưu Map & Tắt Server lúc ${java.text.SimpleDateFormat("HH:mm dd/MM", java.util.Locale.getDefault()).format(java.util.Date())} do $reasonVi"
+                ).apply()
+
+                runCatching {
+                    termux.sendCommand("""title @a title {"text":"⚠ BẢO VỆ MAP","color":"red","bold":true}""")
+                    termux.sendCommand("say [MineHost Guard] $reasonVi -> Tu dong luu Map (save-all) va tat Server sau 10 giay de chong hong Map!")
+                    termux.sendCommand("save-all")
+                }
+                kotlinx.coroutines.delay(10_000L)
+                runCatching {
+                    termux.sendCommand("save-all")
+                    kotlinx.coroutines.delay(1500L)
+                    termux.stopMc()
+                }
+                val app = McApplication.get(this@McForegroundService)
+                app.repository.updateServerState {
+                    it.copy(isRunning = false, runningSinceMs = 0L)
+                }
+                runCatching {
+                    com.mineserve.mobile.data.ServerEventNotifier.notify(
+                        app,
+                        "🛡️ Đã tự động Lưu Map & Tắt Server an toàn",
+                        "Nguyên nhân: $reasonVi. Toàn bộ thế giới đã được lưu an toàn 100%!",
+                        com.mineserve.mobile.data.ServerEventNotifier.ID_SCHEDULE_FAIL,
+                        1
+                    )
+                }
+            } finally {
+                guardShutdownRunning.set(false)
             }
         }
     }
@@ -677,7 +794,57 @@ class McForegroundService : Service() {
         )
     }
 
-    private fun buildNotification(title: String, content: String): Notification {
+    private fun resolveCurrentShareAddress(): String {
+        val playitPrefs = getSharedPreferences("playit_prefs", Context.MODE_PRIVATE)
+        val playitJava = playitPrefs.getString("last_java_address", "").orEmpty().trim()
+        if (playitJava.isNotBlank()) return playitJava
+
+        val lanIp = runCatching {
+            java.net.NetworkInterface.getNetworkInterfaces()?.toList()
+                ?.flatMap { it.inetAddresses.toList() }
+                ?.firstOrNull { !it.isLoopbackAddress && it is java.net.Inet4Address }
+                ?.hostAddress
+        }.getOrNull().orEmpty().ifBlank { "127.0.0.1" }
+        return "$lanIp:25565"
+    }
+
+    private fun refreshLiveNotification(
+        config: com.mineserve.mobile.data.McConfig,
+        state: com.mineserve.mobile.data.ServerState,
+        force: Boolean
+    ) {
+        if (!foregroundStarted) return
+        val now = System.currentTimeMillis()
+        if (!force && now - lastNotifUpdateMs < 4_000L) return
+        lastNotifUpdateMs = now
+
+        val thermal = com.mineserve.mobile.server.ProHostFeatures.readDeviceThermalInfo(this)
+        val serverName = config.activeCoreName.orEmpty().ifBlank { "MineHost Server" }
+        val shareAddr = resolveCurrentShareAddress()
+        val tempStr = String.format(java.util.Locale.US, "%.1f°C", thermal.tempCelsius)
+        val batStr = "${thermal.batteryPercent}%${if (thermal.isCharging) "⚡" else ""}"
+
+        val (title, content, bigText) = if (state.isRunning) {
+            val tpsVal = if (state.tps > 0.0) state.tps else 20.0
+            val tpsStr = String.format(java.util.Locale.US, "%.1f", tpsVal)
+            val ramStr = if (state.usedMemoryMb > 0) "${state.usedMemoryMb}MB" else "${config.maxHeapMb}MB"
+            val t = "🟢 $serverName • ${state.onlinePlayers}/${state.maxPlayers} người • TPS $tpsStr"
+            val c = "RAM: $ramStr • Pin: $batStr ($tempStr) • IP: $shareAddr"
+            val b = "💻 IP: $shareAddr\n📊 RAM: $ramStr • TPS: $tpsStr • Pin: $batStr • Nhiệt độ: $tempStr\n💡 Bấm nút bên dưới để Copy IP, Dọn RAM hoặc Lưu & Tắt nhanh!"
+            Triple(t, c, b)
+        } else {
+            val t = "⚪ $serverName • Đang nghỉ (Sẵn sàng bật)"
+            val c = "Pin: $batStr • Nhiệt độ: $tempStr • Chạm để mở bảng điều khiển"
+            Triple(t, c, c)
+        }
+
+        runCatching {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager
+            nm?.notify(NOTIF_ID, buildNotification(title, content, bigText))
+        }
+    }
+
+    private fun buildNotification(title: String, content: String, bigText: String = content): Notification {
         val openIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
         }
@@ -685,14 +852,14 @@ class McForegroundService : Service() {
             this, 0, openIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+        val copyIpPi = PendingIntent.getService(
+            this, 2000,
+            Intent(this, McForegroundService::class.java).setAction(ACTION_QUICK_COPY_IP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
         val clearLagPi = PendingIntent.getService(
             this, 2001,
             Intent(this, McForegroundService::class.java).setAction(ACTION_QUICK_CLEAR_LAG),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        val daySunPi = PendingIntent.getService(
-            this, 2002,
-            Intent(this, McForegroundService::class.java).setAction(ACTION_QUICK_DAY_SUN),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val saveStopPi = PendingIntent.getService(
@@ -704,11 +871,13 @@ class McForegroundService : Service() {
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle(title)
             .setContentText(content)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(bigText))
             .setOngoing(true)
+            .setOnlyAlertOnce(true)
             .setContentIntent(pi)
-            .addAction(0, "🧹 Dọn Lag", clearLagPi)
-            .addAction(0, "☀️ Trời Sáng", daySunPi)
-            .addAction(0, "🛑 Lưu & Dừng", saveStopPi)
+            .addAction(0, "📋 Copy IP", copyIpPi)
+            .addAction(0, "🧹 Dọn RAM", clearLagPi)
+            .addAction(0, "🛑 Lưu & Tắt", saveStopPi)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
     }
@@ -729,6 +898,7 @@ class McForegroundService : Service() {
         const val ACTION_STOP = "com.mineserve.mobile.action.STOP"
         const val ACTION_REFRESH_KEEP_ALIVE = "com.mineserve.mobile.action.REFRESH_KEEP_ALIVE"
         const val ACTION_REFRESH_STATUS = "com.mineserve.mobile.action.REFRESH_STATUS"
+        const val ACTION_QUICK_COPY_IP = "com.mineserve.mobile.action.QUICK_COPY_IP"
         const val ACTION_QUICK_CLEAR_LAG = "com.mineserve.mobile.action.QUICK_CLEAR_LAG"
         const val ACTION_QUICK_DAY_SUN = "com.mineserve.mobile.action.QUICK_DAY_SUN"
         const val ACTION_QUICK_SAVE_STOP = "com.mineserve.mobile.action.QUICK_SAVE_STOP"

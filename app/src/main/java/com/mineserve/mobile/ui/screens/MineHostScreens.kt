@@ -339,13 +339,22 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
     LaunchedEffect(Unit) { vm.refreshLanIp() }
     LaunchedEffect(ready, config.activeCoreName, config.installedCores.size) {
         if (ready && config.activeCoreName != null) {
+            vm.ensureProMonitorsStarted()
             vm.refreshMods()
             vm.refreshInstalledPlugins()
             vm.refreshServerStorage()
+            vm.refreshPlayers()
+            vm.refreshOnlinePlayers()
         }
     }
 
     val otaState by vm.updateState.collectAsStateWithLifecycle()
+    val missingModDeps by vm.missingModDependencies.collectAsStateWithLifecycle()
+    val installingMissingDeps by vm.installingMissingDeps.collectAsStateWithLifecycle()
+    val autoBatteryShutdown by vm.autoBatteryShutdownGuard.collectAsStateWithLifecycle()
+    val autoOverheatShutdown by vm.autoOverheatShutdownGuard.collectAsStateWithLifecycle()
+    val lastGuardEvent by vm.lastGuardShutdownEvent.collectAsStateWithLifecycle()
+    var overviewTab by remember { mutableStateOf(0) } // 0: Kết nối & Thẻ mời, 1: Tối ưu & Bảo vệ Pin, 2: Thế giới & VIP, 3: Tất cả
 
     HostPage(
         title = "Bảng Điều Khiển Server",
@@ -680,10 +689,141 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
             }
         }
 
+        // ── CẢNH BÁO BẢO VỆ MAP TỰ ĐỘNG KHI PIN YẾU / QUÁ NHIỆT ──
+        if (lastGuardEvent.isNotBlank()) {
+            item(key = "last_guard_shutdown_banner") {
+                Surface(
+                    color = Color(0xFF065F46).copy(alpha = 0.25f),
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.2.dp, Color(0xFF10B981)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            lastGuardEvent,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Color(0xFF6EE7B7),
+                            modifier = Modifier.weight(1f)
+                        )
+                        TextButton(onClick = { vm.clearLastGuardShutdownEvent() }) {
+                            Text("Đã hiểu", fontWeight = FontWeight.ExtraBold, fontSize = 11.5.sp)
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── TỰ ĐỘNG PHÁT HIỆN MOD THIẾU THƯ VIỆN PHỤ TRỢ & CÀI BÙ 1 CHẠM ──
+        if (missingModDeps.isNotEmpty()) {
+            item(key = "missing_mod_deps_alert_card") {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.92f)),
+                    border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.error)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            "🧩 Phát hiện ${missingModDeps.size} thư viện Mod phụ trợ còn thiếu!",
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 13.5.sp,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        Text(
+                            missingModDeps.joinToString("\n") { dep ->
+                                "• Cần cài thêm: ${dep.displayName}" +
+                                    (if (dep.requiredBy.isNotBlank()) " (Do mod '${dep.requiredBy}' yêu cầu)" else "")
+                            },
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                            Button(
+                                onClick = { vm.installAllMissingModDependencies(autoRestartAfter = true) },
+                                enabled = !installingMissingDeps,
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF16A34A), contentColor = Color.White),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1.4f)
+                            ) {
+                                Text(
+                                    if (installingMissingDeps) "⏳ Đang tự động tải & cài đặt..."
+                                    else "⬇️ Tải & Cài Bù Ngay + Bật Lại SV",
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 11.5.sp
+                                )
+                            }
+                            OutlinedButton(
+                                onClick = { vm.installAllMissingModDependencies(autoRestartAfter = false) },
+                                enabled = !installingMissingDeps,
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("📥 Chỉ tải thư viện", fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── THANH CHỌN NHANH 3 PHÂN MỤC TRANG CHỦ (GIÚP GIAO DIỆN GỌN GÀNG, KHÔNG PHẢI CUỘN DÀI) ──
+        if (active != null) {
+            item(key = "overview_section_selector_bar") {
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            "⚡ Phân mục nhanh (Bấm để chuyển khu vực gọn gàng, không cần cuộn dài):",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            listOf(
+                                0 to "🌐 Kết nối & Thẻ mời",
+                                1 to "⚡ Tối ưu & Bảo vệ Pin",
+                                2 to "🎮 Thế giới & VIP",
+                                3 to "📋 Xem tất cả"
+                            ).forEach { (idx, label) ->
+                                FilterChip(
+                                    selected = overviewTab == idx,
+                                    onClick = { overviewTab = idx },
+                                    label = {
+                                        Text(
+                                            label,
+                                            fontSize = 11.5.sp,
+                                            fontWeight = if (overviewTab == idx) FontWeight.ExtraBold else FontWeight.SemiBold
+                                        )
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // ══════════════════════════════════════════════════════════════════════
         // PHẦN 2: TRUNG TÂM ĐƯỜNG HẦM PLAYIT.GG & CHƠI CHUNG PC + ĐIỆN THOẠI PE
         // ══════════════════════════════════════════════════════════════════════
-        if (active != null) {
+        if (active != null && (overviewTab == 0 || overviewTab == 3)) {
             item(key = "unified_connection_crossplay_card") {
                 val localhostAddress = "127.0.0.1:$port"
                 val lanAddress = lanIp.takeIf {
@@ -1387,7 +1527,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D9488), contentColor = Color.White),
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text("📋 Sao Chép Thẻ Mời", fontSize = 11.5.sp, fontWeight = FontWeight.ExtraBold)
+                                    Text("📋 Sao Chép Chữ", fontSize = 11.5.sp, fontWeight = FontWeight.ExtraBold)
                                 }
                                 OutlinedButton(
                                     onClick = {
@@ -1406,8 +1546,45 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     shape = RoundedCornerShape(10.dp),
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text("📤 Gửi Qua Zalo / Discord", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                                    Text("📤 Gửi Tin Nhắn", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
                                 }
+                            }
+                            Button(
+                                onClick = {
+                                    val pcInvite = if (playConnectionMode == PlayConnectionMode.SameNetwork) {
+                                        lanAddress ?: localhostAddress
+                                    } else {
+                                        playitAddress ?: playitPureIpv4Address ?: lanAddress ?: localhostAddress
+                                    }
+                                    val peHostInvite = if (playConnectionMode == PlayConnectionMode.SameNetwork) {
+                                        lanIp.takeIf { it.isNotBlank() && it != "0.0.0.0" && it != "--" } ?: "127.0.0.1"
+                                    } else if (playitState.bedrockAddress.isNotBlank()) {
+                                        vm.extractPlayitBedrockIpv4Host(playitState.bedrockAddress)
+                                            ?: playitState.bedrockAddress.substringBeforeLast(":")
+                                    } else {
+                                        lanIp.takeIf { it.isNotBlank() && it != "0.0.0.0" && it != "--" } ?: "127.0.0.1"
+                                    }
+                                    val pePortInvite = if (playConnectionMode == PlayConnectionMode.Everywhere && playitState.bedrockAddress.isNotBlank()) {
+                                        playitState.bedrockAddress.substringAfterLast(":", bedrockPort.toString())
+                                    } else {
+                                        bedrockPort.toString()
+                                    }
+                                    vm.shareServerInviteCardImage(
+                                        context = context,
+                                        javaIpOverride = pcInvite,
+                                        peHostOverride = peHostInvite,
+                                        pePortOverride = pePortInvite
+                                    )
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB), contentColor = Color.White),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    "🖼️ Tạo Ảnh Thẻ Mời Server Đẹp (Gửi Zalo / Messenger / Discord)",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
                             }
                         }
                     }
@@ -1418,7 +1595,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
         // ══════════════════════════════════════════════════════════════════════
         // PHẦN 3: TỐI ƯU SERVER & RAM 1 CHẠM (GỘP GÓI MOD TỐI ƯU + DỌN RAM GỌN GÀNG)
         // ══════════════════════════════════════════════════════════════════════
-        if (active != null) {
+        if (active != null && (overviewTab == 1 || overviewTab == 3)) {
             item(key = "unified_optimization_card") {
                 val enabledModCount = installedMods.count { it.isEnabled }
                 HostCard(
@@ -1643,6 +1820,47 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
+                                OutlinedButton(
+                                    onClick = { vm.scanMissingModDependenciesNow() },
+                                    enabled = !installingMissingDeps,
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        "🧩 Quét Lỗi Thiếu Thư Viện Mod Phụ Trợ & Tải Bù 1 Chạm (Fabric API / GeckoLib / Cloth Config...)",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+
+                            HorizontalDivider()
+                            val liveThermal by vm.thermalInfo.collectAsStateWithLifecycle()
+                            Text(
+                                "🛡️ Bảo Vệ Map Tự Động Khi Điện Thoại Yếu Pin / Quá Nóng (${liveThermal.statusLabelVi}):",
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color(0xFF10B981)
+                            )
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("🔋 Tự động Lưu Map & Tắt Server khi Pin ≤ 10% (chưa cắm sạc)", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    Text("Báo trước trong game 10s, chạy save-all 2 lần rồi tắt an toàn chống hỏng Map khi sập nguồn", fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Switch(
+                                    checked = autoBatteryShutdown,
+                                    onCheckedChange = { vm.setAutoBatteryShutdownGuardEnabled(it) }
+                                )
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("🌡️ Tự động Lưu Map & Tắt Server khi máy quá nóng ≥ 45.0°C", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    Text("Bảo vệ tuổi thọ pin & phần cứng điện thoại khi treo Server lâu", fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Switch(
+                                    checked = autoOverheatShutdown,
+                                    onCheckedChange = { vm.setAutoOverheatShutdownGuardEnabled(it) }
+                                )
                             }
                         }
                     }
@@ -1654,7 +1872,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
         // NÂNG CẤP 1, 3, 4, 5: BẢNG CÔNG TẮC LUẬT THẾ GIỚI TRỰC TIẾP, HẸN GIỜ TỰ ĐỘNG,
         // KHO SEED ĐẸP & CÀI ADDON .MCPACK / .MCADDON 1 CHẠM
         // ══════════════════════════════════════════════════════════════════════
-        if (active != null) {
+        if (active != null && (overviewTab == 2 || overviewTab == 3)) {
             item(key = "six_upgrades_world_gamerules_card") {
                 var keepInvSwitch by remember(active.dirName) { mutableStateOf(true) }
                 var antiCreeperSwitch by remember(active.dirName) { mutableStateOf(true) }
@@ -1838,7 +2056,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
         // NÂNG CẤP v2.7.3 (TỐN 0 MB RAM CHO MÁY YẾU): KHÓA BIÊN GIỚI WORLDBORDER,
         // THAO TÁC NGƯỜI CHƠI 1 CHẠM, TÊN SERVER MÀU SẮC MOTD & MÀN HÌNH ĐEN TIẾT KIỆM PIN
         // ══════════════════════════════════════════════════════════════════════
-        if (active != null) {
+        if (active != null && (overviewTab == 2 || overviewTab == 3)) {
             item(key = "low_ram_zero_mb_upgrades_card") {
                 val onlinePlayers by vm.onlinePlayerNames.collectAsStateWithLifecycle()
                 val knownPlayers by vm.knownServerPlayers.collectAsStateWithLifecycle()
@@ -2705,41 +2923,43 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
         // ══════════════════════════════════════════════════════════════════════
         // PHẦN 4: 4 Ô QUẢN TRỊ THẾ GIỚI & NGƯỜI CHƠI (LƯỚI 2×2 — KHÔNG TRÙNG LẶP)
         // ══════════════════════════════════════════════════════════════════════
-        item(key = "four_admin_tiles") {
-            HostCard(
-                title = "🧭 Quản Trị Thế Giới & Người Chơi",
-                artKind = MinecraftArtKind.COMMAND_BLOCK,
-                badgeText = "4 Công cụ"
-            ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    QuickPixelTile(
-                        title = "Quản Lý Map & Sao Lưu",
-                        subtitle = activeStorage?.let { "💾 ${vm.formatStorageBytes(it.worldBytes)} • Xóa nhẹ máy" } ?: "Tất cả Map & Sao lưu",
-                        artKind = MinecraftArtKind.GRASS,
-                        modifier = Modifier.weight(1f)
-                    ) { navigate(SubPage.WorldManage) }
+        if (active == null || overviewTab == 0 || overviewTab == 3) {
+            item(key = "four_admin_tiles") {
+                HostCard(
+                    title = "🧭 Quản Trị Thế Giới & Người Chơi",
+                    artKind = MinecraftArtKind.COMMAND_BLOCK,
+                    badgeText = "4 Công cụ"
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        QuickPixelTile(
+                            title = "Quản Lý Map & Sao Lưu",
+                            subtitle = activeStorage?.let { "💾 ${vm.formatStorageBytes(it.worldBytes)} • Xóa nhẹ máy" } ?: "Tất cả Map & Sao lưu",
+                            artKind = MinecraftArtKind.GRASS,
+                            modifier = Modifier.weight(1f)
+                        ) { navigate(SubPage.WorldManage) }
 
-                    QuickPixelTile(
-                        title = "Người Chơi & OP",
-                        subtitle = "Skin Avatar, OP & Ban",
-                        artKind = MinecraftArtKind.DIAMOND_SWORD,
-                        modifier = Modifier.weight(1f)
-                    ) { navigate(SubPage.PlayerList) }
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    QuickPixelTile(
-                        title = "Luật Chơi & Cracked",
-                        subtitle = "Chế độ, Tọa độ, Giữ đồ",
-                        artKind = MinecraftArtKind.ENDER_EYE,
-                        modifier = Modifier.weight(1f)
-                    ) { navigate(SubPage.Properties) }
+                        QuickPixelTile(
+                            title = "Người Chơi & OP",
+                            subtitle = "Skin Avatar, OP & Ban",
+                            artKind = MinecraftArtKind.DIAMOND_SWORD,
+                            modifier = Modifier.weight(1f)
+                        ) { navigate(SubPage.PlayerList) }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        QuickPixelTile(
+                            title = "Luật Chơi & Cracked",
+                            subtitle = "Chế độ, Tọa độ, Giữ đồ",
+                            artKind = MinecraftArtKind.ENDER_EYE,
+                            modifier = Modifier.weight(1f)
+                        ) { navigate(SubPage.Properties) }
 
-                    QuickPixelTile(
-                        title = "Tên & Icon 64×64",
-                        subtitle = "Ảnh đại diện & MOTD",
-                        artKind = MinecraftArtKind.GOLDEN_APPLE,
-                        modifier = Modifier.weight(1f)
-                    ) { navigate(SubPage.ServerIcon) }
+                        QuickPixelTile(
+                            title = "Tên & Icon 64×64",
+                            subtitle = "Ảnh đại diện & MOTD",
+                            artKind = MinecraftArtKind.GOLDEN_APPLE,
+                            modifier = Modifier.weight(1f)
+                        ) { navigate(SubPage.ServerIcon) }
+                    }
                 }
             }
         }
@@ -2747,7 +2967,8 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
         // ══════════════════════════════════════════════════════════════════════
         // [v2.7.4] THẺ CHẨN ĐOÁN PHẦN CỨNG MÁY & CẨM NANG 3 BƯỚC CHO NGƯỜI MỚI
         // ══════════════════════════════════════════════════════════════════════
-        item(key = "device_preflight_and_onboarding") {
+        if (active == null || overviewTab == 1 || overviewTab == 3) {
+            item(key = "device_preflight_and_onboarding") {
             val preflight = remember(ready, state.isRunning, config.installedCores.size) { vm.inspectDevicePreFlight() }
             HostCard(
                 title = "👋 Chẩn Đoán Máy & Cẩm Nang 3 Bước Mở Server",
@@ -2811,6 +3032,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                         }
                     }
                 }
+            }
             }
         }
     }

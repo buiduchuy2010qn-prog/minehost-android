@@ -11047,6 +11047,21 @@ class McViewModel(
     private val _autoThermalGuard = MutableStateFlow(proPrefs.getBoolean("auto_thermal_guard", true))
     val autoThermalGuard: StateFlow<Boolean> = _autoThermalGuard.asStateFlow()
 
+    private val _autoBatteryShutdownGuard = MutableStateFlow(proPrefs.getBoolean("auto_battery_shutdown_guard", true))
+    val autoBatteryShutdownGuard: StateFlow<Boolean> = _autoBatteryShutdownGuard.asStateFlow()
+
+    private val _autoOverheatShutdownGuard = MutableStateFlow(proPrefs.getBoolean("auto_overheat_shutdown_guard", true))
+    val autoOverheatShutdownGuard: StateFlow<Boolean> = _autoOverheatShutdownGuard.asStateFlow()
+
+    private val _lastGuardShutdownEvent = MutableStateFlow(proPrefs.getString("last_guard_shutdown_event", "").orEmpty())
+    val lastGuardShutdownEvent: StateFlow<String> = _lastGuardShutdownEvent.asStateFlow()
+
+    private val _missingModDependencies = MutableStateFlow<List<com.mineserve.mobile.server.ProHostFeatures.MissingModDependency>>(emptyList())
+    val missingModDependencies: StateFlow<List<com.mineserve.mobile.server.ProHostFeatures.MissingModDependency>> = _missingModDependencies.asStateFlow()
+
+    private val _installingMissingDeps = MutableStateFlow(false)
+    val installingMissingDeps: StateFlow<Boolean> = _installingMissingDeps.asStateFlow()
+
     private val _discordWebhookUrl = MutableStateFlow(proPrefs.getString("discord_webhook_url", "").orEmpty())
     val discordWebhookUrl: StateFlow<String> = _discordWebhookUrl.asStateFlow()
 
@@ -11152,6 +11167,7 @@ class McViewModel(
             while (true) {
                 val info = com.mineserve.mobile.server.ProHostFeatures.readDeviceThermalInfo(app)
                 _thermalInfo.value = info
+                _lastGuardShutdownEvent.value = proPrefs.getString("last_guard_shutdown_event", "").orEmpty()
 
                 val isRunning = serverState.value.isRunning
                 if (isRunning && _autoThermalGuard.value && info.isOverheating) {
@@ -11162,6 +11178,28 @@ class McViewModel(
                         sendCommand("kill @e[type=experience_orb]")
                         sendCommand("say [MineHost Thermal Guard] Dien thoai dang nong (${String.format("%.1f", info.tempCelsius)}C) -> Tu dong don rac giam tai!")
                     }
+                }
+
+                // Tự động lưu Map & Tắt Server an toàn khi Pin yếu (<=10% chưa sạc) hoặc Quá nhiệt (>=45°C)
+                val criticalBat = _autoBatteryShutdownGuard.value && info.isCriticalLowBattery
+                val criticalTemp = _autoOverheatShutdownGuard.value && info.isCriticalOverheat
+                if (isRunning && (criticalBat || criticalTemp)) {
+                    val reasonVi = if (criticalBat) {
+                        "Pin điện thoại yếu còn ${info.batteryPercent}% (chưa cắm sạc)"
+                    } else {
+                        "Nhiệt độ máy đạt mức nguy hiểm ${String.format(java.util.Locale.US, "%.1f", info.tempCelsius)}°C"
+                    }
+                    val eventText = "🛡️ Đã tự động Lưu Map & Tắt Server lúc ${java.text.SimpleDateFormat("HH:mm dd/MM", java.util.Locale.getDefault()).format(java.util.Date())} do $reasonVi"
+                    proPrefs.edit().putString("last_guard_shutdown_event", eventText).apply()
+                    _lastGuardShutdownEvent.value = eventText
+                    sendCommand("""title @a title {"text":"⚠ BẢO VỆ MAP","color":"red","bold":true}""")
+                    sendCommand("say [MineHost Guard] $reasonVi -> Tu dong luu Map (save-all) va tat Server sau 10 giay de chong hong Map!")
+                    sendCommand("save-all")
+                    notifyActionDone("🛡️ $reasonVi! Đang tự động lưu Map & tắt Server an toàn...")
+                    kotlinx.coroutines.delay(8000L)
+                    sendCommand("save-all")
+                    kotlinx.coroutines.delay(1500L)
+                    stopServer()
                 }
 
                 val sleepTargetMin = _autoSleepIdleMinutes.value
@@ -11182,6 +11220,29 @@ class McViewModel(
                     emptyMinutesAccum = 0
                 }
                 kotlinx.coroutines.delay(60_000L)
+            }
+        }
+
+        // 3. Tự động quét lỗi thiếu thư viện Mod phụ trợ khi Server dừng / báo lỗi khởi động
+        viewModelScope.launch {
+            _lastRunLog.collect { log ->
+                if (!log.isNullOrBlank()) {
+                    val detected = com.mineserve.mobile.server.ProHostFeatures.detectMissingModDependencies(log)
+                    if (detected.isNotEmpty()) {
+                        _missingModDependencies.value = detected
+                    }
+                }
+            }
+        }
+
+        // 4. Lưu địa chỉ IP công khai mới nhất vào SharedPreferences để nút "📋 Copy IP" trên thanh thông báo nền luôn lấy đúng
+        viewModelScope.launch {
+            playitState.collect { st ->
+                val pub = st.publicAddress.trim()
+                if (pub.isNotBlank()) {
+                    app.getSharedPreferences("playit_prefs", android.content.Context.MODE_PRIVATE)
+                        .edit().putString("last_java_address", pub).apply()
+                }
             }
         }
     }
@@ -11508,6 +11569,175 @@ class McViewModel(
             notifyActionDone("🌐 Đã bật Web Remote tại http://$ip:8585 (Mã PIN: ${_lanWebPanelPin.value})")
         } else {
             _errorFlow.tryEmit("Không thể mở cổng 8585 cho Web Remote (Cổng đang bận).")
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // [v2.8.2] NÂNG CẤP MỚI:
+    // - Tự động Lưu Map & Tắt Server khi Pin yếu (<10%) hoặc Quá nhiệt (>=45°C)
+    // - Tự động phát hiện Mod thiếu thư viện phụ trợ & tải bù 1 chạm từ Modrinth
+    // - Tạo Ảnh Thẻ Mời Server (Java + Bedrock PE) chia sẻ nhanh Zalo/Messenger/Discord
+    // ══════════════════════════════════════════════════════════════════════
+
+    fun setAutoBatteryShutdownGuardEnabled(enabled: Boolean) {
+        _autoBatteryShutdownGuard.value = enabled
+        proPrefs.edit().putBoolean("auto_battery_shutdown_guard", enabled).apply()
+        notifyActionDone(
+            if (enabled) "🔋 Đã bật Tự động Lưu Map & Tắt Server an toàn khi Pin xuống dưới 10% (chưa cắm sạc)!"
+            else "🔋 Đã tắt tự động tắt Server khi Pin yếu."
+        )
+    }
+
+    fun setAutoOverheatShutdownGuardEnabled(enabled: Boolean) {
+        _autoOverheatShutdownGuard.value = enabled
+        proPrefs.edit().putBoolean("auto_overheat_shutdown_guard", enabled).apply()
+        notifyActionDone(
+            if (enabled) "🌡️ Đã bật Tự động Lưu Map & Tắt Server an toàn khi nhiệt độ máy vượt 45°C!"
+            else "🌡️ Đã tắt tự động tắt Server khi quá nhiệt."
+        )
+    }
+
+    fun clearLastGuardShutdownEvent() {
+        _lastGuardShutdownEvent.value = ""
+        proPrefs.edit().remove("last_guard_shutdown_event").apply()
+    }
+
+    fun scanMissingModDependenciesNow() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val combinedLog = buildString {
+                append(_lastRunLog.value.orEmpty())
+                append("\n")
+                append(consoleBuffer.snapshot().takeLast(250).joinToString("\n"))
+                append("\n")
+                append(runCatching { repo.termuxRuntime.readLastMcRunLog() }.getOrDefault(""))
+            }
+            val found = com.mineserve.mobile.server.ProHostFeatures.detectMissingModDependencies(combinedLog)
+            _missingModDependencies.value = found
+            if (found.isEmpty()) {
+                notifyActionDone("✅ Đã quét Log: Không phát hiện thiếu thư viện Mod phụ trợ nào!")
+            } else {
+                notifyActionDone("🧩 Phát hiện ${found.size} thư viện Mod còn thiếu: ${found.joinToString { it.displayName }}!")
+            }
+        }
+    }
+
+    fun installAllMissingModDependencies(autoRestartAfter: Boolean = false) {
+        val deps = _missingModDependencies.value
+        if (deps.isEmpty() || _installingMissingDeps.value) return
+        val dirName = activeDirName()
+        if (dirName == null) {
+            _errorFlow.tryEmit("Hãy chọn một Server trước khi cài thư viện Mod!")
+            return
+        }
+        val activeInstalled = config.value.installedCores.find { it.name == config.value.activeCoreName }
+        val mcVer = activeInstalled?.version?.ifBlank { config.value.mcVersion } ?: config.value.mcVersion
+        val loader = activeInstalled?.core?.name ?: config.value.selectedCore.name
+        val serverDir = repo.termuxRuntime.serverDirFor(dirName)
+        val isPluginCore = loader.equals("Paper", ignoreCase = true) || loader.equals("Purpur", ignoreCase = true)
+        val targetModsDir = java.io.File(serverDir, if (isPluginCore) "plugins" else "mods")
+
+        viewModelScope.launch {
+            _installingMissingDeps.value = true
+            var successCount = 0
+            val installedFiles = mutableListOf<String>()
+            try {
+                for (dep in deps) {
+                    notifyActionDone("⬇️ Đang tải tự động '${dep.displayName}' cho Minecraft $mcVer...")
+                    val res = com.mineserve.mobile.server.ProHostFeatures.downloadAndInstallModDependency(
+                        dep = dep,
+                        mcVersion = mcVer,
+                        loader = loader,
+                        targetModsDir = targetModsDir
+                    )
+                    res.onSuccess { fileName ->
+                        successCount++
+                        installedFiles.add(fileName)
+                    }.onFailure { err ->
+                        _errorFlow.tryEmit("⚠️ Không tải được ${dep.displayName}: ${err.message}")
+                    }
+                }
+                if (successCount > 0) {
+                    _missingModDependencies.value = emptyList()
+                    notifyActionDone("✅ Đã tải & cài xong $successCount thư viện (${installedFiles.joinToString()}) vào ${targetModsDir.name}/!")
+                    if (autoRestartAfter && !serverState.value.isRunning) {
+                        kotlinx.coroutines.delay(800L)
+                        startServer()
+                    }
+                }
+            } finally {
+                _installingMissingDeps.value = false
+            }
+        }
+    }
+
+    fun shareServerInviteCardImage(
+        context: android.content.Context,
+        javaIpOverride: String? = null,
+        peHostOverride: String? = null,
+        pePortOverride: String? = null
+    ) {
+        viewModelScope.launch {
+            runCatching {
+                notifyActionDone("🎨 Đang vẽ Ảnh Thẻ Mời Server chuẩn HD...")
+                val cfg = config.value
+                val st = serverState.value
+                val activeCore = cfg.installedCores.find { it.name == cfg.activeCoreName }
+                val serverName = cfg.activeCoreName.orEmpty().ifBlank { "MineHost Server" }
+                val coreLabel = activeCore?.core?.displayName ?: cfg.selectedCore.displayName
+                val mcVer = activeCore?.version?.ifBlank { cfg.mcVersion } ?: cfg.mcVersion
+
+                val lan = lanIp.value.ifBlank { "127.0.0.1" }
+                val port = serverPort.value
+                val pubJava = javaIpOverride?.takeIf { it.isNotBlank() }
+                    ?: playitState.value.publicAddress.takeIf { it.isNotBlank() }
+                    ?: "$lan:$port"
+
+                val rawPe = playitState.value.bedrockAddress
+                val peHost = peHostOverride?.takeIf { it.isNotBlank() }
+                    ?: rawPe.substringBeforeLast(":", "").ifBlank { pubJava.substringBeforeLast(":") }
+                val pePort = pePortOverride?.takeIf { it.isNotBlank() }
+                    ?: rawPe.substringAfterLast(":", "").takeIf { it.all(Char::isDigit) && it.isNotBlank() }
+                    ?: "19132"
+
+                val pngFile = com.mineserve.mobile.server.ProHostFeatures.renderServerInviteCardPng(
+                    context = app,
+                    serverName = serverName,
+                    coreLabel = coreLabel,
+                    mcVersion = mcVer,
+                    javaIp = pubJava,
+                    bedrockHost = peHost,
+                    bedrockPort = pePort,
+                    onlinePlayers = st.onlinePlayers,
+                    maxPlayers = st.maxPlayers,
+                    isOnline = st.isRunning
+                )
+
+                val uri = androidx.core.content.FileProvider.getUriForFile(
+                    app,
+                    "${app.packageName}.fileprovider",
+                    pngFile
+                )
+
+                val inviteText = buildString {
+                    appendLine("🎮 THẺ MỜI VÀO SERVER MINECRAFT: $serverName")
+                    appendLine("📦 Phiên bản: Minecraft $mcVer ($coreLabel)")
+                    appendLine("💻 Máy tính (Java PC): $pubJava")
+                    appendLine("📱 Điện thoại (Bedrock PE): IP $peHost  |  Port $pePort")
+                    append("✨ Vào chơi chung ngay (Hỗ trợ cả PC & Điện thoại)!")
+                }
+
+                val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                    type = "image/png"
+                    putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                    putExtra(android.content.Intent.EXTRA_TEXT, inviteText)
+                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                val chooser = android.content.Intent.createChooser(shareIntent, "Chia sẻ Ảnh Thẻ Mời Server qua Zalo / Messenger / Discord")
+                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(chooser)
+            }.onFailure { err ->
+                _errorFlow.tryEmit("Không thể tạo ảnh thẻ mời: ${err.message}")
+            }
         }
     }
 }

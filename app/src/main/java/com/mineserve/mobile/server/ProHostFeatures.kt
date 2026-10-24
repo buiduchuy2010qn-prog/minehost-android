@@ -42,11 +42,14 @@ object ProHostFeatures {
     ) {
         val statusLabelVi: String
             get() = when {
-                tempCelsius >= 44.0f -> "🔥 Nóng (${String.format("%.1f", tempCelsius)}°C • Pin $batteryPercent%)"
-                tempCelsius >= 40.5f -> "🌤️ Ấm (${String.format("%.1f", tempCelsius)}°C • Pin $batteryPercent%)"
-                else -> "❄️ Mát mẻ (${String.format("%.1f", tempCelsius)}°C • Pin $batteryPercent%)"
+                tempCelsius >= 44.5f -> "🚨 Quá nhiệt (${String.format("%.1f", tempCelsius)}°C • Pin $batteryPercent%${if (isCharging) "⚡" else ""})"
+                tempCelsius >= 43.0f -> "🔥 Nóng (${String.format("%.1f", tempCelsius)}°C • Pin $batteryPercent%${if (isCharging) "⚡" else ""})"
+                tempCelsius >= 40.0f -> "🌤️ Ấm (${String.format("%.1f", tempCelsius)}°C • Pin $batteryPercent%${if (isCharging) "⚡" else ""})"
+                else -> "❄️ Mát mẻ (${String.format("%.1f", tempCelsius)}°C • Pin $batteryPercent%${if (isCharging) "⚡" else ""})"
             }
-        val isOverheating: Boolean get() = tempCelsius >= 43.0f
+        val isOverheating: Boolean get() = tempCelsius >= 42.5f
+        val isCriticalOverheat: Boolean get() = tempCelsius >= 45.0f
+        val isCriticalLowBattery: Boolean get() = !isCharging && batteryPercent in 1..10
     }
 
     fun readDeviceThermalInfo(context: Context): ThermalInfo {
@@ -343,5 +346,398 @@ object ProHostFeatures {
                 </html>
             """.trimIndent()
         }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // [v2.8.2] TỰ ĐỘNG PHÁT HIỆN MOD THIẾU THƯ VIỆN PHỤ TRỢ & TẢI BÙ 1 CHẠM
+    // ══════════════════════════════════════════════════════════════════════
+
+    data class MissingModDependency(
+        val modId: String,
+        val modrinthSlug: String,
+        val displayName: String,
+        val requiredBy: String = ""
+    )
+
+    private val knownDependencyCatalog: Map<String, Pair<String, String>> = mapOf(
+        "fabric-api" to ("fabric-api" to "Fabric API (Thư viện cốt lõi Fabric)"),
+        "fabric" to ("fabric-api" to "Fabric API (Thư viện cốt lõi Fabric)"),
+        "fabric-language-kotlin" to ("fabric-language-kotlin" to "Fabric Language Kotlin"),
+        "cloth-config" to ("cloth-config" to "Cloth Config API"),
+        "cloth_config" to ("cloth-config" to "Cloth Config API"),
+        "cloth-config2" to ("cloth-config" to "Cloth Config API"),
+        "architectury" to ("architectury-api" to "Architectury API"),
+        "architectury-api" to ("architectury-api" to "Architectury API"),
+        "geckolib" to ("geckolib" to "GeckoLib"),
+        "geckolib3" to ("geckolib" to "GeckoLib"),
+        "curios" to ("curios" to "Curios API"),
+        "trinkets" to ("trinkets" to "Trinkets API"),
+        "cardinal-components" to ("cardinal-components-api" to "Cardinal Components API"),
+        "cardinal-components-base" to ("cardinal-components-api" to "Cardinal Components API"),
+        "bookshelf" to ("bookshelf" to "Bookshelf"),
+        "balm" to ("balm" to "Balm"),
+        "moonlight" to ("moonlight" to "Moonlight Lib"),
+        "selene" to ("moonlight" to "Moonlight Lib"),
+        "puzzleslib" to ("puzzles-lib" to "Puzzles Lib"),
+        "kotlinforforge" to ("kotlin-for-forge" to "Kotlin for Forge"),
+        "collective" to ("collective" to "Collective"),
+        "cristellib" to ("cristel-lib" to "Cristel Lib"),
+        "yacl" to ("yacl" to "YetAnotherConfigLib (YACL)"),
+        "yet_another_config_lib_v3" to ("yacl" to "YetAnotherConfigLib (YACL)"),
+        "citadel" to ("citadel" to "Citadel"),
+        "creativecore" to ("creativecore" to "CreativeCore"),
+        "playeranimator" to ("playeranimator" to "playerAnimator"),
+        "azurelib" to ("azurelib" to "AzureLib"),
+        "smartbrainlib" to ("smartbrainlib" to "SmartBrainLib"),
+        "resourcefullib" to ("resourceful-lib" to "Resourceful Lib"),
+        "resourcefulconfig" to ("resourceful-config" to "Resourceful Config"),
+        "athena" to ("athena" to "Athena"),
+        "botarium" to ("botarium" to "Botarium"),
+        "supermartijn642corelib" to ("supermartijn642s-core-lib" to "SuperMartijn642's Core Lib"),
+        "supermartijn642configlib" to ("supermartijn642s-config-lib" to "SuperMartijn642's Config Lib"),
+        "iceberg" to ("iceberg" to "Iceberg"),
+        "prism" to ("prism-lib" to "Prism Lib"),
+        "konkrete" to ("konkrete" to "Konkrete"),
+        "melody" to ("melody" to "Melody"),
+        "placeholder-api" to ("placeholder-api" to "Text Placeholder API"),
+        "owo" to ("owo-lib" to "oωo (owo-lib)"),
+        "owo-lib" to ("owo-lib" to "oωo (owo-lib)"),
+        "indium" to ("indium" to "Indium"),
+        "forgeconfigapiport" to ("forge-config-api-port" to "Forge Config API Port")
+    )
+
+    private val ignoredModIds = setOf(
+        "minecraft", "java", "fabricloader", "forge", "neoforge", "quilt_loader", "mixinextras"
+    )
+
+    fun detectMissingModDependencies(logText: String): List<MissingModDependency> {
+        if (logText.isBlank()) return emptyList()
+        val found = LinkedHashMap<String, MissingModDependency>()
+
+        fun registerCandidate(rawModId: String, requiredBy: String = "") {
+            val cleanId = rawModId.trim().lowercase().removePrefix("'").removeSuffix("'")
+            if (cleanId.length < 3 || cleanId in ignoredModIds) return
+            val catalogEntry = knownDependencyCatalog[cleanId]
+            val slug = catalogEntry?.first ?: cleanId
+            val name = catalogEntry?.second ?: "Thư viện '$cleanId'"
+            if (!found.containsKey(slug)) {
+                found[slug] = MissingModDependency(
+                    modId = cleanId,
+                    modrinthSlug = slug,
+                    displayName = name,
+                    requiredBy = requiredBy
+                )
+            }
+        }
+
+        // 1. Fabric: "Mod 'X' (x) requires version Y of mod 'Z' (z), which is missing!"
+        val fabricMissingRegex1 = Regex(
+            """Mod\s+'([^']+)'\s*\([^)]+\)\s*requires\s+[^'\n]*?(?:mod\s+'[^']+'\s*\(([a-z0-9_-]+)\)|of\s+([a-z0-9_-]{3,40}))\s*,\s*which is missing""",
+            RegexOption.IGNORE_CASE
+        )
+        fabricMissingRegex1.findAll(logText).forEach { m ->
+            val parent = m.groupValues[1]
+            val depId = m.groupValues[2].ifBlank { m.groupValues[3] }
+            registerCandidate(depId, parent)
+        }
+
+        // 2. Fabric: "Install fabric-api, version ..." or "- Install modId, any version."
+        val fabricSuggestRegex = Regex(
+            """-\s*Install\s+(?:mod\s+'[^']+'\s*\(([a-z0-9_-]+)\)|([a-z0-9_-]{3,40}))\s*,\s*(?:version|any version)""",
+            RegexOption.IGNORE_CASE
+        )
+        fabricSuggestRegex.findAll(logText).forEach { m ->
+            val depId = m.groupValues[1].ifBlank { m.groupValues[2] }
+            registerCandidate(depId)
+        }
+
+        // 3. Forge / NeoForge: "Mod ID: 'geckolib', Requested by: 'xyz'"
+        val forgeMissingRegex = Regex(
+            """Mod ID:\s*'([a-z0-9_-]{3,40})'\s*,\s*Requested by:\s*'([^']+)'""",
+            RegexOption.IGNORE_CASE
+        )
+        forgeMissingRegex.findAll(logText).forEach { m ->
+            registerCandidate(m.groupValues[1], m.groupValues[2])
+        }
+
+        // 4. Forge 1.12-1.16: "MissingModsException: Mod X requires [geckolib@...]"
+        val legacyForgeRegex = Regex(
+            """requires\s+\[?([a-z0-9_-]{3,40})(?:@[^\],\s]+)?""",
+            RegexOption.IGNORE_CASE
+        )
+        if (logText.contains("MissingModsException", ignoreCase = true) ||
+            logText.contains("Missing or unsupported mandatory dependencies", ignoreCase = true)
+        ) {
+            legacyForgeRegex.findAll(logText).forEach { m ->
+                registerCandidate(m.groupValues[1])
+            }
+        }
+
+        // 5. Quét trực tiếp từ danh mục thư viện phổ biến nếu trong log có câu báo thiếu
+        if (logText.contains("Incompatible mod set", ignoreCase = true) ||
+            logText.contains("which is missing", ignoreCase = true) ||
+            logText.contains("Missing or unsupported mandatory dependencies", ignoreCase = true)
+        ) {
+            for ((modKey, _) in knownDependencyCatalog) {
+                if (Regex("""\b${Regex.escape(modKey)}\b""", RegexOption.IGNORE_CASE).containsMatchIn(logText)) {
+                    registerCandidate(modKey)
+                }
+            }
+        }
+
+        return found.values.toList()
+    }
+
+    suspend fun downloadAndInstallModDependency(
+        dep: MissingModDependency,
+        mcVersion: String,
+        loader: String,
+        targetModsDir: File
+    ): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            targetModsDir.mkdirs()
+            val normalizedLoader = loader.lowercase().let {
+                when {
+                    it.contains("neoforge") -> "neoforge"
+                    it.contains("forge") -> "forge"
+                    it.contains("quilt") -> "quilt"
+                    it.contains("paper") || it.contains("purpur") || it.contains("spigot") -> "paper"
+                    else -> "fabric"
+                }
+            }
+
+            fun queryModrinthVersion(projectSlugOrId: String, filterVersion: Boolean): Pair<String, String>? {
+                val urlStr = buildString {
+                    append("https://api.modrinth.com/v2/project/")
+                    append(java.net.URLEncoder.encode(projectSlugOrId, "UTF-8"))
+                    append("/version?loaders=")
+                    append(java.net.URLEncoder.encode("""["$normalizedLoader"]""", "UTF-8"))
+                    if (filterVersion && mcVersion.isNotBlank()) {
+                        append("&game_versions=")
+                        append(java.net.URLEncoder.encode("""["$mcVersion"]""", "UTF-8"))
+                    }
+                }
+                val conn = (URL(urlStr).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = 10000
+                    readTimeout = 10000
+                    setRequestProperty("User-Agent", "MineHost/2.8.2 (Android)")
+                }
+                return try {
+                    if (conn.responseCode !in 200..299) return null
+                    val body = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                    val arr = JSONArray(body)
+                    if (arr.length() == 0) return null
+                    val firstVer = arr.getJSONObject(0)
+                    val files = firstVer.optJSONArray("files") ?: return null
+                    if (files.length() == 0) return null
+                    val fileObj = files.getJSONObject(0)
+                    val dlUrl = fileObj.optString("url")
+                    val fName = fileObj.optString("filename")
+                    if (dlUrl.isNotBlank() && fName.isNotBlank()) dlUrl to fName else null
+                } catch (_: Exception) {
+                    null
+                } finally {
+                    conn.disconnect()
+                }
+            }
+
+            // Thử tìm theo slug khớp đúng phiên bản MC trước, nếu không có thì tìm theo search API
+            var resolved = queryModrinthVersion(dep.modrinthSlug, filterVersion = true)
+                ?: queryModrinthVersion(dep.modId, filterVersion = true)
+
+            if (resolved == null) {
+                val searchUrl = "https://api.modrinth.com/v2/search?query=" +
+                    java.net.URLEncoder.encode(dep.modId, "UTF-8") + "&limit=3"
+                val sConn = (URL(searchUrl).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = 8000
+                    readTimeout = 8000
+                    setRequestProperty("User-Agent", "MineHost/2.8.2 (Android)")
+                }
+                val firstProjectId = try {
+                    if (sConn.responseCode in 200..299) {
+                        val sBody = sConn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                        val hits = JSONObject(sBody).optJSONArray("hits")
+                        if (hits != null && hits.length() > 0) hits.getJSONObject(0).optString("project_id") else null
+                    } else null
+                } catch (_: Exception) {
+                    null
+                } finally {
+                    sConn.disconnect()
+                }
+                if (!firstProjectId.isNullOrBlank()) {
+                    resolved = queryModrinthVersion(firstProjectId, filterVersion = true)
+                        ?: queryModrinthVersion(firstProjectId, filterVersion = false)
+                }
+            }
+
+            val (downloadUrl, fileName) = resolved
+                ?: throw IllegalStateException("Không tìm thấy gói '${dep.displayName}' cho Minecraft $mcVersion ($normalizedLoader) trên Modrinth.")
+
+            val outFile = File(targetModsDir, fileName)
+            val dlConn = (URL(downloadUrl).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 15000
+                readTimeout = 20000
+                setRequestProperty("User-Agent", "MineHost/2.8.2 (Android)")
+            }
+            try {
+                dlConn.inputStream.use { input ->
+                    outFile.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                }
+            } finally {
+                dlConn.disconnect()
+            }
+            fileName
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // [v2.8.2] TẠO ẢNH THẺ MỜI VÀO SERVER ĐẸP 1 CHẠM (PNG BANNER GENERATOR)
+    // ══════════════════════════════════════════════════════════════════════
+
+    suspend fun renderServerInviteCardPng(
+        context: Context,
+        serverName: String,
+        coreLabel: String,
+        mcVersion: String,
+        javaIp: String,
+        bedrockHost: String,
+        bedrockPort: String,
+        onlinePlayers: Int,
+        maxPlayers: Int,
+        isOnline: Boolean
+    ): File = withContext(Dispatchers.IO) {
+        val width = 1080
+        val height = 640
+        val bmp = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bmp)
+
+        val bgPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            shader = android.graphics.LinearGradient(
+                0f, 0f, width.toFloat(), height.toFloat(),
+                intArrayOf(
+                    android.graphics.Color.parseColor("#071318"),
+                    android.graphics.Color.parseColor("#0D2622"),
+                    android.graphics.Color.parseColor("#111C2D")
+                ),
+                floatArrayOf(0f, 0.55f, 1f),
+                android.graphics.Shader.TileMode.CLAMP
+            )
+        }
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), bgPaint)
+
+        // Outer neon border
+        val borderPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            style = android.graphics.Paint.Style.STROKE
+            strokeWidth = 6f
+            color = android.graphics.Color.parseColor("#10B981")
+        }
+        val outerRect = android.graphics.RectF(20f, 20f, width - 20f, height - 20f)
+        canvas.drawRoundRect(outerRect, 36f, 36f, borderPaint)
+
+        // Status pill at top-right
+        val pillPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = if (isOnline) android.graphics.Color.parseColor("#065F46") else android.graphics.Color.parseColor("#334155")
+        }
+        val pillRect = android.graphics.RectF(width - 370f, 52f, width - 56f, 114f)
+        canvas.drawRoundRect(pillRect, 31f, 31f, pillPaint)
+
+        val pillTextPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.parseColor("#A7F3D0")
+            textSize = 26f
+            typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+            textAlign = android.graphics.Paint.Align.CENTER
+        }
+        val statusText = if (isOnline) "🟢 ONLINE • $onlinePlayers/$maxPlayers" else "⚡ SẴN SÀNG VÀO CHƠI"
+        canvas.drawText(statusText, pillRect.centerX(), pillRect.centerY() + 9f, pillTextPaint)
+
+        // Header title & subtitle
+        val brandPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.parseColor("#34D399")
+            textSize = 26f
+            typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+        }
+        canvas.drawText("🇻🇳 MINEHOST PRO • THẺ MỜI VÀO SERVER MINECRAFT", 60f, 84f, brandPaint)
+
+        val titlePaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.WHITE
+            textSize = 54f
+            typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+        }
+        val safeTitle = if (serverName.length > 24) serverName.take(22) + "…" else serverName
+        canvas.drawText(safeTitle, 60f, 152f, titlePaint)
+
+        val subPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.parseColor("#94A3B8")
+            textSize = 26f
+            typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+        }
+        canvas.drawText("Phiên bản: Minecraft $mcVersion ($coreLabel) • Hỗ trợ cả Máy tính (PC) & Điện thoại (PE)", 60f, 198f, subPaint)
+
+        // Box 1: Java PC IP
+        val boxPaint1 = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.parseColor("#132F2B")
+        }
+        val boxStroke1 = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            style = android.graphics.Paint.Style.STROKE
+            strokeWidth = 3f
+            color = android.graphics.Color.parseColor("#059669")
+        }
+        val javaRect = android.graphics.RectF(60f, 232f, width - 60f, 378f)
+        canvas.drawRoundRect(javaRect, 24f, 24f, boxPaint1)
+        canvas.drawRoundRect(javaRect, 24f, 24f, boxStroke1)
+
+        val labelPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.parseColor("#6EE7B7")
+            textSize = 25f
+            typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+        }
+        canvas.drawText("💻 ĐỊA CHỈ MÁY TÍNH (MINECRAFT JAVA EDITION):", 92f, 278f, labelPaint)
+
+        val ipPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.WHITE
+            textSize = 44f
+            typeface = android.graphics.Typeface.create(android.graphics.Typeface.MONOSPACE, android.graphics.Typeface.BOLD)
+        }
+        canvas.drawText(javaIp, 92f, 344f, ipPaint)
+
+        // Box 2: Bedrock PE IP & Port
+        val boxPaint2 = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.parseColor("#17253B")
+        }
+        val boxStroke2 = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            style = android.graphics.Paint.Style.STROKE
+            strokeWidth = 3f
+            color = android.graphics.Color.parseColor("#3B82F6")
+        }
+        val peRect = android.graphics.RectF(60f, 402f, width - 60f, 548f)
+        canvas.drawRoundRect(peRect, 24f, 24f, boxPaint2)
+        canvas.drawRoundRect(peRect, 24f, 24f, boxStroke2)
+
+        val peLabelPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.parseColor("#93C5FD")
+            textSize = 25f
+            typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+        }
+        canvas.drawText("📱 ĐỊA CHỈ ĐIỆN THOẠI (MINECRAFT BEDROCK / PE):", 92f, 448f, peLabelPaint)
+        canvas.drawText("IP: $bedrockHost   •   Cổng (Port): $bedrockPort", 92f, 514f, ipPaint.apply { textSize = 38f })
+
+        // Footer
+        val footerPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.parseColor("#CBD5E1")
+            textSize = 23f
+        }
+        canvas.drawText("✨ Mở Minecraft -> Chơi mạng (Multiplayer) -> Thêm máy chủ (Add Server) và nhập địa chỉ trên!", 60f, 594f, footerPaint)
+
+        val dir = File(context.cacheDir, "share_cards").apply { mkdirs() }
+        val outFile = File(dir, "minehost_invite_card.png")
+        outFile.outputStream().use { out ->
+            bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)
+        }
+        bmp.recycle()
+        outFile
     }
 }
