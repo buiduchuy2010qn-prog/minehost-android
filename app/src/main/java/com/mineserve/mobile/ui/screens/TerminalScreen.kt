@@ -867,60 +867,72 @@ fun TerminalScreen(vm: McViewModel) {
         )
     }
 
-    // ── Hộp thoại 3: Quản lý nhanh Người chơi (OP / Chế độ / Kick) ──────
+    // ── Hộp thoại 3: Quản lý nhanh Người chơi (OP / Chế độ / Kick — Không cần nhập tay) ──────
+    val knownPlayers by vm.knownServerPlayers.collectAsState()
     if (showPlayerToolDialog) {
-        var targetPlayer by remember { mutableStateOf(onlinePlayers.firstOrNull().orEmpty()) }
+        var targetPlayer by remember(knownPlayers) {
+            mutableStateOf(knownPlayers.firstOrNull()?.name ?: "@a")
+        }
         AlertDialog(
             onDismissRequest = { showPlayerToolDialog = false },
-            title = { Text("👑 Công Cụ Quản Trị Người Chơi Nhanh", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
+            title = { Text("👑 Công Cụ Cấp Quyền & Quản Trị Người Chơi 1 Chạm", fontWeight = FontWeight.Bold, fontSize = 15.sp) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (onlinePlayers.isNotEmpty()) {
-                        Text("Chọn nhanh người chơi đang online:", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            onlinePlayers.forEach { p ->
-                                FilterChip(
-                                    selected = targetPlayer == p,
-                                    onClick = { targetPlayer = p },
-                                    label = { Text(p, fontSize = 11.sp) }
-                                )
-                            }
+                    Text("⚡ Chọn nhanh người chơi trong Server (1 chạm — Không cần nhập tay):", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        FilterChip(
+                            selected = targetPlayer == "@a" || targetPlayer.isBlank(),
+                            onClick = { targetPlayer = "@a" },
+                            label = { Text("👥 Tất cả (@a)", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                        )
+                        knownPlayers.forEach { kp ->
+                            val dot = if (kp.isOnline) "🟢" else "🕒"
+                            val crown = if (kp.isOp) " 👑" else ""
+                            FilterChip(
+                                selected = targetPlayer.equals(kp.name, ignoreCase = true),
+                                onClick = { targetPlayer = kp.name },
+                                label = { Text("$dot ${kp.name}$crown", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                            )
                         }
-                    } else {
-                        Text("Hiện chưa ghi nhận người chơi online (hoặc bấm Làm mới danh sách).", fontSize = 11.sp, color = Color(0xFF888888))
                     }
 
                     OutlinedTextField(
                         value = targetPlayer,
                         onValueChange = { targetPlayer = it },
-                        label = { Text("Tên người chơi (hoặc @a cho tất cả)") },
+                        label = { Text("Tên người chơi (Chạm ở trên hoặc nhập)") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
 
                     val who = targetPlayer.trim().ifBlank { "@a" }
-                    Text("Thao tác nhanh cho '$who':", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Thao tác 1 chạm cho '$who':", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         AssistChip(
                             onClick = {
-                                if (targetPlayer.isNotBlank()) vm.opPlayer(targetPlayer.trim())
-                                else vm.sendCommand("op @p")
+                                vm.quickPlayerAction(who, "op")
                                 showPlayerToolDialog = false
                             },
-                            label = { Text("👑 Cấp OP", fontSize = 11.sp) }
+                            label = { Text("👑 Cấp OP", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
                         )
                         AssistChip(
                             onClick = {
-                                if (targetPlayer.isNotBlank()) vm.deopPlayer(targetPlayer.trim())
+                                vm.quickPlayerAction(who, "deop")
                                 showPlayerToolDialog = false
                             },
                             label = { Text("🚫 Gỡ OP", fontSize = 11.sp) }
+                        )
+                        AssistChip(
+                            onClick = {
+                                vm.quickPlayerAction(who, "whitelist_add")
+                                showPlayerToolDialog = false
+                            },
+                            label = { Text("🛡️ +Whitelist", fontSize = 11.sp) }
                         )
                         AssistChip(
                             onClick = {
@@ -945,6 +957,13 @@ fun TerminalScreen(vm: McViewModel) {
                         )
                         AssistChip(
                             onClick = {
+                                vm.quickPlayerAction(who, "heal")
+                                showPlayerToolDialog = false
+                            },
+                            label = { Text("❤️ Hồi đầy máu", fontSize = 11.sp) }
+                        )
+                        AssistChip(
+                            onClick = {
                                 vm.sendCommand("effect clear $who")
                                 showPlayerToolDialog = false
                             },
@@ -965,7 +984,8 @@ fun TerminalScreen(vm: McViewModel) {
             confirmButton = {
                 TextButton(onClick = {
                     vm.refreshOnlinePlayers()
-                }) { Text("🔄 Làm mới danh sách online") }
+                    vm.refreshPlayers()
+                }) { Text("🔄 Làm mới danh sách") }
             },
             dismissButton = {
                 TextButton(onClick = { showPlayerToolDialog = false }) { Text("Đóng") }

@@ -335,68 +335,176 @@ class PlayerManager(private val termux: TermuxRuntime) {
         return true
     }
 
+    /** Lấy UUID chuẩn của người chơi từ usercache.json / ops.json / whitelist.json, hoặc tính OfflinePlayer UUID chuẩn của MC */
+    fun resolvePlayerUuid(dirName: String, name: String): String {
+        val clean = name.trim()
+        readUserCache(dirName).firstOrNull { it.name.equals(clean, ignoreCase = true) && it.uuid.isNotBlank() }?.let { return it.uuid }
+        readOps(dirName).firstOrNull { it.name.equals(clean, ignoreCase = true) && it.uuid.isNotBlank() }?.let { return it.uuid }
+        readWhitelist(dirName).firstOrNull { it.name.equals(clean, ignoreCase = true) && it.uuid.isNotBlank() }?.let { return it.uuid }
+        return java.util.UUID.nameUUIDFromBytes("OfflinePlayer:$clean".toByteArray(Charsets.UTF_8)).toString()
+    }
+
+    private fun writeFileAtomically(dir: File, targetFile: File, content: String) {
+        dir.mkdirs()
+        val temp = File(dir, ".${targetFile.name}.mineserve.tmp")
+        try {
+            temp.writeText(content, Charsets.UTF_8)
+            try {
+                Files.move(temp.toPath(), targetFile.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+            } catch (_: Exception) {
+                Files.move(temp.toPath(), targetFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            }
+        } finally {
+            if (temp.exists()) temp.delete()
+        }
+    }
+
     // ── OP 管理 ──────────────────────────────────────────────────
 
     /**
-     * 添加 OP（默认等级 4）
-     * @return true 表示已发送
+     * 添加 OP（默认等级 4）— Hỗ trợ cả khi Server đang chạy (lệnh console) lẫn khi Server đang tắt (ghi trực tiếp ops.json)
      */
-    fun opPlayer(name: String): Boolean {
-        return sendCmd("op $name")
+    fun opPlayer(name: String, dirName: String? = null, level: Int = 4): Boolean {
+        if (termux.isMcRunning()) {
+            return sendCmd("op $name")
+        }
+        if (dirName.isNullOrBlank()) return false
+        return writeOpEntryOffline(name, level, dirName)
+    }
+
+    private fun writeOpEntryOffline(name: String, level: Int, dirName: String): Boolean {
+        return try {
+            val clean = name.trim()
+            val dir = serverDir(dirName)
+            if (PowerNukkitXLayout.isPowerNukkitX(dir)) {
+                val textFile = File(dir, "ops.txt")
+                val lines = if (textFile.isFile) textFile.readLines().map { it.trim() }.filter { it.isNotEmpty() }.toMutableList() else mutableListOf()
+                if (lines.none { it.equals(clean, ignoreCase = true) }) lines.add(clean)
+                writeFileAtomically(dir, textFile, lines.joinToString("\n"))
+                return true
+            }
+            val opsFile = File(dir, "ops.json")
+            val ops = readOps(dirName).toMutableList()
+            val uuid = resolvePlayerUuid(dirName, clean)
+            val idx = ops.indexOfFirst { it.name.equals(clean, ignoreCase = true) }
+            if (idx >= 0) {
+                ops[idx] = ops[idx].copy(
+                    uuid = ops[idx].uuid.ifBlank { uuid },
+                    level = level
+                )
+            } else {
+                ops.add(OpEntry(name = clean, uuid = uuid, level = level))
+            }
+            val encoded = json.encodeToString(ListSerializer(OpEntry.serializer()), ops)
+            writeFileAtomically(dir, opsFile, encoded)
+            true
+        } catch (_: Exception) {
+            false
+        }
     }
 
     /**
      * 添加 OP 并指定等级。
      */
     fun opPlayerWithLevel(name: String, level: Int, dirName: String): Boolean {
-        if (!termux.isMcRunning()) return false
+        if (!termux.isMcRunning()) {
+            return writeOpEntryOffline(name, level, dirName)
+        }
         // 1. 发送 op 命令添加 OP（等级为 server.properties 默认值，通常 4）
         termux.sendCommand("op $name")
         if (PowerNukkitXLayout.isPowerNukkitX(serverDir(dirName))) return true
         // 2. 等待 MC 回写 ops.json（含 UUID）
         try { Thread.sleep(800) } catch (_: InterruptedException) {}
         // 3. 修改 ops.json 中该玩家的 level 字段
-        try {
-            val dir = serverDir(dirName)
-            val opsFile = File(dir, "ops.json")
-            val ops = readOps(dirName).toMutableList()
-            val idx = ops.indexOfFirst { it.name.equals(name, ignoreCase = true) }
-            if (idx >= 0) {
-                ops[idx] = ops[idx].copy(level = level)
-            } else {
-                ops.add(OpEntry(name = name, uuid = "", level = level))
-            }
-            val encoded = json.encodeToString(ListSerializer(OpEntry.serializer()), ops)
-            if (opsFile.isFile && opsFile.length() > 0L) {
-                runCatching { opsFile.copyTo(File(dir, "ops.json.bak"), overwrite = true) }
-            }
-            val temp = File(dir, ".ops.json.mineserve.tmp")
-            try {
-                temp.writeText(encoded)
-                try {
-                    Files.move(temp.toPath(), opsFile.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
-                } catch (_: Exception) {
-                    Files.move(temp.toPath(), opsFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
-                }
-            } finally {
-                if (temp.exists()) temp.delete()
-            }
-        } catch (_: Exception) {
-            // ops.json 修改失败不影响 op 命令发送结果
-        }
+        writeOpEntryOffline(name, level, dirName)
         return true
     }
 
-    /** 取消 OP */
-    fun deopPlayer(name: String): Boolean = sendCmd("deop $name")
+    /** 取消 OP — Hỗ trợ cả khi Server đang chạy lẫn khi Server đang tắt */
+    fun deopPlayer(name: String, dirName: String? = null): Boolean {
+        if (termux.isMcRunning()) {
+            return sendCmd("deop $name")
+        }
+        if (dirName.isNullOrBlank()) return false
+        return try {
+            val clean = name.trim()
+            val dir = serverDir(dirName)
+            if (PowerNukkitXLayout.isPowerNukkitX(dir)) {
+                val textFile = File(dir, "ops.txt")
+                if (textFile.isFile) {
+                    val lines = textFile.readLines().map { it.trim() }.filter { it.isNotEmpty() && !it.equals(clean, ignoreCase = true) }
+                    writeFileAtomically(dir, textFile, lines.joinToString("\n"))
+                }
+                return true
+            }
+            val opsFile = File(dir, "ops.json")
+            val ops = readOps(dirName).filterNot { it.name.equals(clean, ignoreCase = true) }
+            val encoded = json.encodeToString(ListSerializer(OpEntry.serializer()), ops)
+            writeFileAtomically(dir, opsFile, encoded)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
 
     // ── 白名单 ──────────────────────────────────────────────────
 
-    /** 添加白名单 */
-    fun whitelistAdd(name: String): Boolean = sendCmd("whitelist add $name")
+    /** 添加白名单 — Hỗ trợ cả khi Server đang chạy lẫn khi Server đang tắt */
+    fun whitelistAdd(name: String, dirName: String? = null): Boolean {
+        if (termux.isMcRunning()) {
+            return sendCmd("whitelist add $name")
+        }
+        if (dirName.isNullOrBlank()) return false
+        return try {
+            val clean = name.trim()
+            val dir = serverDir(dirName)
+            if (PowerNukkitXLayout.isPowerNukkitX(dir)) {
+                val textFile = File(dir, "white-list.txt")
+                val lines = if (textFile.isFile) textFile.readLines().map { it.trim() }.filter { it.isNotEmpty() }.toMutableList() else mutableListOf()
+                if (lines.none { it.equals(clean, ignoreCase = true) }) lines.add(clean)
+                writeFileAtomically(dir, textFile, lines.joinToString("\n"))
+                return true
+            }
+            val wlFile = File(dir, "whitelist.json")
+            val list = readWhitelist(dirName).toMutableList()
+            val uuid = resolvePlayerUuid(dirName, clean)
+            if (list.none { it.name.equals(clean, ignoreCase = true) }) {
+                list.add(WhitelistEntry(name = clean, uuid = uuid))
+            }
+            val encoded = json.encodeToString(ListSerializer(WhitelistEntry.serializer()), list)
+            writeFileAtomically(dir, wlFile, encoded)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
 
-    /** 移除白名单 */
-    fun whitelistRemove(name: String): Boolean = sendCmd("whitelist remove $name")
+    /** 移除白名单 — Hỗ trợ cả khi Server đang chạy lẫn khi Server đang tắt */
+    fun whitelistRemove(name: String, dirName: String? = null): Boolean {
+        if (termux.isMcRunning()) {
+            return sendCmd("whitelist remove $name")
+        }
+        if (dirName.isNullOrBlank()) return false
+        return try {
+            val clean = name.trim()
+            val dir = serverDir(dirName)
+            if (PowerNukkitXLayout.isPowerNukkitX(dir)) {
+                val textFile = File(dir, "white-list.txt")
+                if (textFile.isFile) {
+                    val lines = textFile.readLines().map { it.trim() }.filter { it.isNotEmpty() && !it.equals(clean, ignoreCase = true) }
+                    writeFileAtomically(dir, textFile, lines.joinToString("\n"))
+                }
+                return true
+            }
+            val wlFile = File(dir, "whitelist.json")
+            val list = readWhitelist(dirName).filterNot { it.name.equals(clean, ignoreCase = true) }
+            val encoded = json.encodeToString(ListSerializer(WhitelistEntry.serializer()), list)
+            writeFileAtomically(dir, wlFile, encoded)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
 
     /** 开启白名单 */
     fun whitelistOn(): Boolean = sendCmd("whitelist on")

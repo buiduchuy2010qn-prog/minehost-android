@@ -1841,6 +1841,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
         if (active != null) {
             item(key = "low_ram_zero_mb_upgrades_card") {
                 val onlinePlayers by vm.onlinePlayerNames.collectAsStateWithLifecycle()
+                val knownPlayers by vm.knownServerPlayers.collectAsStateWithLifecycle()
                 var selectedTargetPlayer by remember(active.dirName) { mutableStateOf("@a") }
                 var customMotdText by remember(active.dirName) {
                     mutableStateOf("§a§l⛏️ ${active.name} §7• §bChơi Chung PC + PE §eSiêu Mượt!")
@@ -1850,7 +1851,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                 HostCard(
                     title = "🪶 Tiện Ích Tốn 0 MB RAM (Chuyên Biệt Cho Máy RAM Ít)",
                     artKind = MinecraftArtKind.DIAMOND_SWORD,
-                    badgeText = "v2.7.3 • 0 MB RAM"
+                    badgeText = "v2.8.0 • 0 MB RAM"
                 ) {
                     // 1. Khóa Biên Giới Thế Giới 1 chạm (WorldBorder — chống đi xa làm tràn RAM)
                     Surface(
@@ -1902,7 +1903,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                         }
                     }
 
-                    // 2. Bảng Thao Tác Người Chơi 1 chạm bằng lệnh gốc (Tốn 0 MB RAM)
+                    // 2. Bảng Cấp Quyền & Thao Tác Người Chơi 1 chạm (Hiện sẵn người chơi trong Server — Không bắt nhập tay)
                     Surface(
                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
                         shape = RoundedCornerShape(12.dp),
@@ -1913,10 +1914,15 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Text(
-                                "⚡ 2. Chữa Trị, Tặng Đồ Starter Kit & Đổi Chế Độ Người Chơi 1 Chạm (0 MB RAM):",
+                                "⚡ 2. Cấp Quyền OP, Whitelist, Chữa Trị & Đổi Chế Độ Người Chơi 1 Chạm (Không Cần Nhập Tay):",
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                "Danh sách người chơi trong Server (🟢 Đang online / 🕒 Đã vào server) hiện sẵn bên dưới — chạm để chọn người chơi rồi bấm thao tác ngay:",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             FlowRow(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -1928,13 +1934,64 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     onClick = { selectedTargetPlayer = "@a" },
                                     label = { Text("👥 Tất cả (@a)", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
                                 )
-                                onlinePlayers.forEach { pName ->
+                                knownPlayers.forEach { kp ->
+                                    val statusDot = if (kp.isOnline) "🟢" else "🕒"
+                                    val opCrown = if (kp.isOp) " 👑" else ""
+                                    val wlShield = if (kp.isWhitelisted) " 🛡️" else ""
                                     FilterChip(
-                                        selected = selectedTargetPlayer == pName,
-                                        onClick = { selectedTargetPlayer = pName },
-                                        label = { Text("🟢 $pName", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                                        selected = selectedTargetPlayer.equals(kp.name, ignoreCase = true),
+                                        onClick = { selectedTargetPlayer = kp.name },
+                                        label = {
+                                            Text(
+                                                "$statusDot ${kp.name}$opCrown$wlShield",
+                                                fontSize = 11.sp,
+                                                fontWeight = if (kp.isOnline) FontWeight.ExtraBold else FontWeight.SemiBold
+                                            )
+                                        }
                                     )
                                 }
+                                AssistChip(
+                                    onClick = {
+                                        vm.refreshOnlinePlayers()
+                                        vm.refreshPlayers()
+                                    },
+                                    label = { Text("🔄 Làm mới", fontSize = 10.5.sp) }
+                                )
+                            }
+                            if (knownPlayers.isEmpty()) {
+                                Text(
+                                    "ℹ️ Khi có người chơi tham gia server, tên của họ sẽ tự động hiện sẵn tại đây để bạn cấp OP / thao tác 1 chạm mà không cần gõ phím.",
+                                    fontSize = 10.5.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            // Hàng nút Cấp Quyền 1 chạm (OP / Gỡ OP / Whitelist / Kick)
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                                Button(
+                                    onClick = { vm.quickPlayerAction(selectedTargetPlayer, "op") },
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD97706), contentColor = Color.White),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) { Text("👑 Cấp OP", fontSize = 10.5.sp, fontWeight = FontWeight.ExtraBold) }
+                                OutlinedButton(
+                                    onClick = { vm.quickPlayerAction(selectedTargetPlayer, "deop") },
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) { Text("🚫 Gỡ OP", fontSize = 10.5.sp, fontWeight = FontWeight.Bold) }
+                                OutlinedButton(
+                                    onClick = { vm.quickPlayerAction(selectedTargetPlayer, "whitelist_add") },
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                                    modifier = Modifier.weight(1.15f)
+                                ) { Text("🛡️ +Whitelist", fontSize = 10.5.sp, fontWeight = FontWeight.Bold) }
+                                OutlinedButton(
+                                    onClick = { vm.quickPlayerAction(selectedTargetPlayer, "kick") },
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                                    modifier = Modifier.weight(0.85f)
+                                ) { Text("👢 Kick", fontSize = 10.5.sp, fontWeight = FontWeight.Bold) }
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
                                 Button(
@@ -2102,6 +2159,8 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                     // ══════════════════════════════════════════════════════════════════
                     LaunchedEffect(active.dirName) {
                         vm.ensureProMonitorsStarted()
+                        vm.refreshPlayers()
+                        vm.refreshOnlinePlayers()
                     }
                     val thermalInfo by vm.thermalInfo.collectAsStateWithLifecycle()
                     val autoThermalGuard by vm.autoThermalGuard.collectAsStateWithLifecycle()
@@ -2143,20 +2202,33 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                 fontSize = 11.sp
                             )
 
-                            var vipTargetPlayer by remember { mutableStateOf("") }
+                            var vipTargetPlayer by remember(active.dirName) { mutableStateOf("") }
                             var vipGlowing by remember { mutableStateOf(true) }
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            Text(
+                                "⚡ Chọn nhanh người nhận Danh hiệu VIP trong Server (1 chạm — Không cần nhập tay):",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                OutlinedTextField(
-                                    value = vipTargetPlayer,
-                                    onValueChange = { vipTargetPlayer = it },
-                                    label = { Text("Tên người nhận Danh hiệu (Trống = Cả nhóm @a)", fontSize = 11.sp) },
-                                    singleLine = true,
-                                    modifier = Modifier.weight(1f)
+                                FilterChip(
+                                    selected = vipTargetPlayer.isBlank() || vipTargetPlayer == "@a",
+                                    onClick = { vipTargetPlayer = "" },
+                                    label = { Text("👥 Cả nhóm (@a)", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
                                 )
+                                knownPlayers.forEach { kp ->
+                                    val dot = if (kp.isOnline) "🟢" else "🕒"
+                                    val crown = if (kp.isOp) " 👑" else ""
+                                    FilterChip(
+                                        selected = vipTargetPlayer.equals(kp.name, ignoreCase = true),
+                                        onClick = { vipTargetPlayer = kp.name },
+                                        label = { Text("$dot ${kp.name}$crown", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                                    )
+                                }
                                 FilterChip(
                                     selected = vipGlowing,
                                     onClick = { vipGlowing = !vipGlowing },
@@ -2305,14 +2377,36 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             }
 
                             HorizontalDivider()
-                            Text("📍 Sổ Tay Điểm Dịch Chuyển Nhanh (Bấm để dịch chuyển cả nhóm @a):", fontWeight = FontWeight.ExtraBold, fontSize = 11.5.sp)
+                            var warpTargetPlayer by remember(active.dirName) { mutableStateOf("@a") }
+                            Text("📍 Sổ Tay Điểm Dịch Chuyển Nhanh (Chọn người chơi rồi bấm mốc tọa độ để dịch chuyển 1 chạm):", fontWeight = FontWeight.ExtraBold, fontSize = 11.5.sp)
+                            if (knownPlayers.isNotEmpty()) {
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    FilterChip(
+                                        selected = warpTargetPlayer == "@a",
+                                        onClick = { warpTargetPlayer = "@a" },
+                                        label = { Text("👥 Cả nhóm (@a)", fontSize = 10.5.sp, fontWeight = FontWeight.Bold) }
+                                    )
+                                    knownPlayers.forEach { kp ->
+                                        val dot = if (kp.isOnline) "🟢" else "🕒"
+                                        FilterChip(
+                                            selected = warpTargetPlayer.equals(kp.name, ignoreCase = true),
+                                            onClick = { warpTargetPlayer = kp.name },
+                                            label = { Text("$dot ${kp.name}", fontSize = 10.5.sp, fontWeight = FontWeight.Bold) }
+                                        )
+                                    }
+                                }
+                            }
                             FlowRow(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                                 verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 warpPoints.forEach { wp ->
                                     AssistChip(
-                                        onClick = { vm.teleportToWarpPoint(wp, null) },
+                                        onClick = { vm.teleportToWarpPoint(wp, if (warpTargetPlayer == "@a") null else warpTargetPlayer) },
                                         enabled = state.isRunning,
                                         label = { Text("${wp.name} (${wp.x},${wp.y},${wp.z})", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
                                     )
@@ -2448,6 +2542,32 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                 fontSize = 11.5.sp
                             )
                             var adminNameInput by remember(opGuardAdminName) { mutableStateOf(opGuardAdminName) }
+                            if (knownPlayers.isNotEmpty()) {
+                                Text(
+                                    "⚡ Chọn nhanh tài khoản Admin của bạn trong Server (1 chạm — Không cần nhập tay):",
+                                    fontSize = 10.5.sp,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    knownPlayers.forEach { kp ->
+                                        val dot = if (kp.isOnline) "🟢" else "🕒"
+                                        val crown = if (kp.isOp) " 👑" else ""
+                                        FilterChip(
+                                            selected = adminNameInput.equals(kp.name, ignoreCase = true),
+                                            onClick = {
+                                                adminNameInput = kp.name
+                                                vm.saveOpGuardConfig(kp.name, opGuardEnabled)
+                                            },
+                                            label = { Text("$dot ${kp.name}$crown", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                                        )
+                                    }
+                                }
+                            }
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -2456,7 +2576,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                 OutlinedTextField(
                                     value = adminNameInput,
                                     onValueChange = { adminNameInput = it },
-                                    label = { Text("Tên nhân vật Admin của bạn", fontSize = 11.sp) },
+                                    label = { Text("Tên nhân vật Admin (Chạm tên ở trên hoặc nhập)", fontSize = 11.sp) },
                                     singleLine = true,
                                     modifier = Modifier.weight(1f)
                                 )

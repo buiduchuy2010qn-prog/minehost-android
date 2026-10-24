@@ -2092,7 +2092,10 @@ class McViewModel(
                 playerManager.extractPowerNukkitPlayerEvent(line) != null -> {
                     val (name, joined) = playerManager.extractPowerNukkitPlayerEvent(line)!!
                     repo.updateServerState { it.copy(onlinePlayers = (it.onlinePlayers + if (joined) 1 else -1).coerceAtLeast(0)) }
-                    if (joined) addOnlinePlayer(name) else removeOnlinePlayer(name)
+                    if (joined) {
+                        addOnlinePlayer(name)
+                        refreshPlayers()
+                    } else removeOnlinePlayer(name)
                     recordPlayerEvent(name, if (joined) "Vào server" else "Rời server")
                     notifyPlayerEvent(name, joined)
                     handled = true
@@ -2105,6 +2108,7 @@ class McViewModel(
                         }
                         addOnlinePlayer(name)
                         recordPlayerEvent(name, "Vào server")
+                        refreshPlayers()
                         notifyPlayerEvent(name, true)
                     }
                     handled = true
@@ -6256,14 +6260,14 @@ class McViewModel(
     // 声明位置在 init 之后，必须用 lazy 延迟初始化，避免构造函数未完成时读到 null
     private val playerManager: PlayerManager by lazy { PlayerManager(repo.termuxRuntime) }
 
-    private val _ops = MutableStateFlow<List<PlayerManager.OpEntry>>(emptyList())
-    val ops: StateFlow<List<PlayerManager.OpEntry>> = _ops.asStateFlow()
+    private val _ops: MutableStateFlow<List<PlayerManager.OpEntry>> by lazy { MutableStateFlow(emptyList()) }
+    val ops: StateFlow<List<PlayerManager.OpEntry>> by lazy { _ops.asStateFlow() }
 
-    private val _whitelist = MutableStateFlow<List<PlayerManager.WhitelistEntry>>(emptyList())
-    val whitelist: StateFlow<List<PlayerManager.WhitelistEntry>> = _whitelist.asStateFlow()
+    private val _whitelist: MutableStateFlow<List<PlayerManager.WhitelistEntry>> by lazy { MutableStateFlow(emptyList()) }
+    val whitelist: StateFlow<List<PlayerManager.WhitelistEntry>> by lazy { _whitelist.asStateFlow() }
 
-    private val _bannedPlayers = MutableStateFlow<List<PlayerManager.BannedEntry>>(emptyList())
-    val bannedPlayers: StateFlow<List<PlayerManager.BannedEntry>> = _bannedPlayers.asStateFlow()
+    private val _bannedPlayers: MutableStateFlow<List<PlayerManager.BannedEntry>> by lazy { MutableStateFlow(emptyList()) }
+    val bannedPlayers: StateFlow<List<PlayerManager.BannedEntry>> by lazy { _bannedPlayers.asStateFlow() }
 
     /** 白名单开关状态（由 server.properties 的 white-list 控制） */
     private val _whitelistEnabled = MutableStateFlow(false)
@@ -6276,6 +6280,50 @@ class McViewModel(
     /** 在线玩家名列表（从日志解析） */
     private val _onlinePlayerNames: MutableStateFlow<List<String>> by lazy { MutableStateFlow(emptyList()) }
     val onlinePlayerNames: StateFlow<List<String>> by lazy { _onlinePlayerNames.asStateFlow() }
+
+    /** Thông tin người chơi đã biết trong server (Online + Lịch sử + usercache.json + OP + Whitelist) để chọn nhanh 1 chạm */
+    data class KnownServerPlayer(
+        val name: String,
+        val isOnline: Boolean,
+        val isOp: Boolean,
+        val isWhitelisted: Boolean
+    )
+
+    val knownServerPlayers: StateFlow<List<KnownServerPlayer>> by lazy {
+        combine(_onlinePlayerNames, _playerHistory, _ops, _whitelist) { onlineList, historyList, opsList, whitelistList ->
+            val onlineSet = onlineList.map { it.lowercase(java.util.Locale.ROOT) }.toSet()
+            val opSet = opsList.map { it.name.lowercase(java.util.Locale.ROOT) }.toSet()
+            val wlSet = whitelistList.map { it.name.lowercase(java.util.Locale.ROOT) }.toSet()
+            val seenLower = mutableSetOf<String>()
+            val result = mutableListOf<KnownServerPlayer>()
+
+            fun addCandidate(rawName: String) {
+                val trimmed = rawName.trim()
+                if (trimmed.isBlank() || trimmed == "@a" || trimmed == "@p" || trimmed == "@r" || trimmed == "@s") return
+                val lower = trimmed.lowercase(java.util.Locale.ROOT)
+                if (seenLower.add(lower)) {
+                    result.add(
+                        KnownServerPlayer(
+                            name = trimmed,
+                            isOnline = lower in onlineSet,
+                            isOp = lower in opSet,
+                            isWhitelisted = lower in wlSet
+                        )
+                    )
+                }
+            }
+
+            // 1. Ưu tiên người chơi đang Online lên đầu
+            onlineList.forEach { addCandidate(it) }
+            // 2. Người chơi gần đây nhất trong lịch sử / usercache.json
+            historyList.forEach { addCandidate(it.player) }
+            // 3. Người chơi trong danh sách OP và Whitelist
+            opsList.forEach { addCandidate(it.name) }
+            whitelistList.forEach { addCandidate(it.name) }
+
+            result
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    }
 
     /** Bản ghi lịch sử sự kiện vào/rời server của người chơi (lưu bền vững theo từng server) */
     @Serializable
@@ -6483,6 +6531,11 @@ class McViewModel(
                     knownPlayerXuids.clear()
                     if (currentDir != null) {
                         refreshKnownUuidsFromServerFiles(currentDir)
+                        runCatching {
+                            _ops.value = playerManager.readOps(currentDir)
+                            _whitelist.value = playerManager.readWhitelist(currentDir)
+                            _bannedPlayers.value = playerManager.readBanned(currentDir)
+                        }
                     }
                     val f = playerHistoryFile()
                     val sf = serverLocalHistoryFile()
@@ -7090,8 +7143,13 @@ class McViewModel(
 
     fun opPlayer(name: String) {
         if (name.isBlank()) return
-        val sent = playerManager.opPlayer(name)
-        afterCmd(sent, str(R.string.s1055, name))
+        val dirName = activeDirName()
+        viewModelScope.launch {
+            val sent = withContext(Dispatchers.IO) {
+                playerManager.opPlayer(name, dirName)
+            }
+            afterCmd(sent, str(R.string.s1055, name))
+        }
     }
 
     /** 设置 OP 并指定等级（1-4）。手动指定等级需重启服务器才生效到权限系统。 */
@@ -7111,20 +7169,35 @@ class McViewModel(
 
     fun deopPlayer(name: String) {
         if (name.isBlank()) return
-        val sent = playerManager.deopPlayer(name)
-        afterCmd(sent, str(R.string.msg_op_cancelled, name))
+        val dirName = activeDirName()
+        viewModelScope.launch {
+            val sent = withContext(Dispatchers.IO) {
+                playerManager.deopPlayer(name, dirName)
+            }
+            afterCmd(sent, str(R.string.msg_op_cancelled, name))
+        }
     }
 
     fun whitelistAdd(name: String) {
         if (name.isBlank()) return
-        val sent = playerManager.whitelistAdd(name)
-        afterCmd(sent, str(R.string.msg_whitelist_added, name))
+        val dirName = activeDirName()
+        viewModelScope.launch {
+            val sent = withContext(Dispatchers.IO) {
+                playerManager.whitelistAdd(name, dirName)
+            }
+            afterCmd(sent, str(R.string.msg_whitelist_added, name))
+        }
     }
 
     fun whitelistRemove(name: String) {
         if (name.isBlank()) return
-        val sent = playerManager.whitelistRemove(name)
-        afterCmd(sent, str(R.string.msg_whitelist_removed, name))
+        val dirName = activeDirName()
+        viewModelScope.launch {
+            val sent = withContext(Dispatchers.IO) {
+                playerManager.whitelistRemove(name, dirName)
+            }
+            afterCmd(sent, str(R.string.msg_whitelist_removed, name))
+        }
     }
 
     /** 切换白名单开关 */
@@ -10729,15 +10802,81 @@ class McViewModel(
         }
     }
 
-    /** [v2.7.3] Bảng Thao Tác Người Chơi 1 chạm bằng lệnh gốc (Tốn 0 MB RAM) */
+    /** [v2.8.0] Bảng Thao Tác & Cấp Quyền Người Chơi 1 chạm (Không cần nhập tay, tốn 0 MB RAM) */
     fun quickPlayerAction(playerName: String, actionType: String, targetOtherPlayer: String? = null) {
         val target = playerName.trim().ifBlank { "@a" }
         val displayTarget = if (target == "@a") "Tất cả người chơi (@a)" else target
+
+        // Các thao tác cấp quyền (OP / Gỡ OP / Whitelist) hoạt động cả khi Server đang chạy lẫn khi đang tắt
+        when (actionType) {
+            "op" -> {
+                if (target == "@a") {
+                    val candidates = knownServerPlayers.value.map { it.name }
+                    if (candidates.isEmpty()) {
+                        notifyActionDone("ℹ️ Chưa có người chơi nào trong danh sách server để cấp OP!")
+                    } else {
+                        candidates.forEach { opPlayer(it) }
+                        notifyActionDone("👑 Đã cấp quyền OP cho toàn bộ ${candidates.size} người chơi trong server!")
+                    }
+                } else {
+                    opPlayer(target)
+                    notifyActionDone("👑 Đã cấp quyền OP cho $target!")
+                }
+                return
+            }
+            "deop" -> {
+                if (target == "@a") {
+                    val currentOps = _ops.value.map { it.name }
+                    if (currentOps.isEmpty()) {
+                        notifyActionDone("ℹ️ Hiện không có ai đang giữ quyền OP!")
+                    } else {
+                        currentOps.forEach { deopPlayer(it) }
+                        notifyActionDone("🚫 Đã gỡ quyền OP của toàn bộ người chơi!")
+                    }
+                } else {
+                    deopPlayer(target)
+                    notifyActionDone("🚫 Đã gỡ quyền OP của $target!")
+                }
+                return
+            }
+            "whitelist_add" -> {
+                if (target == "@a") {
+                    val candidates = knownServerPlayers.value.map { it.name }
+                    if (candidates.isEmpty()) {
+                        notifyActionDone("ℹ️ Chưa có người chơi nào trong server để thêm Whitelist!")
+                    } else {
+                        candidates.forEach { whitelistAdd(it) }
+                        notifyActionDone("🛡️ Đã thêm toàn bộ ${candidates.size} người chơi vào Whitelist!")
+                    }
+                } else {
+                    whitelistAdd(target)
+                    notifyActionDone("🛡️ Đã thêm $target vào Whitelist!")
+                }
+                return
+            }
+            "whitelist_remove" -> {
+                if (target != "@a") {
+                    whitelistRemove(target)
+                    notifyActionDone("🛡️ Đã gỡ $target khỏi Whitelist!")
+                }
+                return
+            }
+        }
+
         if (!serverState.value.isRunning) {
-            notifyActionDone("ℹ️ Hãy bật Server trước để thực hiện thao tác cho $displayTarget!")
+            notifyActionDone("ℹ️ Hãy bật Server trước để thực hiện thao tác trong game cho $displayTarget!")
             return
         }
         when (actionType) {
+            "kick" -> {
+                if (target == "@a") {
+                    _onlinePlayerNames.value.forEach { kickPlayer(it, "Kicked by Admin") }
+                    notifyActionDone("👢 Đã Kick tất cả người chơi đang online!")
+                } else {
+                    kickPlayer(target, "Kicked by Admin")
+                    notifyActionDone("👢 Đã Kick $target khỏi server!")
+                }
+            }
             "heal" -> {
                 sendCommand("effect give $target minecraft:instant_health 1 10 true")
                 sendCommand("effect give $target minecraft:saturation 5 10 true")

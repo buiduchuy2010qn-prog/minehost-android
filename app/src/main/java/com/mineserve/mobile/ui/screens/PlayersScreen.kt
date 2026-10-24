@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package com.mineserve.mobile.ui.screens
 
 import androidx.compose.ui.res.stringResource
@@ -11,6 +13,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Spacer
@@ -34,6 +37,7 @@ import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.VideogameAsset
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
@@ -41,6 +45,7 @@ import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -166,6 +171,7 @@ fun PlayersScreen(
     val defaultOpLevel by vm.defaultOpLevel.collectAsState()
     val onlinePlayers by vm.onlinePlayerNames.collectAsState()
     val playerHistory by vm.playerHistory.collectAsState()
+    val knownPlayers by vm.knownServerPlayers.collectAsState()
     val config by vm.config.collectAsState()
     val isBootstrapped by vm.isBootstrapped.collectAsState()
     val activitySummaries = remember(playerHistory, onlinePlayers, serverState.isRunning) {
@@ -275,10 +281,12 @@ fun PlayersScreen(
                     OnlineTab(
                         players = if (isRunning) onlinePlayers else emptyList(),
                         summaries = activitySummaries,
+                        ops = ops,
                         isRunning = isRunning,
-                        onRefresh = { vm.refreshOnlinePlayers() },
+                        onRefresh = { vm.refreshOnlinePlayers(); vm.refreshPlayers() },
                         onShowDetail = { detailInitialTab = 0; detailPlayer = DetailInfo.Activity(it) },
                         onOpenInventory = { detailInitialTab = 1; detailPlayer = DetailInfo.Activity(it) },
+                        onToggleOp = { name, isOp -> if (isOp) vm.deopPlayer(name) else vm.opPlayer(name) },
                         onCopy = { name ->
                             val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                             clipboard.setPrimaryClip(android.content.ClipData.newPlainText("MC Player", name))
@@ -291,8 +299,14 @@ fun PlayersScreen(
                     PersistentPlayerHistorySection(
                         summaries = activitySummaries,
                         history = playerHistory,
+                        ops = ops,
+                        whitelist = whitelist,
+                        isRunning = isRunning,
                         onShowDetail = { detailInitialTab = 0; detailPlayer = DetailInfo.Activity(it) },
                         onOpenInventory = { detailInitialTab = 1; detailPlayer = DetailInfo.Activity(it) },
+                        onToggleOp = { name, isOp -> if (isOp) vm.deopPlayer(name) else vm.opPlayer(name) },
+                        onToggleWhitelist = { name, isWl -> if (isWl) vm.whitelistRemove(name) else vm.whitelistAdd(name) },
+                        onSetGameMode = { name, mode -> vm.setGameMode(name, mode) },
                         onCopyText = { textToCopy ->
                             val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                             clipboard.setPrimaryClip(android.content.ClipData.newPlainText("MC Player Info", textToCopy))
@@ -307,8 +321,14 @@ fun PlayersScreen(
                     PersistentPlayerHistorySection(
                         summaries = activitySummaries,
                         history = playerHistory,
+                        ops = ops,
+                        whitelist = whitelist,
+                        isRunning = isRunning,
                         onShowDetail = { detailInitialTab = 0; detailPlayer = DetailInfo.Activity(it) },
                         onOpenInventory = { detailInitialTab = 1; detailPlayer = DetailInfo.Activity(it) },
+                        onToggleOp = { name, isOp -> if (isOp) vm.deopPlayer(name) else vm.opPlayer(name) },
+                        onToggleWhitelist = { name, isWl -> if (isWl) vm.whitelistRemove(name) else vm.whitelistAdd(name) },
+                        onSetGameMode = { name, mode -> vm.setGameMode(name, mode) },
                         onCopyText = { textToCopy ->
                             val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                             clipboard.setPrimaryClip(android.content.ClipData.newPlainText("MC Player Info", textToCopy))
@@ -321,6 +341,7 @@ fun PlayersScreen(
                 }
                 PlayerListTab.Ops -> OpsTab(
                     ops = ops,
+                    knownPlayers = knownPlayers,
                     isRunning = isRunning,
                     defaultOpLevel = defaultOpLevel,
                     onOpAddDefault = { vm.opPlayer(it) },
@@ -331,6 +352,7 @@ fun PlayersScreen(
                 )
                 PlayerListTab.Whitelist -> WhitelistTab(
                     whitelist = whitelist,
+                    knownPlayers = knownPlayers,
                     isRunning = isRunning,
                     whitelistEnabled = whitelistEnabled,
                     onToggle = { vm.toggleWhitelist(it) },
@@ -339,6 +361,7 @@ fun PlayersScreen(
                 )
                 PlayerListTab.Banned -> BannedTab(
                     banned = banned,
+                    knownPlayers = knownPlayers,
                     isRunning = isRunning,
                     onBan = { name, duration, reason ->
                         if (duration.isBlank()) vm.banPlayer(name, reason)
@@ -554,10 +577,12 @@ private fun StatusRow(color: Color, text: String) {
 private fun OnlineTab(
     players: List<String>,
     summaries: List<McViewModel.PlayerActivitySummary>,
+    ops: List<PlayerManager.OpEntry>,
     isRunning: Boolean,
     onRefresh: () -> Unit,
     onShowDetail: (String) -> Unit,
     onOpenInventory: (String) -> Unit,
+    onToggleOp: (String, Boolean) -> Unit,
     onCopy: (String) -> Unit,
     onKick: (String) -> Unit,
     onSetGameMode: (String, Int) -> Unit
@@ -583,11 +608,14 @@ private fun OnlineTab(
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 filteredPlayers.forEach { name ->
                     val summary = summaries.firstOrNull { it.player.equals(name, ignoreCase = true) }
+                    val isPlayerOp = ops.any { it.name.equals(name, ignoreCase = true) }
                     OnlinePlayerRow(
                         name = name,
                         summary = summary,
+                        isOp = isPlayerOp,
                         onShowDetail = { onShowDetail(name) },
                         onOpenInventory = { onOpenInventory(name) },
+                        onToggleOp = { onToggleOp(name, isPlayerOp) },
                         onCopy = { onCopy(name) },
                         onKick = { onKick(name) },
                         onSetGameMode = { mode -> onSetGameMode(name, mode) }
@@ -613,8 +641,10 @@ private fun OnlineTab(
 private fun OnlinePlayerRow(
     name: String,
     summary: McViewModel.PlayerActivitySummary?,
+    isOp: Boolean,
     onShowDetail: () -> Unit,
     onOpenInventory: () -> Unit,
+    onToggleOp: () -> Unit,
     onCopy: () -> Unit,
     onKick: () -> Unit,
     onSetGameMode: (Int) -> Unit
@@ -632,17 +662,37 @@ private fun OnlinePlayerRow(
         MinecraftPlayerAvatar(name = name, isOnline = true, size = 38.dp)
         Spacer(Modifier.size(10.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(name, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                if (isOp) "👑 $name" else name,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
             val joinText = summary?.currentSessionJoinTime ?: summary?.lastJoinTime
             val sessionSec = summary?.currentSessionSeconds ?: 0L
             Text(
                 buildString {
                     append(stringResource(R.string.s318))
+                    if (isOp) append(" • Đang là OP")
                     if (!joinText.isNullOrBlank()) append(" • Vào lúc: $joinText")
                     if (sessionSec > 0L) append(" • Phiên này: ${formatActivitySeconds(sessionSec)}")
                 },
                 color = Mint,
                 fontSize = 10.sp
+            )
+        }
+        // Cấp / Gỡ OP 1 chạm ngay trên dòng
+        TextButton(
+            onClick = onToggleOp,
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+            modifier = Modifier.height(28.dp)
+        ) {
+            Text(
+                if (isOp) "👑 Gỡ OP" else "👑 +OP",
+                color = if (isOp) Coral else Color(0xFFD97706),
+                fontSize = 10.sp,
+                fontWeight = FontWeight.ExtraBold
             )
         }
         // Mở nhanh Túi đồ người chơi
@@ -682,8 +732,14 @@ private fun OnlinePlayerRow(
 private fun PersistentPlayerHistorySection(
     summaries: List<McViewModel.PlayerActivitySummary>,
     history: List<McViewModel.PlayerHistoryEntry>,
+    ops: List<PlayerManager.OpEntry>,
+    whitelist: List<PlayerManager.WhitelistEntry>,
+    isRunning: Boolean,
     onShowDetail: (String) -> Unit,
     onOpenInventory: (String) -> Unit,
+    onToggleOp: (String, Boolean) -> Unit,
+    onToggleWhitelist: (String, Boolean) -> Unit,
+    onSetGameMode: (String, Int) -> Unit,
     onCopyText: (String) -> Unit,
     onDeleteRecord: (String) -> Unit,
     onClearAll: () -> Unit,
@@ -851,6 +907,8 @@ private fun PersistentPlayerHistorySection(
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 filteredSummaries.forEach { item ->
+                    val isPlayerOp = ops.any { it.name.equals(item.player, ignoreCase = true) }
+                    val isPlayerWl = whitelist.any { it.name.equals(item.player, ignoreCase = true) }
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -868,7 +926,7 @@ private fun PersistentPlayerHistorySection(
                             Column(modifier = Modifier.weight(1f)) {
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                     Text(
-                                        item.player,
+                                        if (isPlayerOp) "👑 ${item.player}" else item.player,
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.Bold,
                                         maxLines = 1,
@@ -918,6 +976,47 @@ private fun PersistentPlayerHistorySection(
                         }
 
                         Spacer(Modifier.height(6.dp))
+                        // Thanh Cấp Quyền & Đổi Chế Độ Chơi 1 chạm ngay trên từng thẻ người chơi
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            AssistChip(
+                                onClick = { onToggleOp(item.player, isPlayerOp) },
+                                label = {
+                                    Text(
+                                        if (isPlayerOp) "👑 Đang là OP (Bấm gỡ)" else "👑 Cấp OP (1 chạm)",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = if (isPlayerOp) Coral else Color(0xFFD97706)
+                                    )
+                                }
+                            )
+                            AssistChip(
+                                onClick = { onToggleWhitelist(item.player, isPlayerWl) },
+                                label = {
+                                    Text(
+                                        if (isPlayerWl) "🛡️ Đã Whitelist (Bấm gỡ)" else "🛡️ +Whitelist",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Indigo
+                                    )
+                                }
+                            )
+                            if (isRunning && item.active) {
+                                AssistChip(
+                                    onClick = { onSetGameMode(item.player, 1) },
+                                    label = { Text("🧱 Sáng tạo", fontSize = 10.sp, fontWeight = FontWeight.Bold) }
+                                )
+                                AssistChip(
+                                    onClick = { onSetGameMode(item.player, 0) },
+                                    label = { Text("🗡️ Sinh tồn", fontSize = 10.sp, fontWeight = FontWeight.Bold) }
+                                )
+                            }
+                        }
+
+                        Spacer(Modifier.height(4.dp))
                         Text(
                             buildString {
                                 append("• Lần đầu vào: ${item.firstSeenTime ?: "Chưa rõ"}\n")
@@ -1022,6 +1121,7 @@ private fun PersistentPlayerHistorySection(
 @Composable
 private fun OpsTab(
     ops: List<PlayerManager.OpEntry>,
+    knownPlayers: List<McViewModel.KnownServerPlayer>,
     isRunning: Boolean,
     defaultOpLevel: Int?,
     onOpAddDefault: (String) -> Unit,
@@ -1079,12 +1179,49 @@ private fun OpsTab(
         }
 
         Spacer(Modifier.height(12.dp))
-        Text(stringResource(R.string.s696), color = Indigo, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+        Text("⚡ Cấp quyền OP 1 chạm cho người chơi trong Server (Không cần nhập tay):", color = Indigo, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
         Spacer(Modifier.height(6.dp))
+        if (knownPlayers.isNotEmpty()) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                knownPlayers.forEach { kp ->
+                    val dot = if (kp.isOnline) "🟢" else "🕒"
+                    AssistChip(
+                        onClick = {
+                            if (useDefaultLevel) {
+                                onOpAddDefault(kp.name)
+                            } else {
+                                onOpAdd(kp.name, selectedLevel.value)
+                            }
+                        },
+                        label = {
+                            Text(
+                                if (kp.isOp) "👑 ${kp.name} (Đã OP)" else "$dot ${kp.name} (+Cấp OP)",
+                                fontSize = 11.sp,
+                                fontWeight = if (kp.isOnline) FontWeight.ExtraBold else FontWeight.SemiBold,
+                                color = if (kp.isOp) Mint else Indigo
+                            )
+                        }
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+        } else {
+            Text(
+                "ℹ️ Chưa có người chơi nào trong danh sách server. Khi có người vào server, tên của họ sẽ tự động hiện sẵn tại đây để bấm cấp OP 1 chạm!",
+                color = Muted,
+                fontSize = 10.sp
+            )
+            Spacer(Modifier.height(6.dp))
+        }
+
         OutlinedTextField(
             value = opName,
             onValueChange = { opName = it },
-            label = { Text(stringResource(R.string.s697), fontSize = 11.sp) },
+            label = { Text("Hoặc nhập tên người chơi khác (nếu chưa từng vào server)", fontSize = 11.sp) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
             shape = McShape.ControlCompact
@@ -1170,9 +1307,6 @@ private fun OpsTab(
             )
         }
         Spacer(Modifier.height(8.dp))
-        if (!isRunning) {
-            Text(stringResource(R.string.s699), color = Coral, fontSize = 10.sp)
-        }
         Button(
             onClick = {
                 if (opName.isNotBlank()) {
@@ -1184,7 +1318,7 @@ private fun OpsTab(
                     opName = ""
                 }
             },
-            enabled = isRunning && opName.isNotBlank(),
+            enabled = opName.isNotBlank(),
             colors = ButtonDefaults.buttonColors(containerColor = Indigo),
             shape = McShape.ControlCompact,
             modifier = Modifier.fillMaxWidth()
@@ -1204,6 +1338,7 @@ private fun OpsTab(
 @Composable
 private fun WhitelistTab(
     whitelist: List<PlayerManager.WhitelistEntry>,
+    knownPlayers: List<McViewModel.KnownServerPlayer>,
     isRunning: Boolean,
     whitelistEnabled: Boolean,
     onToggle: (Boolean) -> Unit,
@@ -1278,8 +1413,31 @@ private fun WhitelistTab(
         }
 
         Spacer(Modifier.height(12.dp))
-        Text(stringResource(R.string.s708), color = Indigo, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+        Text("⚡ Thêm vào Whitelist 1 chạm (Chọn người chơi trong Server — Không cần nhập tay):", color = Indigo, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
         Spacer(Modifier.height(6.dp))
+        if (knownPlayers.isNotEmpty()) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                knownPlayers.forEach { kp ->
+                    val dot = if (kp.isOnline) "🟢" else "🕒"
+                    AssistChip(
+                        onClick = { onWhitelistAdd(kp.name) },
+                        label = {
+                            Text(
+                                if (kp.isWhitelisted) "🛡️ ${kp.name} (Đã thêm)" else "$dot ${kp.name} (+Whitelist)",
+                                fontSize = 11.sp,
+                                fontWeight = if (kp.isOnline) FontWeight.ExtraBold else FontWeight.SemiBold,
+                                color = if (kp.isWhitelisted) Mint else Indigo
+                            )
+                        }
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -1288,7 +1446,7 @@ private fun WhitelistTab(
             OutlinedTextField(
                 value = newName,
                 onValueChange = { newName = it },
-                label = { Text(stringResource(R.string.s697), fontSize = 11.sp) },
+                label = { Text("Hoặc nhập tên người chơi mới", fontSize = 11.sp) },
                 singleLine = true,
                 modifier = Modifier.weight(1f),
                 shape = McShape.ControlCompact
@@ -1300,7 +1458,7 @@ private fun WhitelistTab(
                         newName = ""
                     }
                 },
-                enabled = isRunning && newName.isNotBlank(),
+                enabled = newName.isNotBlank(),
                 colors = ButtonDefaults.buttonColors(containerColor = Indigo),
                 shape = McShape.ControlCompact
             ) { Text(stringResource(R.string.s709), color = Color.White, fontSize = 11.sp) }
@@ -1313,6 +1471,7 @@ private fun WhitelistTab(
 @Composable
 private fun BannedTab(
     banned: List<PlayerManager.BannedEntry>,
+    knownPlayers: List<McViewModel.KnownServerPlayer>,
     isRunning: Boolean,
     onBan: (String, String, String) -> Unit,
     onShowDetail: (PlayerManager.BannedEntry) -> Unit
@@ -1357,8 +1516,25 @@ private fun BannedTab(
         }
 
         Spacer(Modifier.height(12.dp))
-        Text(stringResource(R.string.s716), color = Coral, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+        Text("⚡ Chọn nhanh người chơi trong Server để Cấm (1 chạm — Không cần nhập tay):", color = Coral, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
         Spacer(Modifier.height(6.dp))
+        if (knownPlayers.isNotEmpty()) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                knownPlayers.forEach { kp ->
+                    val dot = if (kp.isOnline) "🟢" else "🕒"
+                    FilterChip(
+                        selected = banName.equals(kp.name, ignoreCase = true),
+                        onClick = { banName = kp.name },
+                        label = { Text("$dot ${kp.name}", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                    )
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+        }
         OutlinedTextField(
             value = banName,
             onValueChange = { banName = it },
@@ -1599,11 +1775,62 @@ private fun PlayerDetailDialog(
                 }
 
                 Spacer(Modifier.height(12.dp))
+                val currentOps by vm.ops.collectAsState()
+                val currentWhitelist by vm.whitelist.collectAsState()
+                val isCurrentlyOp = currentOps.any { it.name.equals(playerName, ignoreCase = true) }
+                val isCurrentlyWhitelisted = currentWhitelist.any { it.name.equals(playerName, ignoreCase = true) }
+
+                Text("⚡ Cấp quyền 1 chạm (Hoạt động cả khi Server đang bật hoặc tắt):", color = Indigo, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                Spacer(Modifier.height(6.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                    Button(
+                        onClick = {
+                            if (isCurrentlyOp) vm.deopPlayer(playerName) else vm.opPlayer(playerName)
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isCurrentlyOp) Coral else Color(0xFFD97706),
+                            contentColor = Color.White
+                        ),
+                        shape = McShape.ControlCompact,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            if (isCurrentlyOp) "🚫 Gỡ OP ($playerName)" else "👑 Cấp OP ($playerName)",
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            if (isCurrentlyWhitelisted) vm.whitelistRemove(playerName) else vm.whitelistAdd(playerName)
+                        },
+                        shape = McShape.ControlCompact,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            if (isCurrentlyWhitelisted) "🛡️ Gỡ Whitelist" else "🛡️ +Whitelist",
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Indigo
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(10.dp))
                 if (!isRunning) {
                     Text(stringResource(R.string.s726), color = Coral, fontSize = 10.sp)
                 } else {
                     Text(stringResource(R.string.s727), color = Indigo, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(6.dp))
+
+                    Text(stringResource(R.string.s730), color = Muted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                        listOf(R.string.s281 to 0, R.string.s282 to 1, R.string.s283 to 2, R.string.s284 to 3).forEach { (labelRes, mode) ->
+                            TextButton(onClick = { onSetGameMode(playerName, mode) }) {
+                                Text(stringResource(labelRes), fontSize = 10.sp, color = Indigo, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
 
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
                         TextButton(onClick = { onKick(playerName) }, modifier = Modifier.weight(1f)) {
@@ -1621,16 +1848,6 @@ private fun PlayerDetailDialog(
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
                                 TextButton(onClick = { onDeop(playerName) }, modifier = Modifier.weight(1f)) {
                                     Text(stringResource(R.string.s729), color = Coral, fontSize = 11.sp)
-                                }
-                            }
-                            Spacer(Modifier.height(6.dp))
-                            Text(stringResource(R.string.s730), color = Muted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
-                            Text(stringResource(R.string.s731), color = Coral.copy(alpha = 0.9f), fontSize = 9.sp)
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-                                listOf(R.string.s281 to 0, R.string.s282 to 1, R.string.s283 to 2, R.string.s284 to 3).forEach { (labelRes, mode) ->
-                                    TextButton(onClick = { onSetGameMode(playerName, mode) }) {
-                                        Text(stringResource(labelRes), fontSize = 10.sp, color = Indigo)
-                                    }
                                 }
                             }
                         }
