@@ -24,11 +24,11 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "vn.minehost.android"
+        applicationId = "vn.minehost.pro"
         minSdk = 26
         targetSdk = 28
-        versionCode = 42
-        versionName = "2.7.5"
+        versionCode = 43
+        versionName = "2.7.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
@@ -59,13 +59,19 @@ android {
     signingConfigs {
         create("minehost") {
             storeFile = rootProject.file("signing/minehost.p12")
-            storePassword = providers.environmentVariable("MINEHOST_STORE_PASSWORD").orNull
+            storePassword = providers.environmentVariable("MINEHOST_STORE_PASSWORD").orNull ?: "minehost_release_key_2026"
             keyAlias = "minehost"
-            keyPassword = providers.environmentVariable("MINEHOST_STORE_PASSWORD").orNull
+            keyPassword = providers.environmentVariable("MINEHOST_STORE_PASSWORD").orNull ?: "minehost_release_key_2026"
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
         }
     }
 
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("minehost")
+        }
         release {
             // 正式包始终启用 R8 混淆与资源压缩。
             isMinifyEnabled = true
