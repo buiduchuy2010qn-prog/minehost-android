@@ -10783,5 +10783,483 @@ class McViewModel(
         }.trim()
         return content.ifBlank { "✅ Không có lỗi hệ thống nào được ghi nhận. Ứng dụng đang hoạt động hoàn toàn ổn định!" }
     }
+
+    // ══════════════════════════════════════════════════════════════════════════════
+    // [v2.7.5] TRỌN BỘ 12 TÍNH NĂNG PRO SIÊU XỊN (TỐN 0 MB RAM CỦA SERVER)
+    // ══════════════════════════════════════════════════════════════════════════════
+
+    private val proPrefs by lazy {
+        app.getSharedPreferences("minehost_pro_v275", Context.MODE_PRIVATE)
+    }
+
+    private val _thermalInfo = MutableStateFlow(com.mineserve.mobile.server.ProHostFeatures.readDeviceThermalInfo(app))
+    val thermalInfo: StateFlow<com.mineserve.mobile.server.ProHostFeatures.ThermalInfo> = _thermalInfo.asStateFlow()
+
+    private val _autoThermalGuard = MutableStateFlow(proPrefs.getBoolean("auto_thermal_guard", true))
+    val autoThermalGuard: StateFlow<Boolean> = _autoThermalGuard.asStateFlow()
+
+    private val _discordWebhookUrl = MutableStateFlow(proPrefs.getString("discord_webhook_url", "").orEmpty())
+    val discordWebhookUrl: StateFlow<String> = _discordWebhookUrl.asStateFlow()
+
+    private val _autoSleepIdleMinutes = MutableStateFlow(proPrefs.getInt("auto_sleep_idle_min", 0))
+    val autoSleepIdleMinutes: StateFlow<Int> = _autoSleepIdleMinutes.asStateFlow()
+
+    private val _opGuardAdminName = MutableStateFlow(proPrefs.getString("op_guard_admin", "").orEmpty())
+    val opGuardAdminName: StateFlow<String> = _opGuardAdminName.asStateFlow()
+
+    private val _opGuardEnabled = MutableStateFlow(proPrefs.getBoolean("op_guard_enabled", false))
+    val opGuardEnabled: StateFlow<Boolean> = _opGuardEnabled.asStateFlow()
+
+    private val _opGuardUnlockedSession = MutableStateFlow(false)
+    val opGuardUnlockedSession: StateFlow<Boolean> = _opGuardUnlockedSession.asStateFlow()
+
+    private val _lastLocatedCoords = MutableStateFlow<Pair<String, Triple<Int, Int, Int>>?>(null)
+    val lastLocatedCoords: StateFlow<Pair<String, Triple<Int, Int, Int>>?> = _lastLocatedCoords.asStateFlow()
+
+    private val _warpPoints = MutableStateFlow<List<com.mineserve.mobile.server.ProHostFeatures.WarpPoint>>(emptyList())
+    val warpPoints: StateFlow<List<com.mineserve.mobile.server.ProHostFeatures.WarpPoint>> = _warpPoints.asStateFlow()
+
+    private val _lanWebPanelRunning = MutableStateFlow(false)
+    val lanWebPanelRunning: StateFlow<Boolean> = _lanWebPanelRunning.asStateFlow()
+
+    private val _lanWebPanelPin = MutableStateFlow(proPrefs.getString("lan_web_pin", "2026").orEmpty().ifBlank { "2026" })
+    val lanWebPanelPin: StateFlow<String> = _lanWebPanelPin.asStateFlow()
+
+    private var lanWebServer: com.mineserve.mobile.server.ProHostFeatures.LanWebRemoteServer? = null
+    @Volatile private var proMonitorsStarted = false
+    private val locateRegex = Regex("""\[(-?\d+),\s*(?:~|(-?\d+)),\s*(-?\d+)]""")
+
+    fun ensureProMonitorsStarted() {
+        val dir = activeDirName() ?: "default"
+        _warpPoints.value = com.mineserve.mobile.server.ProHostFeatures.loadWarpPoints(proPrefs, dir)
+        if (proMonitorsStarted) return
+        proMonitorsStarted = true
+
+        // 1. Theo dõi console để bắt tọa độ /locate, báo Discord khi người chơi vào/ra & khóa OP Guard
+        viewModelScope.launch {
+            var lastRunningState = false
+            serverState.collect { st ->
+                if (st.isRunning && !lastRunningState && st.startupPhase == com.mineserve.mobile.data.StartupPhase.Ready) {
+                    lastRunningState = true
+                    val hook = _discordWebhookUrl.value.trim()
+                    if (hook.isNotBlank()) {
+                        val activeName = config.value.activeCoreName.orEmpty().ifBlank { "Minecraft Server" }
+                        val pcAddr = playitState.value.publicAddress.ifBlank { "${lanIp.value}:${serverPort.value}" }
+                        val peAddr = playitState.value.bedrockAddress.ifBlank { "${lanIp.value}:19132" }
+                        com.mineserve.mobile.server.ProHostFeatures.sendDiscordWebhook(
+                            webhookUrl = hook,
+                            title = "🟢 Server '$activeName' Đã Bật!",
+                            description = "💻 **Địa chỉ PC (Java):** `$pcAddr`\n📱 **Địa chỉ Điện thoại (PE):** `$peAddr`\nHãy vào chơi ngay!",
+                            colorDecimal = 3066993
+                        )
+                    }
+                } else if (!st.isRunning && lastRunningState) {
+                    lastRunningState = false
+                    _opGuardUnlockedSession.value = false
+                    val hook = _discordWebhookUrl.value.trim()
+                    if (hook.isNotBlank()) {
+                        val activeName = config.value.activeCoreName.orEmpty().ifBlank { "Minecraft Server" }
+                        com.mineserve.mobile.server.ProHostFeatures.sendDiscordWebhook(
+                            webhookUrl = hook,
+                            title = "🔴 Server '$activeName' Đã Tắt",
+                            description = "Máy chủ đã lưu thế giới và tạm nghỉ.",
+                            colorDecimal = 15158332
+                        )
+                    }
+                }
+            }
+        }
+
+        viewModelScope.launch {
+            repo.termuxRuntime.consoleFlow.collect { line ->
+                // Bắt tọa độ trả về từ lệnh /locate
+                if (line.contains("The nearest", ignoreCase = true) || line.contains("located at", ignoreCase = true) || line.contains("[") && line.contains("blocks away", ignoreCase = true)) {
+                    locateRegex.find(line)?.let { m ->
+                        val x = m.groupValues[1].toIntOrNull() ?: 0
+                        val y = m.groupValues[2].toIntOrNull() ?: 90
+                        val z = m.groupValues[3].toIntOrNull() ?: 0
+                        _lastLocatedCoords.value = "Công trình vừa tìm" to Triple(x, y, z)
+                    }
+                }
+                // OP Guard kiểm tra khi có người đăng nhập trùng tên Admin lúc chưa mở khóa
+                if (_opGuardEnabled.value && !_opGuardUnlockedSession.value) {
+                    val protectedAdmin = _opGuardAdminName.value.trim()
+                    if (protectedAdmin.isNotBlank() &&
+                        line.contains(protectedAdmin, ignoreCase = true) &&
+                        (line.contains("joined the game", ignoreCase = true) || line.contains("logged in", ignoreCase = true))
+                    ) {
+                        sendCommand("deop $protectedAdmin")
+                        sendCommand("gamemode adventure $protectedAdmin")
+                        sendCommand("tell $protectedAdmin [MineHost OP Guard] Tai khoan Admin dang duoc bao ve! Hay bam 'Mo Khoa OP' tren dien thoai chu host.")
+                    }
+                }
+            }
+        }
+
+        // 2. Vòng lặp 45s: Đọc nhiệt độ pin + Lá chắn nhiệt độ + Tự ngủ đông khi vắng khách (Auto-Sleep)
+        viewModelScope.launch {
+            var emptyMinutesAccum = 0
+            var lastThermalCooldownMs = 0L
+            while (true) {
+                val info = com.mineserve.mobile.server.ProHostFeatures.readDeviceThermalInfo(app)
+                _thermalInfo.value = info
+
+                val isRunning = serverState.value.isRunning
+                if (isRunning && _autoThermalGuard.value && info.isOverheating) {
+                    val now = System.currentTimeMillis()
+                    if (now - lastThermalCooldownMs > 180_000L) {
+                        lastThermalCooldownMs = now
+                        sendCommand("kill @e[type=item]")
+                        sendCommand("kill @e[type=experience_orb]")
+                        sendCommand("say [MineHost Thermal Guard] Dien thoai dang nong (${String.format("%.1f", info.tempCelsius)}C) -> Tu dong don rac giam tai!")
+                    }
+                }
+
+                val sleepTargetMin = _autoSleepIdleMinutes.value
+                if (isRunning && sleepTargetMin > 0) {
+                    if (serverState.value.onlinePlayers <= 0) {
+                        emptyMinutesAccum += 1
+                        if (emptyMinutesAccum >= sleepTargetMin) {
+                            emptyMinutesAccum = 0
+                            sendCommand("say [MineHost Auto-Sleep] Khong co nguoi choi trong $sleepTargetMin phut -> Tu dong luu map va tat Server tiet kiem pin!")
+                            sendCommand("save-all")
+                            kotlinx.coroutines.delay(2000L)
+                            stopServer()
+                        }
+                    } else {
+                        emptyMinutesAccum = 0
+                    }
+                } else {
+                    emptyMinutesAccum = 0
+                }
+                kotlinx.coroutines.delay(60_000L)
+            }
+        }
+    }
+
+    /** #2: Lưu & gửi thử Discord Webhook */
+    fun saveDiscordWebhookUrl(url: String) {
+        val clean = url.trim()
+        _discordWebhookUrl.value = clean
+        proPrefs.edit().putString("discord_webhook_url", clean).apply()
+        notifyActionDone("🔔 Đã lưu đường dẫn Discord Webhook!")
+    }
+
+    fun sendDiscordTestWebhook() {
+        val url = _discordWebhookUrl.value.trim()
+        if (url.isBlank()) {
+            _errorFlow.tryEmit("Hãy dán link Discord Webhook trước khi bấm gửi thử!")
+            return
+        }
+        viewModelScope.launch {
+            val activeName = config.value.activeCoreName.orEmpty().ifBlank { "MineHost Server" }
+            val pcAddr = playitState.value.publicAddress.ifBlank { "${lanIp.value}:${serverPort.value}" }
+            val peAddr = playitState.value.bedrockAddress.ifBlank { "${lanIp.value}:19132" }
+            val ok = com.mineserve.mobile.server.ProHostFeatures.sendDiscordWebhook(
+                webhookUrl = url,
+                title = "🎉 Kết nối Discord Webhook Thành Công! ($activeName)",
+                description = "🟢 **Trạng thái:** ${if (serverState.value.isRunning) "Đang mở" else "Đang chờ bật"}\n" +
+                    "💻 **Địa chỉ PC (Java):** `$pcAddr`\n" +
+                    "📱 **Địa chỉ Điện thoại (PE):** `$peAddr`\n" +
+                    "👥 **Online:** ${serverState.value.onlinePlayers}/${serverState.value.maxPlayers} người chơi",
+                colorDecimal = 3447003
+            )
+            if (ok) {
+                notifyActionDone("✅ Đã bắn thông báo kèm IP Server lên kênh Discord thành công!")
+            } else {
+                _errorFlow.tryEmit("❌ Không thể gửi tới Discord. Hãy kiểm tra lại link Webhook!")
+            }
+        }
+    }
+
+    /** #3: Chế độ Tự Ngủ Đông Khi Vắng Khách (0 = Tắt, 15 / 30 / 60 phút) */
+    fun setAutoSleepIdleMinutes(minutes: Int) {
+        _autoSleepIdleMinutes.value = minutes
+        proPrefs.edit().putInt("auto_sleep_idle_min", minutes).apply()
+        if (minutes <= 0) {
+            notifyActionDone("💤 Đã tắt chế độ Tự Ngủ Đông khi vắng khách.")
+        } else {
+            notifyActionDone("💤 Đã bật Tự Ngủ Đông: Tự lưu map & tắt Server khi 0 người chơi sau $minutes phút!")
+        }
+    }
+
+    /** #4: Radar Tìm Công Trình (/locate) & Dịch chuyển 1 chạm */
+    fun locateStructureQuick(structureId: String, labelVi: String) {
+        if (!serverState.value.isRunning) {
+            _errorFlow.tryEmit("Hãy bật Server trước khi dùng Radar tìm công trình!")
+            return
+        }
+        sendCommand("locate structure $structureId")
+        notifyActionDone("🧭 Đang quét tọa độ $labelVi gần nhất... (Tọa độ sẽ hiện ngay bên dưới sau 1–2 giây!)")
+    }
+
+    fun teleportAllToLastLocated() {
+        val loc = _lastLocatedCoords.value ?: return
+        val (x, y, z) = loc.second
+        sendCommand("effect give @a minecraft:slow_falling 20 1 true")
+        sendCommand("tp @a $x $y $z")
+        sendCommand("say [MineHost Radar] Da dich chuyen ca nhom toi ${loc.first} ($x, $y, $z)!")
+        notifyActionDone("🚀 Đã dịch chuyển cả nhóm tới tọa độ ($x, $y, $z) kèm hiệu ứng Rơi Chậm an toàn!")
+    }
+
+    /** #5: Khóa Bảo Vệ Quyền Admin (OP Guard) cho Server Cracked */
+    fun saveOpGuardConfig(adminName: String, enabled: Boolean) {
+        val clean = adminName.trim()
+        _opGuardAdminName.value = clean
+        _opGuardEnabled.value = enabled
+        proPrefs.edit()
+            .putString("op_guard_admin", clean)
+            .putBoolean("op_guard_enabled", enabled)
+            .apply()
+        notifyActionDone(if (enabled) "🛡️ Đã bật Khóa Bảo Vệ OP cho tài khoản '$clean'!" else "🔓 Đã tắt Khóa Bảo Vệ OP.")
+    }
+
+    fun unlockAdminOpNow() {
+        val admin = _opGuardAdminName.value.trim()
+        if (admin.isBlank()) {
+            _errorFlow.tryEmit("Hãy nhập tên nhân vật Admin cần bảo vệ trước!")
+            return
+        }
+        _opGuardUnlockedSession.value = true
+        sendCommand("op $admin")
+        sendCommand("gamemode survival $admin")
+        sendCommand("tell $admin [MineHost OP Guard] Chu host da xac nhan mo khoa quyen OP cho ban!")
+        notifyActionDone("🔓 Đã xác nhận chính chủ & cấp quyền OP cho '$admin' trong phiên này!")
+    }
+
+    /** #6: Bảng Sự Kiện Vui Nhộn 1 Chạm (Mini-Events 0 MB RAM) */
+    fun triggerFunMiniEvent(eventKey: String) {
+        if (!serverState.value.isRunning) {
+            _errorFlow.tryEmit("Hãy bật Server trước khi kích hoạt sự kiện!")
+            return
+        }
+        when (eventKey) {
+            "supply_drop" -> {
+                sendCommand("""title @a title {"text":"🎁 RƯƠNG TIẾP TẾ!","color":"gold","bold":true}""")
+                sendCommand("give @a minecraft:golden_apple 4")
+                sendCommand("give @a minecraft:diamond 3")
+                sendCommand("give @a minecraft:firework_rocket 16")
+                sendCommand("give @a minecraft:cooked_beef 16")
+                sendCommand("effect give @a minecraft:regeneration 30 1 true")
+                sendCommand("say [Su Kien] Chu Server vua tha Qua Tiep Te (Tao Vang + Kim Cuong + Phao Hoa) cho toan bo nguoi choi!")
+                notifyActionDone("🎁 Đã thả Quà Tiếp Tế (Táo Vàng, Kim Cương, Pháo Hoa) cho toàn Server!")
+            }
+            "mining_frenzy" -> {
+                sendCommand("""title @a title {"text":"⚡ SIÊU TỐC ĐỘ ĐÀO!","color":"aqua","bold":true}""")
+                sendCommand("effect give @a minecraft:haste 300 1 true")
+                sendCommand("effect give @a minecraft:speed 300 1 true")
+                sendCommand("effect give @a minecraft:night_vision 300 0 true")
+                sendCommand("say [Su Kien] Da bat Buff Sieu Toc Do Dao + Chay Nhanh + Nhin Trong Dem (5 phut) cho ca Server!")
+                notifyActionDone("⚡ Đã bật Buff Đào Nhanh Haste II + Chạy Nhanh + Nhìn Đêm (5 phút)!")
+            }
+            "exp_rain" -> {
+                sendCommand("""title @a title {"text":"✨ MƯA KINH NGHIỆM!","color":"green","bold":true}""")
+                sendCommand("xp add @a 30 levels")
+                sendCommand("say [Su Kien] Chu Server vua tang +30 Cap Kinh Nghiem (EXP) cho tat ca nguoi choi!")
+                notifyActionDone("✨ Đã tặng +30 Cấp Kinh Nghiệm (EXP) cho toàn bộ người chơi đang online!")
+            }
+            "blood_moon" -> {
+                sendCommand("""title @a title {"text":"🌕 ĐÊM THỬ THÁCH!","color":"dark_red","bold":true}""")
+                sendCommand("time set midnight")
+                sendCommand("effect give @a minecraft:strength 180 0 true")
+                sendCommand("effect give @a minecraft:resistance 180 0 true")
+                sendCommand("say [Su Kien] Dem Thu Thach Chien Binh da bat dau! Tat ca nguoi choi duoc tang Suc Manh & Khang Cu!")
+                notifyActionDone("🌕 Đã kích hoạt Đêm Thử Thách Chiến Binh (Tăng Sức Mạnh & Kháng Cự)!")
+            }
+        }
+    }
+
+    /** #7: Xưởng Danh Hiệu & Màu Tên VIP Trong Game (/team Vanilla — 0 MB RAM) */
+    fun applyPlayerVipRank(targetPlayer: String?, rankKey: String, enableGlowing: Boolean) {
+        if (!serverState.value.isRunning) {
+            _errorFlow.tryEmit("Hãy bật Server trước khi gắn Danh hiệu VIP!")
+            return
+        }
+        val target = targetPlayer?.takeIf { it.isNotBlank() } ?: "@a"
+        val (teamId, prefixJson, colorName, labelVi) = when (rankKey) {
+            "owner" -> listOf("mh_owner", """{"text":"[👑 Chủ Server] ","color":"red","bold":true}""", "red", "👑 [Chủ Server]")
+            "god" -> listOf("mh_god", """{"text":"[⚔️ Chiến Thần] ","color":"gold","bold":true}""", "gold", "⚔️ [Chiến Thần]")
+            "rich" -> listOf("mh_rich", """{"text":"[💎 Đại Gia] ","color":"aqua","bold":true}""", "aqua", "💎 [Đại Gia]")
+            "angel" -> listOf("mh_angel", """{"text":"[🌸 Thiên Thần] ","color":"light_purple","bold":true}""", "light_purple", "🌸 [Thiên Thần]")
+            else -> listOf("mh_guard", """{"text":"[🛡️ Hộ Vệ] ","color":"green","bold":true}""", "green", "🛡️ [Hộ Vệ]")
+        }
+        sendCommand("team add $teamId")
+        sendCommand("team modify $teamId color $colorName")
+        sendCommand("team modify $teamId prefix $prefixJson")
+        sendCommand("team join $teamId $target")
+        if (enableGlowing) {
+            sendCommand("effect give $target minecraft:glowing 600 0 true")
+        }
+        notifyActionDone("👑 Đã gắn danh hiệu $labelVi ${if (enableGlowing) "+ Viền Phát Sáng " else ""}cho ${if (target == "@a") "toàn Server" else target}!")
+    }
+
+    /** #8: Nút Đỏ Khẩn Cấp Chống Phá Hoại & Đóng Băng TNT 1 Chạm (Anti-Grief Panic Button) */
+    fun triggerAntiGriefPanic() {
+        if (!serverState.value.isRunning) {
+            _errorFlow.tryEmit("Server đang dừng.")
+            return
+        }
+        sendCommand("gamerule mobGriefing false")
+        sendCommand("gamerule doFireTick false")
+        sendCommand("gamerule tntExplodes false")
+        sendCommand("kill @e[type=tnt]")
+        sendCommand("kill @e[type=tnt_minecart]")
+        sendCommand("kill @e[type=wither]")
+        sendCommand("kill @e[type=creeper]")
+        sendCommand("kill @e[type=fireball]")
+        sendCommand("gamemode spectator @a")
+        sendCommand("save-all")
+        sendCommand("say [MineHost BAO VE KHAN CAP] Da xoa sach TNT/Wither, tat lua chay lan va chuyen sang Khán Giả de bao ve Map!")
+        notifyActionDone("🚨 ĐÃ KÍCH HOẠT CỨU NGUY KHẨN CẤP: Xóa sạch TNT/Wither, tắt cháy nổ & đóng băng sang Khán Giả!")
+    }
+
+    fun restoreSurvivalAfterPanic() {
+        if (!serverState.value.isRunning) return
+        sendCommand("gamemode survival @a")
+        sendCommand("say [MineHost] Da khoi phuc che do Sinh Ton cho toan bo nguoi choi!")
+        notifyActionDone("🟢 Đã khôi phục chế độ Sinh Tồn cho tất cả người chơi!")
+    }
+
+    /** #9: Sổ Tay Điểm Dịch Chuyển Nhanh (Warp Book — 0 MB RAM) */
+    fun addWarpPoint(name: String, x: Int, y: Int, z: Int) {
+        val dir = activeDirName() ?: "default"
+        val cleanName = name.trim().ifBlank { "Điểm nhớ ($x, $y, $z)" }
+        val updated = _warpPoints.value + com.mineserve.mobile.server.ProHostFeatures.WarpPoint(
+            id = "w_${System.currentTimeMillis()}",
+            name = cleanName,
+            x = x,
+            y = y,
+            z = z
+        )
+        _warpPoints.value = updated
+        com.mineserve.mobile.server.ProHostFeatures.saveWarpPoints(proPrefs, dir, updated)
+        notifyActionDone("📍 Đã lưu mốc dịch chuyển '$cleanName' ($x, $y, $z)!")
+    }
+
+    fun deleteWarpPoint(id: String) {
+        val dir = activeDirName() ?: "default"
+        val updated = _warpPoints.value.filterNot { it.id == id }
+        _warpPoints.value = updated
+        com.mineserve.mobile.server.ProHostFeatures.saveWarpPoints(proPrefs, dir, updated)
+        notifyActionDone("🗑️ Đã xóa mốc dịch chuyển!")
+    }
+
+    fun teleportToWarpPoint(warp: com.mineserve.mobile.server.ProHostFeatures.WarpPoint, targetPlayer: String?) {
+        if (!serverState.value.isRunning) {
+            _errorFlow.tryEmit("Hãy bật Server trước khi dịch chuyển!")
+            return
+        }
+        val target = targetPlayer?.takeIf { it.isNotBlank() } ?: "@a"
+        sendCommand("effect give $target minecraft:slow_falling 15 1 true")
+        sendCommand("tp $target ${warp.x} ${warp.y} ${warp.z}")
+        notifyActionDone("📍 Đã dịch chuyển ${if (target == "@a") "cả nhóm" else target} tới ${warp.name} (${warp.x}, ${warp.y}, ${warp.z})!")
+    }
+
+    /** #10: Lá Chắn Nhiệt Độ Pin Thông Minh (Smart Thermal Guard) */
+    fun setAutoThermalGuardEnabled(enabled: Boolean) {
+        _autoThermalGuard.value = enabled
+        proPrefs.edit().putBoolean("auto_thermal_guard", enabled).apply()
+        notifyActionDone(if (enabled) "🌡️ Đã bật Tự động dọn lag giảm nhiệt khi máy nóng trên 43°C!" else "🌡️ Đã tắt Lá chắn nhiệt độ tự động.")
+    }
+
+    /** #11: Cài đặt nhanh Datapack (.zip) 1 chạm vào world/datapacks/ */
+    fun installDatapackFromUri(uri: Uri) {
+        val dirName = activeDirName()
+        if (dirName == null) {
+            _errorFlow.tryEmit("Hãy chọn một Server trước khi cài Datapack!")
+            return
+        }
+        val displayName = queryDisplayName(uri) ?: "datapack_${System.currentTimeMillis()}.zip"
+        val serverDir = repo.termuxRuntime.serverDirFor(dirName)
+        viewModelScope.launch {
+            val res = com.mineserve.mobile.server.ProHostFeatures.installDatapackZip(app, uri, displayName, serverDir)
+            res.onSuccess { savedName ->
+                if (serverState.value.isRunning) {
+                    sendCommand("reload")
+                }
+                notifyActionDone("📦 Đã cài Datapack '$savedName' vào world/datapacks/ ${if (serverState.value.isRunning) "và tự động /reload kích hoạt!" else "thành công!"}")
+            }.onFailure { err ->
+                _errorFlow.tryEmit("Lỗi cài Datapack: ${err.message}")
+            }
+        }
+    }
+
+    /** #12: Bảng Điều Khiển Từ Xa Qua Trình Duyệt Web (LAN Web Remote Panel :8585) */
+    fun setLanWebPanelPin(pin: String) {
+        val clean = pin.filter { it.isDigit() }.take(6).ifBlank { "2026" }
+        _lanWebPanelPin.value = clean
+        proPrefs.edit().putString("lan_web_pin", clean).apply()
+        notifyActionDone("🔑 Đã đặt mã PIN Web Remote là: $clean")
+    }
+
+    fun toggleLanWebPanel(enable: Boolean) {
+        if (!enable) {
+            lanWebServer?.stop()
+            lanWebServer = null
+            _lanWebPanelRunning.value = false
+            notifyActionDone("🌐 Đã tắt Bảng Điều Khiển Web LAN.")
+            return
+        }
+        val server = com.mineserve.mobile.server.ProHostFeatures.LanWebRemoteServer(
+            port = 8585,
+            pinProvider = { _lanWebPanelPin.value },
+            statusProvider = {
+                mapOf(
+                    "serverName" to config.value.activeCoreName.orEmpty().ifBlank { "MineHost Server" },
+                    "running" to if (serverState.value.isRunning) "🟢 Đang mở" else "⚪ Đang dừng",
+                    "players" to "${serverState.value.onlinePlayers}/${serverState.value.maxPlayers} người chơi",
+                    "tps" to String.format(java.util.Locale.US, "%.1f", serverState.value.tps),
+                    "temp" to _thermalInfo.value.statusLabelVi
+                )
+            },
+            onAction = { act, cmd ->
+                when (act) {
+                    "clear_lag" -> {
+                        clearHostileLagMobsAndGc()
+                        "✅ Đã dọn sạch vật phẩm rác & lưu thế giới!"
+                    }
+                    "day_clear" -> {
+                        sendCommand("time set day")
+                        sendCommand("weather clear")
+                        "☀️ Đã chỉnh Trời Sáng & Tạnh Mưa!"
+                    }
+                    "supply_drop" -> {
+                        triggerFunMiniEvent("supply_drop")
+                        "🎁 Đã thả Rương Tiếp Tế cho toàn Server!"
+                    }
+                    "exp_rain" -> {
+                        triggerFunMiniEvent("exp_rain")
+                        "✨ Đã tặng +30 Cấp EXP cho toàn Server!"
+                    }
+                    "panic" -> {
+                        triggerAntiGriefPanic()
+                        "🚨 Đã kích hoạt Chống Phá Map (Xóa TNT & Đóng băng Khán Giả)!"
+                    }
+                    "save_stop" -> {
+                        sendCommand("save-all")
+                        stopServer()
+                        "🛑 Đã lưu thế giới và dừng Server!"
+                    }
+                    "cmd" -> {
+                        val cleanCmd = cmd.trim().removePrefix("/")
+                        if (cleanCmd.isNotBlank()) {
+                            sendCommand(cleanCmd)
+                            "🚀 Đã gửi lệnh: /$cleanCmd"
+                        } else "⚠️ Lệnh trống."
+                    }
+                    else -> "✅ Đã nhận thao tác."
+                }
+            }
+        )
+        val ok = server.start(viewModelScope)
+        if (ok) {
+            lanWebServer = server
+            _lanWebPanelRunning.value = true
+            val ip = lanIp.value.ifBlank { "127.0.0.1" }
+            notifyActionDone("🌐 Đã bật Web Remote tại http://$ip:8585 (Mã PIN: ${_lanWebPanelPin.value})")
+        } else {
+            _errorFlow.tryEmit("Không thể mở cổng 8585 cho Web Remote (Cổng đang bận).")
+        }
+    }
 }
 

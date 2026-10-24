@@ -200,6 +200,42 @@ class McForegroundService : Service() {
                 val taskId = intent.getStringExtra(EXTRA_AUTOMATION_TASK_ID)
                 scope.launch { runAutomationTask(taskId) }
             }
+            ACTION_QUICK_CLEAR_LAG -> {
+                ensureForeground()
+                scope.launch {
+                    runCatching {
+                        termux.sendCommand("kill @e[type=item]")
+                        termux.sendCommand("kill @e[type=experience_orb]")
+                        termux.sendCommand("kill @e[type=arrow]")
+                        termux.sendCommand("save-all")
+                        termux.sendCommand("say [MineHost] Da don sach vat pham rac & luu map tu thanh thong bao!")
+                    }
+                }
+            }
+            ACTION_QUICK_DAY_SUN -> {
+                ensureForeground()
+                scope.launch {
+                    runCatching {
+                        termux.sendCommand("time set day")
+                        termux.sendCommand("weather clear")
+                        termux.sendCommand("say [MineHost] Da chinh Troi Sang & Tanh Mua tu thanh thong bao!")
+                    }
+                }
+            }
+            ACTION_QUICK_SAVE_STOP -> {
+                ensureForeground()
+                scope.launch {
+                    runCatching {
+                        termux.sendCommand("say [MineHost] Dang luu map va tat Server an toan...")
+                        termux.sendCommand("save-all")
+                        kotlinx.coroutines.delay(1500L)
+                        termux.stopMc()
+                        McApplication.get(this@McForegroundService).repository.updateServerState {
+                            it.copy(isRunning = false, runningSinceMs = 0L)
+                        }
+                    }
+                }
+            }
             ACTION_STOP -> {
                 scope.launch {
                     termux.stopMc()
@@ -649,12 +685,30 @@ class McForegroundService : Service() {
             this, 0, openIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+        val clearLagPi = PendingIntent.getService(
+            this, 2001,
+            Intent(this, McForegroundService::class.java).setAction(ACTION_QUICK_CLEAR_LAG),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val daySunPi = PendingIntent.getService(
+            this, 2002,
+            Intent(this, McForegroundService::class.java).setAction(ACTION_QUICK_DAY_SUN),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val saveStopPi = PendingIntent.getService(
+            this, 2003,
+            Intent(this, McForegroundService::class.java).setAction(ACTION_QUICK_SAVE_STOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
         return NotificationCompat.Builder(this, getString(R.string.notif_channel_id))
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle(title)
             .setContentText(content)
             .setOngoing(true)
             .setContentIntent(pi)
+            .addAction(0, "🧹 Dọn Lag", clearLagPi)
+            .addAction(0, "☀️ Trời Sáng", daySunPi)
+            .addAction(0, "🛑 Lưu & Dừng", saveStopPi)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
     }
@@ -675,6 +729,9 @@ class McForegroundService : Service() {
         const val ACTION_STOP = "com.mineserve.mobile.action.STOP"
         const val ACTION_REFRESH_KEEP_ALIVE = "com.mineserve.mobile.action.REFRESH_KEEP_ALIVE"
         const val ACTION_REFRESH_STATUS = "com.mineserve.mobile.action.REFRESH_STATUS"
+        const val ACTION_QUICK_CLEAR_LAG = "com.mineserve.mobile.action.QUICK_CLEAR_LAG"
+        const val ACTION_QUICK_DAY_SUN = "com.mineserve.mobile.action.QUICK_DAY_SUN"
+        const val ACTION_QUICK_SAVE_STOP = "com.mineserve.mobile.action.QUICK_SAVE_STOP"
         /** 执行一个桌面组件动作（组件/闹钟 Receiver 把长任务转交到这里）。 */
         const val ACTION_WIDGET_ACTION = "com.mineserve.mobile.action.WIDGET_ACTION"
         /** 要执行的组件动作名（[com.mineserve.mobile.widget.WidgetActionReceiver] 的 ACTION_*）。 */

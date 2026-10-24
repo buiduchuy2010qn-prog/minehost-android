@@ -2007,6 +2007,488 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             }
                         }
                     }
+
+                    // ══════════════════════════════════════════════════════════════════
+                    // [v2.7.5] GÓI ĐẠI NÂNG CẤP 12 TÍNH NĂNG PRO SIÊU XỊN (TỐN 0 MB RAM)
+                    // ══════════════════════════════════════════════════════════════════
+                    LaunchedEffect(active.dirName) {
+                        vm.ensureProMonitorsStarted()
+                    }
+                    val thermalInfo by vm.thermalInfo.collectAsStateWithLifecycle()
+                    val autoThermalGuard by vm.autoThermalGuard.collectAsStateWithLifecycle()
+                    val discordWebhookUrl by vm.discordWebhookUrl.collectAsStateWithLifecycle()
+                    val autoSleepIdleMinutes by vm.autoSleepIdleMinutes.collectAsStateWithLifecycle()
+                    val opGuardAdminName by vm.opGuardAdminName.collectAsStateWithLifecycle()
+                    val opGuardEnabled by vm.opGuardEnabled.collectAsStateWithLifecycle()
+                    val opGuardUnlocked by vm.opGuardUnlockedSession.collectAsStateWithLifecycle()
+                    val lastLocatedCoords by vm.lastLocatedCoords.collectAsStateWithLifecycle()
+                    val warpPoints by vm.warpPoints.collectAsStateWithLifecycle()
+                    val lanWebRunning by vm.lanWebPanelRunning.collectAsStateWithLifecycle()
+                    val lanWebPin by vm.lanWebPanelPin.collectAsStateWithLifecycle()
+
+                    val datapackPickerLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+                        contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
+                    ) { uriPicked: android.net.Uri? ->
+                        if (uriPicked != null) {
+                            vm.installDatapackFromUri(uriPicked)
+                        }
+                    }
+
+                    // ── THẺ PRO 1: XƯỞNG DANH HIỆU VIP, SỰ KIỆN VUI NHỘN & CỨU NGUY KHẨN CẤP ──
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, Color(0xFFF59E0B).copy(alpha = 0.55f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                "👑 Xưởng Danh Hiệu VIP, Sự Kiện Vui Nhộn & Chống Phá Map (0 MB RAM)",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color(0xFFF59E0B)
+                            )
+                            Text(
+                                "Gắn danh hiệu màu sắc trên đầu nhân vật (không cần cài LuckPerms/TAB), mở sự kiện sinh tồn & đóng băng kẻ phá map trong 0.5 giây:",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontSize = 11.sp
+                            )
+
+                            var vipTargetPlayer by remember { mutableStateOf("") }
+                            var vipGlowing by remember { mutableStateOf(true) }
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                OutlinedTextField(
+                                    value = vipTargetPlayer,
+                                    onValueChange = { vipTargetPlayer = it },
+                                    label = { Text("Tên người nhận Danh hiệu (Trống = Cả nhóm @a)", fontSize = 11.sp) },
+                                    singleLine = true,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                FilterChip(
+                                    selected = vipGlowing,
+                                    onClick = { vipGlowing = !vipGlowing },
+                                    label = { Text("✨ Phát sáng", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                                )
+                            }
+
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                listOf(
+                                    "owner" to "👑 [Chủ Server]",
+                                    "god" to "⚔️ [Chiến Thần]",
+                                    "rich" to "💎 [Đại Gia]",
+                                    "angel" to "🌸 [Thiên Thần]",
+                                    "guard" to "🛡️ [Hộ Vệ]"
+                                ).forEach { (rk, rLabel) ->
+                                    AssistChip(
+                                        onClick = { vm.applyPlayerVipRank(vipTargetPlayer, rk, vipGlowing) },
+                                        enabled = state.isRunning,
+                                        label = { Text(rLabel, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold) }
+                                    )
+                                }
+                            }
+
+                            HorizontalDivider()
+                            Text("🎉 Bảng Sự Kiện Vui Nhộn 1 Chạm (Khuấy động Server):", fontWeight = FontWeight.ExtraBold, fontSize = 11.5.sp)
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                                Button(
+                                    onClick = { vm.triggerFunMiniEvent("supply_drop") },
+                                    enabled = state.isRunning,
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD97706), contentColor = Color.White),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("🎁 Thả Rương Tiếp Tế", fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
+                                }
+                                Button(
+                                    onClick = { vm.triggerFunMiniEvent("mining_frenzy") },
+                                    enabled = state.isRunning,
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7), contentColor = Color.White),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("⚡ Buff Đào Nhanh (5p)", fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
+                                }
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                                OutlinedButton(
+                                    onClick = { vm.triggerFunMiniEvent("exp_rain") },
+                                    enabled = state.isRunning,
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("✨ Mưa +30 Cấp EXP", fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
+                                }
+                                OutlinedButton(
+                                    onClick = { vm.triggerFunMiniEvent("blood_moon") },
+                                    enabled = state.isRunning,
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("🌕 Đêm Thử Thách", fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
+                                }
+                            }
+
+                            HorizontalDivider()
+                            Text("🚨 Cứu Nguy Khẩn Cấp Khi Bị Đốt Nhà / Đặt TNT Phá Map:", fontWeight = FontWeight.ExtraBold, fontSize = 11.5.sp, color = Color(0xFFEF4444))
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                                Button(
+                                    onClick = { vm.triggerAntiGriefPanic() },
+                                    enabled = state.isRunning,
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626), contentColor = Color.White),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.weight(1.3f)
+                                ) {
+                                    Text("🚨 XÓA TNT & ĐÓNG BĂNG KHẨN CẤP", fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
+                                }
+                                OutlinedButton(
+                                    onClick = { vm.restoreSurvivalAfterPanic() },
+                                    enabled = state.isRunning,
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.weight(0.7f)
+                                ) {
+                                    Text("🟢 Mở Lại Sinh Tồn", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                }
+                            }
+                        }
+                    }
+
+                    // ── THẺ PRO 2: RADAR TÌM CÔNG TRÌNH (/LOCATE), SỔ TAY DỊCH CHUYỂN (WARP BOOK) & DATAPACK ──
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, Color(0xFF06B6D4).copy(alpha = 0.55f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                "🧭 Radar Tìm Công Trình, Sổ Tay Dịch Chuyển (Warp Book) & Datapack",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color(0xFF06B6D4)
+                            )
+                            Text(
+                                "Quét tọa độ Làng / Pháo đài / Cổng End gần nhất hoặc lưu các mốc tọa độ để dịch chuyển trong 1 chạm (Thay thế mod Waystones tốn 0 MB RAM):",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontSize = 11.sp
+                            )
+
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                listOf(
+                                    "minecraft:village_plains" to "🏘️ Tìm Làng",
+                                    "minecraft:fortress" to "🏯 Pháo Đài Nether",
+                                    "minecraft:stronghold" to "👁️ Cổng End",
+                                    "minecraft:ancient_city" to "🏛️ Ancient City",
+                                    "minecraft:end_city" to "🚢 End City",
+                                    "minecraft:mansion" to "🏚️ Biệt Thự Rừng"
+                                ).forEach { (sId, sLabel) ->
+                                    AssistChip(
+                                        onClick = { vm.locateStructureQuick(sId, sLabel) },
+                                        enabled = state.isRunning,
+                                        label = { Text(sLabel, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                                    )
+                                }
+                            }
+
+                            lastLocatedCoords?.let { (locName, coords) ->
+                                Button(
+                                    onClick = { vm.teleportAllToLastLocated() },
+                                    enabled = state.isRunning,
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0891B2), contentColor = Color.White),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        "🚀 Dịch Chuyển Cả Nhóm Tới $locName (${coords.first}, ${coords.second}, ${coords.third})",
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontSize = 11.5.sp
+                                    )
+                                }
+                            }
+
+                            HorizontalDivider()
+                            Text("📍 Sổ Tay Điểm Dịch Chuyển Nhanh (Bấm để dịch chuyển cả nhóm @a):", fontWeight = FontWeight.ExtraBold, fontSize = 11.5.sp)
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                warpPoints.forEach { wp ->
+                                    AssistChip(
+                                        onClick = { vm.teleportToWarpPoint(wp, null) },
+                                        enabled = state.isRunning,
+                                        label = { Text("${wp.name} (${wp.x},${wp.y},${wp.z})", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                                    )
+                                }
+                            }
+
+                            var newWarpName by remember { mutableStateOf("") }
+                            var newWarpX by remember { mutableStateOf("0") }
+                            var newWarpY by remember { mutableStateOf("80") }
+                            var newWarpZ by remember { mutableStateOf("0") }
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                                OutlinedTextField(
+                                    value = newWarpName,
+                                    onValueChange = { newWarpName = it },
+                                    label = { Text("Tên mốc", fontSize = 10.sp) },
+                                    singleLine = true,
+                                    modifier = Modifier.weight(1.3f)
+                                )
+                                OutlinedTextField(
+                                    value = newWarpX,
+                                    onValueChange = { newWarpX = it },
+                                    label = { Text("X", fontSize = 10.sp) },
+                                    singleLine = true,
+                                    modifier = Modifier.weight(0.6f)
+                                )
+                                OutlinedTextField(
+                                    value = newWarpY,
+                                    onValueChange = { newWarpY = it },
+                                    label = { Text("Y", fontSize = 10.sp) },
+                                    singleLine = true,
+                                    modifier = Modifier.weight(0.6f)
+                                )
+                                OutlinedTextField(
+                                    value = newWarpZ,
+                                    onValueChange = { newWarpZ = it },
+                                    label = { Text("Z", fontSize = 10.sp) },
+                                    singleLine = true,
+                                    modifier = Modifier.weight(0.6f)
+                                )
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                                OutlinedButton(
+                                    onClick = {
+                                        vm.addWarpPoint(
+                                            newWarpName,
+                                            newWarpX.toIntOrNull() ?: 0,
+                                            newWarpY.toIntOrNull() ?: 80,
+                                            newWarpZ.toIntOrNull() ?: 0
+                                        )
+                                        newWarpName = ""
+                                    },
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("➕ Lưu Mốc Tọa Độ Mới", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                }
+                                Button(
+                                    onClick = { datapackPickerLauncher.launch("*/*") },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D9488), contentColor = Color.White),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("📦 Cài Datapack (.zip)", fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
+                                }
+                            }
+                        }
+                    }
+
+                    // ── THẺ PRO 3: LÁ CHẮN NHIỆT ĐỘ PIN, TỰ NGỦ ĐÔNG (AUTO-SLEEP) & KHÓA BẢO VỆ OP ──
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.55f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    "🌡️ Lá Chắn Nhiệt Độ, Tự Ngủ Đông & Khóa Bảo Vệ OP",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = Color(0xFF10B981),
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(
+                                    thermalInfo.statusLabelVi,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = if (thermalInfo.isOverheating) Color(0xFFEF4444) else Color(0xFF10B981)
+                                )
+                            }
+
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("🌡️ Tự động dọn lag giảm tải khi máy nóng trên 43°C", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    Text("Bảo vệ pin điện thoại khi vừa cắm sạc vừa treo Server lâu", fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Switch(
+                                    checked = autoThermalGuard,
+                                    onCheckedChange = { vm.setAutoThermalGuardEnabled(it) }
+                                )
+                            }
+
+                            HorizontalDivider()
+                            Text(
+                                "💤 Chế Độ Tự Ngủ Đông Khi Vắng Khách (Tự lưu map & tắt Server khi 0 người chơi):",
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 11.5.sp
+                            )
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                listOf(
+                                    0 to "Tắt (Chạy 24/7)",
+                                    15 to "💤 Sau 15 Phút",
+                                    30 to "💤 Sau 30 Phút",
+                                    60 to "💤 Sau 60 Phút"
+                                ).forEach { (mins, label) ->
+                                    FilterChip(
+                                        selected = autoSleepIdleMinutes == mins,
+                                        onClick = { vm.setAutoSleepIdleMinutes(mins) },
+                                        label = { Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                                    )
+                                }
+                            }
+
+                            HorizontalDivider()
+                            Text(
+                                "🛡️ Khóa Bảo Vệ Tài Khoản Admin (OP Guard — Chống kẻ lạ đặt trùng tên Admin trong Server Cracked):",
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 11.5.sp
+                            )
+                            var adminNameInput by remember(opGuardAdminName) { mutableStateOf(opGuardAdminName) }
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                OutlinedTextField(
+                                    value = adminNameInput,
+                                    onValueChange = { adminNameInput = it },
+                                    label = { Text("Tên nhân vật Admin của bạn", fontSize = 11.sp) },
+                                    singleLine = true,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Switch(
+                                    checked = opGuardEnabled,
+                                    onCheckedChange = { vm.saveOpGuardConfig(adminNameInput, it) }
+                                )
+                            }
+                            if (opGuardEnabled) {
+                                Button(
+                                    onClick = {
+                                        vm.saveOpGuardConfig(adminNameInput, true)
+                                        vm.unlockAdminOpNow()
+                                    },
+                                    enabled = state.isRunning,
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (opGuardUnlocked) Color(0xFF16A34A) else Color(0xFF2563EB),
+                                        contentColor = Color.White
+                                    ),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        if (opGuardUnlocked) "✅ Đã Xác Nhận Chính Chủ (Đang Mở Khóa OP Cho '${adminNameInput}')"
+                                        else "🔓 Xác Nhận Tôi Đã Vào Game (Mở Khóa Quyền OP Ngay)",
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontSize = 11.5.sp
+                                    )
+                                }
+                            }
+                            Text(
+                                "📱 Mẹo hay: Khi đang chơi trong Minecraft PE, bạn chỉ cần vuốt thanh thông báo Android từ trên xuống để bấm nhanh 🧹 Dọn Lag / ☀️ Trời Sáng / 🛑 Lưu & Dừng mà không cần thoát game!",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontSize = 10.5.sp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+
+                    // ── THẺ PRO 4: BÁO TRẠNG THÁI DISCORD TỰ ĐỘNG & ĐIỀU KHIỂN WEB TỪ XA (:8585) ──
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, Color(0xFF6366F1).copy(alpha = 0.55f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                "🔔 Báo Trạng Thái Lên Discord & Điều Khiển Từ Xa Qua Web (:8585)",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color(0xFF6366F1)
+                            )
+                            Text(
+                                "Tự động bắn Địa chỉ IP PC + PE lên kênh Discord nhóm khi bật Server (không cần cài plugin DiscordSRV) & điều khiển Server từ máy tính qua trình duyệt Web:",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontSize = 11.sp
+                            )
+
+                            var webhookInput by remember(discordWebhookUrl) { mutableStateOf(discordWebhookUrl) }
+                            OutlinedTextField(
+                                value = webhookInput,
+                                onValueChange = { webhookInput = it },
+                                label = { Text("Dán link Discord Webhook URL (https://discord.com/api/webhooks/...)", fontSize = 11.sp) },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                                OutlinedButton(
+                                    onClick = { vm.saveDiscordWebhookUrl(webhookInput) },
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("💾 Lưu Webhook", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                }
+                                Button(
+                                    onClick = {
+                                        vm.saveDiscordWebhookUrl(webhookInput)
+                                        vm.sendDiscordTestWebhook()
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4F46E5), contentColor = Color.White),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.weight(1.3f)
+                                ) {
+                                    Text("📨 Bắn Thử IP Server Lên Discord", fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
+                                }
+                            }
+
+                            HorizontalDivider()
+                            val webUrl = "http://${lanIp.ifBlank { "127.0.0.1" }}:8585/?pin=$lanWebPin"
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("💻 Bảng Điều Khiển Từ Xa Qua Trình Duyệt Web (LAN :8585)", fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
+                                    Text(
+                                        if (lanWebRunning) "🟢 Đang mở tại: http://${lanIp.ifBlank { "127.0.0.1" }}:8585 (Mã PIN: $lanWebPin)"
+                                        else "Mở trình duyệt trên PC / điện thoại khác cùng Wi-Fi để điều khiển từ xa",
+                                        fontSize = 10.5.sp,
+                                        color = if (lanWebRunning) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Switch(
+                                    checked = lanWebRunning,
+                                    onCheckedChange = { vm.toggleLanWebPanel(it) }
+                                )
+                            }
+                            if (lanWebRunning) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                                    Button(
+                                        onClick = {
+                                            clipboard.setText(AnnotatedString(webUrl))
+                                            vm.notifyActionDone("📋 Đã sao chép link Web Remote: $webUrl")
+                                        },
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text("📋 Chép Link Điều Khiển Web ($webUrl)", fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

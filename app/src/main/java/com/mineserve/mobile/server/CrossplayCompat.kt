@@ -868,7 +868,7 @@ object CrossplayCompat {
                 connectTimeout = 6000
                 readTimeout = 8000
                 instanceFollowRedirects = true
-                setRequestProperty("User-Agent", "MineHost/2.7.4 (Android; github.com/buiduchuy2010qn-prog/minehost-android)")
+                setRequestProperty("User-Agent", "MineHost/2.7.5 (Android; github.com/buiduchuy2010qn-prog/minehost-android)")
                 setRequestProperty("Accept", "application/json, text/plain, */*")
             }
             if (conn.responseCode in 200..299) conn.inputStream.bufferedReader().use { it.readText() } else null

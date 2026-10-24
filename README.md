@@ -1,16 +1,16 @@
-# 🇻🇳 MineHost Android — v2.7.4 (Bản Cộng Đồng Chính Thức)
+# 🇻🇳 MineHost Android — v2.7.5 (Bản Cộng Đồng Chính Thức)
 
-[![Phiên bản mới nhất](https://img.shields.io/badge/Release-v2.7.4-2E7D32?style=for-the-badge&logo=android)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
+[![Phiên bản mới nhất](https://img.shields.io/badge/Release-v2.7.5-2E7D32?style=for-the-badge&logo=android)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
 [![Nền tảng](https://img.shields.io/badge/Android-8.0%2B%20(ARM64)-0D9488?style=for-the-badge)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases)
 [![Giấy phép](https://img.shields.io/badge/License-GPLv3-blue?style=for-the-badge)](LICENSE)
 
 **MineHost** là ứng dụng Android mã nguồn mở giúp bạn **tự tạo, vận hành và quản trị máy chủ Minecraft Java & Bedrock (Chơi chung PC + Điện thoại PE)** trực tiếp ngay trên điện thoại Android mà không cần thuê VPS.
 
-👉 **[📥 TẢI NGAY APK MỚI NHẤT (minehost-2.7.4-arm64.apk)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)**
+👉 **[📥 TẢI NGAY APK MỚI NHẤT (minehost-2.7.5-arm64.apk)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)**
 
 ---
 
-## ✨ Tính Năng Nổi Bật (v2.7.4)
+## ✨ Tính Năng Nổi Bật (v2.7.5)
 
 ### 1. ⚡ Đặc Trị Cho Điện Thoại RAM Ít (2GB – 4GB RAM) & Các Tính Năng Tốn 0 MB RAM
 - **Chế độ Máy RAM Ít Siêu Nhẹ 1 Chạm:** Tự động tối ưu `view-distance=4`, `simulation-distance=3`, tắt đồng bộ ghi chunk nặng và ép cờ JVM tiết kiệm RAM.
