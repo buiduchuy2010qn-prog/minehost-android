@@ -25,6 +25,24 @@ class BootReceiver : BroadcastReceiver() {
         // 局部变量刻意不叫 action：下面 Intent.apply 里的 `action = ...` 会被它遮蔽，
         // 变成「给 val 赋值」而编译不过。
         val intentAction = intent.action
+        if (intentAction == Intent.ACTION_MY_PACKAGE_REPLACED) {
+            val pendingUpdate = goAsync()
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    val (count, bytes) = com.mineserve.mobile.data.AppUpdateService.cleanupInstalledApks(context)
+                    if (count > 0 && bytes > 0L) {
+                        context.getSharedPreferences(META_PREFS, Context.MODE_PRIVATE)
+                            .edit()
+                            .putLong("last_cleaned_apk_bytes", bytes)
+                            .putInt("last_cleaned_apk_count", count)
+                            .apply()
+                    }
+                } finally {
+                    pendingUpdate.finish()
+                }
+            }
+            return
+        }
         val isBoot = intentAction == Intent.ACTION_BOOT_COMPLETED ||
             intentAction == "android.intent.action.QUICKBOOT_POWERON" ||
             intentAction == "com.htc.intent.action.QUICKBOOT_POWERON"

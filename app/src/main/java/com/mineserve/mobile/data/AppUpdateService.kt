@@ -128,6 +128,12 @@ object AppUpdateService {
 
     suspend fun download(urls: List<String>, target: File, onProgress: (Float) -> Unit) = withContext(Dispatchers.IO) {
         target.parentFile?.mkdirs()
+        // Xóa các file APK cập nhật cũ hoặc file .part dở dang trong thư mục đệm trước khi tải bản mới
+        target.parentFile?.listFiles()?.forEach { existing ->
+            if (existing.name != target.name && (existing.name.endsWith(".apk", ignoreCase = true) || existing.name.endsWith(".part", ignoreCase = true))) {
+                runCatching { existing.delete() }
+            }
+        }
         val temp = File(target.parentFile, "${target.name}.part")
         var lastError: Exception? = null
         for (url in urls.distinct()) {
@@ -242,6 +248,108 @@ object AppUpdateService {
     fun isApk(file: File): Boolean = file.length() > 256 * 1024 && runCatching {
         ZipFile(file).use { it.getEntry("AndroidManifest.xml") != null }
     }.getOrDefault(false)
+
+    /**
+     * Tự động dọn dẹp và xóa các file APK cập nhật sau khi đã cài đặt xong:
+     * 1. Xóa các file .apk / .part trong thư mục bộ nhớ đệm cập nhật (`cacheDir/update`, `externalCacheDir/update`)
+     *    có versionCode <= phiên bản đang cài hiện tại.
+     * 2. Quét thư mục `Download` trên điện thoại (`/storage/emulated/0/Download`) và tự động xóa các file
+     *    APK của chính ứng dụng MineHost (`vn.minehost.pro` / `com.mineserve.mobile`) đã được cài đặt xong
+     *    (có `versionCode <= installedVersionCode`), giúp giải phóng ngay bộ nhớ máy sau khi cài.
+     *
+     * @return Pair(số file APK đã xóa, tổng số byte đã giải phóng)
+     */
+    @Suppress("DEPRECATION")
+    fun cleanupInstalledApks(context: android.content.Context): Pair<Int, Long> {
+        var deletedCount = 0
+        var freedBytes = 0L
+        val pm = context.packageManager
+        val installedVersionCode = runCatching {
+            val pInfo = pm.getPackageInfo(context.packageName, 0)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                pInfo.longVersionCode
+            } else {
+                pInfo.versionCode.toLong()
+            }
+        }.getOrDefault(0L)
+
+        fun tryDeleteInstalledApk(file: File, requirePackageMatch: Boolean) {
+            if (!file.isFile || !file.exists()) return
+            val nameLower = file.name.lowercase(java.util.Locale.ROOT)
+            if (nameLower.endsWith(".part")) {
+                val len = file.length()
+                if (runCatching { file.delete() }.getOrDefault(false)) {
+                    deletedCount++
+                    freedBytes += len
+                }
+                return
+            }
+            if (!nameLower.endsWith(".apk")) return
+            val archiveInfo = runCatching {
+                pm.getPackageArchiveInfo(file.absolutePath, 0)
+            }.getOrNull()
+            if (archiveInfo == null) {
+                // Nếu là file trong thư mục cache/update nội bộ bị hỏng thì xóa luôn
+                if (!requirePackageMatch) {
+                    val len = file.length()
+                    if (runCatching { file.delete() }.getOrDefault(false)) {
+                        deletedCount++
+                        freedBytes += len
+                    }
+                }
+                return
+            }
+            val pkg = archiveInfo.packageName.orEmpty()
+            val isMineHostPkg = pkg == context.packageName ||
+                pkg == "vn.minehost.pro" ||
+                pkg == "com.mineserve.mobile"
+            if (requirePackageMatch && !isMineHostPkg) return
+
+            val archiveVer = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                archiveInfo.longVersionCode
+            } else {
+                archiveInfo.versionCode.toLong()
+            }
+            // Nếu file APK này có versionCode <= phiên bản đã cài trên máy (tức là đã cài xong), xóa ngay!
+            if (installedVersionCode <= 0L || archiveVer <= installedVersionCode) {
+                val len = file.length()
+                if (runCatching { file.delete() }.getOrDefault(false)) {
+                    deletedCount++
+                    freedBytes += len
+                }
+            }
+        }
+
+        // 1. Dọn thư mục cache/update nội bộ
+        listOfNotNull(
+            File(context.cacheDir, "update"),
+            context.externalCacheDir?.let { File(it, "update") }
+        ).forEach { dir ->
+            dir.listFiles()?.forEach { f ->
+                tryDeleteInstalledApk(f, requirePackageMatch = false)
+            }
+        }
+
+        // 2. Dọn các file APK MineHost đã cài xong trong thư mục Download của điện thoại
+        runCatching {
+            val downloadDirs = buildList {
+                add(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS))
+                add(File("/storage/emulated/0/Download"))
+                add(File("/sdcard/Download"))
+            }.distinctBy { runCatching { it.canonicalPath }.getOrDefault(it.absolutePath) }
+
+            downloadDirs.forEach { dlDir ->
+                dlDir.listFiles()?.forEach { f ->
+                    val n = f.name.lowercase(java.util.Locale.ROOT)
+                    if (n.endsWith(".apk") && (n.contains("minehost") || n.contains("mineserve") || n.contains("mcserver"))) {
+                        tryDeleteInstalledApk(f, requirePackageMatch = true)
+                    }
+                }
+            }
+        }
+
+        return deletedCount to freedBytes
+    }
 
     /**
      * 按数字段比较版本号。

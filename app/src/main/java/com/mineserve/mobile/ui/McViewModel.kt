@@ -9970,6 +9970,22 @@ class McViewModel(
         _autoUploadDriveOnStop.value = metaPrefs().getBoolean("auto_upload_drive_on_stop", false)
         _autoInstallUpdateEnabled.value = metaPrefs().getBoolean("auto_install_update_enabled", true)
         _cloudSyncFolderUri.value = metaPrefs().getString("cloud_sync_folder_uri", null)
+        // Tự động xóa file APK cài đặt sau khi cập nhật xong (trong cache/update và thư mục Download trên máy)
+        viewModelScope.launch(Dispatchers.IO) {
+            val (_, directBytes) = com.mineserve.mobile.data.AppUpdateService.cleanupInstalledApks(app)
+            val receiverBytes = metaPrefs().getLong("last_cleaned_apk_bytes", 0L)
+            if (receiverBytes > 0L) {
+                metaPrefs().edit()
+                    .remove("last_cleaned_apk_bytes")
+                    .remove("last_cleaned_apk_count")
+                    .apply()
+            }
+            val totalFreed = directBytes + receiverBytes
+            if (totalFreed > 0L) {
+                val mb = totalFreed.toDouble() / (1024.0 * 1024.0)
+                _messageFlow.tryEmit("🧹 Đã tự động xóa gói APK sau khi cập nhật xong (Giải phóng %.1f MB bộ nhớ)!".format(java.util.Locale.US, mb))
+            }
+        }
         // Tự động phát hiện bản cập nhật mới tức thì (0ms) ngay khi mở App và kiểm tra định kỳ mỗi 3 phút
         viewModelScope.launch {
             while (true) {

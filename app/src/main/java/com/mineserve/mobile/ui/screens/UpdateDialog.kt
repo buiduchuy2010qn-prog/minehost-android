@@ -65,7 +65,7 @@ fun UpdateDialog(vm: McViewModel) {
                         fontWeight = FontWeight.ExtraBold
                     )
                     Text(
-                        "✅ Hỗ trợ cài đè trực tiếp 100% — Giữ nguyên toàn bộ Server, Thế giới (Map), Mod & Cấu hình!",
+                        "✅ Hỗ trợ cài đè trực tiếp 100% — Giữ nguyên toàn bộ Server, Thế giới (Map), Mod & Cấu hình!\n🧹 Tự động xóa file APK trong máy ngay sau khi cập nhật xong.",
                         color = Color(0xFF2E7D32),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
@@ -117,7 +117,7 @@ fun UpdateDialog(vm: McViewModel) {
             text = {
                 Column(Modifier.fillMaxWidth()) {
                     Text(
-                        "File APK v${current.release.tag} đã được xác minh chữ ký số an toàn. Bấm 'Cập nhật' để cài đè trực tiếp (không mất dữ liệu Server & Map).",
+                        "File APK v${current.release.tag} đã được xác minh chữ ký số an toàn. Bấm 'Cập nhật ngay' để cài đè trực tiếp (không mất dữ liệu Server & Map, cài xong tự động xóa file APK trong máy).",
                         fontSize = 13.sp
                     )
                 }
