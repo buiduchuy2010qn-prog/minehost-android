@@ -874,9 +874,9 @@ class McViewModel(
                 return
             }
         }
-        // Tự động kiểm tra bản cập nhật mới khi mở lại App (cách lần kiểm tra trước >= 3 phút)
+        // Tự động phát hiện bản cập nhật mới nhanh nhất khi mở lại App (mỗi 30 giây)
         val now = System.currentTimeMillis()
-        if (now - lastUpdateCheckAtMs >= 3 * 60_000L && _updateState.value !is UpdateUiState.Downloading) {
+        if (now - lastUpdateCheckAtMs >= 30_000L && _updateState.value !is UpdateUiState.Downloading) {
             checkForUpdate(manual = false)
         }
     }
@@ -886,6 +886,7 @@ class McViewModel(
         if (!manual && !updateCheckInFlight.compareAndSet(false, true)) return
         if (manual) {
             updateCheckInFlight.set(true)
+            skippedReleaseTag = null
             _updateState.value = UpdateUiState.Checking
             _updateDialogVisible.value = true
         }
@@ -894,26 +895,20 @@ class McViewModel(
                 lastUpdateCheckAtMs = System.currentTimeMillis()
                 val release = AppUpdateService.latest(com.mineserve.mobile.BuildConfig.VERSION_NAME)
                 if (release != null) {
+                    _lastUpdateCheckResult.value = "🚀 Có bản cập nhật mới v${release.tag} · ${nowTime()}"
+                    if (!manual && release.tag == skippedReleaseTag) {
+                        return@launch
+                    }
                     val cachedApk = File(app.cacheDir, "update/MineHost-${release.tag}-arm64.apk")
                     if (cachedApk.exists() && AppUpdateService.isApk(cachedApk) && AppUpdateService.verifySignature(app, cachedApk)) {
                         _updateState.value = UpdateUiState.Downloaded(release, cachedApk.absolutePath)
                     } else {
                         _updateState.value = UpdateUiState.Available(release)
                     }
-                    _lastUpdateCheckResult.value = "🚀 Đã phát hiện bản mới v${release.tag} · ${nowTime()}"
-                    if (manual || release.tag != skippedReleaseTag) {
-                        _updateDialogVisible.value = true
-                    }
-                    if (!manual && release.tag != skippedReleaseTag) {
+                    // Chỉ hiển thị hộp thoại hỏi "Bỏ qua" hoặc "Cập nhật" (KHÔNG tự động tải/cài khi người dùng chưa bấm)
+                    _updateDialogVisible.value = true
+                    if (!manual) {
                         showUpdateNotification(app, release)
-                    }
-                    // Tự động tải ngầm & mở bảng Cài đè ngay khi phát hiện bản mới
-                    if (_autoInstallUpdateEnabled.value && (manual || release.tag != skippedReleaseTag)) {
-                        if (_updateState.value is UpdateUiState.Downloaded) {
-                            if (manual) installApk(app, cachedApk)
-                        } else {
-                            downloadUpdate(autoInstallWhenDone = true)
-                        }
                     }
                 } else {
                     _updateState.value = UpdateUiState.Idle
@@ -952,6 +947,7 @@ class McViewModel(
             else -> null
         }
         if (release != null) skippedReleaseTag = release.tag
+        _updateState.value = UpdateUiState.Idle
         dismissUpdateDialog()
     }
 
@@ -9901,14 +9897,13 @@ class McViewModel(
         _autoUploadDriveOnStop.value = metaPrefs().getBoolean("auto_upload_drive_on_stop", false)
         _autoInstallUpdateEnabled.value = metaPrefs().getBoolean("auto_install_update_enabled", true)
         _cloudSyncFolderUri.value = metaPrefs().getString("cloud_sync_folder_uri", null)
-        // Tự động phát hiện bản cập nhật mới ngay khi mở App và kiểm tra định kỳ mỗi 15 phút
+        // Tự động phát hiện bản cập nhật mới tức thì (0ms) ngay khi mở App và kiểm tra định kỳ mỗi 3 phút
         viewModelScope.launch {
-            delay(1_500L)
             while (true) {
                 if (uiVisible && _updateState.value !is UpdateUiState.Downloading) {
                     checkForUpdate(manual = false)
                 }
-                delay(15 * 60_000L)
+                delay(3 * 60_000L)
             }
         }
         viewModelScope.launch {

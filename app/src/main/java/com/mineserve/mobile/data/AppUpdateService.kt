@@ -39,14 +39,19 @@ object AppUpdateService {
     suspend fun latest(currentVersion: String, customFeedUrl: String? = null): AppRelease? = withContext(Dispatchers.IO) {
         var lastError: Exception? = null
         var sawNotFoundOrPrivate = false
+        val redirectCandidate = runCatching { latestViaRedirect(currentVersion) }.getOrNull()
         for (api in apiUrls(customFeedUrl)) try {
-            val connection = URL(api).openConnection() as HttpURLConnection
+            val sep = if (api.contains("?")) "&" else "?"
+            val connection = URL("$api${sep}_t=${System.currentTimeMillis()}").openConnection() as HttpURLConnection
             try {
                 connection.requestMethod = "GET"
-                connection.connectTimeout = 12_000
-                connection.readTimeout = 12_000
+                connection.useCaches = false
+                connection.connectTimeout = 5_000
+                connection.readTimeout = 5_000
                 connection.setRequestProperty("Accept", "application/vnd.github+json")
-                connection.setRequestProperty("User-Agent", "MineServeMobile")
+                connection.setRequestProperty("Cache-Control", "no-cache, no-store, must-revalidate")
+                connection.setRequestProperty("Pragma", "no-cache")
+                connection.setRequestProperty("User-Agent", "MineHost-Android")
                 val code = connection.responseCode
                 if (code == 404) {
                     // Repo riêng tư hoặc chưa phát hành bản Release công khai (tuyệt đối không nhúng token vào APK)
@@ -59,23 +64,27 @@ object AppUpdateService {
                 val release = decodeRelease(connection.inputStream.bufferedReader().use { it.readText() })
                 val rawTag = release.tag_name.trim()
                 val tag = rawTag.removePrefix("v")
-                if (tag.isBlank()) return@withContext null
+                if (tag.isBlank()) return@withContext redirectCandidate
                 val apk = release.assets.firstOrNull { it.name == APK_NAME }
                     ?: release.assets.firstOrNull { it.name.startsWith("minehost-", ignoreCase = true) && it.name.endsWith(".apk", ignoreCase = true) }
                     ?: release.assets.firstOrNull { it.name.endsWith(".apk", ignoreCase = true) }
-                    ?: return@withContext null
-                return@withContext if (compare(tag, currentVersion) <= 0) null
+                    ?: return@withContext redirectCandidate
+                val apiRelease = if (compare(tag, currentVersion) <= 0) null
                 else AppRelease(tag, release.body?.trim().orEmpty(), downloadUrls(apk.browser_download_url), "$PROJECT_URL/releases/tag/$rawTag")
+                return@withContext when {
+                    apiRelease != null && redirectCandidate != null ->
+                        if (compare(redirectCandidate.tag, apiRelease.tag) > 0) redirectCandidate else apiRelease
+                    apiRelease != null -> apiRelease
+                    else -> redirectCandidate
+                }
             } finally {
                 connection.disconnect()
             }
         } catch (e: Exception) {
             lastError = e
         }
-        // Dự phòng chống giới hạn Rate-Limit 60 req/giờ của api.github.com trên mạng 4G/CGNAT:
-        // Kiểm tra trực tiếp 302 Redirect từ trang releases/latest của GitHub.
-        runCatching {
-            latestViaRedirect(currentVersion)?.let { return@withContext it }
+        if (redirectCandidate != null) {
+            return@withContext redirectCandidate
         }
         if (sawNotFoundOrPrivate && lastError == null) {
             return@withContext null
@@ -84,12 +93,15 @@ object AppUpdateService {
     }
 
     private fun latestViaRedirect(currentVersion: String): AppRelease? {
-        val latestPageUrl = "$PROJECT_URL/releases/latest"
+        val latestPageUrl = "$PROJECT_URL/releases/latest?_t=${System.currentTimeMillis()}"
         val conn = (URL(latestPageUrl).openConnection() as HttpURLConnection).apply {
             instanceFollowRedirects = false
+            useCaches = false
             requestMethod = "GET"
-            connectTimeout = 10_000
-            readTimeout = 10_000
+            connectTimeout = 4_500
+            readTimeout = 4_500
+            setRequestProperty("Cache-Control", "no-cache, no-store, must-revalidate")
+            setRequestProperty("Pragma", "no-cache")
             setRequestProperty("User-Agent", "MineHost-Android")
         }
         try {

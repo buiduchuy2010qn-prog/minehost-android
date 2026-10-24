@@ -13,7 +13,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -36,7 +35,6 @@ import com.mineserve.mobile.ui.theme.Indigo
 fun UpdateDialog(vm: McViewModel) {
     val visible by vm.updateDialogVisible.collectAsState()
     val state by vm.updateState.collectAsState()
-    val autoInstall by vm.autoInstallUpdateEnabled.collectAsState()
     if (!visible) return
     when (val current = state) {
         UpdateUiState.Checking -> AlertDialog(
@@ -78,31 +76,21 @@ fun UpdateDialog(vm: McViewModel) {
                         fontSize = 12.5.sp,
                         modifier = Modifier.padding(top = 8.dp).heightIn(max = 180.dp).verticalScroll(rememberScrollState())
                     )
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text("⚡ Tự động tải & bật cài đè", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                        Switch(
-                            checked = autoInstall,
-                            onCheckedChange = { vm.setAutoInstallUpdateEnabled(it) }
-                        )
-                    }
                 }
             },
             confirmButton = {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    TextButton(onClick = vm::openGithubUpdate) { Text("Mở GitHub") }
-                    Button(
-                        onClick = { vm.downloadUpdate(autoInstallWhenDone = true) },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
-                    ) {
-                        Text("🚀 Tải & Cài Đè Ngay", color = Color.White, fontWeight = FontWeight.ExtraBold)
-                    }
+                Button(
+                    onClick = { vm.downloadUpdate(autoInstallWhenDone = true) },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
+                ) {
+                    Text("🚀 Cập nhật", color = Color.White, fontWeight = FontWeight.ExtraBold)
                 }
             },
-            dismissButton = { TextButton(onClick = vm::skipCurrentUpdate) { Text(stringResource(R.string.upd_skip)) } }
+            dismissButton = {
+                TextButton(onClick = vm::skipCurrentUpdate) {
+                    Text("Bỏ qua", fontWeight = FontWeight.Bold)
+                }
+            }
         )
         is UpdateUiState.Downloading -> AlertDialog(
             onDismissRequest = vm::dismissUpdateDialog,
@@ -116,12 +104,6 @@ fun UpdateDialog(vm: McViewModel) {
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(top = 8.dp)
                     )
-                    Text(
-                        "💡 Bạn có thể bấm 'Ẩn xuống nền' — ứng dụng vẫn tiếp tục tải ngầm.",
-                        fontSize = 11.5.sp,
-                        color = Color.Gray,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
                 }
             },
             confirmButton = {},
@@ -130,12 +112,12 @@ fun UpdateDialog(vm: McViewModel) {
             }
         )
         is UpdateUiState.Downloaded -> AlertDialog(
-            onDismissRequest = vm::dismissUpdateDialog,
+            onDismissRequest = vm::skipCurrentUpdate,
             title = { Text("✅ Đã tải xong bản v${current.release.tag} — Sẵn sàng cài đè!") },
             text = {
                 Column(Modifier.fillMaxWidth()) {
                     Text(
-                        "File APK v${current.release.tag} đã được xác minh chữ ký số an toàn. Bấm nút bên dưới để mở trình cài đặt hệ thống và cài đè trực tiếp (không mất dữ liệu Server & Map).",
+                        "File APK v${current.release.tag} đã được xác minh chữ ký số an toàn. Bấm 'Cập nhật' để cài đè trực tiếp (không mất dữ liệu Server & Map).",
                         fontSize = 13.sp
                     )
                 }
@@ -145,10 +127,14 @@ fun UpdateDialog(vm: McViewModel) {
                     onClick = { vm.installDownloadedUpdate(current.apkPath) },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
                 ) {
-                    Text("📲 Cài Đè Ngay (Giữ 100% Dữ Liệu)", color = Color.White, fontWeight = FontWeight.ExtraBold)
+                    Text("📲 Cập nhật ngay", color = Color.White, fontWeight = FontWeight.ExtraBold)
                 }
             },
-            dismissButton = { TextButton(onClick = vm::dismissUpdateDialog) { Text(stringResource(R.string.upd_install_later)) } }
+            dismissButton = {
+                TextButton(onClick = vm::skipCurrentUpdate) {
+                    Text("Bỏ qua", fontWeight = FontWeight.Bold)
+                }
+            }
         )
         is UpdateUiState.Failed -> AlertDialog(
             onDismissRequest = vm::dismissUpdateDialog,

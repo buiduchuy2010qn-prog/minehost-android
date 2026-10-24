@@ -388,13 +388,24 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     "Hỗ trợ cài đè trực tiếp 100% lên bản hiện tại (giữ nguyên toàn bộ Server, Thế giới & Mod).",
                                     fontSize = 11.5.sp
                                 )
-                                Button(
-                                    onClick = { vm.downloadUpdate(autoInstallWhenDone = true) },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
-                                    shape = RoundedCornerShape(10.dp),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text("⚡ Tải & Cài Đè Bản v${cur.release.tag} Ngay", color = Color.White, fontWeight = FontWeight.ExtraBold)
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            vm.skipCurrentUpdate()
+                                        },
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text("Bỏ qua", fontWeight = FontWeight.Bold)
+                                    }
+                                    Button(
+                                        onClick = { vm.downloadUpdate(autoInstallWhenDone = true) },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.weight(1.4f)
+                                    ) {
+                                        Text("🚀 Cập nhật v${cur.release.tag}", color = Color.White, fontWeight = FontWeight.ExtraBold)
+                                    }
                                 }
                             }
                             is McViewModel.UpdateUiState.Downloading -> {
