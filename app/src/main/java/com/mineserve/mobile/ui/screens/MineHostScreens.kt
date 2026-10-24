@@ -2050,6 +2050,76 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                 }
             }
         }
+
+        // ══════════════════════════════════════════════════════════════════════
+        // [v2.7.4] THẺ CHẨN ĐOÁN PHẦN CỨNG MÁY & CẨM NANG 3 BƯỚC CHO NGƯỜI MỚI
+        // ══════════════════════════════════════════════════════════════════════
+        item(key = "device_preflight_and_onboarding") {
+            val preflight = remember(ready, state.isRunning, config.installedCores.size) { vm.inspectDevicePreFlight() }
+            HostCard(
+                title = "👋 Chẩn Đoán Máy & Cẩm Nang 3 Bước Mở Server",
+                artKind = MinecraftArtKind.DIAMOND_SWORD,
+                badgeText = preflight.tierTitle
+            ) {
+                Surface(
+                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            "📊 Phần cứng: Tổng RAM ${preflight.totalRamMb} MB • Trống ~${preflight.availRamMb} MB • Bộ nhớ còn ${preflight.freeStorageGb}",
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 11.5.sp
+                        )
+                        Text(
+                            "💡 Gợi ý tự động: ${preflight.recommendationVi}",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
+                }
+
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
+                    Text("🚀 Quy trình 3 bước mở Server chuẩn:", fontWeight = FontWeight.ExtraBold, fontSize = 11.5.sp)
+                    Text(
+                        "${if (ready) "🟢" else "⚪"} Bước 1: Cài môi trường chạy (${if (ready) "Đã hoàn tất" else "Bấm nút Cài đặt môi trường ở trên cùng"})",
+                        fontSize = 11.sp
+                    )
+                    Text(
+                        "${if (config.installedCores.isNotEmpty()) "🟢" else "⚪"} Bước 2: Tải Server Core Paper/Fabric (${if (config.installedCores.isNotEmpty()) "Đã có ${config.installedCores.size} server" else "Bấm Tạo Server Mới"})",
+                        fontSize = 11.sp
+                    )
+                    Text(
+                        "${if (state.isRunning) "🟢" else "⚪"} Bước 3: Bật Server & Mở đường hầm Playit.gg để bạn bè vào chơi (${if (state.isRunning) "Server đang mở!" else "Sẵn sàng bật"})",
+                        fontSize = 11.sp
+                    )
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    if (!preflight.ignoringBatteryOptimizations) {
+                        Button(
+                            onClick = { vm.requestIgnoreBatteryOptimization() },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD97706), contentColor = Color.White),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("🔋 Cấp Quyền Chạy Nền (Chống Tắt Ngầm)", fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
+                        }
+                    }
+                    if (preflight.isLowRamDevice && active != null) {
+                        OutlinedButton(
+                            onClick = { vm.applyUltraLiteLowRamMode() },
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("⚡ Bật Chế Độ Máy RAM Ít", fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
+                        }
+                    }
+                }
+            }
+        }
     }
 
     if (showPastePlayitKeyDialog) {
@@ -2361,10 +2431,163 @@ fun MineHostManage(vm: McViewModel, navigate: (SubPage) -> Unit) {
         }
 
         item(key = "about_card") {
-            HostCard("🇻🇳 MineHost v${com.mineserve.mobile.BuildConfig.VERSION_NAME} • Bản Cộng Đồng Minecraft Việt Nam", artKind = MinecraftArtKind.CREEPER) {
-                Text("Giao diện trực quan không trùng lặp, định tuyến IPv4 Playit.gg chống lỗi 'Máy chủ không rõ', Chơi chung PC + PE (tự kiểm tra bản PE vào được) qua GeyserMC + Floodgate + ViaVersion & Gói 14 Mod Tối Ưu Server 1 chạm.")
-                TextButton(onClick = { uri.openUri("https://github.com/buiduchuy2010qn-prog/minehost-android") }) {
-                    Text("Mã nguồn & bản build trên GitHub")
+            val clipboard = LocalClipboardManager.current
+            val lastUpdateResult by vm.lastUpdateCheckResult.collectAsStateWithLifecycle()
+            var showCrashLogModal by remember { mutableStateOf(false) }
+            var showPrivacyModal by remember { mutableStateOf(false) }
+            var crashLogText by remember { mutableStateOf("") }
+
+            HostCard(
+                "🇻🇳 MineHost v${com.mineserve.mobile.BuildConfig.VERSION_NAME} (Build ${com.mineserve.mobile.BuildConfig.VERSION_CODE}) • Chuẩn Cộng Đồng & Store",
+                artKind = MinecraftArtKind.CREEPER,
+                badgeText = "v${com.mineserve.mobile.BuildConfig.VERSION_NAME}"
+            ) {
+                Text(
+                    "Ứng dụng tự tạo & quản trị máy chủ Minecraft Java + Bedrock (Crossplay PC & PE) trên Android. Tích hợp Chế độ Siêu Nhẹ cho máy RAM ít, Gói 5 Mod Siêu Nhẹ (-45% RAM), Định tuyến Playit.gg IPv4 và Quản trị 1 chạm.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                if (!lastUpdateResult.isNullOrBlank()) {
+                    Text(
+                        lastUpdateResult.orEmpty(),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.5.sp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    Button(
+                        onClick = { vm.checkForUpdate(manual = true) },
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("🔄 Kiểm Tra Cập Nhật (OTA)", fontWeight = FontWeight.ExtraBold, fontSize = 11.5.sp)
+                    }
+                    OutlinedButton(
+                        onClick = { uri.openUri("https://github.com/buiduchuy2010qn-prog/minehost-android/releases") },
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("📦 Kho Bản Build GitHub", fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
+                    }
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(
+                        onClick = {
+                            crashLogText = vm.readAppCrashLog()
+                            showCrashLogModal = true
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("🛠️ Nhật Ký Lỗi (Crash Log)", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                    }
+                    OutlinedButton(
+                        onClick = { showPrivacyModal = true },
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("⚖️ Quyền Riêng Tư & Pháp Lý", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                    }
+                }
+
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            "⚖️ TUYÊN BỐ BẢN QUYỀN (TRADEMARK DISCLAIMER):",
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 10.5.sp
+                        )
+                        Text(
+                            "NOT AN OFFICIAL MINECRAFT PRODUCT. NOT APPROVED BY OR ASSOCIATED WITH MOJANG OR MICROSOFT.\n(Không phải sản phẩm Minecraft chính thức. Không được phê duyệt bởi hoặc liên kết với Mojang hay Microsoft.)",
+                            fontSize = 10.sp,
+                            lineHeight = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                if (showCrashLogModal) {
+                    AlertDialog(
+                        onDismissRequest = { showCrashLogModal = false },
+                        title = { Text("🛠️ Nhật Ký Lỗi Ứng Dụng (Crash Log)", fontWeight = FontWeight.ExtraBold, fontSize = 15.sp) },
+                        text = {
+                            Column(
+                                modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp).verticalScroll(rememberScrollState()),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(crashLogText, fontSize = 11.sp, lineHeight = 15.sp)
+                            }
+                        },
+                        confirmButton = {
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                TextButton(onClick = {
+                                    clipboard.setText(AnnotatedString(crashLogText))
+                                    vm.notifyActionDone("📋 Đã sao chép nhật ký lỗi vào bộ nhớ tạm!")
+                                }) {
+                                    Text("📋 Sao chép")
+                                }
+                                TextButton(onClick = {
+                                    vm.clearAppCrashLog()
+                                    crashLogText = vm.readAppCrashLog()
+                                }) {
+                                    Text("🧹 Xóa log")
+                                }
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showCrashLogModal = false }) { Text("Đóng") }
+                        }
+                    )
+                }
+
+                if (showPrivacyModal) {
+                    AlertDialog(
+                        onDismissRequest = { showPrivacyModal = false },
+                        title = { Text("⚖️ Chính Sách Quyền Riêng Tư & Giấy Phép", fontWeight = FontWeight.ExtraBold, fontSize = 15.sp) },
+                        text = {
+                            Column(
+                                modifier = Modifier.fillMaxWidth().heightIn(max = 340.dp).verticalScroll(rememberScrollState()),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    "1. Cam Kết Quyền Riêng Tư (Zero Telemetry):\n" +
+                                        "• MineHost KHÔNG thu thập, KHÔNG lưu trữ và KHÔNG gửi bất kỳ dữ liệu cá nhân, danh bạ, vị trí hay mã định danh thiết bị (Android ID) nào về máy chủ bên thứ ba.\n" +
+                                        "• Toàn bộ dữ liệu thế giới (World), cấu hình máy chủ và bản sao lưu nằm hoàn toàn trên bộ nhớ thiết bị của bạn.",
+                                    fontSize = 11.5.sp,
+                                    lineHeight = 16.sp
+                                )
+                                Text(
+                                    "2. Giải Thích Quyền Truy Cập (Permissions):\n" +
+                                        "• Mạng (Internet): Chỉ dùng để tải nhân máy chủ Minecraft chính thức (Paper/Fabric), GeyserMC, Mod từ Modrinth và kết nối đường hầm Playit.gg.\n" +
+                                        "• Lưu trữ (Storage): Chỉ dùng để xuất/nhập file sao lưu thế giới (.zip) và cài đặt gói Addon/Mod do chính bạn chọn.\n" +
+                                        "• Chạy nền (Foreground Service & Wakelock): Giữ tiến trình máy chủ Minecraft không bị hệ điều hành Android đóng khi tắt màn hình.",
+                                    fontSize = 11.5.sp,
+                                    lineHeight = 16.sp
+                                )
+                                Text(
+                                    "3. Giấy Phép Mã Nguồn Mở & Miễn Trừ Mojang:\n" +
+                                        "• Phát hành theo giấy phép mã nguồn mở GNU GPL-3.0-or-later tại github.com/buiduchuy2010qn-prog/minehost-android.\n" +
+                                        "• NOT AN OFFICIAL MINECRAFT PRODUCT. NOT APPROVED BY OR ASSOCIATED WITH MOJANG OR MICROSOFT.",
+                                    fontSize = 11.5.sp,
+                                    lineHeight = 16.sp
+                                )
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(onClick = { uri.openUri("https://github.com/buiduchuy2010qn-prog/minehost-android/blob/main/PRIVACY.md") }) {
+                                Text("🌐 Xem trên GitHub")
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showPrivacyModal = false }) { Text("Đã hiểu") }
+                        }
+                    )
                 }
             }
         }

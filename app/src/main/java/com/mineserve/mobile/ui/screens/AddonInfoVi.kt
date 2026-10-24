@@ -567,7 +567,7 @@ internal object AddonInfoVi {
                 connectTimeout = 5000
                 readTimeout = 6000
                 instanceFollowRedirects = true
-                setRequestProperty("User-Agent", "MineHost/2.6 (Android; github.com/duchilocket-oss/minehost-android)")
+                setRequestProperty("User-Agent", "MineHost/2.7.4 (Android; github.com/buiduchuy2010qn-prog/minehost-android)")
             }
             if (conn.responseCode in 200..299) conn.inputStream.bufferedReader().use { it.readText() } else null
         } catch (_: Exception) {

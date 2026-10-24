@@ -304,6 +304,7 @@ fun McApp() {
         }
 
         // 软件更新对话框（全局，覆盖所有页面）
+        UpdateDialog(vm = vm)
         eulaRequest?.let { requestedDir ->
             AlertDialog(
                 onDismissRequest = vm::dismissEula,

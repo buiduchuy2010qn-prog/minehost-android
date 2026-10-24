@@ -57,13 +57,15 @@ object AppUpdateService {
                     throw IllegalStateException("update check failed: HTTP $code")
                 }
                 val release = decodeRelease(connection.inputStream.bufferedReader().use { it.readText() })
-                val tag = release.tag_name.trim().removePrefix("v")
+                val rawTag = release.tag_name.trim()
+                val tag = rawTag.removePrefix("v")
                 if (tag.isBlank()) return@withContext null
                 val apk = release.assets.firstOrNull { it.name == APK_NAME }
+                    ?: release.assets.firstOrNull { it.name.startsWith("minehost-", ignoreCase = true) && it.name.endsWith(".apk", ignoreCase = true) }
                     ?: release.assets.firstOrNull { it.name.endsWith(".apk", ignoreCase = true) }
                     ?: return@withContext null
                 return@withContext if (compare(tag, currentVersion) <= 0) null
-                else AppRelease(tag, release.body?.trim().orEmpty(), downloadUrls(apk.browser_download_url), "$PROJECT_URL/releases/tag/$tag")
+                else AppRelease(tag, release.body?.trim().orEmpty(), downloadUrls(apk.browser_download_url), "$PROJECT_URL/releases/tag/$rawTag")
             } finally {
                 connection.disconnect()
             }

@@ -850,10 +850,37 @@ class McViewModel(
 
     /** 检查更新：manual=true 来自设置页（显示检查进度 + 失败提示）；auto=true 启动检查（失败静默 + 有新版发通知） */
     fun checkForUpdate(manual: Boolean = false) {
-        if (!manual) return
-        _lastUpdateCheckResult.value = "Bản thử nghiệm: xem build trên GitHub (cần đăng nhập repo riêng tư)."
-        app.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/duchilocket-oss/minehost-android/actions"))
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        if (manual) {
+            _updateState.value = UpdateUiState.Checking
+            _updateDialogVisible.value = true
+        }
+        viewModelScope.launch {
+            try {
+                val release = AppUpdateService.latest(com.mineserve.mobile.BuildConfig.VERSION_NAME)
+                if (release != null) {
+                    _updateState.value = UpdateUiState.Available(release)
+                    _lastUpdateCheckResult.value = "🚀 Có bản mới v${release.tag} · ${nowTime()}"
+                    if (manual || release.tag != skippedReleaseTag) {
+                        _updateDialogVisible.value = true
+                    }
+                    if (!manual && release.tag != skippedReleaseTag) {
+                        showUpdateNotification(app, release)
+                    }
+                } else {
+                    _updateState.value = UpdateUiState.Idle
+                    if (manual) {
+                        _updateDialogVisible.value = false
+                        _lastUpdateCheckResult.value = "✅ Đã là bản mới nhất (v${com.mineserve.mobile.BuildConfig.VERSION_NAME}) · ${nowTime()}"
+                        _messageFlow.tryEmit("✅ Bạn đang dùng phiên bản mới nhất v${com.mineserve.mobile.BuildConfig.VERSION_NAME}!")
+                    }
+                }
+            } catch (e: Exception) {
+                if (manual) {
+                    _updateState.value = UpdateUiState.Failed(e.message ?: "Không thể kiểm tra cập nhật từ GitHub")
+                    _lastUpdateCheckResult.value = "⚠️ Kiểm tra thất bại · ${nowTime()}"
+                }
+            }
+        }
     }
 
     private fun nowTime(): String =
@@ -10678,6 +10705,90 @@ class McViewModel(
                 _errorFlow.tryEmit("Không thể lưu Tên Server MOTD: ${e.message}")
             }
         }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════════
+    // [v2.7.4] CHUẨN DEV APP LÊN STORE: PRE-FLIGHT CHECK, CRASH LOG VIEWER & LEGAL
+    // ══════════════════════════════════════════════════════════════════════════════
+
+    data class DevicePreFlightReport(
+        val totalRamMb: Int,
+        val availRamMb: Int,
+        val freeStorageGb: String,
+        val ignoringBatteryOptimizations: Boolean,
+        val tierTitle: String,
+        val recommendationVi: String,
+        val isLowRamDevice: Boolean
+    )
+
+    fun inspectDevicePreFlight(): DevicePreFlightReport {
+        val am = app.getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
+        val memInfo = android.app.ActivityManager.MemoryInfo()
+        am?.getMemoryInfo(memInfo)
+        val totalRamMb = (memInfo.totalMem / (1024L * 1024L)).toInt().coerceAtLeast(1024)
+        val availRamMb = (memInfo.availMem / (1024L * 1024L)).toInt().coerceAtLeast(256)
+
+        val stat = runCatching { android.os.StatFs(app.filesDir.absolutePath) }.getOrNull()
+        val freeBytes = stat?.availableBytes ?: 0L
+        val freeGb = String.format(java.util.Locale.US, "%.1f GB", freeBytes.toDouble() / (1024.0 * 1024.0 * 1024.0))
+
+        val pm = app.getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
+        val ignoringBattery = pm?.isIgnoringBatteryOptimizations(app.packageName) ?: false
+
+        val isLowRam = totalRamMb <= 4200
+        val (tier, rec) = when {
+            totalRamMb <= 3200 -> "📱 Máy RAM Ít (${totalRamMb} MB)" to "Khuyên bật '⚡ Chế Độ Máy RAM Ít Siêu Nhẹ' + dùng 'Gói 5 Mod Sinh Tồn Siêu Nhẹ (-45% RAM)'."
+            totalRamMb <= 4500 -> "📱 Máy Tầm Trung (${totalRamMb} MB)" to "Chạy tốt Paper/Fabric! Nên cài 'Gói 5 Mod Siêu Nhẹ' và giới hạn biên thế giới 1.000 Ô để mượt nhất."
+            else -> "🚀 Máy Cấu Hình Khỏe (${totalRamMb} MB)" to "Đủ sức chạy mượt cả Paper Crossplay (PC + PE) lẫn Gói 14 Mod Sinh Tồn Fabric!"
+        }
+        return DevicePreFlightReport(
+            totalRamMb = totalRamMb,
+            availRamMb = availRamMb,
+            freeStorageGb = freeGb,
+            ignoringBatteryOptimizations = ignoringBattery,
+            tierTitle = tier,
+            recommendationVi = rec,
+            isLowRamDevice = isLowRam
+        )
+    }
+
+    fun requestIgnoreBatteryOptimization() {
+        try {
+            val intent = Intent(
+                android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                Uri.parse("package:${app.packageName}")
+            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            app.startActivity(intent)
+        } catch (_: Exception) {
+            try {
+                val fallback = Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                app.startActivity(fallback)
+            } catch (e: Exception) {
+                _errorFlow.tryEmit("Không thể mở cài đặt tối ưu pin: ${e.message}")
+            }
+        }
+    }
+
+    fun readAppCrashLog(): String {
+        val homeDir = File(app.filesDir, "home")
+        val f1 = File(homeDir, "crash_log.txt")
+        val f2 = File(homeDir, "crash_log_read.txt")
+        val content = buildString {
+            if (f1.exists() && f1.length() > 0) append(runCatching { f1.readText() }.getOrDefault(""))
+            if (f2.exists() && f2.length() > 0) {
+                if (isNotEmpty()) append("\n\n")
+                append(runCatching { f2.readText() }.getOrDefault(""))
+            }
+        }.trim()
+        return content.ifBlank { "✅ Không có lỗi hệ thống nào được ghi nhận. Ứng dụng đang hoạt động hoàn toàn ổn định!" }
+    }
+
+    fun clearAppCrashLog() {
+        val homeDir = File(app.filesDir, "home")
+        runCatching { File(homeDir, "crash_log.txt").delete() }
+        runCatching { File(homeDir, "crash_log_read.txt").delete() }
+        notifyActionDone("🧹 Đã xóa sạch nhật ký lỗi ứng dụng!")
     }
 }
 

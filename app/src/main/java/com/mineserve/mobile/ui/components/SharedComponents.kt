@@ -1190,12 +1190,12 @@ fun WarnNote(text: String) {
     }
 }
 
-/** QQ 交流群跳转链接 */
+/** Cộng đồng MineHost GitHub chính thức */
 private const val QQ_GROUP_URL =
-    "https://qun.qq.com/universal-share/share?ac=1&authKey=ISbTtN7IFJ0ItNdgzSlZ68hWxg136HpWhwOjj%2BRcl55agd85N3DCzBU82z7U8dQT&busi_data=eyJncm91cENvZGUiOiI1OTM2ODIwMzMiLCJ0b2tlbiI6ImJBS1d3WHRabHRBNUJXcHE5d1EzK01SbUZsVXg5ajM4SVdCeGhBZTVBQXNhMGlpck5DWE04azFKWWhSVW1JbTYiLCJ1aW4iOiIxNjcyNDU0ODQifQ%3D%3D&data=mDeXPqhlgK8JWPqiG2MpojgJuRaMiLLUN_czFSB2Yuhhl2mi9r-v-f6C6DzXxyXQY_Nog12BLMt6kJ8aanRlfg&svctype=4&tempid=h5_group_info"
+    "https://github.com/buiduchuy2010qn-prog/minehost-android/issues"
 
-/** QQ 群号（纯数字，用于复制与展示） */
-private const val QQ_GROUP_NUMBER = "593682033"
+/** Địa chỉ repo cộng đồng (dùng để sao chép & hiển thị) */
+private const val QQ_GROUP_NUMBER = "github.com/buiduchuy2010qn-prog/minehost-android"
 
 /** 打开 QQ 加群页面；无浏览器/QQ 时静默失败 */
 private fun openQqGroup(context: android.content.Context) {

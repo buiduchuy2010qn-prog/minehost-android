@@ -308,11 +308,10 @@ fun SettingsScreen(vm: McViewModel, onNavigate: (SubPage) -> Unit = {}) {
             Button(
                 onClick = {
                     try {
-                        val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:167245484@qq.com"))
-                        intent.putExtra(Intent.EXTRA_SUBJECT, feedbackSubject)
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/buiduchuy2010qn-prog/minehost-android/issues"))
                         context.startActivity(intent)
                     } catch (e: Exception) {
-                        // 设备无邮件客户端时静默
+                        // Thiết bị không có trình duyệt
                     }
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = Indigo),
