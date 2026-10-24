@@ -1860,7 +1860,9 @@ class PlayitTunnelController(
             if (footerId == UDP_CHANNEL_ESTABLISH_ID) {
                 if (verifyUdpEstablishAck(rxPkt.address, rxPkt.port, tunnelAddr, footerId)) {
                     val ackNow = System.currentTimeMillis()
-                    firstUdpEstablishRxMs.compareAndSet(0L, ackNow)
+                    if (firstUdpEstablishRxMs.compareAndSet(0L, ackNow)) {
+                        appendLog("✅ [UDP Relay] Kênh dữ liệu UDP Bedrock (MCPE) đã thông suốt (${rxPkt.address.hostAddress}:${rxPkt.port})!")
+                    }
                     lastUdpEstablishRxMs.set(ackNow)
                     val ageMs = (ackNow - firstUdpEstablishRxMs.get()).coerceAtLeast(0L)
                     updateStateForSession(sessionGen) { cur ->
@@ -3354,7 +3356,7 @@ class PlayitTunnelController(
         private const val KEY_SERVER_TUNNEL_ROUTES = "server_tunnel_routes_v1"
 
         // Playit UDP Channel Protocol v1/v2 Footer Magic IDs (IPv4 & IPv6)
-        internal const val UDP_CHANNEL_ESTABLISH_ID = -3449785662535178367L // 0xd01fe6830ddce781UL
+        internal const val UDP_CHANNEL_ESTABLISH_ID = -3449785338994825343L // 0xd01fe6830ddce781UL.toLong()
         internal const val REDIRECT_FLOW_4_FOOTER_ID_V1 = 0x5cb867cf788173b2L
         internal const val REDIRECT_FLOW_6_FOOTER_ID_V1 = 0x666867cf788173b2L
         internal const val REDIRECT_FLOW_4_FOOTER_ID_V2 = 0x5cb867cf78817399L

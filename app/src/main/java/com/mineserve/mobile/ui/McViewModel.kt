@@ -9902,10 +9902,17 @@ class McViewModel(
             controller.startupFailures.collect { showStartupFailureReport(it) }
         }
         viewModelScope.launch(Dispatchers.Default) {
+            val silentZeroListRegex = Regex("""(There are 0 of a max of \d+ players online:|Hiện có 0/\d+ người chơi đang online:)\s*$""")
+            var shownFirstZeroList = false
             repo.termuxRuntime.consoleFlow.collect { line ->
+                parseConsoleLine(line)
+                val isZeroListPoll = silentZeroListRegex.containsMatchIn(line)
+                if (isZeroListPoll) {
+                    if (shownFirstZeroList) return@collect
+                    shownFirstZeroList = true
+                }
                 consoleBuffer.add(line)
                 pendingConsoleBuffer.add(line)
-                parseConsoleLine(line)
             }
         }
         // Process only newly received lines. Older terminal rows keep their identity across UI flushes.

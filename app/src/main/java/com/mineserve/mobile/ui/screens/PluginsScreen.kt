@@ -1,3 +1,4 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 package com.mineserve.mobile.ui.screens
 
 import androidx.compose.ui.res.stringResource
@@ -600,15 +601,17 @@ fun PluginsScreen(vm: McViewModel) {
                                 )
                                 Spacer(Modifier.size(9.dp))
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    FlowRow(
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
                                     ) {
                                         Text(
                                             item.displayName,
                                             fontSize = 12.sp,
                                             fontWeight = FontWeight.ExtraBold,
-                                            color = MaterialTheme.colorScheme.onSurface
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                         Box(
                                             modifier = Modifier
@@ -620,7 +623,8 @@ fun PluginsScreen(vm: McViewModel) {
                                                 item.impactBadge,
                                                 color = Indigo,
                                                 fontSize = 9.5.sp,
-                                                fontWeight = FontWeight.ExtraBold
+                                                fontWeight = FontWeight.ExtraBold,
+                                                maxLines = 1
                                             )
                                         }
                                         Box(
@@ -633,7 +637,8 @@ fun PluginsScreen(vm: McViewModel) {
                                                 item.categoryBadge,
                                                 color = Mint,
                                                 fontSize = 9.5.sp,
-                                                fontWeight = FontWeight.Bold
+                                                fontWeight = FontWeight.Bold,
+                                                maxLines = 1
                                             )
                                         }
                                     }
@@ -1578,13 +1583,45 @@ private fun ModsTab(
             )
         } else {
             // ── Thanh thao tác hàng loạt thông minh: Tắt toàn bộ Mod / Bật toàn bộ Mod / Chỉ bật Mod Tối ưu & Lõi ──
-            val coreLibPrefixes = remember {
-                listOf("fabric-api", "fabric-language-kotlin", "architectury", "cloth-config", "balm", "puzzleslib", "forgeconfigapiport", "collective", "craterlib")
+            val pureOptPrefixes = remember {
+                listOf(
+                    "fabric-api", "lithium", "ferritecore", "krypton", "c2me", "noisium",
+                    "modernfix", "immediatelyfast", "entityculling", "alternate-current",
+                    "alternate_current", "chunky", "spark", "ksyxis", "servercore", "clumps",
+                    "very-many-players", "vmp", "starlight", "lazydfu", "memoryleakfix"
+                )
+            }
+            val serilumDependents = remember {
+                listOf(
+                    "treeharvester", "starterkit", "healingcampfire", "villagernames",
+                    "doubledoors", "inventorytotem", "areas", "edibles", "naturalslabs"
+                )
             }
             val disabledCoreLibs = remember(mods) {
+                val enabledNorms = mods.filter { it.isEnabled }.map {
+                    it.baseName.lowercase(java.util.Locale.ROOT).replace("_", "-")
+                }
+                val hasAnyEnabled = enabledNorms.isNotEmpty()
+                val hasNonOptGameplayMod = enabledNorms.any { norm ->
+                    pureOptPrefixes.none { opt -> norm.contains(opt) }
+                }
+                val hasSerilumMod = enabledNorms.any { norm ->
+                    serilumDependents.any { dep -> norm.contains(dep) }
+                }
                 mods.filter { mod ->
-                    !mod.isEnabled && coreLibPrefixes.any { prefix ->
-                        mod.baseName.lowercase(java.util.Locale.ROOT).replace("_", "-").contains(prefix)
+                    if (mod.isEnabled) return@filter false
+                    val norm = mod.baseName.lowercase(java.util.Locale.ROOT).replace("_", "-")
+                    when {
+                        norm.contains("fabric-api") -> hasAnyEnabled
+                        norm.contains("collective") -> hasSerilumMod
+                        norm.contains("fabric-language-kotlin") ||
+                            norm.contains("architectury") ||
+                            norm.contains("cloth-config") ||
+                            norm.contains("balm") ||
+                            norm.contains("puzzleslib") ||
+                            norm.contains("forgeconfigapiport") ||
+                            norm.contains("craterlib") -> hasNonOptGameplayMod
+                        else -> false
                     }
                 }
             }
