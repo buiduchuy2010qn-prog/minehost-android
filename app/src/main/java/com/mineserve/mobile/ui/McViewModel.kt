@@ -197,6 +197,9 @@ class McViewModel(
     /** 由 McApp 在 Activity 前台/后台切换时调用，供日志刷新循环据此降频。 */
     fun setUiVisible(visible: Boolean) {
         uiVisible = visible
+        if (visible) {
+            onAppForegrounded()
+        }
     }
 
     /** 事件通知等级：0=关闭 1=仅重要 2=全部（含玩家上下线）。 */
@@ -844,33 +847,79 @@ class McViewModel(
     /** 最近一次更新检查结果描述（设置页显示），如「已是最新版本 · 08:30」 */
     private val _lastUpdateCheckResult = MutableStateFlow<String?>(null)
     val lastUpdateCheckResult: StateFlow<String?> = _lastUpdateCheckResult.asStateFlow()
+    private val _autoInstallUpdateEnabled = MutableStateFlow(true)
+    val autoInstallUpdateEnabled: StateFlow<Boolean> = _autoInstallUpdateEnabled.asStateFlow()
     private var skippedReleaseTag: String? = null
+    @Volatile private var lastUpdateCheckAtMs: Long = 0L
+    @Volatile private var pendingInstallApkFile: File? = null
+    private val updateCheckInFlight = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    fun setAutoInstallUpdateEnabled(enabled: Boolean) {
+        _autoInstallUpdateEnabled.value = enabled
+        metaPrefs().edit().putBoolean("auto_install_update_enabled", enabled).apply()
+    }
 
     fun dismissUpdateDialog() { _updateDialogVisible.value = false }
 
+    private fun onAppForegrounded() {
+        // Nếu người dùng vừa bật quyền "Cài đặt ứng dụng không rõ nguồn gốc" trong Cài đặt hệ thống rồi quay lại App,
+        // tự động mở ngay trình Cài đè mà không bắt bấm lại.
+        val pendingFile = pendingInstallApkFile
+        if (pendingFile != null && pendingFile.exists()) {
+            if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.O ||
+                app.packageManager.canRequestPackageInstalls()
+            ) {
+                pendingInstallApkFile = null
+                installApk(app, pendingFile)
+                return
+            }
+        }
+        // Tự động kiểm tra bản cập nhật mới khi mở lại App (cách lần kiểm tra trước >= 3 phút)
+        val now = System.currentTimeMillis()
+        if (now - lastUpdateCheckAtMs >= 3 * 60_000L && _updateState.value !is UpdateUiState.Downloading) {
+            checkForUpdate(manual = false)
+        }
+    }
+
     /** 检查更新：manual=true 来自设置页（显示检查进度 + 失败提示）；auto=true 启动检查（失败静默 + 有新版发通知） */
     fun checkForUpdate(manual: Boolean = false) {
+        if (!manual && !updateCheckInFlight.compareAndSet(false, true)) return
         if (manual) {
+            updateCheckInFlight.set(true)
             _updateState.value = UpdateUiState.Checking
             _updateDialogVisible.value = true
         }
         viewModelScope.launch {
             try {
+                lastUpdateCheckAtMs = System.currentTimeMillis()
                 val release = AppUpdateService.latest(com.mineserve.mobile.BuildConfig.VERSION_NAME)
                 if (release != null) {
-                    _updateState.value = UpdateUiState.Available(release)
-                    _lastUpdateCheckResult.value = "🚀 Có bản mới v${release.tag} · ${nowTime()}"
+                    val cachedApk = File(app.cacheDir, "update/MineHost-${release.tag}-arm64.apk")
+                    if (cachedApk.exists() && AppUpdateService.isApk(cachedApk) && AppUpdateService.verifySignature(app, cachedApk)) {
+                        _updateState.value = UpdateUiState.Downloaded(release, cachedApk.absolutePath)
+                    } else {
+                        _updateState.value = UpdateUiState.Available(release)
+                    }
+                    _lastUpdateCheckResult.value = "🚀 Đã phát hiện bản mới v${release.tag} · ${nowTime()}"
                     if (manual || release.tag != skippedReleaseTag) {
                         _updateDialogVisible.value = true
                     }
                     if (!manual && release.tag != skippedReleaseTag) {
                         showUpdateNotification(app, release)
                     }
+                    // Tự động tải ngầm & mở bảng Cài đè ngay khi phát hiện bản mới
+                    if (_autoInstallUpdateEnabled.value && (manual || release.tag != skippedReleaseTag)) {
+                        if (_updateState.value is UpdateUiState.Downloaded) {
+                            if (manual) installApk(app, cachedApk)
+                        } else {
+                            downloadUpdate(autoInstallWhenDone = true)
+                        }
+                    }
                 } else {
                     _updateState.value = UpdateUiState.Idle
+                    _lastUpdateCheckResult.value = "✅ Đã là bản mới nhất (v${com.mineserve.mobile.BuildConfig.VERSION_NAME}) · ${nowTime()}"
                     if (manual) {
                         _updateDialogVisible.value = false
-                        _lastUpdateCheckResult.value = "✅ Đã là bản mới nhất (v${com.mineserve.mobile.BuildConfig.VERSION_NAME}) · ${nowTime()}"
                         _messageFlow.tryEmit("✅ Bạn đang dùng phiên bản mới nhất v${com.mineserve.mobile.BuildConfig.VERSION_NAME}!")
                     }
                 }
@@ -879,6 +928,8 @@ class McViewModel(
                     _updateState.value = UpdateUiState.Failed(e.message ?: "Không thể kiểm tra cập nhật từ GitHub")
                     _lastUpdateCheckResult.value = "⚠️ Kiểm tra thất bại · ${nowTime()}"
                 }
+            } finally {
+                updateCheckInFlight.set(false)
             }
         }
     }
@@ -888,19 +939,30 @@ class McViewModel(
             .format(java.util.Date())
 
     fun showUpdateDialog() {
-        if (_updateState.value is UpdateUiState.Available) _updateDialogVisible.value = true
+        val st = _updateState.value
+        if (st is UpdateUiState.Available || st is UpdateUiState.Downloading || st is UpdateUiState.Downloaded) {
+            _updateDialogVisible.value = true
+        }
     }
 
     fun skipCurrentUpdate() {
-        val state = _updateState.value as? UpdateUiState.Available ?: return
-        skippedReleaseTag = state.release.tag
+        val release = when (val st = _updateState.value) {
+            is UpdateUiState.Available -> st.release
+            is UpdateUiState.Downloaded -> st.release
+            else -> null
+        }
+        if (release != null) skippedReleaseTag = release.tag
         dismissUpdateDialog()
     }
 
     /** 打开浏览器跳到 GitHub Release 页面（供用户手动下载更新） */
     fun openGithubUpdate() {
-        val url = (_updateState.value as? UpdateUiState.Available)?.release?.releaseUrl
-            ?: com.mineserve.mobile.data.AppUpdateService.PROJECT_URL
+        val url = when (val st = _updateState.value) {
+            is UpdateUiState.Available -> st.release.releaseUrl
+            is UpdateUiState.Downloading -> st.release.releaseUrl
+            is UpdateUiState.Downloaded -> st.release.releaseUrl
+            else -> com.mineserve.mobile.data.AppUpdateService.PROJECT_URL
+        }
         try {
             val intent = android.content.Intent(
                 android.content.Intent.ACTION_VIEW,
@@ -913,21 +975,30 @@ class McViewModel(
     }
 
     /** 开始下载新版 APK（完成后自动调系统安装器） */
-    fun downloadUpdate() {
+    fun downloadUpdate(autoInstallWhenDone: Boolean = true) {
         val state = _updateState.value
         val release = when (state) {
             is UpdateUiState.Available -> state.release
             is UpdateUiState.Failed -> state.release
+            is UpdateUiState.Downloaded -> {
+                installApk(app, File(state.apkPath))
+                return
+            }
             else -> null
         } ?: return
         _updateState.value = UpdateUiState.Downloading(0f, release)
         viewModelScope.launch {
             try {
-                val target = File(app.cacheDir, "update/MineServeMobile-latest.apk")
-                AppUpdateService.download(release.apkUrls, target) { p ->
-                    _updateState.value = UpdateUiState.Downloading(p, release)
+                val target = File(app.cacheDir, "update/MineHost-${release.tag}-arm64.apk")
+                if (!target.exists() || !AppUpdateService.isApk(target) || !AppUpdateService.verifySignature(app, target)) {
+                    AppUpdateService.download(release.apkUrls, target) { p ->
+                        _updateState.value = UpdateUiState.Downloading(p, release)
+                    }
                 }
                 _updateState.value = UpdateUiState.Downloaded(release, target.absolutePath)
+                if (autoInstallWhenDone && uiVisible) {
+                    installApk(app, target)
+                }
             } catch (e: Exception) {
                 _updateState.value = UpdateUiState.Failed(e.message ?: app.getString(R.string.update_download_failed), release)
             }
@@ -952,15 +1023,17 @@ class McViewModel(
             }
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O &&
                 !context.packageManager.canRequestPackageInstalls()) {
+                pendingInstallApkFile = file
                 context.startActivity(
                     Intent(
                         android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
                         Uri.parse("package:${context.packageName}")
                     ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 )
-                _messageFlow.tryEmit(str(R.string.msg_allow_unknown_install))
+                _messageFlow.tryEmit("📲 Hãy gạt bật 'Cho phép từ nguồn này' — khi quay lại App sẽ tự động cài đè ngay!")
                 return
             }
+            pendingInstallApkFile = null
             val uri = FileProvider.getUriForFile(
                 context, context.packageName + ".fileprovider", file
             )
@@ -9826,7 +9899,26 @@ class McViewModel(
         _autoCleanRamOnStart.value = metaPrefs().getBoolean("auto_clean_ram_on_start", true)
         _autoBackupOnStop.value = metaPrefs().getBoolean("auto_backup_on_stop", true)
         _autoUploadDriveOnStop.value = metaPrefs().getBoolean("auto_upload_drive_on_stop", false)
+        _autoInstallUpdateEnabled.value = metaPrefs().getBoolean("auto_install_update_enabled", true)
         _cloudSyncFolderUri.value = metaPrefs().getString("cloud_sync_folder_uri", null)
+        // Tự động phát hiện bản cập nhật mới ngay khi mở App và kiểm tra định kỳ mỗi 15 phút
+        viewModelScope.launch {
+            delay(1_500L)
+            while (true) {
+                if (uiVisible && _updateState.value !is UpdateUiState.Downloading) {
+                    checkForUpdate(manual = false)
+                }
+                delay(15 * 60_000L)
+            }
+        }
+        viewModelScope.launch {
+            McApplication.get(app).openUpdateRequest.collect { wantOpen ->
+                if (wantOpen) {
+                    McApplication.get(app).consumeOpenUpdateRequest()
+                    showUpdateDialog()
+                }
+            }
+        }
         refreshDeviceProfile()
         refreshLanIp(notifyOnChange = false)
         runCatching {

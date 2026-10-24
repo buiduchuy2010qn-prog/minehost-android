@@ -345,6 +345,8 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
         }
     }
 
+    val otaState by vm.updateState.collectAsStateWithLifecycle()
+
     HostPage(
         title = "Bảng Điều Khiển Server",
         subtitle = "Giao diện trực quan 4 khu vực — Bật Server, Đường hầm PC + PE & Tối ưu 1 chạm.",
@@ -358,6 +360,82 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
             }
         }
     ) {
+        // ── BANNER TỰ ĐỘNG PHÁT HIỆN & CÀI ĐÈ BẢN CẬP NHẬT MỚI (OTA) ──
+        if (otaState is McViewModel.UpdateUiState.Available ||
+            otaState is McViewModel.UpdateUiState.Downloading ||
+            otaState is McViewModel.UpdateUiState.Downloaded
+        ) {
+            item(key = "ota_auto_update_banner") {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1B5E20).copy(alpha = 0.22f)),
+                    border = BorderStroke(1.5.dp, Color(0xFF4CAF50))
+                ) {
+                    Column(
+                        Modifier.fillMaxWidth().padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        when (val cur = otaState) {
+                            is McViewModel.UpdateUiState.Available -> {
+                                Text(
+                                    "🚀 Đã phát hiện bản cập nhật mới v${cur.release.tag}!",
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 13.5.sp,
+                                    color = Color(0xFF66BB6A)
+                                )
+                                Text(
+                                    "Hỗ trợ cài đè trực tiếp 100% lên bản hiện tại (giữ nguyên toàn bộ Server, Thế giới & Mod).",
+                                    fontSize = 11.5.sp
+                                )
+                                Button(
+                                    onClick = { vm.downloadUpdate(autoInstallWhenDone = true) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("⚡ Tải & Cài Đè Bản v${cur.release.tag} Ngay", color = Color.White, fontWeight = FontWeight.ExtraBold)
+                                }
+                            }
+                            is McViewModel.UpdateUiState.Downloading -> {
+                                Text(
+                                    "⬇️ Đang tự động tải bản cập nhật v${cur.release.tag} (${(cur.progress.coerceIn(0f, 1f) * 100).toInt()}%)...",
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 13.sp,
+                                    color = Color(0xFF66BB6A)
+                                )
+                                LinearProgressIndicator(
+                                    progress = { cur.progress.coerceIn(0f, 1f) },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Text(
+                                    "Sẽ tự động mở bảng Cài đè ngay khi tải xong 100%!",
+                                    fontSize = 11.sp
+                                )
+                            }
+                            is McViewModel.UpdateUiState.Downloaded -> {
+                                Text(
+                                    "✅ Bản cập nhật v${cur.release.tag} đã tải sẵn sàng!",
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 13.5.sp,
+                                    color = Color(0xFF66BB6A)
+                                )
+                                Button(
+                                    onClick = { vm.installDownloadedUpdate(cur.apkPath) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("📲 Bấm Để Cài Đè Bản v${cur.release.tag} Ngay (Giữ 100% Map & Server)", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
+                                }
+                            }
+                            else -> Unit
+                        }
+                    }
+                }
+            }
+        }
+
         // ── NẾU CHƯA CÀI MÔI TRƯỜNG LẦN ĐẦU ──
         if (!ready) {
             item(key = "bootstrap") {
@@ -2917,6 +2995,7 @@ fun MineHostManage(vm: McViewModel, navigate: (SubPage) -> Unit) {
         item(key = "about_card") {
             val clipboard = LocalClipboardManager.current
             val lastUpdateResult by vm.lastUpdateCheckResult.collectAsStateWithLifecycle()
+            val autoInstallUpdate by vm.autoInstallUpdateEnabled.collectAsStateWithLifecycle()
             var showCrashLogModal by remember { mutableStateOf(false) }
             var showPrivacyModal by remember { mutableStateOf(false) }
             var crashLogText by remember { mutableStateOf("") }
@@ -2930,6 +3009,29 @@ fun MineHostManage(vm: McViewModel, navigate: (SubPage) -> Unit) {
                     "Ứng dụng tự tạo & quản trị máy chủ Minecraft Java + Bedrock (Crossplay PC & PE) trên Android. Tích hợp Chế độ Siêu Nhẹ cho máy RAM ít, Gói 5 Mod Siêu Nhẹ (-45% RAM), Định tuyến Playit.gg IPv4 và Quản trị 1 chạm.",
                     style = MaterialTheme.typography.bodySmall
                 )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "⚡ Tự động phát hiện, tải sẵn & bật cài đè khi có bản mới",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.5.sp
+                        )
+                        Text(
+                            "Khi mở App hoặc đang dùng mà có bản mới trên GitHub, App sẽ tự tải ngầm và bật hộp thoại Cài đè (giữ nguyên 100% Server & Map).",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = autoInstallUpdate,
+                        onCheckedChange = { vm.setAutoInstallUpdateEnabled(it) }
+                    )
+                }
                 if (!lastUpdateResult.isNullOrBlank()) {
                     Text(
                         lastUpdateResult.orEmpty(),

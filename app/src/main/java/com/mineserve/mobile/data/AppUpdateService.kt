@@ -72,10 +72,46 @@ object AppUpdateService {
         } catch (e: Exception) {
             lastError = e
         }
+        // Dự phòng chống giới hạn Rate-Limit 60 req/giờ của api.github.com trên mạng 4G/CGNAT:
+        // Kiểm tra trực tiếp 302 Redirect từ trang releases/latest của GitHub.
+        runCatching {
+            latestViaRedirect(currentVersion)?.let { return@withContext it }
+        }
         if (sawNotFoundOrPrivate && lastError == null) {
             return@withContext null
         }
         throw lastError ?: IllegalStateException("update check failed")
+    }
+
+    private fun latestViaRedirect(currentVersion: String): AppRelease? {
+        val latestPageUrl = "$PROJECT_URL/releases/latest"
+        val conn = (URL(latestPageUrl).openConnection() as HttpURLConnection).apply {
+            instanceFollowRedirects = false
+            requestMethod = "GET"
+            connectTimeout = 10_000
+            readTimeout = 10_000
+            setRequestProperty("User-Agent", "MineHost-Android")
+        }
+        try {
+            val code = conn.responseCode
+            val location = conn.getHeaderField("Location").orEmpty()
+            val rawTag = when {
+                code in 300..399 && location.contains("/releases/tag/") ->
+                    location.substringAfterLast("/releases/tag/").substringBefore("?").substringBefore("#").trim()
+                else -> ""
+            }
+            val tag = rawTag.removePrefix("v")
+            if (tag.isBlank() || compare(tag, currentVersion) <= 0) return null
+            val directApkUrl = "$PROJECT_URL/releases/download/$rawTag/minehost-$tag-arm64.apk"
+            return AppRelease(
+                tag = tag,
+                notes = "Bản cập nhật MineHost v$tag mới nhất từ GitHub Releases (hỗ trợ cài đè trực tiếp 100%, giữ nguyên toàn bộ Server & Thế giới).",
+                apkUrls = downloadUrls(directApkUrl),
+                releaseUrl = "$PROJECT_URL/releases/tag/$rawTag"
+            )
+        } finally {
+            conn.disconnect()
+        }
     }
 
     suspend fun download(urls: List<String>, target: File, onProgress: (Float) -> Unit) = withContext(Dispatchers.IO) {
