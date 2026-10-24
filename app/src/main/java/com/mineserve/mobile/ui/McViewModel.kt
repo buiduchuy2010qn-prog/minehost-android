@@ -10783,12 +10783,5 @@ class McViewModel(
         }.trim()
         return content.ifBlank { "✅ Không có lỗi hệ thống nào được ghi nhận. Ứng dụng đang hoạt động hoàn toàn ổn định!" }
     }
-
-    fun clearAppCrashLog() {
-        val homeDir = File(app.filesDir, "home")
-        runCatching { File(homeDir, "crash_log.txt").delete() }
-        runCatching { File(homeDir, "crash_log_read.txt").delete() }
-        notifyActionDone("🧹 Đã xóa sạch nhật ký lỗi ứng dụng!")
-    }
 }
 
