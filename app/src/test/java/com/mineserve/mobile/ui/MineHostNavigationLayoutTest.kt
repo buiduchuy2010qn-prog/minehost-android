@@ -38,6 +38,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.android.controller.ActivityController
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import org.robolectric.shadows.ShadowDialog
 
 /** Runs on the GitHub runner, with no server/VM/network side effects. */
 @RunWith(RobolectricTestRunner::class)
@@ -86,7 +87,8 @@ class MineHostNavigationLayoutTest {
         file.parentFile?.mkdirs()
         // Draw the actual view on the runner; PixelCopy requires a real display.
         compose.runOnUiThread {
-            val view = controller!!.get().window.decorView
+            val view = ShadowDialog.getLatestDialog()?.takeIf { it.isShowing }?.window?.decorView
+                ?: controller!!.get().window.decorView
             val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
             view.draw(Canvas(bitmap))
             file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }

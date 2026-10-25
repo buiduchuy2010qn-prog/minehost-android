@@ -1,6 +1,14 @@
 package com.mineserve.mobile.ui
 
-import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -10,20 +18,21 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.launch
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 
 /** Lets page headers yield their large title to the shared app bar. */
 val LocalMineHostChrome = staticCompositionLocalOf { false }
@@ -132,25 +141,60 @@ internal fun MineHostNavigation(
     onNavigate: (SubPage) -> Unit,
     content: @Composable () -> Unit
 ) {
-    val drawer = rememberDrawerState(DrawerValue.Closed)
-    val scope = rememberCoroutineScope()
-    val contentDirection = LocalLayoutDirection.current
+    var menuOpen by rememberSaveable { mutableStateOf(false) }
+    val menuVisibility = remember { MutableTransitionState(false) }
+    LaunchedEffect(menuOpen) { menuVisibility.targetState = menuOpen }
     fun choose(action: () -> Unit) {
+        menuOpen = false
         action()
-        scope.launch { drawer.close() }
     }
-    // Mirror only the drawer placement; all product text and content retain LTR.
-    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-        ModalNavigationDrawer(
-            drawerState = drawer,
-            gesturesEnabled = drawer.isOpen,
-            drawerContent = {
-                CompositionLocalProvider(LocalLayoutDirection provides contentDirection) {
-                    ModalDrawerSheet(modifier = Modifier.fillMaxWidth(0.90f).widthIn(max = 380.dp)) {
+    CompositionLocalProvider(LocalMineHostChrome provides true) {
+        Column(Modifier.fillMaxSize().statusBarsPadding()) {
+            Surface(color = MaterialTheme.colorScheme.surface) {
+                Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(start = 20.dp, end = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Medium,
+                        modifier = Modifier.weight(1f).padding(vertical = 12.dp))
+                    IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(48.dp)) {
+                        Icon(Icons.Outlined.Menu, contentDescription = "Mở danh mục")
+                    }
+                }
+            }
+            Box(Modifier.weight(1f)) { content() }
+        }
+    }
+    // A native modal window keeps focus inside the end-side menu and leaves the
+    // app's layout direction unchanged. Insets are owned by the panel itself.
+    if (menuVisibility.currentState || menuVisibility.targetState) {
+        Dialog(
+            onDismissRequest = { menuOpen = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+        ) {
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                val panelWidth = minOf(maxWidth * 0.92f, 380.dp)
+                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.45f))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClickLabel = "Đóng danh mục"
+                    ) { menuOpen = false })
+                AnimatedVisibility(
+                    visibleState = menuVisibility,
+                    modifier = Modifier.align(Alignment.CenterEnd),
+                    enter = slideInHorizontally(tween(220)) { it },
+                    exit = slideOutHorizontally(tween(180)) { it }
+                ) {
+                    Surface(
+                        onClick = {},
+                        modifier = Modifier.width(panelWidth).fillMaxHeight().semantics { paneTitle = "Danh mục" },
+                        color = MaterialTheme.colorScheme.surface,
+                        shape = RoundedCornerShape(topStart = 24.dp, bottomStart = 24.dp)
+                    ) {
+                        Box(Modifier.safeDrawingPadding()) {
                         Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
                             Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Text("Danh mục", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-                                IconButton(onClick = { scope.launch { drawer.close() } }, modifier = Modifier.size(48.dp)) {
+                                IconButton(onClick = { menuOpen = false }, modifier = Modifier.size(48.dp)) {
                                     Icon(Icons.Outlined.Close, contentDescription = "Đóng danh mục")
                                 }
                             }
@@ -195,25 +239,9 @@ internal fun MineHostNavigation(
                             DrawerLink("Chẩn đoán", "Kiểm tra và hướng dẫn sửa lỗi", Icons.Outlined.Build, page == SubPage.Diagnostics) { choose { onNavigate(SubPage.Diagnostics) } }
                             DrawerLink("Công cụ & ứng dụng", "Giao diện, Google Drive và cập nhật", Icons.Outlined.Settings, page == null && tab == McTab.Settings) { choose { onTab(McTab.Settings) } }
                         }
-                    }
-                }
-            }
-        ) {
-            CompositionLocalProvider(LocalLayoutDirection provides contentDirection, LocalMineHostChrome provides true) {
-                Column(Modifier.fillMaxSize().statusBarsPadding()) {
-                    Surface(color = MaterialTheme.colorScheme.surface) {
-                        Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(start = 20.dp, end = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically) {
-                            Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Medium,
-                                modifier = Modifier.weight(1f).padding(vertical = 12.dp))
-                            IconButton(onClick = { scope.launch { drawer.open() } }, modifier = Modifier.size(48.dp)) {
-                                Icon(Icons.Outlined.Menu, contentDescription = "Mở danh mục")
-                            }
                         }
                     }
-                    Box(Modifier.weight(1f)) { content() }
                 }
-                BackHandler(enabled = drawer.isOpen) { scope.launch { drawer.close() } }
             }
         }
     }
