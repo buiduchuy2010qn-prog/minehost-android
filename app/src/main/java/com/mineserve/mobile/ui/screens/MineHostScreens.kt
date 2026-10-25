@@ -2686,7 +2686,14 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
             item(key = "low_ram_zero_mb_upgrades_card") {
                 val onlinePlayers by vm.onlinePlayerNames.collectAsStateWithLifecycle()
                 val knownPlayers by vm.knownServerPlayers.collectAsStateWithLifecycle()
-                var selectedTargetPlayer by remember(active.dirName) { mutableStateOf("@a") }
+                var selectedTargetPlayer by remember(active.dirName) {
+                    mutableStateOf(knownPlayers.firstOrNull()?.name.orEmpty())
+                }
+                LaunchedEffect(knownPlayers) {
+                    if (selectedTargetPlayer.isBlank() && knownPlayers.isNotEmpty()) {
+                        selectedTargetPlayer = knownPlayers.first().name
+                    }
+                }
                 var customMotdText by remember(active.dirName) {
                     mutableStateOf("§a§l⛏️ ${active.name} §7• §bChơi Chung PC + PE §eSiêu Mượt!")
                 }
@@ -2695,7 +2702,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                 HostCard(
                     title = "🪶 Tiện Ích Tốn 0 MB RAM (Chuyên Biệt Cho Máy RAM Ít)",
                     artKind = MinecraftArtKind.DIAMOND_SWORD,
-                    badgeText = "v2.8.0 • 0 MB RAM"
+                    badgeText = "v2.8.9 • 0 MB RAM"
                 ) {
                     // 1. Khóa Biên Giới Thế Giới 1 chạm (WorldBorder — chống đi xa làm tràn RAM)
                     Surface(
@@ -2758,13 +2765,13 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Text(
-                                "⚡ 2. Cấp Quyền OP, Whitelist, Chữa Trị & Đổi Chế Độ Người Chơi 1 Chạm (Không Cần Nhập Tay):",
+                                "⚡ 2. Cấp Quyền OP, Whitelist, Chữa Trị & Đổi Chế Độ Người Chơi 1 Chạm:",
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = MaterialTheme.colorScheme.primary
                             )
                             Text(
-                                "Danh sách người chơi trong Server (🟢 Đang online / 🕒 Đã vào server) hiện sẵn bên dưới — chạm để chọn người chơi rồi bấm thao tác ngay:",
+                                "Chạm chọn tên người chơi trong Server bên dưới hoặc tự gõ tên vào ô (Đã gỡ nút @a sẵn để tránh bấm nhầm cấp OP cho tất cả):",
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -2773,11 +2780,6 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                 verticalArrangement = Arrangement.spacedBy(6.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                FilterChip(
-                                    selected = selectedTargetPlayer == "@a",
-                                    onClick = { selectedTargetPlayer = "@a" },
-                                    label = { Text("👥 Tất cả (@a)", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
-                                )
                                 knownPlayers.forEach { kp ->
                                     val statusDot = if (kp.isOnline) "🟢" else "🕒"
                                     val opCrown = if (kp.isOp) " 👑" else ""
@@ -2802,13 +2804,14 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     label = { Text("🔄 Làm mới", fontSize = 10.5.sp) }
                                 )
                             }
-                            if (knownPlayers.isEmpty()) {
-                                Text(
-                                    "ℹ️ Khi có người chơi tham gia server, tên của họ sẽ tự động hiện sẵn tại đây để bạn cấp OP / thao tác 1 chạm mà không cần gõ phím.",
-                                    fontSize = 10.5.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
+                            OutlinedTextField(
+                                value = selectedTargetPlayer,
+                                onValueChange = { selectedTargetPlayer = it },
+                                label = { Text("Tên người chơi cần thao tác (chạm chọn ở trên hoặc tự nhập)", fontSize = 11.sp) },
+                                placeholder = { Text("Nhập tên người chơi (hoặc tự gõ @a nếu muốn)", fontSize = 11.sp) },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
                             // Hàng nút Cấp Quyền 1 chạm (OP / Gỡ OP / Whitelist / Kick)
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
                                 Button(
@@ -3046,10 +3049,17 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                 fontSize = 11.sp
                             )
 
-                            var vipTargetPlayer by remember(active.dirName) { mutableStateOf("") }
+                            var vipTargetPlayer by remember(active.dirName) {
+                                mutableStateOf(knownPlayers.firstOrNull()?.name.orEmpty())
+                            }
+                            LaunchedEffect(knownPlayers) {
+                                if (vipTargetPlayer.isBlank() && knownPlayers.isNotEmpty()) {
+                                    vipTargetPlayer = knownPlayers.first().name
+                                }
+                            }
                             var vipGlowing by remember { mutableStateOf(true) }
                             Text(
-                                "⚡ Chọn nhanh người nhận Danh hiệu VIP trong Server (1 chạm — Không cần nhập tay):",
+                                "⚡ Chọn người nhận Danh hiệu VIP trong Server (Chạm chọn tên hoặc tự nhập):",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary
@@ -3059,11 +3069,6 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                 verticalArrangement = Arrangement.spacedBy(6.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                FilterChip(
-                                    selected = vipTargetPlayer.isBlank() || vipTargetPlayer == "@a",
-                                    onClick = { vipTargetPlayer = "" },
-                                    label = { Text("👥 Cả nhóm (@a)", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
-                                )
                                 knownPlayers.forEach { kp ->
                                     val dot = if (kp.isOnline) "🟢" else "🕒"
                                     val crown = if (kp.isOp) " 👑" else ""
@@ -3079,6 +3084,13 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     label = { Text("✨ Phát sáng", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
                                 )
                             }
+                            OutlinedTextField(
+                                value = vipTargetPlayer,
+                                onValueChange = { vipTargetPlayer = it },
+                                label = { Text("Tên người nhận Danh hiệu VIP (hoặc tự nhập)", fontSize = 11.sp) },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
 
                             FlowRow(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -3221,19 +3233,21 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             }
 
                             HorizontalDivider()
-                            var warpTargetPlayer by remember(active.dirName) { mutableStateOf("@a") }
-                            Text("📍 Sổ Tay Điểm Dịch Chuyển Nhanh (Chọn người chơi rồi bấm mốc tọa độ để dịch chuyển 1 chạm):", fontWeight = FontWeight.ExtraBold, fontSize = 11.5.sp)
+                            var warpTargetPlayer by remember(active.dirName) {
+                                mutableStateOf(knownPlayers.firstOrNull()?.name.orEmpty())
+                            }
+                            LaunchedEffect(knownPlayers) {
+                                if (warpTargetPlayer.isBlank() && knownPlayers.isNotEmpty()) {
+                                    warpTargetPlayer = knownPlayers.first().name
+                                }
+                            }
+                            Text("📍 Sổ Tay Điểm Dịch Chuyển Nhanh (Chọn người chơi hoặc tự nhập rồi bấm mốc tọa độ):", fontWeight = FontWeight.ExtraBold, fontSize = 11.5.sp)
                             if (knownPlayers.isNotEmpty()) {
                                 FlowRow(
                                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                                     verticalArrangement = Arrangement.spacedBy(6.dp),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    FilterChip(
-                                        selected = warpTargetPlayer == "@a",
-                                        onClick = { warpTargetPlayer = "@a" },
-                                        label = { Text("👥 Cả nhóm (@a)", fontSize = 10.5.sp, fontWeight = FontWeight.Bold) }
-                                    )
                                     knownPlayers.forEach { kp ->
                                         val dot = if (kp.isOnline) "🟢" else "🕒"
                                         FilterChip(
@@ -3244,13 +3258,20 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     }
                                 }
                             }
+                            OutlinedTextField(
+                                value = warpTargetPlayer,
+                                onValueChange = { warpTargetPlayer = it },
+                                label = { Text("Tên người chơi cần dịch chuyển (hoặc tự nhập)", fontSize = 11.sp) },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
                             FlowRow(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                                 verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 warpPoints.forEach { wp ->
                                     AssistChip(
-                                        onClick = { vm.teleportToWarpPoint(wp, if (warpTargetPlayer == "@a") null else warpTargetPlayer) },
+                                        onClick = { vm.teleportToWarpPoint(wp, warpTargetPlayer) },
                                         enabled = state.isRunning,
                                         label = { Text("${wp.name} (${wp.x},${wp.y},${wp.z})", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
                                     )
@@ -3460,7 +3481,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                         }
                     }
 
-                    // ── THẺ PRO 4: BÁO TRẠNG THÁI DISCORD TỰ ĐỘNG & ĐIỀU KHIỂN WEB TỪ XA (:8585) ──
+                    // ── THẺ PRO 4: BÁO TRẠNG THÁI DISCORD & TELEGRAM TỰ ĐỘNG + ĐIỀU KHIỂN WEB TỪ XA (:8585) ──
                     Surface(
                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
                         shape = RoundedCornerShape(12.dp),
@@ -3469,19 +3490,24 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                     ) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(
-                                "🔔 Báo Trạng Thái Lên Discord & Điều Khiển Từ Xa Qua Web (:8585)",
+                                "🔔 Báo Trạng Thái Lên Discord & Telegram + Điều Khiển Web (:8585)",
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = Color(0xFF6366F1)
                             )
                             Text(
-                                "Tự động bắn Địa chỉ IP PC + PE lên kênh Discord nhóm khi bật Server (không cần cài plugin DiscordSRV) & điều khiển Server từ máy tính qua trình duyệt Web:",
+                                "Tự động bắn Địa chỉ IP PC + PE lên kênh Discord hoặc nhóm Telegram khi bật Server (tốn 0 MB RAM) & điều khiển Server từ máy tính qua trình duyệt Web:",
                                 style = MaterialTheme.typography.bodySmall,
                                 fontSize = 11.sp
                             )
 
                             var webhookInput by remember(discordWebhookUrl) { mutableStateOf(discordWebhookUrl) }
                             val discordJoinLeaveEnabled by vm.discordNotifyJoinLeave.collectAsState()
+                            val savedTgToken by vm.telegramBotToken.collectAsState()
+                            val savedTgChatId by vm.telegramChatId.collectAsState()
+                            var tgTokenInput by remember(savedTgToken) { mutableStateOf(savedTgToken) }
+                            var tgChatIdInput by remember(savedTgChatId) { mutableStateOf(savedTgChatId) }
+
                             OutlinedTextField(
                                 value = webhookInput,
                                 onValueChange = { webhookInput = it },
@@ -3495,7 +3521,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    "👋 Tự động báo lên Discord khi có người chơi vào/rời Server",
+                                    "👋 Tự động báo lên Discord / Telegram khi có người vào/rời Server",
                                     fontSize = 11.5.sp,
                                     fontWeight = FontWeight.Bold,
                                     modifier = Modifier.weight(1f)
@@ -3522,7 +3548,67 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     shape = RoundedCornerShape(8.dp),
                                     modifier = Modifier.weight(1.3f)
                                 ) {
-                                    Text("📨 Bắn Thử IP Server Lên Discord", fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
+                                    Text("📨 Bắn Thử IP Lên Discord", fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
+                                }
+                            }
+
+                            HorizontalDivider()
+                            Text(
+                                "✈️ Bot Thông Báo Telegram Tự Động (Không cần Discord — Tốn 0 MB RAM):",
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 11.5.sp,
+                                color = Color(0xFF0284C7)
+                            )
+                            Text(
+                                "Tạo Bot tại @BotFather trên Telegram để lấy Bot Token, sau đó nhắn 1 tin bất kỳ vào Bot/Nhóm rồi bấm '🔍 Tự lấy Chat ID':",
+                                fontSize = 10.5.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            OutlinedTextField(
+                                value = tgTokenInput,
+                                onValueChange = { tgTokenInput = it },
+                                label = { Text("Telegram Bot Token (VD: 123456789:AAH...)", fontSize = 11.sp) },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                OutlinedTextField(
+                                    value = tgChatIdInput,
+                                    onValueChange = { tgChatIdInput = it },
+                                    label = { Text("Chat ID (VD: -100... hoặc ID cá nhân)", fontSize = 11.sp) },
+                                    singleLine = true,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                OutlinedButton(
+                                    onClick = {
+                                        vm.autoDetectTelegramChatId(tgTokenInput) { detected ->
+                                            tgChatIdInput = detected
+                                        }
+                                    },
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text("🔍 Tự lấy Chat ID", fontWeight = FontWeight.ExtraBold, fontSize = 10.5.sp)
+                                }
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                                OutlinedButton(
+                                    onClick = { vm.saveTelegramConfig(tgTokenInput, tgChatIdInput) },
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("💾 Lưu Telegram", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                }
+                                Button(
+                                    onClick = { vm.sendTelegramTestMessage(tgTokenInput, tgChatIdInput) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7), contentColor = Color.White),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.weight(1.3f)
+                                ) {
+                                    Text("✈️ Bắn Thử IP Lên Telegram", fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
                                 }
                             }
 

@@ -1,9 +1,9 @@
 <div align="center">
 
 # 🇻🇳 MINEHOST PRO — ANDROID MINECRAFT SERVER ENGINE
-### **v2.8.8 (Build 55 • Official Community Edition)**
+### **v2.8.9 (Build 56 • Official Community Edition)**
 
-[![Release](https://img.shields.io/badge/RELEASE-v2.8.8%20(Build%2055)-10B981?style=for-the-badge&logo=android&logoColor=white)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
+[![Release](https://img.shields.io/badge/RELEASE-v2.8.9%20(Build%2056)-10B981?style=for-the-badge&logo=android&logoColor=white)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
 [![Platform](https://img.shields.io/badge/ANDROID-8.0%2B%20(ARM64)-0EA5E9?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases)
 [![Crossplay](https://img.shields.io/badge/CROSSPLAY-JAVA%20PC%20%2B%20BEDROCK%20PE-F59E0B?style=for-the-badge&logo=reverbnation&logoColor=white)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
 [![OTA](https://img.shields.io/badge/OTA%20UPDATE-ZERO%20CACHE%20•%20AUTO%20CLEAN-6366F1?style=for-the-badge)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
@@ -11,16 +11,18 @@
 
 **Biến điện thoại Android thành máy chủ Minecraft chuyên nghiệp (Paper, Purpur, Fabric, Forge, NeoForge, Vanilla, Bedrock) — Hỗ trợ chơi chung PC & Điện thoại PE không cần thuê VPS hay mở Port Router.**
 
-### 👉 [**📥 TẢI NGAY APK v2.8.8 MỚI NHẤT (`minehost-2.8.8-arm64.apk`)**](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
+### 👉 [**📥 TẢI NGAY APK v2.8.9 MỚI NHẤT (`minehost-2.8.9-arm64.apk`)**](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
 
 </div>
 
 ---
 
-## 🚀 Điểm Nhấn Đột Phá Trên Bản `v2.8.8` (Build 55)
+## 🚀 Điểm Nhấn Đột Phá Trên Bản `v2.8.9` (Build 56)
 
 | Tính năng | Công nghệ & Cơ chế hoạt động |
 | :--- | :--- |
+| **🛡️ An Toàn Cấp OP (Gỡ bỏ nút `@a` mặc định)** | Loại bỏ hoàn toàn nút chọn sẵn `👥 Tất cả (@a)` ở bảng Cấp quyền OP / Danh hiệu VIP / Dịch chuyển để tránh ấn nhầm cấp OP cho cả Server; bổ sung ô nhập tên trực tiếp để chạm chọn người chơi hoặc tự gõ tên theo ý muốn. |
+| **✈️ Bot Thông Báo Telegram & Discord Tự Động** | Hỗ trợ song song cả **Telegram Bot API** (kèm nút **🔍 Tự lấy Chat ID 1 chạm** qua `getUpdates`) và **Discord Webhook**: tự động bắn IP PC + PE khi bật Server và báo ngay khi có người chơi vào/rời Server. |
 | **♻️ Self-Healing `.fabric` Core Cache & Port Guard** | Tự động phát hiện và dọn sạch bộ đệm `.fabric/remappedJars` / `libraries/` bị ghi dở dang (do ngắt tiến trình lúc đang nạp Core 62%), mở khóa `session.lock` tự động và tự chuyển sang cổng trống kế tiếp (`25566+`) nếu cổng mặc định `25565` đang bị ứng dụng khác chiếm. |
 | **🔊 Level-Up Audio & Live Running Pulse** | Tự động phát giai điệu hợp âm **"Minecraft Level Up" (PCM 16-bit 44.1kHz + Rung phản hồi)** ngay khi Server mở thành công (`StartupPhase.Ready`), kèm hiệu ứng viền nhịp thở phát sáng (`InfiniteTransition`) và thanh tiến trình trực tiếp `0% → 100%` cho mọi tác vụ tải xuống/cài đặt. |
 | **🗺️ 1-Tap Playable Worlds (`OneBlock`, `SkyBlock`, `Parkour`, `Lucky Island`)** | Tạo nhanh thế giới mới 1 chạm kèm Datapack chuẩn kép (`function` + `functions` cho MC `1.20.x–1.21+`), tự dựng đảo khởi đầu, rương sinh tồn và giữ nguyên 100% các thế giới cũ. |

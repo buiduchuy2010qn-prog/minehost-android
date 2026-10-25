@@ -172,6 +172,91 @@ object ProHostFeatures {
         }
     }
 
+    /**
+     * [v2.8.9] Hỗ trợ gửi thông báo tự động qua Telegram Bot API (Tốn 0 MB RAM của Minecraft JVM)
+     * - Gửi địa chỉ IP PC + PE khi Server bật/tắt & thông báo khi có người chơi vào/rời Server.
+     */
+    suspend fun sendTelegramBotMessage(
+        botToken: String,
+        chatId: String,
+        textMessage: String
+    ): Boolean = withContext(Dispatchers.IO) {
+        val cleanToken = botToken.trim().removePrefix("bot")
+        val cleanChatId = chatId.trim()
+        if (cleanToken.length < 15 || !cleanToken.contains(":") || cleanChatId.isBlank()) {
+            return@withContext false
+        }
+        var conn: HttpURLConnection? = null
+        try {
+            val apiUrl = "https://api.telegram.org/bot$cleanToken/sendMessage"
+            val payload = JSONObject().apply {
+                put("chat_id", cleanChatId)
+                put("text", textMessage)
+                put("disable_web_page_preview", true)
+            }
+            conn = (URL(apiUrl).openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = 8000
+                readTimeout = 8000
+                doOutput = true
+                setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+                setRequestProperty("User-Agent", "MineHost/2.8.9")
+            }
+            conn.outputStream.use { os ->
+                os.write(payload.toString().toByteArray(Charsets.UTF_8))
+            }
+            conn.responseCode in 200..299
+        } catch (_: Exception) {
+            false
+        } finally {
+            conn?.disconnect()
+        }
+    }
+
+    /**
+     * [v2.8.9] Tự động dò Chat ID từ tin nhắn gần nhất gửi tới Bot Telegram (getUpdates)
+     * Giúp người dùng chỉ cần nhắn 1 tin bất kỳ vào Bot/Nhóm Telegram rồi bấm 1 chạm là lấy được Chat ID.
+     */
+    suspend fun detectTelegramChatId(botToken: String): Pair<String, String>? = withContext(Dispatchers.IO) {
+        val cleanToken = botToken.trim().removePrefix("bot")
+        if (cleanToken.length < 15 || !cleanToken.contains(":")) return@withContext null
+        var conn: HttpURLConnection? = null
+        try {
+            val apiUrl = "https://api.telegram.org/bot$cleanToken/getUpdates?limit=15"
+            conn = (URL(apiUrl).openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 8000
+                readTimeout = 8000
+                setRequestProperty("User-Agent", "MineHost/2.8.9")
+            }
+            if (conn.responseCode !in 200..299) return@withContext null
+            val body = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            val root = JSONObject(body)
+            if (!root.optBoolean("ok", false)) return@withContext null
+            val results = root.optJSONArray("result") ?: return@withContext null
+            for (i in results.length() - 1 downTo 0) {
+                val item = results.optJSONObject(i) ?: continue
+                val msg = item.optJSONObject("message")
+                    ?: item.optJSONObject("channel_post")
+                    ?: item.optJSONObject("my_chat_member")
+                val chat = msg?.optJSONObject("chat") ?: continue
+                val idVal = chat.opt("id")?.toString().orEmpty()
+                if (idVal.isNotBlank()) {
+                    val chatTitle = chat.optString("title")
+                        .ifBlank { chat.optString("first_name") }
+                        .ifBlank { chat.optString("username") }
+                        .ifBlank { "Telegram Chat" }
+                    return@withContext idVal to chatTitle
+                }
+            }
+            null
+        } catch (_: Exception) {
+            null
+        } finally {
+            conn?.disconnect()
+        }
+    }
+
     suspend fun installDatapackZip(
         context: Context,
         uri: Uri,
