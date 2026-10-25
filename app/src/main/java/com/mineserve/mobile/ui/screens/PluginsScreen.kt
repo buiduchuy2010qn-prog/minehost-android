@@ -721,6 +721,185 @@ fun PluginsScreen(vm: McViewModel) {
                 }
             }
 
+            // ── NÂNG CẤP PRO MAX: SIMPLE VOICE CHAT 1 CHẠM & XƯỞNG GẮN RESOURCE PACK / VIỆT HÓA (TỰ BĂM SHA-1) ──
+            val voiceChatStatus by vm.voiceChatStatus.collectAsStateWithLifecycle()
+            val resourcePackInfo by vm.serverResourcePackInfo.collectAsStateWithLifecycle()
+            val liveTask by vm.liveTaskProgress.collectAsStateWithLifecycle()
+            var customRpUrl by remember { mutableStateOf("") }
+            var requireRpToggle by remember(resourcePackInfo.requirePack) { mutableStateOf(resourcePackInfo.requirePack) }
+            LaunchedEffect(config.activeCoreName) {
+                vm.refreshVoiceChatAndResourcePackStatus()
+            }
+
+            McCard(
+                title = "🎙️ Simple Voice Chat 1 Chạm & 🎨 Xưởng Resource Pack / Việt Hóa"
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (liveTask.active) {
+                        val pct = (liveTask.progress.coerceIn(0f, 1f) * 100).toInt()
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(IndigoSoft)
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(liveTask.title, fontSize = 11.5.sp, fontWeight = FontWeight.ExtraBold, color = Indigo)
+                                Text("${pct}%", fontSize = 11.5.sp, fontWeight = FontWeight.ExtraBold, color = Mint)
+                            }
+                            LinearProgressIndicator(
+                                progress = { liveTask.progress.coerceIn(0f, 1f) },
+                                modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(4.dp)),
+                                color = Mint,
+                                trackColor = Indigo.copy(alpha = 0.2f)
+                            )
+                            if (liveTask.detail.isNotBlank()) {
+                                Text(liveTask.detail, fontSize = 10.sp, color = Muted)
+                            }
+                        }
+                    }
+
+                    // 1. Simple Voice Chat 1-Tap
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "🎙️ Đàm Thoại Trong Game 1 Chạm (Simple Voice Chat Pro)",
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 13.sp,
+                                color = Indigo
+                            )
+                            Text(
+                                if (voiceChatStatus.isInstalled) {
+                                    "✅ Đã cài (${voiceChatStatus.fileName}) • Cổng UDP: ${voiceChatStatus.udpPort}"
+                                } else {
+                                    "Tự tải đúng bản Fabric/Forge/NeoForge/Paper & cấu hình sẵn cổng UDP 24454"
+                                },
+                                fontSize = 11.sp,
+                                color = if (voiceChatStatus.isInstalled) Mint else Muted,
+                                fontWeight = if (voiceChatStatus.isInstalled) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
+                        Button(
+                            onClick = { vm.installSimpleVoiceChatOneTap() },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (voiceChatStatus.isInstalled) Mint else Indigo
+                            ),
+                            shape = McShape.ControlCompact
+                        ) {
+                            Text(
+                                if (voiceChatStatus.isInstalled) "🔄 Cập nhật Voice" else "🎙️ Cài Ngay 1 Chạm",
+                                color = Color.White,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                        }
+                    }
+
+                    // 2. Xưởng Gắn Resource Pack & Việt Hóa Server (Tự tính SHA-1)
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(FieldGray)
+                            .padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            "🎨 Xưởng Gắn Resource Pack & Việt Hóa Server (Tự Băm SHA-1 Chuẩn):",
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 12.sp,
+                            color = Indigo
+                        )
+                        if (resourcePackInfo.url.isNotBlank()) {
+                            Text(
+                                "✅ Đang gắn: ${resourcePackInfo.url.take(55)}${if (resourcePackInfo.url.length > 55) "..." else ""}\n🔐 SHA-1: ${resourcePackInfo.sha1.ifBlank { "Tự động" }}",
+                                fontSize = 10.5.sp,
+                                color = Mint,
+                                fontWeight = FontWeight.Bold
+                            )
+                        } else {
+                            Text(
+                                "Chọn nhanh gói có sẵn hoặc dán link .zip để mọi người vào Server tự động được tải về:",
+                                fontSize = 10.5.sp,
+                                color = Muted
+                            )
+                        }
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            com.mineserve.mobile.server.ProHostFeatures.RESOURCE_PACK_PRESETS.forEach { preset ->
+                                OutlinedButton(
+                                    onClick = {
+                                        vm.applyServerResourcePackOneTap(
+                                            packUrl = preset.url,
+                                            promptVi = preset.promptVi,
+                                            requirePack = requireRpToggle
+                                        )
+                                    },
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text(preset.titleVi, fontSize = 10.5.sp, fontWeight = FontWeight.ExtraBold)
+                                }
+                            }
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedTextField(
+                                value = customRpUrl,
+                                onValueChange = { customRpUrl = it },
+                                label = { Text("Hoặc dán link trực tiếp .zip Resource Pack", fontSize = 10.5.sp) },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Button(
+                                onClick = {
+                                    vm.applyServerResourcePackOneTap(
+                                        packUrl = customRpUrl,
+                                        promptVi = "Tải gói tài nguyên của Server để có trải nghiệm tốt nhất!",
+                                        requirePack = requireRpToggle
+                                    )
+                                },
+                                enabled = customRpUrl.isNotBlank(),
+                                shape = McShape.ControlCompact
+                            ) {
+                                Text("Gắn & Băm SHA-1", color = Color.White, fontSize = 10.5.sp, fontWeight = FontWeight.ExtraBold)
+                            }
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "Bắt buộc người chơi phải tải gói tài nguyên (require-resource-pack)",
+                                fontSize = 10.5.sp,
+                                color = Muted,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Switch(
+                                checked = requireRpToggle,
+                                onCheckedChange = { requireRpToggle = it }
+                            )
+                        }
+                    }
+                }
+            }
+
             // ── 4 Phân mục Tài nguyên: Plugin / Mod / Gói Mod & ZIP / Gói Tài Nguyên ──
             if (availableTypes.isEmpty()) {
                 Text(

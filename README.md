@@ -1,9 +1,9 @@
 <div align="center">
 
 # 🇻🇳 MINEHOST PRO — ANDROID MINECRAFT SERVER ENGINE
-### **v2.8.6 (Build 53 • Official Community Edition)**
+### **v2.8.7 (Build 54 • Official Community Edition)**
 
-[![Release](https://img.shields.io/badge/RELEASE-v2.8.6%20(Build%2053)-10B981?style=for-the-badge&logo=android&logoColor=white)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
+[![Release](https://img.shields.io/badge/RELEASE-v2.8.7%20(Build%2054)-10B981?style=for-the-badge&logo=android&logoColor=white)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
 [![Platform](https://img.shields.io/badge/ANDROID-8.0%2B%20(ARM64)-0EA5E9?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases)
 [![Crossplay](https://img.shields.io/badge/CROSSPLAY-JAVA%20PC%20%2B%20BEDROCK%20PE-F59E0B?style=for-the-badge&logo=reverbnation&logoColor=white)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
 [![OTA](https://img.shields.io/badge/OTA%20UPDATE-ZERO%20CACHE%20•%20AUTO%20CLEAN-6366F1?style=for-the-badge)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
@@ -11,24 +11,24 @@
 
 **Biến điện thoại Android thành máy chủ Minecraft chuyên nghiệp (Paper, Purpur, Fabric, Forge, NeoForge, Vanilla, Bedrock) — Hỗ trợ chơi chung PC & Điện thoại PE không cần thuê VPS hay mở Port Router.**
 
-### 👉 [**📥 TẢI NGAY APK v2.8.6 MỚI NHẤT (`minehost-2.8.6-arm64.apk`)**](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
+### 👉 [**📥 TẢI NGAY APK v2.8.7 MỚI NHẤT (`minehost-2.8.7-arm64.apk`)**](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
 
 </div>
 
 ---
 
-## 🚀 Điểm Nhấn Đột Phá Trên Bản `v2.8.6` (Build 53)
+## 🚀 Điểm Nhấn Đột Phá Trên Bản `v2.8.7` (Build 54)
 
 | Tính năng | Công nghệ & Cơ chế hoạt động |
 | :--- | :--- |
-| **⚡ Turbo Boot & Instant Stop Engine** | Tăng tốc nạp Core (62%) và mở/đóng Server gấp 2–3 lần: bộ nhớ đệm xác thực môi trường `0ms`, bỏ chạy lặp `fc-cache -f`, tự động tắt kiểm tra phiên bản Mod trực tuyến (`fml.toml`), ghi chunk bất đồng bộ (`sync-chunk-writes=false`), giới hạn luồng JIT chống nghẽn CPU (`-XX:CICompilerCount=2`) và giải phóng nút **Dừng máy chủ** tức thì (`< 0.3s` khi đang nạp Core / `1–2s` sau khi lưu Map). |
-| **🛠️ Smart Mod Doctor (1-Tap Auto-Fix)** | Tự động mổ xẻ `fabric.mod.json` / `mods.toml` của toàn bộ tệp `.jar` trong `mods/`: tự tải bù thư viện còn thiếu (`Fabric API`, `Cloth Config`, `Architectury`, `Bookshelf`, `GeckoLib`...), tự thay thế hoặc cách ly (`.disabled`) các Mod lệch phiên bản Minecraft / Client-only / trùng ID và tự bật lại Server chỉ với **1 chạm**. |
-| **🎯 Strict MC Version Resolver** | Khóa chặt tương thích nhị phân theo đúng phiên bản Minecraft của Server khi tải Mod từ Modrinth, chặn triệt để lỗi `FormattedException` và `DuplicateModFoundException`. |
-| **🩺 Chẩn Đoán Lỗi Crash Tiếng Việt 100%** | Phân tích ngoại lệ Java, chuỗi `Caused by`, mã thoát tiến trình (`Exit 137 / Exit 1`) và trích xuất đích danh tên Mod xung đột kèm nút dẫn đường trực tiếp (**Mở Quản Lý Mod**, **Môi Trường Java**, **Chẩn Đoán Hệ Thống**, **Đổi Cổng Server**). |
-| **🎯 Floating In-Game Admin Menu** | Bong bóng điều khiển nổi ngay trên màn hình khi đang chơi Minecraft (`☀️ Trời Sáng`, `🧹 Dọn Lag`, `❤️ Hồi Máu @a`, `📋 Copy IP`, `🏠 Mở App`, `🛑 Lưu & Tắt`). |
-| **💬 Live 2-Way Game Chat** | Khung trò chuyện trực tiếp 2 chiều giữa Chủ Host (`[👑 Chủ Server]`) và người chơi trong game ngay trên Trang chủ. |
-| **📦 Trình Cài Modpack `.mrpack` 1 Chạm** | Giải nén và cài đặt trọn gói Modpack chuẩn Modrinth, tự động lọc bỏ 100% các Mod đồ họa chỉ dành cho Client (`Sodium`, `Iris`, `OptiFine`, `ModMenu`...). |
-| **🛡️ Anti-Bot & Flood Guard** | Lá chắn tự động phát hiện và `ban-ip` tức thì các kết nối spam hoặc bot giả mạo hàng loạt tài khoản qua đường hầm công khai. |
+| **🔊 Level-Up Audio & Live Running Pulse** | Tự động phát giai điệu hợp âm **"Minecraft Level Up" (PCM 16-bit 44.1kHz + Rung phản hồi)** ngay khi Server mở thành công (`StartupPhase.Ready`), kèm hiệu ứng viền nhịp thở phát sáng (`InfiniteTransition`) và thanh tiến trình trực tiếp `0% → 100%` cho mọi tác vụ tải xuống/cài đặt. |
+| **🗺️ 1-Tap Playable Worlds (`OneBlock`, `SkyBlock`, `Parkour`, `Lucky Island`)** | Tạo nhanh thế giới mới 1 chạm kèm Datapack chuẩn kép (`function` + `functions` cho MC `1.20.x–1.21+`), tự dựng đảo khởi đầu, rương sinh tồn và giữ nguyên 100% các thế giới cũ. |
+| **🎙️ Simple Voice Chat 1-Tap (`UDP 24454`)** | Tự động dò đúng phiên bản Minecraft & Loader (`Fabric` / `Forge` / `NeoForge` / `Paper`) trên Modrinth, tải trực tiếp có thanh phần trăm và tự sinh cấu hình `voicechat-server.properties`. |
+| **🎨 Resource Pack Studio & Auto SHA-1** | Kho gói tài nguyên 1 chạm (**Việt Hóa Giao Diện**, **Quặng Phát Sáng**, **Dark UI**, **Cỏ Đẹp**) hoặc dán URL `.zip` tùy chọn — tự động tải luồng để băm mã kiểm tra `resource-pack-sha1` chuẩn 100%. |
+| **🛡️ Anti-Grief Shield 2.0 & Auto-ClearLag 15m** | Lưu bền vững cấu hình Luật Thế Giới (`keepInventory`, `mobGriefing`, `doFireTick`, `playersSleepingPercentage`) để tự động áp lại mỗi lần mở Server; dọn rác định kỳ 15 phút bảo vệ tuyệt đối thú cưng đã đặt tên (`name=!`), dân làng và Boss. |
+| **⚡ Turbo Boot & Instant Stop Engine** | Tăng tốc nạp Core (62%) và mở/đóng Server gấp 2–3 lần: bộ nhớ đệm xác thực môi trường `0ms`, bỏ chạy lặp `fc-cache -f`, tắt kiểm tra phiên bản Mod trực tuyến (`fml.toml`), ghi chunk bất đồng bộ (`sync-chunk-writes=false`) và giải phóng nút **Dừng máy chủ** tức thì (`< 0.3s`). |
+| **🛠️ Smart Mod Doctor (1-Tap Auto-Fix)** | Tự động mổ xẻ `fabric.mod.json` / `mods.toml` của toàn bộ tệp `.jar` trong `mods/`: tự tải bù thư viện còn thiếu (`Fabric API`, `Cloth Config`, `Architectury`...), tự thay thế hoặc cách ly (`.disabled`) các Mod lệch phiên bản / Client-only / trùng ID. |
+| **🤖 Discord Webhook Pro & 2-Way Game Chat** | Tự động bắn IP Server + thông báo khi người chơi vào/rời Server lên kênh Discord nhóm và trò chuyện trực tiếp 2 chiều giữa Chủ Host với người chơi trong game. |
 
 ---
 

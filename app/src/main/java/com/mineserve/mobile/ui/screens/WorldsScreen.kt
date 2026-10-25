@@ -324,6 +324,88 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
             }
         }
 
+        // NÂNG CẤP PRO MAX: CHẾ ĐỘ CHƠI & BẢN ĐỒ DỰNG SẴN 1 CHẠM (ONEBLOCK, SKYBLOCK, PARKOUR, LUCKY ISLAND)
+        item(key = "playable_mode_worlds_pro_card") {
+            val liveTask by vm.liveTaskProgress.collectAsState()
+            HostCard("🗺️ Chế Độ Chơi & Bản Đồ Dựng Sẵn 1 Chạm (OneBlock • SkyBlock • Parkour • Lucky Island)") {
+                Text(
+                    "Tự động tạo thế giới mới kèm Datapack đảo sinh tồn chuẩn 1.20.x–1.21+, điểm hồi sinh, rương khởi đầu và giữ nguyên 100% các thế giới cũ của bạn:",
+                    fontSize = 11.sp,
+                    color = Muted
+                )
+                Spacer(Modifier.height(6.dp))
+                if (liveTask.active) {
+                    val pct = (liveTask.progress.coerceIn(0f, 1f) * 100).toInt()
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(liveTask.title, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, color = Indigo)
+                            Text("${pct}%", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, color = Mint)
+                        }
+                        LinearProgressIndicator(
+                            progress = { liveTask.progress.coerceIn(0f, 1f) },
+                            modifier = Modifier.fillMaxWidth().height(6.dp),
+                            color = Mint,
+                            trackColor = Indigo.copy(alpha = 0.2f)
+                        )
+                        if (liveTask.detail.isNotBlank()) {
+                            Text(liveTask.detail, fontSize = 10.sp, color = Muted)
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                    Button(
+                        onClick = { vm.createPlayableModeWorldOneTap("oneblock") },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+                        shape = McShape.ControlCompact,
+                        modifier = Modifier.weight(1f)
+                    ) { Text("🧱 OneBlock (1 Ô Đất)", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold) }
+                    Button(
+                        onClick = { vm.createPlayableModeWorldOneTap("skyblock") },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D9488)),
+                        shape = McShape.ControlCompact,
+                        modifier = Modifier.weight(1f)
+                    ) { Text("🏝️ SkyBlock (Đảo Trời)", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold) }
+                }
+                Spacer(Modifier.height(6.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                    Button(
+                        onClick = { vm.createPlayableModeWorldOneTap("parkour") },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED)),
+                        shape = McShape.ControlCompact,
+                        modifier = Modifier.weight(1f)
+                    ) { Text("🏃 Tháp Parkour 30 Tầng", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold) }
+                    Button(
+                        onClick = { vm.createPlayableModeWorldOneTap("lucky_island") },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD97706)),
+                        shape = McShape.ControlCompact,
+                        modifier = Modifier.weight(1f)
+                    ) { Text("💎 Đảo Kho Báu Sinh Tồn", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold) }
+                }
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = { vm.enableFullAntiGriefShieldOneTap() },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF16A34A)),
+                    shape = McShape.ControlCompact,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        "🛡️ Bật Toàn Bộ Lá Chắn Bảo Vệ Map (Giữ Đồ • Chống Creeper • Chống Cháy Lan • 1 Người Ngủ)",
+                        color = Color.White,
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                }
+            }
+        }
+
         // NÂNG CẤP 4: BỘ CHỌN NHANH KIỂU THẾ GIỚI & KHO SEED ĐẸP (WORLD PRESETS & SEED GALLERY)
         item(key = "world_presets_seed_gallery_card") {
             var presetWorldType by rememberSaveable { mutableStateOf("minecraft:normal") }

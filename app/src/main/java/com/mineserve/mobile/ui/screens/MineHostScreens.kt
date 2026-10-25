@@ -1,5 +1,6 @@
 package com.mineserve.mobile.ui.screens
 
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -490,11 +491,40 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
         // PHẦN 1: THẺ ĐIỀU KHIỂN SERVER CHÍNH + 3 THÔNG SỐ + CHUYỂN SERVER NHANH
         // ══════════════════════════════════════════════════════════════════════
         item(key = "hero_server_card") {
+            val soundOnReady by vm.soundOnServerReady.collectAsStateWithLifecycle()
+            val liveTask by vm.liveTaskProgress.collectAsStateWithLifecycle()
+            val pulseTransition = androidx.compose.animation.core.rememberInfiniteTransition(label = "server_live_pulse")
+            val pulseAlpha by pulseTransition.animateFloat(
+                initialValue = 0.35f,
+                targetValue = 1.0f,
+                animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+                    animation = androidx.compose.animation.core.tween(850),
+                    repeatMode = androidx.compose.animation.core.RepeatMode.Reverse
+                ),
+                label = "pulse_alpha"
+            )
+            val animatedStartupProgress by androidx.compose.animation.core.animateFloatAsState(
+                targetValue = if (state.isRunning && state.startupPhase != StartupPhase.Ready) {
+                    state.startupPhase.progress.coerceIn(0.05f, 0.98f)
+                } else if (state.isRunning) 1f else 0f,
+                animationSpec = androidx.compose.animation.core.tween(420),
+                label = "startup_progress_anim"
+            )
+
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(18.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-                border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary)
+                border = BorderStroke(
+                    if (state.isRunning) 2.dp else 1.5.dp,
+                    if (state.isRunning && state.startupPhase == StartupPhase.Ready) {
+                        Color(0xFF10B981).copy(alpha = pulseAlpha)
+                    } else if (state.isRunning) {
+                        Color(0xFFF59E0B).copy(alpha = pulseAlpha)
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    }
+                )
             ) {
                 Column(
                     Modifier
@@ -520,7 +550,11 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                 .size(56.dp)
                                 .clip(RoundedCornerShape(14.dp))
                                 .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f))
-                                .border(1.5.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(14.dp))
+                                .border(
+                                    1.5.dp,
+                                    if (state.isRunning) Color(0xFF10B981).copy(alpha = pulseAlpha) else MaterialTheme.colorScheme.primary,
+                                    RoundedCornerShape(14.dp)
+                                )
                                 .clickable { navigate(SubPage.ServerIcon) },
                             contentAlignment = Alignment.Center
                         ) {
@@ -541,13 +575,32 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                 color = MaterialTheme.colorScheme.surface.copy(alpha = 0.78f),
                                 shape = RoundedCornerShape(6.dp)
                             ) {
-                                Text(
-                                    status,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.ExtraBold,
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                                )
+                                ) {
+                                    if (state.isRunning || stopping || liveTask.active) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(8.dp)
+                                                .clip( androidx.compose.foundation.shape.CircleShape)
+                                                .background(
+                                                    when {
+                                                        stopping -> Color(0xFFF59E0B).copy(alpha = pulseAlpha)
+                                                        state.startupPhase == StartupPhase.Ready -> Color(0xFF10B981).copy(alpha = pulseAlpha)
+                                                        else -> Color(0xFF38BDF8).copy(alpha = pulseAlpha)
+                                                    }
+                                                )
+                                        )
+                                    }
+                                    Text(
+                                        status,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.ExtraBold
+                                    )
+                                }
                             }
                             Text(
                                 active?.name ?: "Chưa có máy chủ",
@@ -572,14 +625,115 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                     }
 
                     if (state.isRunning && state.startupPhase != StartupPhase.Ready) {
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            LinearProgressIndicator(Modifier.fillMaxWidth())
-                            Text(
-                                "⏳ Tiến trình: ${state.startupPhase.label} (${(state.startupPhase.progress * 100).toInt()}%)",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
+                        Surface(
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.86f),
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(10.dp),
+                                verticalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        "⚡ ${state.startupPhase.label}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    Text(
+                                        "${(animatedStartupProgress * 100).toInt()}%",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = Color(0xFF10B981)
+                                    )
+                                }
+                                LinearProgressIndicator(
+                                    progress = { animatedStartupProgress },
+                                    modifier = Modifier.fillMaxWidth().height(7.dp).clip(RoundedCornerShape(4.dp))
+                                )
+                                Text(
+                                    if (soundOnReady) "🔊 Sẽ phát chuông báo 'Minecraft Level Up' ngay khi Server mở xong 100%!"
+                                    else "⏳ Đang nạp nhanh bằng bộ đệm Turbo Boot...",
+                                    fontSize = 10.5.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+
+                    // ── THANH TIẾN TRÌNH TÁC VỤ / TẢI XUỐNG TOÀN CỤC (HIỆN NGAY KHI TẢI BẤT KỲ THỨ GÌ) ──
+                    val activePluginDl = addonBusy.entries.firstOrNull()?.value
+                    if (liveTask.active || activePluginDl != null || isTogglingOptPack || mrpackInstallBusy) {
+                        val rawProgress = when {
+                            liveTask.active -> liveTask.progress
+                            activePluginDl != null && activePluginDl.totalBytes > 0 ->
+                                (activePluginDl.downloadedBytes.toFloat() / activePluginDl.totalBytes.toFloat()).coerceIn(0f, 1f)
+                            else -> -1f
+                        }
+                        val taskTitle = when {
+                            liveTask.active -> liveTask.title
+                            activePluginDl != null -> "⬇️ Đang tải ${activePluginDl.pluginId} (${activePluginDl.speedBytesPerSec / 1024} KB/s)..."
+                            isTogglingOptPack -> optPackProgress ?: "🚀 Đang xử lý Gói Mod Tối Ưu Server..."
+                            mrpackInstallBusy -> mrpackInstallProgress ?: "📦 Đang cài đặt gói Modpack .mrpack..."
+                            else -> "⏳ Đang xử lý tác vụ..."
+                        }
+                        Surface(
+                            color = Color(0xFF0F172A).copy(alpha = 0.9f),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.2.dp, Color(0xFF38BDF8)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(10.dp),
+                                verticalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        taskTitle,
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = Color(0xFF38BDF8),
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    if (rawProgress >= 0f) {
+                                        Text(
+                                            "${(rawProgress * 100).toInt()}%",
+                                            fontSize = 11.5.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = Color(0xFF4ADE80)
+                                        )
+                                    }
+                                }
+                                if (rawProgress >= 0f) {
+                                    LinearProgressIndicator(
+                                        progress = { rawProgress.coerceIn(0f, 1f) },
+                                        modifier = Modifier.fillMaxWidth().height(7.dp).clip(RoundedCornerShape(4.dp)),
+                                        color = Color(0xFF38BDF8)
+                                    )
+                                } else {
+                                    LinearProgressIndicator(
+                                        modifier = Modifier.fillMaxWidth().height(7.dp).clip(RoundedCornerShape(4.dp)),
+                                        color = Color(0xFF38BDF8)
+                                    )
+                                }
+                                if (liveTask.detail.isNotBlank()) {
+                                    Text(
+                                        liveTask.detail,
+                                        fontSize = 10.5.sp,
+                                        color = Color(0xFF94A3B8)
+                                    )
+                                }
+                            }
                         }
                     }
 
@@ -781,6 +935,37 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             modifier = Modifier.weight(1f)
                         ) {
                             Text("🗂️ Quản Lý Các SV (${config.installedCores.size})", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    // [v2.8.7] Thanh bật/tắt Chuông báo "Minecraft Level Up" khi mở Server thành công + Nút Nghe thử
+                    Surface(
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                if (soundOnReady) "🔊 Phát nhạc 'Level Up' khi mở SV xong" else "🔇 Đang tắt chuông báo mở SV",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.weight(1f)
+                            )
+                            TextButton(
+                                onClick = { vm.testServerReadySoundNow() },
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text("🎵 Nghe thử", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                            }
+                            Switch(
+                                checked = soundOnReady,
+                                onCheckedChange = { vm.setSoundOnServerReady(it) }
+                            )
                         }
                     }
                 }
@@ -1945,6 +2130,17 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     Text("🚀 Tối Ưu Cấu Hình Sâu", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
                                 }
                             }
+                            val autoClearLag15m by vm.autoClearLag15m.collectAsStateWithLifecycle()
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("🔄 Tự động dọn vật phẩm rơi mỗi 15 phút (Auto-ClearLag Pro)", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    Text("Tự báo đếm ngược 10s trong game trước khi dọn • Bảo vệ 100% Dân làng, Thú cưng đã đặt tên & Boss", fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Switch(
+                                    checked = autoClearLag15m,
+                                    onCheckedChange = { vm.setAutoClearLag15m(it) }
+                                )
+                            }
                             HorizontalDivider()
                             Text(
                                 "🪶 Dành riêng cho Điện Thoại RAM Ít (1GB – 2GB RAM — Chống tràn RAM OutOfMemory):",
@@ -2195,10 +2391,12 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
         // ══════════════════════════════════════════════════════════════════════
         if (active != null && (overviewTab == 2 || overviewTab == 3)) {
             item(key = "six_upgrades_world_gamerules_card") {
-                var keepInvSwitch by remember(active.dirName) { mutableStateOf(true) }
-                var antiCreeperSwitch by remember(active.dirName) { mutableStateOf(true) }
-                var onePlayerSleepSwitch by remember(active.dirName) { mutableStateOf(true) }
-                var noFireSpreadSwitch by remember(active.dirName) { mutableStateOf(true) }
+                var keepInvSwitch by remember(active.dirName) { mutableStateOf(vm.readSavedGameruleBoolean("keepInventory", true)) }
+                var antiCreeperSwitch by remember(active.dirName) { mutableStateOf(vm.readSavedGameruleBoolean("mobGriefing", true)) }
+                var onePlayerSleepSwitch by remember(active.dirName) { mutableStateOf(vm.readSavedGameruleBoolean("playersSleepingPercentage", true)) }
+                var noFireSpreadSwitch by remember(active.dirName) { mutableStateOf(vm.readSavedGameruleBoolean("doFireTick", true)) }
+                val voiceChatStatus by vm.voiceChatStatus.collectAsStateWithLifecycle()
+                val resPackInfo by vm.serverResourcePackInfo.collectAsStateWithLifecycle()
                 val homeAddonLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
                     androidx.activity.result.contract.ActivityResultContracts.GetContent()
                 ) { uri ->
@@ -2206,11 +2404,80 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                 }
 
                 HostCard(
-                    title = "🎮 Bảng Công Tắc Luật Thế Giới, Hẹn Giờ & Tiện Ích 1 Chạm",
+                    title = "🎮 Lá Chắn Bảo Vệ Map, Chế Độ Chơi 1 Chạm & Voice Chat",
                     artKind = MinecraftArtKind.COMMAND_BLOCK,
-                    badgeText = "6 Nâng cấp mới"
+                    badgeText = "v2.8.7 Pro Max"
                 ) {
-                    // 1. Bảng công tắc Gamerule 1 chạm
+                    // 0. KHO CHẾ ĐỘ CHƠI DỰNG SẴN 1 CHẠM (ONEBLOCK / SKYBLOCK / PARKOUR / LUCKY ISLAND)
+                    Surface(
+                        color = Color(0xFF065F46).copy(alpha = 0.22f),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.2.dp, Color(0xFF10B981)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                "🗺️ Chế Độ Chơi Dựng Sẵn 1 Chạm (Tự tạo Map + Datapack chuẩn, giữ nguyên Map cũ):",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color(0xFF34D399)
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                                Button(
+                                    onClick = { vm.createPlayableModeWorldOneTap("oneblock") },
+                                    enabled = !state.isRunning,
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF059669), contentColor = Color.White),
+                                    shape = RoundedCornerShape(9.dp),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("🏝️ OneBlock 1 Ô", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                                }
+                                Button(
+                                    onClick = { vm.createPlayableModeWorldOneTap("skyblock") },
+                                    enabled = !state.isRunning,
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7), contentColor = Color.White),
+                                    shape = RoundedCornerShape(9.dp),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("☁️ SkyBlock Đảo", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                                }
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                                OutlinedButton(
+                                    onClick = { vm.createPlayableModeWorldOneTap("parkour") },
+                                    enabled = !state.isRunning,
+                                    shape = RoundedCornerShape(9.dp),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("🏃 Đua Parkour", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                                OutlinedButton(
+                                    onClick = { vm.createPlayableModeWorldOneTap("lucky_island") },
+                                    enabled = !state.isRunning,
+                                    shape = RoundedCornerShape(9.dp),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("🍀 Đảo Kho Báu", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                            if (state.isRunning) {
+                                Text(
+                                    "ℹ️ Đang mở Server: Hãy dừng Server trước khi chuyển sang chế độ OneBlock/SkyBlock để bảo toàn Map hiện tại.",
+                                    fontSize = 10.5.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+
+                    // 1. Bảng công tắc Gamerule 1 chạm (Anti-Grief Shield 2.0)
                     Surface(
                         color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
                         shape = RoundedCornerShape(12.dp),
@@ -2220,12 +2487,33 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             modifier = Modifier.padding(12.dp),
                             verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Text(
-                                "🎮 1. Công tắc Luật Thế Giới trực tiếp (Bật/tắt ngay cả khi đang chơi):",
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    "🛡️ 1. Lá Chắn Chống Phá Hoại 2.0 (Tự nhớ & áp dụng cả khi tắt/mở SV):",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                            Button(
+                                onClick = {
+                                    keepInvSwitch = true
+                                    antiCreeperSwitch = true
+                                    onePlayerSleepSwitch = true
+                                    noFireSpreadSwitch = true
+                                    vm.enableFullAntiGriefShieldOneTap()
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D9488), contentColor = Color.White),
+                                shape = RoundedCornerShape(9.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("🛡️ Bật Toàn Bộ Lá Chắn Bảo Vệ Map Ngay (1 Chạm)", fontSize = 11.5.sp, fontWeight = FontWeight.ExtraBold)
+                            }
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                                 Text("🎒 Giữ đồ khi chết (keepInventory)", modifier = Modifier.weight(1f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                                 Switch(
@@ -2365,6 +2653,23 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     modifier = Modifier.weight(1f)
                                 ) {
                                     Text("🌍 Kho Seed Đẹp & Kiểu Map", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                Button(
+                                    onClick = { vm.installSimpleVoiceChatOneTap() },
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4F46E5), contentColor = Color.White),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("🎙️ Cài Voice Chat (24454)", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                                }
+                                OutlinedButton(
+                                    onClick = { navigate(SubPage.Plugins) },
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("🎨 Gắn Gói Việt Hóa / Quặng", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
@@ -3176,6 +3481,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             )
 
                             var webhookInput by remember(discordWebhookUrl) { mutableStateOf(discordWebhookUrl) }
+                            val discordJoinLeaveEnabled by vm.discordNotifyJoinLeave.collectAsState()
                             OutlinedTextField(
                                 value = webhookInput,
                                 onValueChange = { webhookInput = it },
@@ -3183,6 +3489,22 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "👋 Tự động báo lên Discord khi có người chơi vào/rời Server",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Switch(
+                                    checked = discordJoinLeaveEnabled,
+                                    onCheckedChange = { vm.setDiscordNotifyJoinLeave(it) }
+                                )
+                            }
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
                                 OutlinedButton(
                                     onClick = { vm.saveDiscordWebhookUrl(webhookInput) },

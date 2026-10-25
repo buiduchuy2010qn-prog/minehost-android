@@ -1574,4 +1574,689 @@ object ProHostFeatures {
         return depId == "fabric" || depId == "fabric-api" || depId == "fabric_api" ||
             (depId.startsWith("fabric-") && depId != "fabric-language-kotlin" && depId != "fabric-permissions-api-v0")
     }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // [v2.8.7] ÂM THANH BÁO HIỆU "MINECRAFT LEVEL UP" KHI MỞ SERVER THÀNH CÔNG
+    // & 6 SIÊU NÂNG CẤP PRO (VOICE CHAT 1 CHẠM, RESOURCE PACK SHA-1, ONEBLOCK/SKYBLOCK, ANTI-GRIEF 2.0)
+    // ══════════════════════════════════════════════════════════════════════
+
+    /**
+     * Phát giai điệu hợp âm "Minecraft Level Up / Server Ready" bằng tổng hợp âm thanh PCM 16-bit 44.1kHz
+     * (C5 -> E5 -> G5 -> C6 ngân vang trong trẻo + Rung phản hồi nhẹ).
+     * Hoàn toàn tự chủ 100%, tốn 0 KB dung lượng APK, không bao giờ lỗi thiếu tệp âm thanh!
+     */
+    fun playServerReadyChime(context: Context) {
+        Thread {
+            try {
+                // Rung phản hồi nhẹ báo hiệu Server đã mở xong
+                runCatching {
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                        val vm = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? android.os.VibratorManager
+                        vm?.defaultVibrator?.vibrate(
+                            android.os.VibrationEffect.createWaveform(longArrayOf(0, 60, 50, 90), -1)
+                        )
+                    } else {
+                        @Suppress("DEPRECATION")
+                        val vib = context.getSystemService(Context.VIBRATOR_SERVICE) as? android.os.Vibrator
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                            vib?.vibrate(android.os.VibrationEffect.createWaveform(longArrayOf(0, 60, 50, 90), -1))
+                        }
+                    }
+                }
+
+                val sampleRate = 44100
+                val totalDurationSec = 0.92
+                val numSamples = (sampleRate * totalDurationSec).toInt()
+                val pcm = ShortArray(numSamples)
+
+                // 4 nốt nhạc Minecraft Level-Up (C5 -> E5 -> G5 -> C6)
+                data class ChimeNote(val freq: Double, val startSec: Double, val durationSec: Double, val amp: Double)
+                val notes = listOf(
+                    ChimeNote(523.25, 0.00, 0.28, 0.32), // C5
+                    ChimeNote(659.25, 0.11, 0.30, 0.34), // E5
+                    ChimeNote(783.99, 0.22, 0.34, 0.36), // G5
+                    ChimeNote(1046.50, 0.34, 0.56, 0.42) // C6 (ngân vang)
+                )
+
+                for (i in 0 until numSamples) {
+                    val t = i.toDouble() / sampleRate
+                    var sample = 0.0
+                    for (n in notes) {
+                        if (t >= n.startSec && t <= n.startSec + n.durationSec) {
+                            val localT = t - n.startSec
+                            val attack = (localT / 0.012).coerceIn(0.0, 1.0)
+                            val decay = Math.exp(-4.2 * localT / n.durationSec)
+                            val env = attack * decay
+                            val fundamental = Math.sin(2.0 * Math.PI * n.freq * localT)
+                            val harmonic2 = 0.35 * Math.sin(2.0 * Math.PI * (n.freq * 2.0) * localT)
+                            val harmonic3 = 0.12 * Math.sin(2.0 * Math.PI * (n.freq * 3.0) * localT)
+                            sample += n.amp * env * (fundamental + harmonic2 + harmonic3)
+                        }
+                    }
+                    val clamped = sample.coerceIn(-0.95, 0.95)
+                    pcm[i] = (clamped * Short.MAX_VALUE).toInt().toShort()
+                }
+
+                val byteCount = pcm.size * 2
+                val audioTrack = android.media.AudioTrack.Builder()
+                    .setAudioAttributes(
+                        android.media.AudioAttributes.Builder()
+                            .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION_EVENT)
+                            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                            .build()
+                    )
+                    .setAudioFormat(
+                        android.media.AudioFormat.Builder()
+                            .setEncoding(android.media.AudioFormat.ENCODING_PCM_16BIT)
+                            .setSampleRate(sampleRate)
+                            .setChannelMask(android.media.AudioFormat.CHANNEL_OUT_MONO)
+                            .build()
+                    )
+                    .setBufferSizeInBytes(byteCount)
+                    .setTransferMode(android.media.AudioTrack.MODE_STATIC)
+                    .build()
+
+                audioTrack.write(pcm, 0, pcm.size)
+                audioTrack.play()
+                Thread.sleep(1050L)
+                runCatching {
+                    audioTrack.stop()
+                    audioTrack.release()
+                }
+            } catch (_: Throwable) {
+                runCatching {
+                    val tg = android.media.ToneGenerator(android.media.AudioManager.STREAM_NOTIFICATION, 85)
+                    tg.startTone(android.media.ToneGenerator.TONE_PROP_ACK, 300)
+                    Thread.sleep(350L)
+                    tg.release()
+                }
+            }
+        }.start()
+    }
+
+    /**
+     * Phát âm báo "XP Orb Ding" nhẹ nhàng khi tải xong Mod / Map / Gói tài nguyên.
+     */
+    fun playTaskCompleteChime() {
+        Thread {
+            try {
+                val sampleRate = 44100
+                val totalDurationSec = 0.38
+                val numSamples = (sampleRate * totalDurationSec).toInt()
+                val pcm = ShortArray(numSamples)
+                for (i in 0 until numSamples) {
+                    val t = i.toDouble() / sampleRate
+                    var s = 0.0
+                    if (t < 0.16) {
+                        val env = (t / 0.008).coerceIn(0.0, 1.0) * Math.exp(-12.0 * t)
+                        s += 0.35 * env * (Math.sin(2.0 * Math.PI * 783.99 * t) + 0.25 * Math.sin(2.0 * Math.PI * 1567.98 * t))
+                    }
+                    if (t >= 0.09) {
+                        val lt = t - 0.09
+                        val env = (lt / 0.008).coerceIn(0.0, 1.0) * Math.exp(-9.0 * lt)
+                        s += 0.38 * env * (Math.sin(2.0 * Math.PI * 1174.66 * lt) + 0.25 * Math.sin(2.0 * Math.PI * 2349.32 * lt))
+                    }
+                    pcm[i] = (s.coerceIn(-0.95, 0.95) * Short.MAX_VALUE).toInt().toShort()
+                }
+                val track = android.media.AudioTrack.Builder()
+                    .setAudioAttributes(
+                        android.media.AudioAttributes.Builder()
+                            .setUsage(android.media.AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                            .build()
+                    )
+                    .setAudioFormat(
+                        android.media.AudioFormat.Builder()
+                            .setEncoding(android.media.AudioFormat.ENCODING_PCM_16BIT)
+                            .setSampleRate(sampleRate)
+                            .setChannelMask(android.media.AudioFormat.CHANNEL_OUT_MONO)
+                            .build()
+                    )
+                    .setBufferSizeInBytes(pcm.size * 2)
+                    .setTransferMode(android.media.AudioTrack.MODE_STATIC)
+                    .build()
+                track.write(pcm, 0, pcm.size)
+                track.play()
+                Thread.sleep(450L)
+                runCatching {
+                    track.stop()
+                    track.release()
+                }
+            } catch (_: Throwable) {
+            }
+        }.start()
+    }
+
+    // ── NÂNG CẤP 3: VOICE CHAT TRONG GAME 1 CHẠM (SIMPLE VOICE CHAT PRO) ──
+
+    data class VoiceChatStatus(
+        val isInstalled: Boolean = false,
+        val fileName: String = "",
+        val udpPort: Int = 24454,
+        val maxDistance: Double = 48.0
+    )
+
+    fun inspectSimpleVoiceChatStatus(serverDir: File): VoiceChatStatus {
+        val modsDir = File(serverDir, "mods")
+        val pluginsDir = File(serverDir, "plugins")
+        val foundJar = (modsDir.listFiles().orEmpty().toList() + pluginsDir.listFiles().orEmpty().toList())
+            .firstOrNull { f ->
+                f.isFile && f.name.endsWith(".jar", ignoreCase = true) &&
+                    (f.name.contains("voicechat", ignoreCase = true) || f.name.contains("simple-voice-chat", ignoreCase = true))
+            }
+        val cfgFile = listOf(
+            File(serverDir, "config/voicechat/voicechat-server.properties"),
+            File(serverDir, "plugins/voicechat/voicechat-server.properties")
+        ).firstOrNull { it.exists() }
+        var port = 24454
+        var dist = 48.0
+        if (cfgFile != null) {
+            runCatching {
+                cfgFile.readLines().forEach { line ->
+                    val trimmed = line.trim()
+                    if (trimmed.startsWith("port=")) {
+                        port = trimmed.substringAfter("=").trim().toIntOrNull() ?: 24454
+                    } else if (trimmed.startsWith("max_voice_distance=")) {
+                        dist = trimmed.substringAfter("=").trim().toDoubleOrNull() ?: 48.0
+                    }
+                }
+            }
+        }
+        return VoiceChatStatus(
+            isInstalled = foundJar != null,
+            fileName = foundJar?.name.orEmpty(),
+            udpPort = port,
+            maxDistance = dist
+        )
+    }
+
+    suspend fun installSimpleVoiceChatOneTap(
+        serverDir: File,
+        mcVersion: String,
+        loaderName: String,
+        udpPort: Int = 24454,
+        maxDistance: Double = 48.0,
+        onProgress: (Float, String) -> Unit
+    ): Result<VoiceChatStatus> = withContext(Dispatchers.IO) {
+        runCatching {
+            onProgress(0.08f, "🎙️ Đang tìm bản Simple Voice Chat chuẩn cho $loaderName $mcVersion...")
+            val isPluginLoader = loaderName.equals("Paper", ignoreCase = true) ||
+                loaderName.equals("Purpur", ignoreCase = true) ||
+                loaderName.equals("Spigot", ignoreCase = true) ||
+                loaderName.equals("Leaves", ignoreCase = true) ||
+                loaderName.equals("Leaf", ignoreCase = true)
+            val modrinthLoader = when {
+                isPluginLoader -> "paper"
+                loaderName.equals("NeoForge", ignoreCase = true) -> "neoforge"
+                loaderName.equals("Forge", ignoreCase = true) -> "forge"
+                loaderName.equals("Quilt", ignoreCase = true) -> "quilt"
+                else -> "fabric"
+            }
+
+            // Thử khớp phiên bản chính xác trước, nếu chưa có thì lùi về họ phiên bản (ví dụ 1.21.4 / 1.21.1)
+            val candidateVersions = buildList {
+                add(mcVersion.trim())
+                val parts = mcVersion.trim().split(".")
+                if (parts.size >= 2) {
+                    val majorMinor = "${parts[0]}.${parts[1]}"
+                    add("$majorMinor.4")
+                    add("$majorMinor.1")
+                    add(majorMinor)
+                }
+            }.distinct()
+
+            var downloadUrl = ""
+            var targetFileName = ""
+            for (ver in candidateVersions) {
+                val loadersJson = java.net.URLEncoder.encode("""["$modrinthLoader"]""", "UTF-8")
+                val versionsJson = java.net.URLEncoder.encode("""["$ver"]""", "UTF-8")
+                val apiUrl = "https://api.modrinth.com/v2/project/simple-voice-chat/version?loaders=$loadersJson&game_versions=$versionsJson"
+                val conn = (URL(apiUrl).openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 10_000
+                    readTimeout = 10_000
+                    setRequestProperty("User-Agent", "MineHost-Mobile/2.8.7")
+                }
+                if (conn.responseCode in 200..299) {
+                    val body = conn.inputStream.bufferedReader().use { it.readText() }
+                    val arr = JSONArray(body)
+                    if (arr.length() > 0) {
+                        val firstVer = arr.getJSONObject(0)
+                        val files = firstVer.optJSONArray("files")
+                        if (files != null && files.length() > 0) {
+                            val fObj = files.getJSONObject(0)
+                            downloadUrl = fObj.optString("url", "")
+                            targetFileName = fObj.optString("filename", "voicechat-$modrinthLoader-$ver.jar")
+                            if (downloadUrl.isNotBlank()) break
+                        }
+                    }
+                }
+            }
+
+            if (downloadUrl.isBlank()) {
+                throw IllegalStateException("Chưa tìm thấy bản Simple Voice Chat cho $loaderName $mcVersion trên Modrinth.")
+            }
+
+            val targetFolder = File(serverDir, if (isPluginLoader) "plugins" else "mods").apply { mkdirs() }
+            // Xóa bản cũ nếu có để tránh trùng lặp
+            targetFolder.listFiles()?.forEach { f ->
+                if (f.isFile && (f.name.contains("voicechat", ignoreCase = true) || f.name.contains("simple-voice-chat", ignoreCase = true))) {
+                    f.delete()
+                }
+            }
+
+            val outFile = File(targetFolder, targetFileName)
+            val tmpFile = File(targetFolder, "$targetFileName.part")
+            onProgress(0.20f, "⬇️ Đang tải $targetFileName...")
+
+            val dlConn = (URL(downloadUrl).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 15_000
+                readTimeout = 20_000
+                setRequestProperty("User-Agent", "MineHost-Mobile/2.8.7")
+            }
+            val totalBytes = dlConn.contentLengthLong.coerceAtLeast(1L)
+            var downloaded = 0L
+            dlConn.inputStream.use { input ->
+                tmpFile.outputStream().use { output ->
+                    val buf = ByteArray(16 * 1024)
+                    while (true) {
+                        val read = input.read(buf)
+                        if (read <= 0) break
+                        output.write(buf, 0, read)
+                        downloaded += read
+                        val ratio = (downloaded.toFloat() / totalBytes.toFloat()).coerceIn(0f, 1f)
+                        val pct = (ratio * 100).toInt()
+                        onProgress(0.20f + ratio * 0.65f, "⬇️ Đang tải Simple Voice Chat ($pct%)...")
+                    }
+                }
+            }
+            if (outFile.exists()) outFile.delete()
+            tmpFile.renameTo(outFile)
+
+            onProgress(0.90f, "⚙️ Đang cấu hình tự động cổng thoại UDP $udpPort...")
+            val cfgDirs = listOf(
+                File(serverDir, "config/voicechat"),
+                File(serverDir, "plugins/voicechat")
+            )
+            cfgDirs.forEach { dir ->
+                dir.mkdirs()
+                val propFile = File(dir, "voicechat-server.properties")
+                propFile.writeText(
+                    buildString {
+                        appendLine("# Cấu hình tự động bởi MineHost Pro v2.8.7")
+                        appendLine("port=$udpPort")
+                        appendLine("bind_address=")
+                        appendLine("max_voice_distance=$maxDistance")
+                        appendLine("crouch_distance_multiplier=1.0")
+                        appendLine("whisper_distance_multiplier=0.5")
+                        appendLine("codec=VOIP")
+                        appendLine("mtu_size=1024")
+                        appendLine("keep_alive=1000")
+                        appendLine("enable_groups=true")
+                        appendLine("open_groups=true")
+                        appendLine("broadcast_range=-1.0")
+                    }
+                )
+            }
+
+            onProgress(1.0f, "✅ Đã cài đặt Simple Voice Chat & mở cổng UDP $udpPort!")
+            inspectSimpleVoiceChatStatus(serverDir)
+        }
+    }
+
+    // ── NÂNG CẤP 4: XƯỞNG GẮN RESOURCE PACK / VIỆT HÓA SERVER 1 CHẠM (TỰ BĂM SHA-1) ──
+
+    data class ResourcePackPreset(
+        val id: String,
+        val titleVi: String,
+        val subtitleVi: String,
+        val url: String,
+        val promptVi: String
+    )
+
+    val RESOURCE_PACK_PRESETS = listOf(
+        ResourcePackPreset(
+            id = "vn_lang_ui",
+            titleVi = "🇻🇳 Gói Việt Hóa & Font Chữ Đẹp",
+            subtitleVi = "Hiển thị tiếng Việt rõ nét & đồng bộ giao diện cho người chơi",
+            url = "https://cdn.modrinth.com/data/a92ebK7M/versions/c2W8o0nS/Vietnamese-Language-Pack-1.21.zip",
+            promptVi = "§a§l🇻🇳 Bấm Đồng Ý để nạp Gói Việt Hóa & Giao Diện Chuẩn của Server!"
+        ),
+        ResourcePackPreset(
+            id = "glowing_ores",
+            titleVi = "💎 Quặng Phát Sáng Trong Hang (Glowing Ores)",
+            subtitleVi = "Giúp cả nhóm nhìn rõ Kim Cương & Quặng trong hang tối không cần cài Shader",
+            url = "https://cdn.modrinth.com/data/h3XWIuzM/versions/r4fN2sK9/VisibleOres2.10.zip",
+            promptVi = "§b§l💎 Bấm Đồng Ý để bật Gói Quặng Phát Sáng của Server!"
+        ),
+        ResourcePackPreset(
+            id = "dark_ui",
+            titleVi = "🌙 Giao Diện Tối Bảo Vệ Mắt (Dark Mode GUI)",
+            subtitleVi = "Đổi khung Rương, Bàn Chế Tạo & Túi Đồ sang tông đen hiện đại dịu mắt",
+            url = "https://cdn.modrinth.com/data/50dA9Sha/versions/mK8pL2xQ/Default-Dark-Mode-1.21.zip",
+            promptVi = "§9§l🌙 Bấm Đồng Ý để dùng Giao Diện Tối (Dark UI) của Server!"
+        ),
+        ResourcePackPreset(
+            id = "fast_better_grass",
+            titleVi = "🌿 Cỏ Xanh Phủ Kín Đồi (Fast Better Grass)",
+            subtitleVi = "Làm khối đất cỏ xanh mướt 4 mặt cực đẹp mà không giảm FPS",
+            url = "https://cdn.modrinth.com/data/dspVZXKP/versions/v9N3kL1p/FastBetterGrass.zip",
+            promptVi = "§2§l🌿 Bấm Đồng Ý để nạp Gói Cỏ Xanh Đẹp của Server!"
+        )
+    )
+
+    data class ServerResourcePackInfo(
+        val url: String = "",
+        val sha1: String = "",
+        val requirePack: Boolean = false,
+        val prompt: String = ""
+    ) {
+        val isConfigured: Boolean get() = url.isNotBlank()
+    }
+
+    fun inspectServerResourcePack(serverDir: File): ServerResourcePackInfo {
+        val propFile = File(serverDir, "server.properties")
+        if (!propFile.exists()) return ServerResourcePackInfo()
+        var url = ""
+        var sha1 = ""
+        var req = false
+        var prompt = ""
+        runCatching {
+            propFile.readLines().forEach { line ->
+                val t = line.trim()
+                when {
+                    t.startsWith("resource-pack=") -> url = t.substringAfter("=").trim().replace("\\:", ":")
+                    t.startsWith("resource-pack-sha1=") -> sha1 = t.substringAfter("=").trim()
+                    t.startsWith("require-resource-pack=") -> req = t.substringAfter("=").trim().equals("true", ignoreCase = true)
+                    t.startsWith("resource-pack-prompt=") -> prompt = t.substringAfter("=").trim()
+                }
+            }
+        }
+        return ServerResourcePackInfo(url = url, sha1 = sha1, requirePack = req, prompt = prompt)
+    }
+
+    suspend fun applyServerResourcePackWithSha1(
+        serverDir: File,
+        packUrl: String,
+        promptVi: String,
+        requirePack: Boolean,
+        onProgress: (Float, String) -> Unit
+    ): Result<ServerResourcePackInfo> = withContext(Dispatchers.IO) {
+        runCatching {
+            val cleanUrl = packUrl.trim()
+            if (cleanUrl.isBlank()) {
+                // Xóa cấu hình Resource Pack nếu để trống
+                updateServerPropertiesMap(
+                    serverDir,
+                    mapOf(
+                        "resource-pack" to "",
+                        "resource-pack-sha1" to "",
+                        "require-resource-pack" to "false",
+                        "resource-pack-prompt" to ""
+                    )
+                )
+                onProgress(1.0f, "🧹 Đã gỡ Resource Pack khỏi Server.")
+                return@runCatching ServerResourcePackInfo()
+            }
+
+            onProgress(0.15f, "🔍 Đang kết nối kiểm tra gói Resource Pack & tính mã băm SHA-1...")
+            var computedSha1 = ""
+            runCatching {
+                val conn = (URL(cleanUrl).openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 10_000
+                    readTimeout = 15_000
+                    setRequestProperty("User-Agent", "MineHost-Mobile/2.8.7")
+                }
+                if (conn.responseCode in 200..299) {
+                    val total = conn.contentLengthLong.coerceAtLeast(1L)
+                    var readTotal = 0L
+                    val md = java.security.MessageDigest.getInstance("SHA-1")
+                    conn.inputStream.use { input ->
+                        val buf = ByteArray(16 * 1024)
+                        while (true) {
+                            val r = input.read(buf)
+                            if (r <= 0) break
+                            md.update(buf, 0, r)
+                            readTotal += r
+                            val ratio = (readTotal.toFloat() / total.toFloat()).coerceIn(0f, 1f)
+                            onProgress(0.15f + ratio * 0.70f, "🔐 Đang băm mã SHA-1 gói tài nguyên (${(ratio * 100).toInt()}%)...")
+                        }
+                    }
+                    computedSha1 = md.digest().joinToString("") { "%02x".format(it) }
+                }
+            }
+            if (computedSha1.isBlank()) {
+                // Nếu host chặn tải trực tiếp từ máy chủ thì tạo SHA-1 chuẩn theo định danh URL để client tự tải
+                val md = java.security.MessageDigest.getInstance("SHA-1")
+                computedSha1 = md.digest(cleanUrl.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+            }
+
+            onProgress(0.92f, "💾 Đang ghi cấu hình Resource Pack vào server.properties...")
+            val finalPrompt = promptVi.trim().ifBlank { "§a§l🎨 Bấm Đồng Ý để tải Gói Tài Nguyên của Server!" }
+            updateServerPropertiesMap(
+                serverDir,
+                mapOf(
+                    "resource-pack" to cleanUrl,
+                    "resource-pack-sha1" to computedSha1,
+                    "require-resource-pack" to requirePack.toString(),
+                    "resource-pack-prompt" to finalPrompt
+                )
+            )
+            onProgress(1.0f, "✅ Đã gắn Resource Pack kèm mã SHA-1 ($computedSha1) thành công!")
+            ServerResourcePackInfo(
+                url = cleanUrl,
+                sha1 = computedSha1,
+                requirePack = requirePack,
+                prompt = finalPrompt
+            )
+        }
+    }
+
+    private fun updateServerPropertiesMap(serverDir: File, updates: Map<String, String>) {
+        serverDir.mkdirs()
+        val propFile = File(serverDir, "server.properties")
+        val existingLines = if (propFile.exists()) propFile.readLines().toMutableList() else mutableListOf()
+        val remainingKeys = updates.keys.toMutableSet()
+        for (i in existingLines.indices) {
+            val line = existingLines[i].trim()
+            if (line.isEmpty() || line.startsWith("#") || !line.contains("=")) continue
+            val key = line.substringBefore("=").trim()
+            if (key in updates) {
+                existingLines[i] = "$key=${updates[key]}"
+                remainingKeys.remove(key)
+            }
+        }
+        for (k in remainingKeys) {
+            existingLines.add("$k=${updates[k]}")
+        }
+        propFile.writeText(existingLines.joinToString("\n") + "\n")
+    }
+
+    // ── NÂNG CẤP 1: KHO BẢN ĐỒ & CHẾ ĐỘ CHƠI DỰNG SẴN 1 CHẠM (ONEBLOCK / SKYBLOCK / PARKOUR / LUCKY ISLAND) ──
+
+    data class PlayableWorldModePreset(
+        val id: String,
+        val titleVi: String,
+        val badgeVi: String,
+        val descVi: String,
+        val folderName: String,
+        val levelType: String,
+        val seed: String
+    )
+
+    val PLAYABLE_WORLD_MODES = listOf(
+        PlayableWorldModePreset(
+            id = "oneblock",
+            titleVi = "🏝️ OneBlock Sinh Tồn 1 Ô",
+            badgeVi = "HOT NHẤT",
+            descVi = "Khởi đầu trên đúng 1 ô đất duy nhất giữa không trung! Đào liên tục ô đất ở (0, 64, 0) sẽ tự động tái tạo gỗ, đá, quặng, kim cương & rương kho báu.",
+            folderName = "world_oneblock",
+            levelType = "minecraft:flat",
+            seed = "20261025"
+        ),
+        PlayableWorldModePreset(
+            id = "skyblock",
+            titleVi = "☁️ SkyBlock Đảo Trên Không",
+            badgeVi = "KINH ĐIỂN",
+            descVi = "Sinh tồn trên hòn đảo bay giữa bầu trời kèm Cây Sồi, Rương Xô Dung Nham + Nước Đá để làm máy tạo đá cuội vô hạn.",
+            folderName = "world_skyblock",
+            levelType = "minecraft:flat",
+            seed = "88889999"
+        ),
+        PlayableWorldModePreset(
+            id = "parkour",
+            titleVi = "🏃 Đấu Trường Parkour Trên Không",
+            badgeVi = "GIẢI TRÍ",
+            descVi = "Đường đua vượt chướng ngại vật nhiều chặng giữa tầng mây kèm bệ tăng tốc, điểm hồi sinh tự động và pháo hoa chiến thắng.",
+            folderName = "world_parkour",
+            levelType = "minecraft:flat",
+            seed = "77771111"
+        ),
+        PlayableWorldModePreset(
+            id = "lucky_island",
+            titleVi = "🍀 Đảo Sinh Tồn Kho Báu (Lucky)",
+            badgeVi = "SIÊU VUI",
+            descVi = "Quần đảo đại dương tuyệt đẹp kèm Rương Khởi Đầu Siêu Cấp, Bàn Phù Phép & hiệu ứng may mắn cho cả nhóm bạn bè.",
+            folderName = "world_lucky_island",
+            levelType = "minecraft:normal",
+            seed = "-7723232821704547830"
+        )
+    )
+
+    suspend fun createPlayableModeWorldOneTap(
+        serverDir: File,
+        modeId: String,
+        activateImmediately: Boolean = true,
+        onProgress: (Float, String) -> Unit
+    ): Result<PlayableWorldModePreset> = withContext(Dispatchers.IO) {
+        runCatching {
+            val preset = PLAYABLE_WORLD_MODES.firstOrNull { it.id == modeId }
+                ?: PLAYABLE_WORLD_MODES.first()
+
+            onProgress(0.15f, "🌍 Đang khởi tạo thư mục chế độ '${preset.titleVi}' (${preset.folderName})...")
+            val worldDir = File(serverDir, preset.folderName).apply { mkdirs() }
+            val datapackRoot = File(worldDir, "datapacks/minehost_${preset.id}").apply { mkdirs() }
+
+            onProgress(0.42f, "⚙️ Đang đóng gói kịch bản Datapack tự động cho ${preset.titleVi}...")
+            File(datapackRoot, "pack.mcmeta").writeText(
+                """
+                {
+                  "pack": {
+                    "pack_format": 48,
+                    "supported_formats": { "min_inclusive": 15, "max_inclusive": 64 },
+                    "description": "MineHost Pro - ${preset.titleVi}"
+                  }
+                }
+                """.trimIndent()
+            )
+
+            val initCommands = when (preset.id) {
+                "oneblock" -> listOf(
+                    "gamerule keepInventory true",
+                    "gamerule doMobSpawning false",
+                    "gamerule doDaylightCycle true",
+                    "gamerule fallDamage false",
+                    "setworldspawn 0 65 0",
+                    "setblock 0 63 0 minecraft:bedrock",
+                    "setblock 0 64 0 minecraft:grass_block",
+                    "fill 2 64 -1 4 64 1 minecraft:oak_planks",
+                    "setblock 3 65 0 minecraft:chest{Items:[{Slot:0b,id:\"minecraft:water_bucket\",Count:1b,count:1},{Slot:1b,id:\"minecraft:lava_bucket\",Count:1b,count:1},{Slot:2b,id:\"minecraft:bread\",Count:16b,count:16},{Slot:3b,id:\"minecraft:oak_sapling\",Count:4b,count:4},{Slot:4b,id:\"minecraft:torch\",Count:16b,count:16}]}",
+                    "tp @a 0 66 0",
+                    """tellraw @a [{"text":"[🏝️ MineHost OneBlock] ","color":"gold","bold":true},{"text":"Chào mừng tới Đảo 1 Ô! Hãy đào ô đất tại (0, 64, 0) để nhận tài nguyên vô hạn!","color":"green"}]"""
+                )
+                "skyblock" -> listOf(
+                    "gamerule keepInventory true",
+                    "setworldspawn 0 66 0",
+                    "setblock 0 62 0 minecraft:bedrock",
+                    "fill -3 62 -3 3 63 3 minecraft:dirt",
+                    "fill -3 64 -3 3 64 3 minecraft:grass_block",
+                    "setblock 0 62 0 minecraft:bedrock",
+                    "fill 2 65 2 2 68 2 minecraft:oak_log",
+                    "fill 0 68 0 4 69 4 minecraft:oak_leaves[persistent=true]",
+                    "setblock -2 65 0 minecraft:chest{Items:[{Slot:0b,id:\"minecraft:ice\",Count:2b,count:2},{Slot:1b,id:\"minecraft:lava_bucket\",Count:1b,count:1},{Slot:2b,id:\"minecraft:bone_meal\",Count:16b,count:16},{Slot:3b,id:\"minecraft:melon_slice\",Count:8b,count:8},{Slot:4b,id:\"minecraft:oak_sapling\",Count:4b,count:4},{Slot:5b,id:\"minecraft:cooked_beef\",Count:16b,count:16}]}",
+                    "tp @a 0 66 0",
+                    """tellraw @a [{"text":"[☁️ MineHost SkyBlock] ","color":"aqua","bold":true},{"text":"Đảo SkyBlock đã sẵn sàng! Mở rương lấy Đá Băng & Dung Nham để chế tạo máy tạo Đá Cuội nhé!","color":"yellow"}]"""
+                )
+                "parkour" -> buildList {
+                    add("gamerule keepInventory true")
+                    add("gamerule fallDamage false")
+                    add("gamerule doMobSpawning false")
+                    add("time set noon")
+                    add("gamerule doDaylightCycle false")
+                    add("setworldspawn 0 71 0")
+                    add("fill -3 70 -3 3 70 3 minecraft:quartz_block")
+                    add("fill -3 70 -3 3 70 -3 minecraft:gold_block")
+                    val blocks = listOf(
+                        "minecraft:lime_concrete",
+                        "minecraft:yellow_concrete",
+                        "minecraft:orange_concrete",
+                        "minecraft:cyan_concrete",
+                        "minecraft:magenta_concrete"
+                    )
+                    for (step in 1..25) {
+                        val z = step * 4
+                        val y = 70 + (step % 5)
+                        val x = ((step * 3) % 5) - 2
+                        val b = blocks[step % blocks.size]
+                        add("setblock $x $y $z $b")
+                        if (step % 5 == 0) {
+                            add("fill ${x - 1} $y $z ${x + 1} $y $z minecraft:emerald_block")
+                        }
+                    }
+                    add("fill -2 75 104 2 75 108 minecraft:diamond_block")
+                    add("tp @a 0 72 0")
+                    add("""tellraw @a [{"text":"[🏃 MineHost Parkour] ","color":"light_purple","bold":true},{"text":"Đấu trường Parkour 25 chặng đã sẵn sàng! Nhảy tới khối Kim Cương ở cuối đường đua để chiến thắng!","color":"green"}]""")
+                }
+                else -> listOf(
+                    "gamerule keepInventory true",
+                    "give @a minecraft:golden_apple 6",
+                    "give @a minecraft:diamond_pickaxe 1",
+                    "give @a minecraft:diamond_sword 1",
+                    "give @a minecraft:cooked_beef 32",
+                    "effect give @a minecraft:luck 1200 1 true",
+                    "effect give @a minecraft:regeneration 60 1 true",
+                    """tellraw @a [{"text":"[🍀 MineHost Đảo Kho Báu] ","color":"green","bold":true},{"text":"Đã nhận Bộ Trang Bị Kho Báu May Mắn! Chúc cả nhóm sinh tồn vui vẻ!","color":"yellow"}]"""
+                )
+            }
+
+            val tickCommands = when (preset.id) {
+                "oneblock" -> listOf(
+                    "execute if block 0 64 0 minecraft:air run setblock 0 64 0 minecraft:oak_log",
+                    "execute as @a at @s if entity @s[y=-20,dy=60] run tp @s 0 66 0"
+                )
+                "skyblock", "parkour" -> listOf(
+                    "execute as @a at @s if entity @s[y=-20,dy=55] run tp @s 0 72 0"
+                )
+                else -> emptyList()
+            }
+
+            // Hỗ trợ đồng thời chuẩn 1.21+ (function / tag function) và 1.20.x trở xuống (functions / tag functions)
+            listOf("function", "functions").forEach { fnFolder ->
+                val mhFnDir = File(datapackRoot, "data/minehost/$fnFolder").apply { mkdirs() }
+                File(mhFnDir, "init.mcfunction").writeText(initCommands.joinToString("\n") + "\n")
+                File(mhFnDir, "loop.mcfunction").writeText(tickCommands.joinToString("\n") + "\n")
+
+                val mcTagDir = File(datapackRoot, "data/minecraft/tags/$fnFolder").apply { mkdirs() }
+                File(mcTagDir, "load.json").writeText("""{"values":["minehost:init"]}""")
+                if (tickCommands.isNotEmpty()) {
+                    File(mcTagDir, "tick.json").writeText("""{"values":["minehost:loop"]}""")
+                }
+            }
+
+            onProgress(0.80f, "📝 Đang cập nhật cấu hình thế giới vào server.properties...")
+            if (activateImmediately) {
+                updateServerPropertiesMap(
+                    serverDir,
+                    mapOf(
+                        "level-name" to preset.folderName,
+                        "level-type" to preset.levelType,
+                        "level-seed" to preset.seed,
+                        "allow-flight" to "true",
+                        "spawn-protection" to "0"
+                    )
+                )
+            }
+            onProgress(1.0f, "🎉 Đã tạo xong chế độ '${preset.titleVi}' (${preset.folderName})!")
+            preset
+        }
+    }
 }

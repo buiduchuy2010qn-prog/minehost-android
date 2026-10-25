@@ -10329,14 +10329,41 @@ class McViewModel(
     // 6. Thẻ Mời Bạn Bè 1 Chạm (Quick Share Invite Card)
     // ══════════════════════════════════════════════════════════════════════
 
-    /** [Nâng cấp 1] Bật/tắt nhanh Luật Thế Giới (keepInventory, mobGriefing, doFireTick, playersSleepingPercentage) */
+    /** [Nâng cấp 1 - v2.8.7 Pro] Bật/tắt nhanh Luật Thế Giới (keepInventory, mobGriefing, doFireTick, playersSleepingPercentage) — Lưu bền vững & tự nạp khi mở Server */
     fun applyQuickGamerule(ruleName: String, value: String, labelVi: String) {
+        val dir = activeDirName() ?: "default"
+        proPrefs.edit().putString("saved_gamerule_${dir}_$ruleName", value).apply()
         if (serverState.value.isRunning) {
             sendCommand("gamerule $ruleName $value")
-            notifyActionDone("🎮 Đã áp dụng trực tiếp vào Thế Giới: $labelVi ($ruleName = $value)")
+            notifyActionDone("🎮 Đã áp dụng trực tiếp & lưu bền vững: $labelVi ($ruleName = $value)")
         } else {
-            notifyActionDone("ℹ️ Hãy bật Server để lệnh '$labelVi' ($ruleName = $value) có hiệu lực trong thế giới!")
+            notifyActionDone("🛡️ Đã lưu '$labelVi' ($ruleName = $value) — Sẽ tự động kích hoạt ngay khi Server mở!")
         }
+    }
+
+    /** [v2.8.7] Bật đồng loạt toàn bộ Lá Chắn Chống Phá Hoại 1 Chạm (Anti-Grief Shield Pro) */
+    fun enableFullAntiGriefShieldOneTap() {
+        val dir = activeDirName() ?: "default"
+        val rules = mapOf(
+            "keepInventory" to "true",
+            "mobGriefing" to "false",
+            "doFireTick" to "false",
+            "playersSleepingPercentage" to "1"
+        )
+        val editor = proPrefs.edit()
+        rules.forEach { (k, v) -> editor.putString("saved_gamerule_${dir}_$k", v) }
+        editor.apply()
+        if (dir != "default") {
+            viewModelScope.launch(Dispatchers.IO) {
+                runCatching { propertiesManager.setProperty(dir, "spawn-protection", "16") }
+            }
+        }
+        if (serverState.value.isRunning) {
+            rules.forEach { (k, v) -> sendCommand("gamerule $k $v") }
+            sendCommand("say [MineHost Anti-Grief] 🛡️ Da bat tron bo La Chan Chong Pha Map (Giu do khi chet, Chong Creeper no, Tat lua chay lan, 1 nguoi ngu qua dem)!")
+        }
+        com.mineserve.mobile.server.ProHostFeatures.playTaskCompleteChime()
+        notifyActionDone("🛡️ Đã bật trọn bộ Lá Chắn Chống Phá Hoại (Giữ đồ + Chống nổ Creeper + Chống cháy lan + Khóa Spawn)!")
     }
 
     /** [Nâng cấp 1] Chỉnh nhanh Thời gian / Thời tiết trong thế giới 1 chạm */
@@ -10357,36 +10384,69 @@ class McViewModel(
         }
         viewModelScope.launch {
             if (countdownSec > 0) {
+                _liveTaskProgress.value = LiveTaskProgressState(
+                    active = true,
+                    progress = 0.1f,
+                    title = "🧹 Đang đếm ngược dọn vật phẩm rơi (${countdownSec}s)...",
+                    detail = "Bảo vệ 100% Dân làng, Thú cưng đã đặt tên & Boss"
+                )
                 notifyActionDone("⏳ Đang báo trên chat game đếm ngược ${countdownSec}s trước khi dọn vật phẩm rơi...")
                 sendCommand("say [MineHost] 🧹 Sẽ dọn vật phẩm rơi dưới đất sau ${countdownSec} giây — hãy nhặt đồ quý ngay!")
                 delay(5000L)
-                if (!serverState.value.isRunning) return@launch
+                if (!serverState.value.isRunning) {
+                    _liveTaskProgress.value = LiveTaskProgressState()
+                    return@launch
+                }
+                _liveTaskProgress.value = LiveTaskProgressState(
+                    active = true,
+                    progress = 0.5f,
+                    title = "🧹 Còn 5 giây trước khi dọn vật phẩm rơi...",
+                    detail = "Đang chuẩn bị giải phóng thực thể rác"
+                )
                 sendCommand("say [MineHost] 🧹 Còn 5 giây trước khi dọn vật phẩm rơi!")
                 delay(3000L)
-                if (!serverState.value.isRunning) return@launch
+                if (!serverState.value.isRunning) {
+                    _liveTaskProgress.value = LiveTaskProgressState()
+                    return@launch
+                }
+                _liveTaskProgress.value = LiveTaskProgressState(
+                    active = true,
+                    progress = 0.8f,
+                    title = "🧹 Còn 2 giây...",
+                    detail = "Sẵn sàng thực thi lệnh dọn sạch"
+                )
                 sendCommand("say [MineHost] 🧹 Còn 2 giây!")
                 delay(2000L)
-                if (!serverState.value.isRunning) return@launch
+                if (!serverState.value.isRunning) {
+                    _liveTaskProgress.value = LiveTaskProgressState()
+                    return@launch
+                }
             }
             sendCommand("kill @e[type=item]")
             sendCommand("kill @e[type=experience_orb]")
-            sendCommand("say [MineHost] ✨ Đã dọn sạch vật phẩm rơi dưới đất giúp giảm lag!")
+            sendCommand("kill @e[type=arrow]")
+            sendCommand("say [MineHost] ✨ Đã dọn sạch vật phẩm rơi & mũi tên thừa dưới đất giúp tăng TPS!")
+            _liveTaskProgress.value = LiveTaskProgressState()
+            com.mineserve.mobile.server.ProHostFeatures.playTaskCompleteChime()
             notifyActionDone("🧹 Đã dọn sạch vật phẩm rơi dưới đất & thông báo trong game!")
         }
     }
 
-    /** [Nâng cấp 2] Dọn bớt Quái Gây Lag & Giải Phóng RAM (save-all + System.gc) */
+    /** [Nâng cấp 2 - v2.8.7 Pro] Dọn bớt Quái Gây Lag (Chừa 100% thú cưng đã đặt tên name=!, Dân làng & Boss) + Giải Phóng RAM */
     fun clearHostileLagMobsAndGc() {
         viewModelScope.launch {
             if (serverState.value.isRunning) {
-                listOf("zombie", "skeleton", "creeper", "spider", "phantom", "drowned").forEach { mob ->
-                    sendCommand("kill @e[type=$mob]")
+                listOf("zombie", "skeleton", "creeper", "spider", "phantom", "drowned", "enderman", "witch").forEach { mob ->
+                    sendCommand("kill @e[type=$mob,name=!]")
                 }
+                sendCommand("kill @e[type=item]")
+                sendCommand("kill @e[type=experience_orb]")
                 sendCommand("save-all")
-                sendCommand("say [MineHost] ⚡ Đã dọn bớt quái gây lag & lưu thế giới an toàn!")
+                sendCommand("say [MineHost] ⚡ Đã dọn quái đông gây lag (chừa thú cưng/dân làng) & lưu thế giới an toàn!")
             }
             cleanRamNow()
-            notifyActionDone("🧟 Đã dọn bớt quái gây lag, lưu thế giới (save-all) & giải phóng RAM!")
+            com.mineserve.mobile.server.ProHostFeatures.playTaskCompleteChime()
+            notifyActionDone("🧟 Đã dọn sạch quái gây lag (giữ nguyên Thú cưng & Dân làng), lưu Map & giải phóng RAM!")
         }
     }
 
@@ -11188,6 +11248,31 @@ class McViewModel(
 
     private val floodTracker = com.mineserve.mobile.server.ProHostFeatures.ConnectionFloodTracker()
 
+    data class LiveTaskProgressState(
+        val active: Boolean = false,
+        val progress: Float = 0f,
+        val title: String = "",
+        val detail: String = ""
+    )
+
+    private val _liveTaskProgress = MutableStateFlow(LiveTaskProgressState())
+    val liveTaskProgress: StateFlow<LiveTaskProgressState> = _liveTaskProgress.asStateFlow()
+
+    private val _soundOnServerReady = MutableStateFlow(proPrefs.getBoolean("sound_on_server_ready", true))
+    val soundOnServerReady: StateFlow<Boolean> = _soundOnServerReady.asStateFlow()
+
+    private val _discordNotifyJoinLeave = MutableStateFlow(proPrefs.getBoolean("discord_notify_join_leave", true))
+    val discordNotifyJoinLeave: StateFlow<Boolean> = _discordNotifyJoinLeave.asStateFlow()
+
+    private val _autoClearLag15m = MutableStateFlow(proPrefs.getBoolean("auto_clear_lag_15m", false))
+    val autoClearLag15m: StateFlow<Boolean> = _autoClearLag15m.asStateFlow()
+
+    private val _voiceChatStatus = MutableStateFlow(com.mineserve.mobile.server.ProHostFeatures.VoiceChatStatus())
+    val voiceChatStatus: StateFlow<com.mineserve.mobile.server.ProHostFeatures.VoiceChatStatus> = _voiceChatStatus.asStateFlow()
+
+    private val _serverResourcePackInfo = MutableStateFlow(com.mineserve.mobile.server.ProHostFeatures.ServerResourcePackInfo())
+    val serverResourcePackInfo: StateFlow<com.mineserve.mobile.server.ProHostFeatures.ServerResourcePackInfo> = _serverResourcePackInfo.asStateFlow()
+
     private var lanWebServer: com.mineserve.mobile.server.ProHostFeatures.LanWebRemoteServer? = null
     @Volatile private var proMonitorsStarted = false
     private val locateRegex = Regex("""\[(-?\d+),\s*(?:~|(-?\d+)),\s*(-?\d+)]""")
@@ -11196,15 +11281,29 @@ class McViewModel(
         val dir = activeDirName() ?: "default"
         _warpPoints.value = com.mineserve.mobile.server.ProHostFeatures.loadWarpPoints(proPrefs, dir)
         refreshRecentInstalledMods()
+        refreshVoiceChatAndResourcePackStatus()
         if (proMonitorsStarted) return
         proMonitorsStarted = true
 
-        // 1. Theo dõi console để bắt tọa độ /locate, báo Discord khi người chơi vào/ra & khóa OP Guard
+        // 1. Theo dõi trạng thái Server: Phát âm thanh "Level Up" khi mở xong + Tự động áp dụng Luật bảo vệ Map + Báo Discord
         viewModelScope.launch {
             var lastRunningState = false
             serverState.collect { st ->
                 if (st.isRunning && !lastRunningState && st.startupPhase == com.mineserve.mobile.data.StartupPhase.Ready) {
                     lastRunningState = true
+                    if (_soundOnServerReady.value) {
+                        com.mineserve.mobile.server.ProHostFeatures.playServerReadyChime(app)
+                    }
+                    // Tự động áp dụng lại các Luật Thế Giới (Anti-Grief Shield) đã lưu của Server
+                    val activeDir = activeDirName() ?: "default"
+                    listOf("keepInventory", "mobGriefing", "doFireTick", "playersSleepingPercentage").forEach { rule ->
+                        val savedVal = proPrefs.getString("saved_gamerule_${activeDir}_$rule", null)
+                        if (!savedVal.isNullOrBlank()) {
+                            sendCommand("gamerule $rule $savedVal")
+                        }
+                    }
+                    refreshPlayers()
+                    refreshOnlinePlayers()
                     val hook = _discordWebhookUrl.value.trim()
                     if (hook.isNotBlank()) {
                         val activeName = config.value.activeCoreName.orEmpty().ifBlank { "Minecraft Server" }
@@ -11237,9 +11336,24 @@ class McViewModel(
 
         viewModelScope.launch {
             repo.termuxRuntime.consoleFlow.collect { line ->
-                // [v2.8.3] 1. Lọc tin nhắn Chat & Vào/Ra của người chơi vào Khung Chat trực tiếp
+                // [v2.8.3] 1. Lọc tin nhắn Chat & Vào/Ra của người chơi vào Khung Chat trực tiếp + Báo Discord
                 com.mineserve.mobile.server.ProHostFeatures.parseConsoleChatLine(line)?.let { entry ->
                     _liveChatMessages.update { (it + entry).takeLast(60) }
+                    if ((entry.kind == "join" || entry.kind == "leave") && _discordNotifyJoinLeave.value) {
+                        val hook = _discordWebhookUrl.value.trim()
+                        if (hook.isNotBlank()) {
+                            val activeName = config.value.activeCoreName.orEmpty().ifBlank { "Minecraft Server" }
+                            val isJoin = entry.kind == "join"
+                            viewModelScope.launch(Dispatchers.IO) {
+                                com.mineserve.mobile.server.ProHostFeatures.sendDiscordWebhook(
+                                    webhookUrl = hook,
+                                    title = if (isJoin) "👋 Người chơi mới vào '$activeName'" else "🚪 Người chơi rời '$activeName'",
+                                    description = entry.message,
+                                    colorDecimal = if (isJoin) 3066993 else 15105570
+                                )
+                            }
+                        }
+                    }
                 }
 
                 // [v2.8.3] 2. Lá chắn chống Bot / Spam kết nối (Anti-Bot Flood Guard)
@@ -11276,9 +11390,10 @@ class McViewModel(
             }
         }
 
-        // 2. Vòng lặp 45s: Đọc nhiệt độ pin + Lá chắn nhiệt độ + Tự ngủ đông khi vắng khách (Auto-Sleep)
+        // 2. Vòng lặp 60s: Đọc nhiệt độ pin + Lá chắn nhiệt độ + Tự dọn Lag 15 phút + Tự ngủ đông khi vắng khách
         viewModelScope.launch {
             var emptyMinutesAccum = 0
+            var clearLagMinutesAccum = 0
             var lastThermalCooldownMs = 0L
             while (true) {
                 val info = com.mineserve.mobile.server.ProHostFeatures.readDeviceThermalInfo(app)
@@ -11286,6 +11401,15 @@ class McViewModel(
                 _lastGuardShutdownEvent.value = proPrefs.getString("last_guard_shutdown_event", "").orEmpty()
 
                 val isRunning = serverState.value.isRunning
+                if (isRunning && _autoClearLag15m.value) {
+                    clearLagMinutesAccum += 1
+                    if (clearLagMinutesAccum >= 15) {
+                        clearLagMinutesAccum = 0
+                        runCountdownClearGroundItems(countdownSec = 10)
+                    }
+                } else {
+                    clearLagMinutesAccum = 0
+                }
                 if (isRunning && _autoThermalGuard.value && info.isOverheating) {
                     val now = System.currentTimeMillis()
                     if (now - lastThermalCooldownMs > 180_000L) {
@@ -11378,6 +11502,12 @@ class McViewModel(
             return
         }
         viewModelScope.launch {
+            _liveTaskProgress.value = LiveTaskProgressState(
+                active = true,
+                progress = 0.45f,
+                title = "📨 Đang bắn thông báo IP Server lên kênh Discord...",
+                detail = "Kiểm tra kết nối Webhook trực tiếp"
+            )
             val activeName = config.value.activeCoreName.orEmpty().ifBlank { "MineHost Server" }
             val pcAddr = playitState.value.publicAddress.ifBlank { "${lanIp.value}:${serverPort.value}" }
             val peAddr = playitState.value.bedrockAddress.ifBlank { "${lanIp.value}:19132" }
@@ -11390,7 +11520,9 @@ class McViewModel(
                     "👥 **Online:** ${serverState.value.onlinePlayers}/${serverState.value.maxPlayers} người chơi",
                 colorDecimal = 3447003
             )
+            _liveTaskProgress.value = LiveTaskProgressState()
             if (ok) {
+                com.mineserve.mobile.server.ProHostFeatures.playTaskCompleteChime()
                 notifyActionDone("✅ Đã bắn thông báo kèm IP Server lên kênh Discord thành công!")
             } else {
                 _errorFlow.tryEmit("❌ Không thể gửi tới Discord. Hãy kiểm tra lại link Webhook!")
@@ -12048,14 +12180,30 @@ class McViewModel(
         viewModelScope.launch {
             _modDoctorBusy.value = true
             _modDoctorProgress.value = "🩺 Đang khởi chạy Bác sĩ tự động sửa lỗi Mod..."
+            _liveTaskProgress.value = LiveTaskProgressState(
+                active = true,
+                progress = 0.18f,
+                title = "🩺 Bác Sĩ Sửa Lỗi Mod Đang Chạy...",
+                detail = "Đang phân tích xung đột & tải bù thư viện cho $loader $mcVer"
+            )
             try {
                 val combinedLog = withContext(Dispatchers.IO) { buildCombinedCrashAndRunLog() }
+                var stepCount = 0
                 val report = com.mineserve.mobile.server.ProHostFeatures.smartRepairModsFolder(
                     serverDir = serverDir,
                     mcVersion = mcVer,
                     loader = loader,
                     crashAndRunLogText = combinedLog,
-                    onProgress = { msg -> _modDoctorProgress.value = msg }
+                    onProgress = { msg ->
+                        stepCount++
+                        _modDoctorProgress.value = msg
+                        _liveTaskProgress.value = LiveTaskProgressState(
+                            active = true,
+                            progress = (0.20f + stepCount * 0.14f).coerceAtMost(0.94f),
+                            title = msg,
+                            detail = "Server: ${config.value.activeCoreName.orEmpty()} ($loader $mcVer)"
+                        )
+                    }
                 )
                 refreshMods()
                 refreshRecentInstalledMods()
@@ -12064,6 +12212,7 @@ class McViewModel(
                 val summaryVi = report.toVietnameseSummary(mcVer, loader)
                 _lastModDoctorReport.value = summaryVi
                 _lastModImportReport.value = summaryVi
+                com.mineserve.mobile.server.ProHostFeatures.playTaskCompleteChime()
 
                 if (report.totalFixedCount > 0) {
                     notifyActionDone(
@@ -12083,6 +12232,223 @@ class McViewModel(
             } finally {
                 _modDoctorBusy.value = false
                 _modDoctorProgress.value = null
+                _liveTaskProgress.value = LiveTaskProgressState()
+            }
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // [v2.8.7] HỆ THỐNG ÂM BÁO KHI MỞ SERVER THÀNH CÔNG, THANH TIẾN TRÌNH TOÀN CỤC
+    // & 6 TÍNH NĂNG PRO MAX (VOICE CHAT, RESOURCE PACK SHA-1, ONEBLOCK/SKYBLOCK, ANTI-GRIEF 2.0)
+    // ══════════════════════════════════════════════════════════════════════
+
+    fun setSoundOnServerReady(enabled: Boolean) {
+        _soundOnServerReady.value = enabled
+        proPrefs.edit().putBoolean("sound_on_server_ready", enabled).apply()
+        if (enabled) {
+            com.mineserve.mobile.server.ProHostFeatures.playServerReadyChime(app)
+            notifyActionDone("🔊 Đã bật Âm báo 'Minecraft Level Up' khi Server mở thành công!")
+        } else {
+            notifyActionDone("🔇 Đã tắt âm báo khi mở Server.")
+        }
+    }
+
+    fun testServerReadySoundNow() {
+        com.mineserve.mobile.server.ProHostFeatures.playServerReadyChime(app)
+        notifyActionDone("🔊 Đang phát thử chuông báo 'Minecraft Level Up' khi Server mở thành công!")
+    }
+
+    fun setDiscordNotifyJoinLeave(enabled: Boolean) {
+        _discordNotifyJoinLeave.value = enabled
+        proPrefs.edit().putBoolean("discord_notify_join_leave", enabled).apply()
+        notifyActionDone(
+            if (enabled) "🔔 Đã bật tự động báo lên Discord khi có người chơi vào/rời Server!"
+            else "🔕 Đã tắt báo Discord khi người chơi vào/rời."
+        )
+    }
+
+    fun setAutoClearLag15m(enabled: Boolean) {
+        _autoClearLag15m.value = enabled
+        proPrefs.edit().putBoolean("auto_clear_lag_15m", enabled).apply()
+        notifyActionDone(
+            if (enabled) "🧹 Đã bật Tự động dọn vật phẩm rơi mỗi 15 phút (Có báo đếm ngược 10s trong game, giữ nguyên thú cưng/dân làng)!"
+            else "🧹 Đã tắt tự động dọn rác định kỳ 15 phút."
+        )
+    }
+
+    fun readSavedGameruleBoolean(ruleName: String, defaultVal: Boolean = true): Boolean {
+        val dir = activeDirName() ?: "default"
+        val raw = proPrefs.getString("saved_gamerule_${dir}_$ruleName", null) ?: return defaultVal
+        return when (ruleName) {
+            "mobGriefing", "doFireTick" -> !raw.equals("false", ignoreCase = true)
+            "playersSleepingPercentage" -> raw.trim() == "1"
+            else -> raw.equals("true", ignoreCase = true)
+        }
+    }
+
+    fun refreshVoiceChatAndResourcePackStatus() {
+        val dirName = activeDirName() ?: return
+        val serverDir = repo.termuxRuntime.serverDirFor(dirName)
+        viewModelScope.launch(Dispatchers.IO) {
+            _voiceChatStatus.value = com.mineserve.mobile.server.ProHostFeatures.inspectSimpleVoiceChatStatus(serverDir)
+            _serverResourcePackInfo.value = com.mineserve.mobile.server.ProHostFeatures.inspectServerResourcePack(serverDir)
+        }
+    }
+
+    /** #3 (v2.8.7): Cài đặt Simple Voice Chat (Mic trong game) 1 chạm + Tự mở cổng UDP 24454 + Thanh tiến trình 0-100% */
+    fun installSimpleVoiceChatOneTap(udpPort: Int = 24454) {
+        if (_liveTaskProgress.value.active) return
+        val dirName = activeDirName()
+        if (dirName == null) {
+            _errorFlow.tryEmit("Hãy chọn hoặc tạo một Server trước khi cài Voice Chat!")
+            return
+        }
+        val activeInstalled = config.value.installedCores.find { it.name == config.value.activeCoreName }
+        val core = activeInstalled?.core ?: config.value.selectedCore
+        if (core.isBedrock) {
+            _errorFlow.tryEmit("Simple Voice Chat dành cho Server Java (Fabric / Forge / NeoForge / Paper / Purpur).")
+            return
+        }
+        val mcVer = activeInstalled?.version?.ifBlank { config.value.mcVersion } ?: config.value.mcVersion
+        val serverDir = repo.termuxRuntime.serverDirFor(dirName)
+
+        viewModelScope.launch {
+            _liveTaskProgress.value = LiveTaskProgressState(
+                active = true,
+                progress = 0.05f,
+                title = "🎙️ Đang chuẩn bị cài đặt Simple Voice Chat...",
+                detail = "Phiên bản: ${core.displayName} $mcVer • Cổng UDP $udpPort"
+            )
+            try {
+                val res = com.mineserve.mobile.server.ProHostFeatures.installSimpleVoiceChatOneTap(
+                    serverDir = serverDir,
+                    mcVersion = mcVer,
+                    loaderName = core.name,
+                    udpPort = udpPort,
+                    onProgress = { ratio, msg ->
+                        _liveTaskProgress.value = LiveTaskProgressState(
+                            active = true,
+                            progress = ratio.coerceIn(0f, 1f),
+                            title = msg,
+                            detail = "Cấu hình tự động: UDP $udpPort • Bán kính thoại 48m"
+                        )
+                    }
+                )
+                res.onSuccess { status ->
+                    _voiceChatStatus.value = status
+                    refreshMods()
+                    refreshInstalledPlugins()
+                    refreshServerStorage()
+                    com.mineserve.mobile.server.ProHostFeatures.playTaskCompleteChime()
+                    notifyActionDone("🎙️ Đã cài xong Simple Voice Chat (${status.fileName}) & tự động mở cổng thoại UDP ${status.udpPort}!")
+                }.onFailure { err ->
+                    _errorFlow.tryEmit("❌ Không thể cài Simple Voice Chat: ${err.message}")
+                }
+            } finally {
+                _liveTaskProgress.value = LiveTaskProgressState()
+            }
+        }
+    }
+
+    /** #4 (v2.8.7): Gắn Resource Pack / Việt Hóa Server 1 chạm + Tự động băm SHA-1 + Thanh tiến trình 0-100% */
+    fun applyServerResourcePackOneTap(
+        packUrl: String,
+        promptVi: String = "§a§l🇻🇳 Bấm Đồng Ý để nạp Gói Tài Nguyên & Việt Hóa của Server!",
+        requirePack: Boolean = false
+    ) {
+        if (_liveTaskProgress.value.active) return
+        val dirName = activeDirName()
+        if (dirName == null) {
+            _errorFlow.tryEmit("Hãy chọn một Server trước khi gắn Resource Pack!")
+            return
+        }
+        val serverDir = repo.termuxRuntime.serverDirFor(dirName)
+        viewModelScope.launch {
+            _liveTaskProgress.value = LiveTaskProgressState(
+                active = true,
+                progress = 0.1f,
+                title = "🎨 Đang kiểm tra & băm mã SHA-1 cho Resource Pack...",
+                detail = packUrl.ifBlank { "Đang gỡ Resource Pack" }
+            )
+            try {
+                val res = com.mineserve.mobile.server.ProHostFeatures.applyServerResourcePackWithSha1(
+                    serverDir = serverDir,
+                    packUrl = packUrl,
+                    promptVi = promptVi,
+                    requirePack = requirePack,
+                    onProgress = { ratio, msg ->
+                        _liveTaskProgress.value = LiveTaskProgressState(
+                            active = true,
+                            progress = ratio.coerceIn(0f, 1f),
+                            title = msg,
+                            detail = "Tự động đồng bộ vào server.properties"
+                        )
+                    }
+                )
+                res.onSuccess { info ->
+                    _serverResourcePackInfo.value = info
+                    loadServerProperties()
+                    com.mineserve.mobile.server.ProHostFeatures.playTaskCompleteChime()
+                    if (info.isConfigured) {
+                        notifyActionDone("🎨 Đã gắn Resource Pack thành công! Mã SHA-1: ${info.sha1.take(12)}...")
+                    } else {
+                        notifyActionDone("🧹 Đã gỡ Resource Pack khỏi Server.")
+                    }
+                }.onFailure { err ->
+                    _errorFlow.tryEmit("❌ Lỗi gắn Resource Pack: ${err.message}")
+                }
+            } finally {
+                _liveTaskProgress.value = LiveTaskProgressState()
+            }
+        }
+    }
+
+    /** #1 (v2.8.7): Tạo & kích hoạt Chế Độ Chơi Dựng Sẵn 1 Chạm (OneBlock / SkyBlock / Parkour / Lucky Island) */
+    fun createPlayableModeWorldOneTap(modeId: String) {
+        if (_liveTaskProgress.value.active) return
+        if (serverState.value.isRunning) {
+            _errorFlow.tryEmit("⚠️ Hãy dừng Server trước khi chuyển sang Chế độ chơi mới để bảo toàn Map hiện tại!")
+            return
+        }
+        val dirName = activeDirName()
+        if (dirName == null) {
+            _errorFlow.tryEmit("Hãy chọn hoặc tạo một Server trước!")
+            return
+        }
+        val serverDir = repo.termuxRuntime.serverDirFor(dirName)
+        viewModelScope.launch {
+            _liveTaskProgress.value = LiveTaskProgressState(
+                active = true,
+                progress = 0.08f,
+                title = "🗺️ Đang dựng chế độ chơi mới...",
+                detail = "Giữ nguyên 100% các thế giới cũ của bạn"
+            )
+            try {
+                val res = com.mineserve.mobile.server.ProHostFeatures.createPlayableModeWorldOneTap(
+                    serverDir = serverDir,
+                    modeId = modeId,
+                    activateImmediately = true,
+                    onProgress = { ratio, msg ->
+                        _liveTaskProgress.value = LiveTaskProgressState(
+                            active = true,
+                            progress = ratio.coerceIn(0f, 1f),
+                            title = msg,
+                            detail = "Tự động tích hợp kịch bản Datapack & điểm hồi sinh"
+                        )
+                    }
+                )
+                res.onSuccess { preset ->
+                    loadWorlds()
+                    refreshAllServerWorlds()
+                    refreshServerStorage()
+                    loadServerProperties()
+                    com.mineserve.mobile.server.ProHostFeatures.playTaskCompleteChime()
+                    notifyActionDone("🎉 Đã tạo & kích hoạt '${preset.titleVi}' (${preset.folderName})! Bấm BẬT SERVER để vào chơi ngay!")
+                }.onFailure { err ->
+                    _errorFlow.tryEmit("❌ Không thể tạo chế độ chơi: ${err.message}")
+                }
+            } finally {
+                _liveTaskProgress.value = LiveTaskProgressState()
             }
         }
     }
