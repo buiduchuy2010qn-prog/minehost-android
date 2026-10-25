@@ -11089,6 +11089,31 @@ class McViewModel(
     private val _lanWebPanelPin = MutableStateFlow(proPrefs.getString("lan_web_pin", "2026").orEmpty().ifBlank { "2026" })
     val lanWebPanelPin: StateFlow<String> = _lanWebPanelPin.asStateFlow()
 
+    // [v2.8.3] 5 Nâng cấp mới:
+    // - Khung Chat trực tiếp 2 chiều với người chơi trong game
+    // - Lá chắn chống Bot / Spam kết nối (Anti-Bot Flood Guard)
+    // - Hoàn tác / Gỡ nhanh Mod vừa cài gây lỗi 1 chạm
+    // - Cài gói Modpack .mrpack (Modrinth) 1 chạm (tự lọc bỏ Mod chỉ dành cho Client)
+    private val _liveChatMessages = MutableStateFlow<List<com.mineserve.mobile.server.ProHostFeatures.ChatEntry>>(emptyList())
+    val liveChatMessages: StateFlow<List<com.mineserve.mobile.server.ProHostFeatures.ChatEntry>> = _liveChatMessages.asStateFlow()
+
+    private val _antiBotFloodGuard = MutableStateFlow(proPrefs.getBoolean("anti_bot_flood_guard", true))
+    val antiBotFloodGuard: StateFlow<Boolean> = _antiBotFloodGuard.asStateFlow()
+
+    private val _blockedBotIpsCount = MutableStateFlow(0)
+    val blockedBotIpsCount: StateFlow<Int> = _blockedBotIpsCount.asStateFlow()
+
+    private val _recentInstalledModNames = MutableStateFlow<List<String>>(emptyList())
+    val recentInstalledModNames: StateFlow<List<String>> = _recentInstalledModNames.asStateFlow()
+
+    private val _mrpackInstallBusy = MutableStateFlow(false)
+    val mrpackInstallBusy: StateFlow<Boolean> = _mrpackInstallBusy.asStateFlow()
+
+    private val _mrpackInstallProgress = MutableStateFlow<String?>(null)
+    val mrpackInstallProgress: StateFlow<String?> = _mrpackInstallProgress.asStateFlow()
+
+    private val floodTracker = com.mineserve.mobile.server.ProHostFeatures.ConnectionFloodTracker()
+
     private var lanWebServer: com.mineserve.mobile.server.ProHostFeatures.LanWebRemoteServer? = null
     @Volatile private var proMonitorsStarted = false
     private val locateRegex = Regex("""\[(-?\d+),\s*(?:~|(-?\d+)),\s*(-?\d+)]""")
@@ -11096,6 +11121,7 @@ class McViewModel(
     fun ensureProMonitorsStarted() {
         val dir = activeDirName() ?: "default"
         _warpPoints.value = com.mineserve.mobile.server.ProHostFeatures.loadWarpPoints(proPrefs, dir)
+        refreshRecentInstalledMods()
         if (proMonitorsStarted) return
         proMonitorsStarted = true
 
@@ -11120,6 +11146,7 @@ class McViewModel(
                 } else if (!st.isRunning && lastRunningState) {
                     lastRunningState = false
                     _opGuardUnlockedSession.value = false
+                    refreshRecentInstalledMods()
                     val hook = _discordWebhookUrl.value.trim()
                     if (hook.isNotBlank()) {
                         val activeName = config.value.activeCoreName.orEmpty().ifBlank { "Minecraft Server" }
@@ -11136,6 +11163,21 @@ class McViewModel(
 
         viewModelScope.launch {
             repo.termuxRuntime.consoleFlow.collect { line ->
+                // [v2.8.3] 1. Lọc tin nhắn Chat & Vào/Ra của người chơi vào Khung Chat trực tiếp
+                com.mineserve.mobile.server.ProHostFeatures.parseConsoleChatLine(line)?.let { entry ->
+                    _liveChatMessages.update { (it + entry).takeLast(60) }
+                }
+
+                // [v2.8.3] 2. Lá chắn chống Bot / Spam kết nối (Anti-Bot Flood Guard)
+                if (_antiBotFloodGuard.value) {
+                    floodTracker.inspectLine(line)?.let { verdict ->
+                        _blockedBotIpsCount.value = floodTracker.blockedCount()
+                        sendCommand("ban-ip ${verdict.ip} [MineHost Anti-Bot] ${verdict.reasonVi}")
+                        sendCommand("say [MineHost Anti-Bot] Da tu dong chan IP spam ket noi: ${verdict.ip} (${verdict.reasonVi})!")
+                        notifyActionDone("🛡️ Anti-Bot đã tự động chặn IP spam ${verdict.ip}: ${verdict.reasonVi}")
+                    }
+                }
+
                 // Bắt tọa độ trả về từ lệnh /locate
                 if (line.contains("The nearest", ignoreCase = true) || line.contains("located at", ignoreCase = true) || line.contains("[") && line.contains("blocks away", ignoreCase = true)) {
                     locateRegex.find(line)?.let { m ->
@@ -11739,6 +11781,151 @@ class McViewModel(
                 _errorFlow.tryEmit("Không thể tạo ảnh thẻ mời: ${err.message}")
             }
         }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // [v2.8.3] 5 NÂNG CẤP ĐỈNH CAO:
+    // 1. Menu Nổi Admin ngay trong lúc đang chơi game (Floating In-Game Admin Menu)
+    // 2. Tự động bật lại Server khi bị văng (Auto-Restart) + Gỡ nhanh Mod vừa cài gây lỗi 1 chạm
+    // 3. Khung Chat trực tiếp 2 chiều với người chơi trong game (Live Game Chat Messenger)
+    // 4. Hỗ trợ cài gói Modpack .mrpack (Modrinth) 1 chạm (tự lọc bỏ Mod chỉ dành cho Client)
+    // 5. Lá chắn chống Bot / Spam kết nối (Anti-Bot & Connection Flood Guard)
+    // ══════════════════════════════════════════════════════════════════════
+
+    /** #1 (v2.8.3): Bật / Tắt Bong bóng Menu Admin Nổi trên màn hình khi đang chơi Minecraft */
+    fun toggleInGameAdminBubble(context: android.content.Context, enable: Boolean) {
+        if (enable && !android.provider.Settings.canDrawOverlays(context)) {
+            setKeepStatusOverlay(true)
+            runCatching {
+                val intent = android.content.Intent(
+                    android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    android.net.Uri.parse("package:${context.packageName}")
+                ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(intent)
+            }
+            notifyActionDone("🎯 Hãy bật quyền 'Hiển thị trên ứng dụng khác' cho MineHost để hiện Menu Admin Nổi trong game!")
+            return
+        }
+        setKeepStatusOverlay(enable)
+        if (enable) {
+            com.mineserve.mobile.service.StatusOverlay.show(app)
+            notifyActionDone("🎯 Đã bật Bong Bóng Menu Admin Nổi! Chạm vào bong bóng lúc đang chơi game để mở 6 nút Admin nhanh.")
+        } else {
+            com.mineserve.mobile.service.StatusOverlay.hide(app)
+            notifyActionDone("🎯 Đã ẩn Bong Bóng Menu Admin Nổi.")
+        }
+    }
+
+    /** #2 (v2.8.3): Quét & Hoàn tác (tạm tắt) các Mod vừa cài gần nhất gây văng Server */
+    fun refreshRecentInstalledMods() {
+        val dirName = activeDirName() ?: return
+        val serverDir = repo.termuxRuntime.serverDirFor(dirName)
+        viewModelScope.launch(Dispatchers.IO) {
+            val recent = com.mineserve.mobile.server.ProHostFeatures.findRecentInstalledMods(serverDir)
+                .map { it.name }
+            _recentInstalledModNames.value = recent
+        }
+    }
+
+    fun rollbackRecentModsNow() {
+        val dirName = activeDirName()
+        if (dirName == null) {
+            _errorFlow.tryEmit("Hãy chọn một Server trước!")
+            return
+        }
+        val serverDir = repo.termuxRuntime.serverDirFor(dirName)
+        viewModelScope.launch(Dispatchers.IO) {
+            val rolledBack = com.mineserve.mobile.server.ProHostFeatures.rollbackRecentInstalledMods(serverDir)
+            val remaining = com.mineserve.mobile.server.ProHostFeatures.findRecentInstalledMods(serverDir).map { it.name }
+            _recentInstalledModNames.value = remaining
+            withContext(Dispatchers.Main) {
+                if (rolledBack.isEmpty()) {
+                    _errorFlow.tryEmit("Không tìm thấy Mod (.jar) nào trong thư mục mods/ để hoàn tác.")
+                } else {
+                    refreshMods()
+                    notifyActionDone("⏪ Đã tạm tắt ${rolledBack.size} Mod vừa cài (${rolledBack.joinToString()} -> .disabled)! Bấm Mở Server để chạy lại an toàn.")
+                }
+            }
+        }
+    }
+
+    /** #3 (v2.8.3): Gửi tin nhắn từ Khung Chat Trực Tiếp vào thẳng trong Game với nhãn [👑 Chủ Server] */
+    fun sendHostLiveChatMessage(message: String) {
+        val clean = message.trim()
+        if (clean.isBlank()) return
+        if (!serverState.value.isRunning) {
+            _errorFlow.tryEmit("Hãy bật Server trước khi gửi tin nhắn vào trong game!")
+            return
+        }
+        val activeInstalled = config.value.installedCores.find { it.name == config.value.activeCoreName }
+        val isBedrock = activeInstalled?.core?.isBedrock == true
+        if (isBedrock) {
+            sendCommand("say [Chu Server] $clean")
+        } else {
+            val escaped = clean
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+            sendCommand(
+                """tellraw @a [{"text":"[👑 Chủ Server] ","color":"gold","bold":true},{"text":"$escaped","color":"yellow"}]"""
+            )
+        }
+        val timeFmt = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
+        val entry = com.mineserve.mobile.server.ProHostFeatures.ChatEntry(
+            id = System.nanoTime(),
+            timeStr = timeFmt,
+            sender = "👑 Chủ Server",
+            message = clean,
+            kind = "host"
+        )
+        _liveChatMessages.update { (it + entry).takeLast(60) }
+    }
+
+    /** #4 (v2.8.3): Cài đặt gói Modpack .mrpack (Modrinth) 1 chạm & tự động lọc bỏ Mod chỉ dành cho Client */
+    fun installMrpackFromUri(uri: Uri) {
+        if (_mrpackInstallBusy.value) return
+        val dirName = activeDirName()
+        if (dirName == null) {
+            _errorFlow.tryEmit("Hãy chọn hoặc tạo một Server trước khi cài gói Modpack .mrpack!")
+            return
+        }
+        val serverDir = repo.termuxRuntime.serverDirFor(dirName)
+        viewModelScope.launch {
+            _mrpackInstallBusy.value = true
+            _mrpackInstallProgress.value = "📦 Đang đọc cấu trúc gói .mrpack..."
+            try {
+                val res = com.mineserve.mobile.server.ProHostFeatures.installMrpackModpack(
+                    context = app,
+                    uri = uri,
+                    serverDir = serverDir,
+                    onProgress = { msg -> _mrpackInstallProgress.value = msg }
+                )
+                res.onSuccess { summary ->
+                    refreshMods()
+                    refreshRecentInstalledMods()
+                    val skippedNote = if (summary.skippedClientModsCount > 0) {
+                        " (Đã tự động lọc bỏ ${summary.skippedClientModsCount} Mod đồ họa Client tránh văng Server)"
+                    } else ""
+                    notifyActionDone(
+                        "🎉 Đã cài xong Modpack '${summary.packName}': ${summary.installedModsCount} Mod Server + ${summary.extractedOverridesCount} tệp cấu hình$skippedNote!"
+                    )
+                }.onFailure { err ->
+                    _errorFlow.tryEmit("❌ Lỗi cài gói .mrpack: ${err.message}")
+                }
+            } finally {
+                _mrpackInstallBusy.value = false
+                _mrpackInstallProgress.value = null
+            }
+        }
+    }
+
+    /** #5 (v2.8.3): Bật / Tắt Lá chắn chống Bot & Spam kết nối (Anti-Bot Flood Guard) */
+    fun setAntiBotFloodGuardEnabled(enabled: Boolean) {
+        _antiBotFloodGuard.value = enabled
+        proPrefs.edit().putBoolean("anti_bot_flood_guard", enabled).apply()
+        notifyActionDone(
+            if (enabled) "🛡️ Đã bật Lá chắn Chống Bot & Spam kết nối (Tự động ban-ip khi spam >=6 kết nối/15s)!"
+            else "🛡️ Đã tắt Lá chắn Chống Bot."
+        )
     }
 }
 

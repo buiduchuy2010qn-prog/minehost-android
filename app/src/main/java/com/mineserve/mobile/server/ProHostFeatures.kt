@@ -740,4 +740,284 @@ object ProHostFeatures {
         bmp.recycle()
         outFile
     }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // [v2.8.3] KHUNG CHAT TRỰC TIẾP 2 CHIỀU GIỮA CHỦ HOST & TRONG GAME
+    // ══════════════════════════════════════════════════════════════════════
+
+    data class ChatEntry(
+        val id: Long,
+        val timeStr: String,
+        val sender: String,
+        val message: String,
+        val kind: String // "chat", "host", "join", "leave"
+    )
+
+    private val chatMsgRegex = Regex("""(?:\[Not Secure]\s*)?<([A-Za-z0-9_.\-]{1,24})>\s*(.+)$""")
+    private val serverSayRegex = Regex("""\[(?:Server|Chủ Server|MineHost[^\]]*)]\s*(.+)$""")
+    private val playerJoinLineRegex = Regex("""([A-Za-z0-9_.\-]{2,20})\s+joined the game""", RegexOption.IGNORE_CASE)
+    private val playerLeaveLineRegex = Regex("""([A-Za-z0-9_.\-]{2,20})\s+left the game""", RegexOption.IGNORE_CASE)
+
+    fun parseConsoleChatLine(rawLine: String): ChatEntry? {
+        val clean = rawLine.replace(Regex("""\u001B\[[0-9;]*[A-Za-z]"""), "").trim()
+        if (clean.isBlank()) return null
+        val contentPart = clean.substringAfter("INFO]: ", clean).substringAfter("INFO] ", clean).trim()
+        val nowTime = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
+
+        chatMsgRegex.find(contentPart)?.let { m ->
+            val sender = m.groupValues[1]
+            val msg = m.groupValues[2].trim()
+            if (msg.isNotBlank()) {
+                return ChatEntry(System.nanoTime(), nowTime, sender, msg, "chat")
+            }
+        }
+        if (contentPart.contains("[👑 Chủ Server]") || contentPart.startsWith("[Server]")) {
+            val msg = serverSayRegex.find(contentPart)?.groupValues?.getOrNull(1)?.trim() ?: contentPart
+            return ChatEntry(System.nanoTime(), nowTime, "👑 Chủ Server", msg, "host")
+        }
+        playerJoinLineRegex.find(contentPart)?.let { m ->
+            val p = m.groupValues[1]
+            return ChatEntry(System.nanoTime(), nowTime, p, "🟢 $p đã vào Server", "join")
+        }
+        playerLeaveLineRegex.find(contentPart)?.let { m ->
+            val p = m.groupValues[1]
+            return ChatEntry(System.nanoTime(), nowTime, p, "⚪ $p đã rời Server", "leave")
+        }
+        return null
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // [v2.8.3] HOÀN TÁC / GỠ NHANH MOD VỪA CÀI GÂY LỖI 1 CHẠM (MOD ROLLBACK)
+    // ══════════════════════════════════════════════════════════════════════
+
+    fun findRecentInstalledMods(serverDir: File): List<File> {
+        val dirs = listOf(File(serverDir, "mods"), File(serverDir, "plugins"))
+        val allJars = dirs.flatMap { d ->
+            d.listFiles { f -> f.isFile && f.name.endsWith(".jar", ignoreCase = true) }?.toList() ?: emptyList()
+        }.sortedByDescending { it.lastModified() }
+        if (allJars.isEmpty()) return emptyList()
+        val newestTime = allJars.first().lastModified()
+        // Gom các file .jar được cài trong cùng đợt gần nhất (cách file mới nhất trong vòng 90 giây)
+        return allJars.filter { newestTime - it.lastModified() <= 90_000L }.take(6)
+    }
+
+    fun rollbackRecentInstalledMods(serverDir: File): List<String> {
+        val recent = findRecentInstalledMods(serverDir)
+        if (recent.isEmpty()) return emptyList()
+        val disabledNames = mutableListOf<String>()
+        recent.forEach { jarFile ->
+            val disabledFile = File(jarFile.parentFile, "${jarFile.name}.disabled")
+            if (jarFile.renameTo(disabledFile)) {
+                disabledNames.add(jarFile.name)
+            } else if (jarFile.delete()) {
+                disabledNames.add(jarFile.name)
+            }
+        }
+        return disabledNames
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // [v2.8.3] CÀI GÓI MODPACK .MRPACK (MODRINTH) TỰ LỌC BỎ MOD CLIENT GÂY SẬP SERVER
+    // ══════════════════════════════════════════════════════════════════════
+
+    data class MrpackInstallSummary(
+        val packName: String,
+        val mcVersion: String,
+        val installedModsCount: Int,
+        val skippedClientModsCount: Int,
+        val extractedOverridesCount: Int,
+        val skippedClientModNames: List<String>
+    )
+
+    private val clientOnlyModKeywords = listOf(
+        "sodium", "iris", "optifine", "optifabric", "modmenu", "reeses-sodium-options", "reeses_sodium",
+        "sodium-extra", "sodium_extra", "indium", "continuity", "entity_model_features", "entity_texture_features",
+        "emf_", "etf_", "immediatelyfast", "moreculling", "lambdynamiclights", "zoomify", "fabrishot",
+        "replaymod", "citresewn", "3dskinlayers", "skinlayers3d", "eatinganimation", "notenoughanimations",
+        "presencefootsteps", "presence-footsteps", "bobby", "chat_heads", "chatheads", "betterf3",
+        "mousewheelie", "wi-zoom", "wizoom", "fallingleaves", "visuality", "polytone", "freecam",
+        "controlling", "searchables", "torohealth", "blur", "cullleaves", "ebe", "enhancedblockentities",
+        "dynamicfps", "dynamic-fps", "advancementplaques", "legendarytooltips", "authme-fabric", "mod-menu"
+    )
+
+    fun isLikelyClientOnlyModFilename(fileNameOrPath: String): Boolean {
+        val lower = fileNameOrPath.substringAfterLast("/").lowercase()
+        return clientOnlyModKeywords.any { kw -> lower.contains(kw) }
+    }
+
+    suspend fun installMrpackModpack(
+        context: Context,
+        uri: Uri,
+        serverDir: File,
+        onProgress: (String) -> Unit
+    ): Result<MrpackInstallSummary> = withContext(Dispatchers.IO) {
+        runCatching {
+            val tempMrpack = File(context.cacheDir, "temp_modpack_${System.currentTimeMillis()}.mrpack")
+            try {
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    tempMrpack.outputStream().use { output -> input.copyTo(output) }
+                } ?: throw IllegalStateException("Không thể đọc tệp .mrpack đã chọn.")
+
+                var indexJsonStr: String? = null
+                var extractedOverrides = 0
+
+                ZipFile(tempMrpack).use { zip ->
+                    val indexEntry = zip.getEntry("modrinth.index.json")
+                        ?: throw IllegalStateException("Tệp không có modrinth.index.json (Không phải gói .mrpack chuẩn Modrinth).")
+                    indexJsonStr = zip.getInputStream(indexEntry).bufferedReader(Charsets.UTF_8).use { it.readText() }
+
+                    val entries = zip.entries()
+                    while (entries.hasMoreElements()) {
+                        val entry = entries.nextElement()
+                        if (entry.isDirectory) continue
+                        val name = entry.name.replace("\\", "/")
+                        val relPath = when {
+                            name.startsWith("server-overrides/") -> name.removePrefix("server-overrides/")
+                            name.startsWith("overrides/") -> name.removePrefix("overrides/")
+                            else -> null
+                        } ?: continue
+
+                        if (relPath.isBlank() || relPath.contains("..")) continue
+                        // Bỏ qua các thư mục chỉ dành cho Client
+                        val lowerRel = relPath.lowercase()
+                        if (lowerRel.startsWith("resourcepacks/") ||
+                            lowerRel.startsWith("shaderpacks/") ||
+                            lowerRel == "options.txt" ||
+                            lowerRel == "servers.dat"
+                        ) {
+                            continue
+                        }
+                        if ((lowerRel.startsWith("mods/") || lowerRel.startsWith("plugins/")) &&
+                            isLikelyClientOnlyModFilename(lowerRel)
+                        ) {
+                            continue
+                        }
+                        val outFile = File(serverDir, relPath)
+                        outFile.parentFile?.mkdirs()
+                        zip.getInputStream(entry).use { zIn ->
+                            outFile.outputStream().use { fOut -> zIn.copyTo(fOut) }
+                        }
+                        extractedOverrides++
+                    }
+                }
+
+                val rootObj = JSONObject(indexJsonStr ?: "{}")
+                val packName = rootObj.optString("name", "Modpack Modrinth")
+                val depsObj = rootObj.optJSONObject("dependencies")
+                val mcVer = depsObj?.optString("minecraft", "").orEmpty()
+                val filesArr = rootObj.optJSONArray("files") ?: JSONArray()
+
+                var installedCount = 0
+                val skippedClientNames = mutableListOf<String>()
+                val totalFiles = filesArr.length()
+
+                for (i in 0 until totalFiles) {
+                    val fileObj = filesArr.getJSONObject(i)
+                    val path = fileObj.optString("path", "").replace("\\", "/")
+                    if (path.isBlank() || path.contains("..")) continue
+
+                    val envObj = fileObj.optJSONObject("env")
+                    val serverSupport = envObj?.optString("server", "required")?.lowercase() ?: "required"
+                    val fileNameOnly = path.substringAfterLast("/")
+
+                    // Lọc bỏ Mod chỉ chạy trên Client (unsupported hoặc nằm trong danh sách mod đồ họa/client)
+                    if (serverSupport == "unsupported" ||
+                        path.startsWith("resourcepacks/", ignoreCase = true) ||
+                        path.startsWith("shaderpacks/", ignoreCase = true) ||
+                        isLikelyClientOnlyModFilename(fileNameOnly)
+                    ) {
+                        skippedClientNames.add(fileNameOnly)
+                        continue
+                    }
+
+                    val downloadsArr = fileObj.optJSONArray("downloads")
+                    val dlUrl = if (downloadsArr != null && downloadsArr.length() > 0) downloadsArr.optString(0) else ""
+                    if (dlUrl.isBlank()) continue
+
+                    onProgress("📦 Đang tải Mod (${i + 1}/$totalFiles): $fileNameOnly...")
+                    val targetFile = File(serverDir, path)
+                    targetFile.parentFile?.mkdirs()
+
+                    val conn = (URL(dlUrl).openConnection() as HttpURLConnection).apply {
+                        connectTimeout = 12000
+                        readTimeout = 20000
+                        setRequestProperty("User-Agent", "MineHost/2.8.3 (Android)")
+                    }
+                    try {
+                        if (conn.responseCode in 200..299) {
+                            conn.inputStream.use { input ->
+                                targetFile.outputStream().use { output -> input.copyTo(output) }
+                            }
+                            installedCount++
+                        }
+                    } finally {
+                        conn.disconnect()
+                    }
+                }
+
+                MrpackInstallSummary(
+                    packName = packName,
+                    mcVersion = mcVer,
+                    installedModsCount = installedCount,
+                    skippedClientModsCount = skippedClientNames.size,
+                    extractedOverridesCount = extractedOverrides,
+                    skippedClientModNames = skippedClientNames
+                )
+            } finally {
+                tempMrpack.delete()
+            }
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // [v2.8.3] LÁ CHẮN CHỐNG BOT / SPAM KẾT NỐI (ANTI-BOT & FLOOD GUARD)
+    // ══════════════════════════════════════════════════════════════════════
+
+    class ConnectionFloodTracker {
+        data class FloodVerdict(val ip: String, val reasonVi: String)
+
+        private val ipTimestamps = HashMap<String, MutableList<Long>>()
+        private val ipUsernames = HashMap<String, MutableSet<String>>()
+        private val bannedIps = HashSet<String>()
+
+        private val ipExtractRegex = Regex("""/(\d{1,3}(?:\.\d{1,3}){3}):\d+""")
+        private val userExtractRegex = Regex("""([A-Za-z0-9_.\-]{2,16})(?:\[/\d+|\s+\(/|\s+logged in|\s+lost connection)""")
+
+        @Synchronized
+        fun inspectLine(line: String): FloodVerdict? {
+            if (!line.contains("/") && !line.contains("Disconnecting", ignoreCase = true) && !line.contains("lost connection", ignoreCase = true)) {
+                return null
+            }
+            val ipMatch = ipExtractRegex.find(line) ?: return null
+            val ip = ipMatch.groupValues[1]
+            if (ip == "127.0.0.1" || ip.startsWith("192.168.") || ip.startsWith("10.") || ip in bannedIps) {
+                return null
+            }
+            val now = System.currentTimeMillis()
+            val times = ipTimestamps.getOrPut(ip) { mutableListOf() }
+            times.removeAll { now - it > 15_000L }
+            times.add(now)
+
+            userExtractRegex.find(line)?.groupValues?.getOrNull(1)?.let { uname ->
+                if (!uname.equals("Server", ignoreCase = true) && !uname.equals("INFO", ignoreCase = true)) {
+                    val users = ipUsernames.getOrPut(ip) { mutableSetOf() }
+                    users.add(uname.lowercase())
+                }
+            }
+
+            val distinctUsers = ipUsernames[ip]?.size ?: 0
+            if (times.size >= 6) {
+                bannedIps.add(ip)
+                return FloodVerdict(ip, "Spam kết nối liên tục (${times.size} lần trong 15 giây)")
+            }
+            if (distinctUsers >= 3 && times.size >= 3) {
+                bannedIps.add(ip)
+                return FloodVerdict(ip, "Bot đổi nhiều tên nhân vật ($distinctUsers tài khoản từ cùng 1 IP)")
+            }
+            return null
+        }
+
+        @Synchronized
+        fun blockedCount(): Int = bannedIps.size
+    }
 }

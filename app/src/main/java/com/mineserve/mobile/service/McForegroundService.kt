@@ -247,7 +247,17 @@ class McForegroundService : Service() {
                     runCatching {
                         termux.sendCommand("time set day")
                         termux.sendCommand("weather clear")
-                        termux.sendCommand("say [MineHost] Da chinh Troi Sang & Tanh Mua tu thanh thong bao!")
+                        termux.sendCommand("say [MineHost] Da chinh Troi Sang & Tanh Mua tu Menu Noi Admin!")
+                    }
+                }
+            }
+            ACTION_QUICK_HEAL_ALL -> {
+                ensureForeground()
+                scope.launch {
+                    runCatching {
+                        termux.sendCommand("effect give @a minecraft:instant_health 2 4 true")
+                        termux.sendCommand("effect give @a minecraft:saturation 10 4 true")
+                        termux.sendCommand("say [MineHost] Chu Server vua hoi day mau & thuc an cho tat ca nguoi choi!")
                     }
                 }
             }
@@ -901,6 +911,7 @@ class McForegroundService : Service() {
         const val ACTION_QUICK_COPY_IP = "com.mineserve.mobile.action.QUICK_COPY_IP"
         const val ACTION_QUICK_CLEAR_LAG = "com.mineserve.mobile.action.QUICK_CLEAR_LAG"
         const val ACTION_QUICK_DAY_SUN = "com.mineserve.mobile.action.QUICK_DAY_SUN"
+        const val ACTION_QUICK_HEAL_ALL = "com.mineserve.mobile.action.QUICK_HEAL_ALL"
         const val ACTION_QUICK_SAVE_STOP = "com.mineserve.mobile.action.QUICK_SAVE_STOP"
         /** 执行一个桌面组件动作（组件/闹钟 Receiver 把长任务转交到这里）。 */
         const val ACTION_WIDGET_ACTION = "com.mineserve.mobile.action.WIDGET_ACTION"

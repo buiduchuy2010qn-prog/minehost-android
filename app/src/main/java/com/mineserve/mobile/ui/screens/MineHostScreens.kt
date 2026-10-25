@@ -354,6 +354,19 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
     val autoBatteryShutdown by vm.autoBatteryShutdownGuard.collectAsStateWithLifecycle()
     val autoOverheatShutdown by vm.autoOverheatShutdownGuard.collectAsStateWithLifecycle()
     val lastGuardEvent by vm.lastGuardShutdownEvent.collectAsStateWithLifecycle()
+    val liveChatMessages by vm.liveChatMessages.collectAsStateWithLifecycle()
+    val antiBotFloodGuard by vm.antiBotFloodGuard.collectAsStateWithLifecycle()
+    val blockedBotIpsCount by vm.blockedBotIpsCount.collectAsStateWithLifecycle()
+    val recentInstalledModNames by vm.recentInstalledModNames.collectAsStateWithLifecycle()
+    val mrpackInstallBusy by vm.mrpackInstallBusy.collectAsStateWithLifecycle()
+    val mrpackInstallProgress by vm.mrpackInstallProgress.collectAsStateWithLifecycle()
+    val mrpackPickerLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uriPicked: android.net.Uri? ->
+        if (uriPicked != null) {
+            vm.installMrpackFromUri(uriPicked)
+        }
+    }
     var overviewTab by remember { mutableStateOf(0) } // 0: Kết nối & Thẻ mời, 1: Tối ưu & Bảo vệ Pin, 2: Thế giới & VIP, 3: Tất cả
 
     HostPage(
@@ -769,6 +782,46 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             ) {
                                 Text("📥 Chỉ tải thư viện", fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
                             }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── [v2.8.3] NÚT HOÀN TÁC / GỠ NHANH MOD VỪA CÀI GÂY LỖI KHI SERVER KHỞI ĐỘNG THẤT BẠI ──
+        if (state.startupPhase == StartupPhase.Failed && recentInstalledModNames.isNotEmpty()) {
+            item(key = "recent_mod_crash_rollback_banner") {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF78350F).copy(alpha = 0.25f)),
+                    border = BorderStroke(1.5.dp, Color(0xFFF59E0B))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            "⏪ Phát hiện Server báo lỗi sau khi cài Mod mới!",
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 13.5.sp,
+                            color = Color(0xFFFBBF24)
+                        )
+                        Text(
+                            "Mod vừa cài gần nhất: ${recentInstalledModNames.joinToString()}.\nBấm nút bên dưới để tạm tắt (.disabled) các Mod vừa thêm và bật lại Server an toàn:",
+                            fontSize = 11.5.sp
+                        )
+                        Button(
+                            onClick = { vm.rollbackRecentModsNow() },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD97706), contentColor = Color.White),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                "⏪ Hoàn Tác / Tạm Tắt Mod Vừa Cài Gây Lỗi Ngay (1 Chạm)",
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 12.sp
+                            )
                         }
                     }
                 }
@@ -1832,16 +1885,81 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
+                                Button(
+                                    onClick = { mrpackPickerLauncher.launch("*/*") },
+                                    enabled = !mrpackInstallBusy && !stopping,
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED), contentColor = Color.White),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        if (mrpackInstallBusy) "⏳ ${mrpackInstallProgress ?: "Đang cài gói Modpack .mrpack..."}"
+                                        else "📦 Cài Gói Modpack .mrpack (Modrinth) 1 Chạm (Tự lọc bỏ Mod đồ họa Client tránh văng SV)",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.ExtraBold
+                                    )
+                                }
+                                if (recentInstalledModNames.isNotEmpty()) {
+                                    OutlinedButton(
+                                        onClick = { vm.rollbackRecentModsNow() },
+                                        enabled = !state.isRunning && !stopping,
+                                        shape = RoundedCornerShape(10.dp),
+                                        border = BorderStroke(1.2.dp, Color(0xFFF59E0B)),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(
+                                            "⏪ Hoàn Tác / Tạm Tắt Mod Vừa Cài Gây Lỗi (${recentInstalledModNames.take(2).joinToString()}${if (recentInstalledModNames.size > 2) "..." else ""})",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = Color(0xFFF59E0B)
+                                        )
+                                    }
+                                }
                             }
 
                             HorizontalDivider()
                             val liveThermal by vm.thermalInfo.collectAsStateWithLifecycle()
                             Text(
-                                "🛡️ Bảo Vệ Map Tự Động Khi Điện Thoại Yếu Pin / Quá Nóng (${liveThermal.statusLabelVi}):",
+                                "🛡️ Bảo Vệ Map, Chống Văng & Menu Nổi Admin Trong Game (${liveThermal.statusLabelVi}):",
                                 fontSize = 11.5.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = Color(0xFF10B981)
                             )
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("🎯 Bong Bóng Menu Admin Nổi Khi Đang Chơi Game", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    Text("Hiện nút nổi ☀️ Trời Sáng • 🧹 Dọn Lag • ❤️ Hồi Máu @a • 📋 Copy IP • 🛑 Lưu & Tắt ngay trên màn hình Minecraft", fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Switch(
+                                    checked = config.keepStatusOverlay,
+                                    onCheckedChange = { vm.toggleInGameAdminBubble(context, it) }
+                                )
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("🔄 Tự động bật lại Server khi bị văng đột ngột (Auto-Restart)", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    Text("Tự động khởi động lại Server nếu bị crash giữa chừng (tối đa 3 lần liên tiếp để tránh lặp lỗi)", fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Switch(
+                                    checked = config.autoRestartOnCrash,
+                                    onCheckedChange = { vm.setAutoRestart(it) }
+                                )
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        "🛡️ Lá chắn Chống Bot & Spam Kết Nối" +
+                                            if (blockedBotIpsCount > 0) " (Đã chặn $blockedBotIpsCount IP)" else "",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp
+                                    )
+                                    Text("Tự động ban-ip khi phát hiện 1 IP lạ spam ≥ 6 kết nối hoặc ≥ 3 tài khoản ảo trong 15 giây", fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Switch(
+                                    checked = antiBotFloodGuard,
+                                    onCheckedChange = { vm.setAntiBotFloodGuardEnabled(it) }
+                                )
+                            }
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                                 Column(Modifier.weight(1f)) {
                                     Text("🔋 Tự động Lưu Map & Tắt Server khi Pin ≤ 10% (chưa cắm sạc)", fontWeight = FontWeight.Bold, fontSize = 12.sp)
@@ -1862,6 +1980,136 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     onCheckedChange = { vm.setAutoOverheatShutdownGuardEnabled(it) }
                                 )
                             }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════════════════
+        // [v2.8.3] KHUNG CHAT TRỰC TIẾP 2 CHIỀU VỚI NGƯỜI CHƠI TRONG GAME & BẬT NHANH MENU NỔI ADMIN
+        // ══════════════════════════════════════════════════════════════════════
+        if (active != null && (overviewTab == 0 || overviewTab == 2 || overviewTab == 3)) {
+            item(key = "live_game_chat_messenger_card") {
+                var hostChatInput by remember { mutableStateOf("") }
+                HostCard(
+                    title = "💬 Chat Trực Tiếp Với Trong Game & Menu Nổi Admin",
+                    artKind = MinecraftArtKind.DIAMOND_SWORD,
+                    badgeText = if (liveChatMessages.isNotEmpty()) "${liveChatMessages.size} tin nhắn" else "Trực tiếp 2 chiều"
+                ) {
+                    // Công tắc bật nhanh Bong Bóng Menu Admin Nổi ngay trên màn hình khi vào Minecraft
+                    Surface(
+                        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.65f),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    "🎯 Bong Bóng Menu Admin Nổi Ngay Trong Game",
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 12.sp,
+                                    color = Color(0xFF10B981)
+                                )
+                                Text(
+                                    "Chạm bong bóng khi đang chơi Minecraft PE / Pojav để bấm ☀️ Trời Sáng • 🧹 Dọn Lag • ❤️ Hồi Máu @a • 📋 Copy IP • 🛑 Lưu & Tắt!",
+                                    fontSize = 10.5.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = config.keepStatusOverlay,
+                                onCheckedChange = { vm.toggleInGameAdminBubble(context, it) }
+                            )
+                        }
+                    }
+
+                    // Khung hiển thị tin nhắn của người chơi (tự lọc sạch log kỹ thuật)
+                    Surface(
+                        color = Color(0xFF0F172A),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, Color(0xFF334155)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            if (liveChatMessages.isEmpty()) {
+                                Text(
+                                    "💬 Chưa có tin nhắn nào trong phiên này.\n• Khi người chơi nhắn tin hoặc vào/ra Server, hội thoại sẽ hiện trực tiếp tại đây (đã lọc sạch chữ kỹ thuật).\n• Bạn có thể gõ tin nhắn bên dưới để gửi vào game với danh hiệu [👑 Chủ Server]!",
+                                    fontSize = 11.sp,
+                                    color = Color(0xFF94A3B8),
+                                    lineHeight = 15.sp
+                                )
+                            } else {
+                                liveChatMessages.takeLast(12).forEach { msg ->
+                                    Row(
+                                        verticalAlignment = Alignment.Top,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(
+                                            "[${msg.timeStr}]",
+                                            fontSize = 10.sp,
+                                            color = Color(0xFF64748B),
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                        if (msg.kind == "join" || msg.kind == "leave") {
+                                            Text(
+                                                msg.message,
+                                                fontSize = 11.sp,
+                                                color = Color(0xFF38BDF8),
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                        } else {
+                                            val isOwnerMsg = msg.kind == "host" || msg.sender.contains("Chủ Server")
+                                            Text(
+                                                "${msg.sender}:",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                color = if (isOwnerMsg) Color(0xFFFBBF24) else Color(0xFF4ADE80)
+                                            )
+                                            Text(
+                                                msg.message,
+                                                fontSize = 11.sp,
+                                                color = Color(0xFFF8FAFC),
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Ô nhập & gửi tin nhắn trực tiếp vào trong game
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        OutlinedTextField(
+                            value = hostChatInput,
+                            onValueChange = { hostChatInput = it },
+                            label = { Text("Nhắn tin vào game với tên [👑 Chủ Server]...", fontSize = 11.sp) },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Button(
+                            onClick = {
+                                vm.sendHostLiveChatMessage(hostChatInput)
+                                hostChatInput = ""
+                            },
+                            enabled = state.isRunning && hostChatInput.isNotBlank(),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D9488), contentColor = Color.White)
+                        ) {
+                            Text("📨 Gửi", fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
                         }
                     }
                 }
