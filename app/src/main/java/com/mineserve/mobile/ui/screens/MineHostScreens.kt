@@ -2258,7 +2258,7 @@ fun MineHostOverview(
         // ══════════════════════════════════════════════════════════════════════
         if (active != null && overviewTab == 0) {
             item(key = "live_game_chat_messenger_card") {
-                var hostChatInput by remember { mutableStateOf("") }
+                var hostChatInput by rememberSaveable(active.dirName) { mutableStateOf("") }
                 HostCard(
                     title = "Trò chuyện trong game",
                     artKind = MinecraftArtKind.DIAMOND_SWORD,
@@ -2284,39 +2284,22 @@ fun MineHostOverview(
                                 )
                             } else {
                                 liveChatMessages.takeLast(12).forEach { msg ->
-                                    Row(
-                                        verticalAlignment = Alignment.Top,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    Column(
+                                        verticalArrangement = Arrangement.spacedBy(2.dp),
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
+                                        val isOwnerMsg = msg.kind == "host" || msg.sender.contains("Chủ Server")
                                         Text(
-                                            "[${msg.timeStr}]",
+                                            "[${msg.timeStr}] ${if (msg.kind == "join" || msg.kind == "leave") "Hoạt động" else msg.sender}",
                                             fontSize = 14.sp,
-                                            color = Color(0xFF64748B),
+                                            color = if (isOwnerMsg) Color(0xFFFBBF24) else Color(0xFFA7B4C8),
                                             fontWeight = FontWeight.SemiBold
                                         )
-                                        if (msg.kind == "join" || msg.kind == "leave") {
-                                            Text(
-                                                msg.message,
-                                                fontSize = 14.sp,
-                                                color = Color(0xFF38BDF8),
-                                                fontWeight = FontWeight.SemiBold
-                                            )
-                                        } else {
-                                            val isOwnerMsg = msg.kind == "host" || msg.sender.contains("Chủ Server")
-                                            Text(
-                                                "${msg.sender}:",
-                                                fontSize = 14.sp,
-                                                fontWeight = FontWeight.SemiBold,
-                                                color = if (isOwnerMsg) Color(0xFFFBBF24) else Color(0xFF4ADE80)
-                                            )
-                                            Text(
-                                                msg.message,
-                                                fontSize = 14.sp,
-                                                color = Color(0xFFF8FAFC),
-                                                modifier = Modifier.weight(1f)
-                                            )
-                                        }
+                                        Text(
+                                            msg.message,
+                                            fontSize = 14.sp,
+                                            color = if (msg.kind == "join" || msg.kind == "leave") Color(0xFF38BDF8) else Color(0xFFF8FAFC)
+                                        )
                                     }
                                 }
                             }
@@ -2332,7 +2315,7 @@ fun MineHostOverview(
                         OutlinedTextField(
                             value = hostChatInput,
                             onValueChange = { hostChatInput = it },
-                            label = { Text("Nhắn tin vào game với tên [👑 Chủ Server]...", fontSize = 14.sp) },
+                            label = { Text("Tin nhắn vào game", fontSize = 14.sp) },
                             singleLine = true,
                             modifier = Modifier.weight(1f)
                         )

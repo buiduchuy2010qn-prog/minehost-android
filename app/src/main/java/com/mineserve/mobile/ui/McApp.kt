@@ -201,7 +201,6 @@ fun McApp() {
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
                 .padding(padding)
-                .consumeWindowInsets(WindowInsets.statusBars)
         ) {
             val page = Triple(showLogs, subPage, tab)
             pageState.SaveableStateProvider("${config.activeCoreName}:${page.first}:${page.second}:${page.third}") {

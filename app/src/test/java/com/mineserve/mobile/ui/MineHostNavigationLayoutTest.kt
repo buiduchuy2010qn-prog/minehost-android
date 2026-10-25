@@ -68,7 +68,15 @@ class MineHostNavigationLayoutTest {
                 val layouts = mutableListOf<TextLayoutResult>()
                 node.config.getOrNull(SemanticsActions.GetTextLayoutResult)?.action?.invoke(layouts)
                 layouts.forEach { result ->
-                    assertFalse("Text clipped: ${result.layoutInput.text}; size=${result.size}; paragraph=${result.multiParagraph.width}x${result.multiParagraph.height}; lines=${result.lineCount}; constraints=${result.layoutInput.constraints}", result.hasVisualOverflow)
+                    // Cached paragraph width can exceed the final intrinsic text width.
+                    // Check the actual glyph lines, ellipsis and height, not that cache width.
+                    repeat(result.lineCount) { line ->
+                        val clipped = result.isLineEllipsized(line) ||
+                            result.getLineLeft(line) < -1f ||
+                            result.getLineRight(line) > result.size.width + 1f ||
+                            result.getLineBottom(line) > result.size.height + 1f
+                        assertFalse("Text clipped: ${result.layoutInput.text}; line=$line; bounds=${result.getLineLeft(line)}..${result.getLineRight(line)}; size=${result.size}", clipped)
+                    }
                 }
             }
     }
@@ -101,10 +109,10 @@ class MineHostNavigationLayoutTest {
                 MineHostBottomBar(McTab.Dashboard) { selected = it }
             }
         }
-        mineHostMainTabs.forEach { (_, label) -> compose.onNodeWithText(label).assertIsDisplayed() }
+        mineHostMainTabs.forEach { (_, label) -> compose.onNodeWithContentDescription(label).assertIsDisplayed() }
         screenshot("bottom-320-large-font")
         assertTextFits()
-        compose.onNodeWithText("Console").performClick()
+        compose.onNodeWithContentDescription("Console").performClick()
         assertEquals(McTab.Terminal, selected)
     }
 

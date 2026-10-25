@@ -4,6 +4,8 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -12,6 +14,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.font.FontWeight
@@ -33,21 +38,41 @@ internal val mineHostMainTabs = listOf(
 
 @Composable
 internal fun MineHostBottomBar(selected: McTab?, onSelect: (McTab) -> Unit) {
-    NavigationBar(containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp) {
-        mineHostMainTabs.forEach { (destination, label) ->
-            NavigationBarItem(
-                selected = selected == destination,
-                onClick = { onSelect(destination) },
-                icon = { Icon(destination.icon, contentDescription = null) },
-                label = { Text(label, style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.Center) },
-                colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    selectedTextColor = MaterialTheme.colorScheme.primary,
-                    indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            )
+    val largeLabels = LocalDensity.current.fontScale > 1.3f
+    Surface(color = MaterialTheme.colorScheme.surface) {
+        Row(
+            Modifier.fillMaxWidth().windowInsetsPadding(NavigationBarDefaults.windowInsets)
+                .height(IntrinsicSize.Min).selectableGroup(),
+            horizontalArrangement = Arrangement.spacedBy(0.dp)
+        ) {
+            mineHostMainTabs.forEach { (destination, label) ->
+                val active = selected == destination
+                Column(
+                    Modifier.weight(1f).fillMaxHeight()
+                        .selectable(active, role = Role.Tab, onClick = { onSelect(destination) })
+                        .semantics { contentDescription = label }
+                        .heightIn(min = 72.dp).padding(vertical = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Surface(
+                        shape = MaterialTheme.shapes.small,
+                        color = if (active) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+                    ) {
+                        Box(Modifier.size(width = 48.dp, height = 28.dp), contentAlignment = Alignment.Center) {
+                            Icon(destination.icon, null, Modifier.size(24.dp),
+                                tint = if (active) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    Text(
+                        if (largeLabels && destination == McTab.Terminal) "Lệnh" else label,
+                        modifier = Modifier.fillMaxWidth(),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
         }
     }
 }
@@ -175,9 +200,9 @@ internal fun MineHostNavigation(
             }
         ) {
             CompositionLocalProvider(LocalLayoutDirection provides contentDirection, LocalMineHostChrome provides true) {
-                Column(Modifier.fillMaxSize()) {
+                Column(Modifier.fillMaxSize().statusBarsPadding()) {
                     Surface(color = MaterialTheme.colorScheme.surface) {
-                        Row(Modifier.fillMaxWidth().statusBarsPadding().heightIn(min = 56.dp).padding(start = 20.dp, end = 8.dp),
+                        Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(start = 20.dp, end = 8.dp),
                             verticalAlignment = Alignment.CenterVertically) {
                             Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Medium,
                                 modifier = Modifier.weight(1f).padding(vertical = 12.dp))
@@ -186,7 +211,7 @@ internal fun MineHostNavigation(
                             }
                         }
                     }
-                    Box(Modifier.weight(1f).consumeWindowInsets(WindowInsets.statusBars)) { content() }
+                    Box(Modifier.weight(1f)) { content() }
                 }
                 BackHandler(enabled = drawer.isOpen) { scope.launch { drawer.close() } }
             }
