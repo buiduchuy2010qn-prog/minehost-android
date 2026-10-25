@@ -583,8 +583,10 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                         }
                     }
 
-                    // Khung mở nhanh Báo Cáo Lỗi Sập & Nhật Ký ngay trên thẻ chính khi khởi động thất bại
+                    // Khung mở nhanh Báo Cáo Lỗi Sập, Tự động Sửa Lỗi Mod & Nhật Ký ngay trên thẻ chính khi khởi động thất bại
                     if (state.startupPhase == StartupPhase.Failed && !state.isRunning) {
+                        val modDoctorBusy by vm.modDoctorBusy.collectAsState()
+                        val modDoctorProgress by vm.modDoctorProgress.collectAsState()
                         Surface(
                             color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.92f),
                             shape = RoundedCornerShape(12.dp),
@@ -596,11 +598,39 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                 verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 Text(
-                                    "⚠️ Máy chủ vừa dừng hoặc khởi động thất bại — Bấm xem ngay nguyên nhân & cách sửa:",
+                                    "⚠️ Máy chủ vừa dừng hoặc khởi động thất bại — Bấm tự động sửa hoặc xem phân tích:",
                                     fontSize = 11.5.sp,
                                     fontWeight = FontWeight.ExtraBold,
                                     color = MaterialTheme.colorScheme.onErrorContainer
                                 )
+                                if (modDoctorBusy && !modDoctorProgress.isNullOrBlank()) {
+                                    Text(
+                                        modDoctorProgress.orEmpty(),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                }
+                                if (active?.core?.supportsMods == true) {
+                                    Button(
+                                        onClick = { vm.autoFixModCrashAndRestart(autoRestart = true) },
+                                        enabled = !modDoctorBusy,
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = Color(0xFF059669),
+                                            contentColor = Color.White
+                                        ),
+                                        shape = RoundedCornerShape(9.dp),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 7.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(
+                                            if (modDoctorBusy) "⏳ Đang tự động sửa lỗi Mod..."
+                                            else "🛠️ Tự Động Sửa Lỗi Mod & Bật Lại Server Ngay (1 Chạm)",
+                                            fontSize = 11.5.sp,
+                                            fontWeight = FontWeight.ExtraBold
+                                        )
+                                    }
+                                }
                                 Row(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                                     modifier = Modifier.fillMaxWidth()

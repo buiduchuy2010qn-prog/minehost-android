@@ -4533,6 +4533,18 @@ class McViewModel(
                             }.forEach { it.join() }
                         }
                     }
+                    // Tự động chạy Bác sĩ kiểm tra tương thích phiên bản MC & tải bù thư viện còn thiếu
+                    _modBatchProgress.value = "🩺 Đang kiểm tra độ tương thích phiên bản MC ($mcVer) & dọn Mod lệch bản..."
+                    val doctor = com.mineserve.mobile.server.ProHostFeatures.smartRepairModsFolder(
+                        serverDir = repo.termuxRuntime.serverDirFor(dirName),
+                        mcVersion = mcVer,
+                        loader = loader,
+                        crashAndRunLogText = buildCombinedCrashAndRunLog(),
+                        onProgress = { msg -> _modBatchProgress.value = msg }
+                    )
+                    cleanedLegacyCount += doctor.disabledMods.size + doctor.deduplicatedMods.size
+                    installed.addAll(doctor.downloadedDeps)
+                    installed.addAll(doctor.upgradedMods)
                 }
                 refreshMods()
                 refreshWorldModCount()
@@ -11981,6 +11993,91 @@ class McViewModel(
             if (enabled) "🛡️ Đã bật Lá chắn Chống Bot & Spam kết nối (Tự động ban-ip khi spam >=6 kết nối/15s)!"
             else "🛡️ Đã tắt Lá chắn Chống Bot."
         )
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // [v2.8.5] BÁC SĨ CỨU HỘ & TỰ ĐỘNG SỬA LỖI MOD 1 CHẠM (SMART MOD DOCTOR)
+    // ══════════════════════════════════════════════════════════════════════
+
+    private val _modDoctorBusy = MutableStateFlow(false)
+    val modDoctorBusy: StateFlow<Boolean> = _modDoctorBusy.asStateFlow()
+
+    private val _modDoctorProgress = MutableStateFlow<String?>(null)
+    val modDoctorProgress: StateFlow<String?> = _modDoctorProgress.asStateFlow()
+
+    private val _lastModDoctorReport = MutableStateFlow<String?>(null)
+    val lastModDoctorReport: StateFlow<String?> = _lastModDoctorReport.asStateFlow()
+
+    fun clearModDoctorReport() {
+        _lastModDoctorReport.value = null
+    }
+
+    private suspend fun buildCombinedCrashAndRunLog(): String = buildString {
+        append(_currentCrashContent.value.orEmpty())
+        append("\n")
+        append(_lastRunLog.value.orEmpty())
+        append("\n")
+        append(consoleBuffer.snapshot().takeLast(250).joinToString("\n"))
+        append("\n")
+        append(runCatching { repo.termuxRuntime.readLastMcRunLog() }.getOrDefault(""))
+    }
+
+    fun autoFixModCrashAndRestart(autoRestart: Boolean = true) {
+        if (_modDoctorBusy.value) return
+        val dirName = activeDirName()
+        if (dirName == null) {
+            _errorFlow.tryEmit("Hãy chọn một Server trước khi chạy Tự động sửa lỗi Mod!")
+            return
+        }
+        if (serverState.value.isRunning) {
+            _errorFlow.tryEmit("Hãy dừng Server trước khi sửa lỗi Mod!")
+            return
+        }
+        val activeInstalled = config.value.installedCores.find { it.name == config.value.activeCoreName }
+        val mcVer = activeInstalled?.version?.ifBlank { config.value.mcVersion } ?: config.value.mcVersion
+        val loader = activeInstalled?.core?.name ?: config.value.selectedCore.name
+        val serverDir = repo.termuxRuntime.serverDirFor(dirName)
+
+        viewModelScope.launch {
+            _modDoctorBusy.value = true
+            _modDoctorProgress.value = "🩺 Đang khởi chạy Bác sĩ tự động sửa lỗi Mod..."
+            try {
+                val combinedLog = withContext(Dispatchers.IO) { buildCombinedCrashAndRunLog() }
+                val report = com.mineserve.mobile.server.ProHostFeatures.smartRepairModsFolder(
+                    serverDir = serverDir,
+                    mcVersion = mcVer,
+                    loader = loader,
+                    crashAndRunLogText = combinedLog,
+                    onProgress = { msg -> _modDoctorProgress.value = msg }
+                )
+                refreshMods()
+                refreshRecentInstalledMods()
+                refreshWorldModCount()
+                _missingModDependencies.value = emptyList()
+                val summaryVi = report.toVietnameseSummary(mcVer, loader)
+                _lastModDoctorReport.value = summaryVi
+                _lastModImportReport.value = summaryVi
+
+                if (report.totalFixedCount > 0) {
+                    notifyActionDone(
+                        "✅ Đã tự động sửa xong ${report.totalFixedCount} lỗi Mod (Tải bù: ${report.downloadedDeps.size}, Đổi bản chuẩn: ${report.upgradedMods.size}, Tạm tắt xung đột: ${report.disabledMods.size + report.deduplicatedMods.size})!"
+                    )
+                } else {
+                    notifyActionDone("✅ Đã kiểm tra toàn bộ ${report.remainingActiveCount} Mod: Không còn xung đột phiên bản!")
+                }
+
+                if (autoRestart && !serverState.value.isRunning) {
+                    clearCrashContent()
+                    kotlinx.coroutines.delay(500L)
+                    startServer()
+                }
+            } catch (e: Exception) {
+                _errorFlow.tryEmit("❌ Lỗi khi tự động sửa Mod: ${e.message}")
+            } finally {
+                _modDoctorBusy.value = false
+                _modDoctorProgress.value = null
+            }
+        }
     }
 }
 

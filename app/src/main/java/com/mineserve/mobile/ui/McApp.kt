@@ -229,6 +229,13 @@ fun McApp() {
                             onGoToJavaInstall = {
                                 envManagerTab = 0
                                 subPage = SubPage.EnvManager
+                            },
+                            onGoToModManager = {
+                                subPage = null
+                                tab = McTab.Download
+                            },
+                            onGoToDiagnostics = {
+                                subPage = SubPage.Diagnostics
                             }
                         )
                         SubPage.WidgetSettings -> WidgetSettingsScreen(onBack = { subPage = null })
@@ -329,10 +336,24 @@ fun McApp() {
                 crashAnalysis,
                 lastRunLog,
                 onDismiss = { vm.clearCrashContent() },
+                vm = vm,
                 onGoToJavaInstall = {
                     vm.clearCrashContent()
                     envManagerTab = 0
                     subPage = SubPage.EnvManager
+                },
+                onGoToModManager = {
+                    vm.clearCrashContent()
+                    subPage = null
+                    tab = McTab.Download
+                },
+                onGoToDiagnostics = {
+                    vm.clearCrashContent()
+                    subPage = SubPage.Diagnostics
+                },
+                onGoToProperties = {
+                    vm.clearCrashContent()
+                    subPage = SubPage.Properties
                 }
             )
         }

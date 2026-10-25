@@ -1324,6 +1324,7 @@ class PluginManager(
                 check(!termux.isMcRunning()) { "Server đã được bật trong lúc tải mod. Đã hủy ghi đè để bảo vệ runtime." }
                 val (baseName, _) = parseModFileName(cleanJarName)
                 File(dir, "$baseName$MOD_DISABLED_SUFFIX").takeIf { it.exists() }?.delete()
+                AddonSafety.removeDuplicateModIdJars(dir, AddonSafety.extractFabricModId(staged), target.name)
                 java.nio.file.Files.move(
                     staged.toPath(),
                     target.toPath(),
@@ -2170,6 +2171,34 @@ class PluginManager(
     }
 
     /**
+     * Chỉ trả về các phiên bản Minecraft tương thích nhị phân 100% cho Mod (Fabric/Forge/NeoForge/Quilt).
+     * Tránh tuyệt đối việc tải Mod của 1.21.1 nhét vào Server 1.21.4 / 1.21.11 gây lỗi FormattedException!
+     */
+    fun strictCompatibleModMcVersions(mcVersion: String, loader: String = "fabric"): List<String> {
+        val clean = mcVersion.trim()
+        if (clean.isBlank()) return listOf("1.21.1", "1.21.4", "1.20.1")
+        val lowerLoader = loader.lowercase(Locale.ROOT)
+        if (lowerLoader in setOf("paper", "spigot", "bukkit", "purpur")) {
+            return candidateMcVersions(clean)
+        }
+        return when (clean) {
+            "1.21.1" -> listOf("1.21.1", "1.21")
+            "1.21" -> listOf("1.21", "1.21.1")
+            "1.21.3" -> listOf("1.21.3", "1.21.2")
+            "1.21.2" -> listOf("1.21.2", "1.21.3")
+            "1.20.1" -> listOf("1.20.1", "1.20")
+            "1.20" -> listOf("1.20", "1.20.1")
+            "1.20.4" -> listOf("1.20.4", "1.20.3")
+            "1.20.3" -> listOf("1.20.3", "1.20.4")
+            "1.20.6" -> listOf("1.20.6", "1.20.5")
+            "1.20.5" -> listOf("1.20.5", "1.20.6")
+            "1.19.2" -> listOf("1.19.2", "1.19.1")
+            "1.16.5" -> listOf("1.16.5", "1.16.4")
+            else -> listOf(clean)
+        }
+    }
+
+    /**
      * Phân giải trực tiếp 1 slug trên Modrinth sang `(downloadUrl, targetFileName)` cho bộ 56 mod đã bao gồm sẵn toàn bộ thư viện nền.
      */
     fun resolveSingleModrinthSlug(
@@ -2183,7 +2212,7 @@ class PluginManager(
             else -> "[\"$loader\"]"
         }
         val encodedLoaders = java.net.URLEncoder.encode(loaderList, "UTF-8")
-        for (verCandidate in candidateMcVersions(mcVersion)) {
+        for (verCandidate in strictCompatibleModMcVersions(mcVersion, loader)) {
             val encodedVer = java.net.URLEncoder.encode("[\"$verCandidate\"]", "UTF-8")
             val body = runCatching {
                 fetchModrinthText("https://api.modrinth.com/v2/project/$slugOrId/version?game_versions=$encodedVer&loaders=$encodedLoaders")
@@ -2219,7 +2248,7 @@ class PluginManager(
         val results = mutableListOf<Pair<String, String>>()
 
         fun fetchBestVersion(projectOrSlug: String): ModrinthVersion? {
-            for (verCandidate in candidateMcVersions(mcVersion)) {
+            for (verCandidate in strictCompatibleModMcVersions(mcVersion, loader)) {
                 val encodedVer = java.net.URLEncoder.encode("[\"$verCandidate\"]", "UTF-8")
                 val body = runCatching {
                     fetchModrinthText("https://api.modrinth.com/v2/project/$projectOrSlug/version?game_versions=$encodedVer&loaders=$encodedLoaders")
@@ -2325,11 +2354,16 @@ class PluginManager(
 
         val directHits = queryForVersion(mcVersion.trim())
         if (directHits.isNotEmpty() || mcVersion.isBlank()) return directHits
-        for (fallbackVer in candidateMcVersions(mcVersion).drop(1).take(3)) {
+        val fallbackList = if (projectType == "mod") {
+            strictCompatibleModMcVersions(mcVersion, loaders.firstOrNull() ?: "fabric").drop(1)
+        } else {
+            candidateMcVersions(mcVersion).drop(1).take(3)
+        }
+        for (fallbackVer in fallbackList) {
             val fallbackHits = queryForVersion(fallbackVer)
             if (fallbackHits.isNotEmpty()) return fallbackHits
         }
-        return queryForVersion("")
+        return if (projectType == "mod") emptyList() else queryForVersion("")
     }
 
     /** 拉取 Modrinth 支持的 MC 游戏版本列表（过滤 rc/pre/snapshot，取最新 N 个） */

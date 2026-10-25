@@ -74,6 +74,27 @@ object AddonSafety {
         }
     }
 
+    fun extractFabricModId(file: File): String? = runCatching {
+        JarFile(file).use { jar ->
+            val fabric = jar.getJarEntry("fabric.mod.json") ?: return@use null
+            val text = jar.getInputStream(fabric).bufferedReader(Charsets.UTF_8).use { it.readText() }
+            val meta = Json.parseToJsonElement(text).jsonObject
+            meta["id"]?.jsonPrimitive?.content?.trim()?.lowercase()
+        }
+    }.getOrNull()
+
+    fun removeDuplicateModIdJars(modsDir: File, newModId: String?, keepFileName: String) {
+        if (newModId.isNullOrBlank() || !modsDir.isDirectory) return
+        modsDir.listFiles()?.forEach { f ->
+            if (!f.isFile || f.name == keepFileName) return@forEach
+            if (!f.name.endsWith(".jar", ignoreCase = true)) return@forEach
+            val existingId = extractFabricModId(f)
+            if (existingId != null && existingId == newModId) {
+                runCatching { f.delete() }
+            }
+        }
+    }
+
     /** Download/import into a sibling temp file, then replace only after validation. */
     suspend fun install(
         target: File, mod: Boolean, loader: String? = null,
@@ -87,6 +108,10 @@ object AddonSafety {
             fill(staged)
             validate(staged, mod, loader)
             check(!isRunning()) { "Server đã được bật trong lúc tải. Đã hủy ghi đè tệp để bảo vệ runtime." }
+            if (mod) {
+                val modId = extractFabricModId(staged)
+                removeDuplicateModIdJars(target.parentFile!!, modId, target.name)
+            }
             Files.move(staged.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
             target
         } finally { staged.delete() }

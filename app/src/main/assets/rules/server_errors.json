@@ -108,19 +108,22 @@
     },
     {
       "id": "mod-mismatch",
-      "level": "Possible",
+      "level": "Identified",
       "contains": [
         "mixin apply failed",
-        "mixin",
         "mod loading has failed",
         "loading errors encountered",
         "failed to load mod",
-        "fabricloader"
+        "Some of your mods are incompatible",
+        "Incompatible mod set",
+        "Mod resolution failed",
+        "Missing or unsupported mandatory dependencies",
+        "DuplicateModFoundException"
       ],
-      "label": "Lỗi nạp Mod hoặc xung đột Mixin",
-      "detail": "Quá trình nạp Mod hoặc tiêm mã Mixin thất bại (có thể do cài nhầm Mod chỉ dành cho Client lên Server hoặc thiếu thư viện phụ trợ).",
-      "evidence": "Phát hiện lỗi nạp Mod / Mixin apply failed",
-      "suggest": "Hãy kiểm tra phiên bản Minecraft, Loader (Fabric/Forge/NeoForge) và bấm nút「Hoàn tác / Tạm tắt Mod vừa cài gây lỗi」trên Trang chủ."
+      "label": "Xung đột Mod, lệch phiên bản MC hoặc thiếu thư viện Mod",
+      "detail": "Một hoặc nhiều Mod trong thư mục mods/ đang bị thiếu thư viện phụ trợ (như Fabric API), cài lệch phiên bản Minecraft của Server, hoặc là Mod chỉ dành cho máy chơi (Client-only).",
+      "evidence": "Phát hiện lỗi xung đột phiên bản Mod / thiếu thư viện phụ trợ",
+      "suggest": "Hãy bấm nút「🛠️ Tự Động Sửa Lỗi Mod & Bật Lại Server」ngay bên dưới để MineHost tự tải bù thư viện thiếu và tự tạm tắt các Mod lệch phiên bản!"
     },
     {
       "id": "plugin-mismatch",
@@ -246,14 +249,14 @@
       "id": "fontconfig-missing",
       "level": "Possible",
       "contains": [
-        "fontconfig",
-        "fc-cache",
         "fontconfig error",
-        "Fontconfig head is null"
+        "Fontconfig head is null",
+        "Cannot load default config file",
+        "fc-cache: failed"
       ],
       "label": "Thiếu thư viện phông chữ (fontconfig)",
       "detail": "Gói khởi tạo phông chữ mà Forge/NeoForge yêu cầu chưa được nạp đầy đủ.",
-      "evidence": "Phát hiện lỗi fontconfig / fc-cache",
+      "evidence": "Phát hiện lỗi Fontconfig error / Fontconfig head is null",
       "suggest": "Hãy vào「Cài đặt → Chẩn đoán & Tự sửa lỗi」để tự động bổ sung thư viện phông chữ và tạo lại bộ đệm fc-cache."
     },
     {

@@ -506,22 +506,26 @@ object ProHostFeatures {
                 }
             }
 
-            fun queryModrinthVersion(projectSlugOrId: String, filterVersion: Boolean): Pair<String, String>? {
+            fun queryModrinthVersion(projectSlugOrId: String): Pair<String, String>? {
+                val aliases = compatiblePatchAliases(mcVersion).filter { it.isNotBlank() }
+                val gameVersJson = if (aliases.isNotEmpty()) {
+                    aliases.joinToString(",", prefix = "[", postfix = "]") { "\"$it\"" }
+                } else ""
                 val urlStr = buildString {
                     append("https://api.modrinth.com/v2/project/")
                     append(java.net.URLEncoder.encode(projectSlugOrId, "UTF-8"))
                     append("/version?loaders=")
                     append(java.net.URLEncoder.encode("""["$normalizedLoader"]""", "UTF-8"))
-                    if (filterVersion && mcVersion.isNotBlank()) {
+                    if (gameVersJson.isNotBlank()) {
                         append("&game_versions=")
-                        append(java.net.URLEncoder.encode("""["$mcVersion"]""", "UTF-8"))
+                        append(java.net.URLEncoder.encode(gameVersJson, "UTF-8"))
                     }
                 }
                 val conn = (URL(urlStr).openConnection() as HttpURLConnection).apply {
                     requestMethod = "GET"
                     connectTimeout = 10000
                     readTimeout = 10000
-                    setRequestProperty("User-Agent", "MineHost/2.8.2 (Android)")
+                    setRequestProperty("User-Agent", "MineHost/2.8.5 (Android)")
                 }
                 return try {
                     if (conn.responseCode !in 200..299) return null
@@ -543,8 +547,9 @@ object ProHostFeatures {
             }
 
             // Thử tìm theo slug khớp đúng phiên bản MC trước, nếu không có thì tìm theo search API
-            var resolved = queryModrinthVersion(dep.modrinthSlug, filterVersion = true)
-                ?: queryModrinthVersion(dep.modId, filterVersion = true)
+            var resolved = queryModrinthVersion(dep.modrinthSlug)
+                ?: queryModrinthVersion(dep.modId)
+                ?: queryModrinthVersion(dep.modId.replace("_", "-"))
 
             if (resolved == null) {
                 val searchUrl = "https://api.modrinth.com/v2/search?query=" +
@@ -553,7 +558,7 @@ object ProHostFeatures {
                     requestMethod = "GET"
                     connectTimeout = 8000
                     readTimeout = 8000
-                    setRequestProperty("User-Agent", "MineHost/2.8.2 (Android)")
+                    setRequestProperty("User-Agent", "MineHost/2.8.5 (Android)")
                 }
                 val firstProjectId = try {
                     if (sConn.responseCode in 200..299) {
@@ -567,8 +572,7 @@ object ProHostFeatures {
                     sConn.disconnect()
                 }
                 if (!firstProjectId.isNullOrBlank()) {
-                    resolved = queryModrinthVersion(firstProjectId, filterVersion = true)
-                        ?: queryModrinthVersion(firstProjectId, filterVersion = false)
+                    resolved = queryModrinthVersion(firstProjectId)
                 }
             }
 
@@ -1019,5 +1023,555 @@ object ProHostFeatures {
 
         @Synchronized
         fun blockedCount(): Int = bannedIps.size
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // [v2.8.5] BÁC SĨ CỨU HỘ & TỰ ĐỘNG SỬA LỖI MOD 1 CHẠM (SMART MOD DOCTOR)
+    // Tự động đọc Crash Log + mổ xẻ fabric.mod.json / mods.toml trong từng .jar:
+    //  1. Tắt Mod Client-only / Mod hỏng / Mod sai Loader (Forge nhét vào Fabric...)
+    //  2. Thay thế hoặc tạm tắt Mod lệch phiên bản Minecraft (FormattedException)
+    //  3. Dọn Mod bị trùng lặp 2 file cùng ID (DuplicateModFoundException)
+    //  4. Tự động tải bù toàn bộ thư viện phụ trợ còn thiếu (Fabric API, Cloth Config, Bookshelf...)
+    //  5. Tự động tắt dây chuyền các Mod phụ thuộc vào thư viện chưa hỗ trợ bản MC hiện tại
+    // ══════════════════════════════════════════════════════════════════════
+
+    data class ModDoctorReport(
+        val downloadedDeps: List<String>,
+        val upgradedMods: List<String>,
+        val disabledMods: List<String>,
+        val deduplicatedMods: List<String>,
+        val remainingActiveCount: Int
+    ) {
+        val totalFixedCount: Int
+            get() = downloadedDeps.size + upgradedMods.size + disabledMods.size + deduplicatedMods.size
+
+        fun toVietnameseSummary(mcVersion: String, loader: String): String = buildString {
+            appendLine("🛠️ Kết quả Tự Động Sửa Lỗi Mod ($loader $mcVersion):")
+            if (downloadedDeps.isNotEmpty()) {
+                appendLine("• 📥 Đã tự tải bù ${downloadedDeps.size} thư viện thiếu: ${downloadedDeps.joinToString(", ")}")
+            }
+            if (upgradedMods.isNotEmpty()) {
+                appendLine("• 🔄 Đã đổi sang bản khớp MC $mcVersion cho ${upgradedMods.size} Mod: ${upgradedMods.joinToString(", ")}")
+            }
+            if (disabledMods.isNotEmpty()) {
+                appendLine("• ⏸️ Đã tạm tắt (.disabled) ${disabledMods.size} Mod xung đột / lệch bản MC: ${disabledMods.joinToString(", ")}")
+            }
+            if (deduplicatedMods.isNotEmpty()) {
+                appendLine("• 🧹 Đã dọn ${deduplicatedMods.size} tệp Mod trùng lặp: ${deduplicatedMods.joinToString(", ")}")
+            }
+            if (totalFixedCount == 0) {
+                appendLine("• ✅ Toàn bộ $remainingActiveCount Mod đang bật trong mods/ đều hợp lệ và khớp phiên bản MC $mcVersion!")
+            } else {
+                appendLine("• 🚀 Hiện có $remainingActiveCount Mod tương thích hoàn toàn đang bật — sẵn sàng chạy Server!")
+            }
+        }.trim()
+    }
+
+    private data class InspectedModJar(
+        val file: File,
+        val modId: String,
+        val displayName: String,
+        val isCorrupt: Boolean,
+        val isClientOnly: Boolean,
+        val isWrongLoader: Boolean,
+        val isMcCompatible: Boolean,
+        val providedIds: Set<String>,
+        val requiredDeps: Set<String>
+    )
+
+    private fun parseMcTuple(ver: String): Triple<Int, Int, Int>? {
+        val clean = ver.trim().removePrefix("=").substringBefore("-").substringBefore("+").trim()
+        val parts = clean.split(".")
+        if (parts.size < 2) return null
+        val major = parts[0].toIntOrNull() ?: return null
+        val minor = parts[1].toIntOrNull() ?: return null
+        val patch = parts.getOrNull(2)?.toIntOrNull() ?: 0
+        return Triple(major, minor, patch)
+    }
+
+    private fun compareMcTuples(a: Triple<Int, Int, Int>, b: Triple<Int, Int, Int>): Int {
+        if (a.first != b.first) return a.first.compareTo(b.first)
+        if (a.second != b.second) return a.second.compareTo(b.second)
+        return a.third.compareTo(b.third)
+    }
+
+    private fun compatiblePatchAliases(mcVersion: String): Set<String> = when (mcVersion.trim()) {
+        "1.21.1", "1.21" -> setOf("1.21.1", "1.21", "1.21.0")
+        "1.21.3", "1.21.2" -> setOf("1.21.3", "1.21.2")
+        "1.20.1", "1.20" -> setOf("1.20.1", "1.20", "1.20.0")
+        "1.20.4", "1.20.3" -> setOf("1.20.4", "1.20.3")
+        "1.20.6", "1.20.5" -> setOf("1.20.6", "1.20.5")
+        "1.19.2", "1.19.1" -> setOf("1.19.2", "1.19.1")
+        "1.16.5", "1.16.4" -> setOf("1.16.5", "1.16.4")
+        else -> setOf(mcVersion.trim())
+    }
+
+    private fun isSingleMcConstraintSatisfied(rawExpr: String, serverMcVersion: String): Boolean {
+        val expr = rawExpr.trim()
+        if (expr.isBlank() || expr == "*" || expr.equals("any", ignoreCase = true)) return true
+        if (expr.contains("||")) {
+            return expr.split("||").any { isSingleMcConstraintSatisfied(it, serverMcVersion) }
+        }
+        val srvTuple = parseMcTuple(serverMcVersion) ?: return true
+
+        // Wildcard 1.21.x / 1.21.*
+        Regex("""^(\d+)\.(\d+)\.[xX*]$""").find(expr)?.let { m ->
+            val maj = m.groupValues[1].toIntOrNull() ?: return true
+            val min = m.groupValues[2].toIntOrNull() ?: return true
+            return srvTuple.first == maj && srvTuple.second == min
+        }
+
+        // Exact version "1.21.1" or "=1.21.1"
+        Regex("""^=?(\d+\.\d+(?:\.\d+)?)$""").find(expr)?.let { m ->
+            val ver = m.groupValues[1]
+            return ver in compatiblePatchAliases(serverMcVersion)
+        }
+
+        // Space-separated range tokens like ">=1.21 <=1.21.1" or ">=1.21.0 <1.21.2-" or "~1.21.1"
+        val tokens = expr.split(Regex("""\s+""")).filter { it.isNotBlank() }
+        for (tok in tokens) {
+            when {
+                tok.startsWith(">=") -> {
+                    val t = parseMcTuple(tok.removePrefix(">=")) ?: continue
+                    if (compareMcTuples(srvTuple, t) < 0) return false
+                }
+                tok.startsWith("<=") -> {
+                    val t = parseMcTuple(tok.removePrefix("<=")) ?: continue
+                    if (compareMcTuples(srvTuple, t) > 0) return false
+                }
+                tok.startsWith(">") -> {
+                    val t = parseMcTuple(tok.removePrefix(">")) ?: continue
+                    if (compareMcTuples(srvTuple, t) <= 0) return false
+                }
+                tok.startsWith("<") -> {
+                    val rawBound = tok.removePrefix("<").trim()
+                    val t = parseMcTuple(rawBound) ?: continue
+                    if (compareMcTuples(srvTuple, t) >= 0) return false
+                }
+                tok.startsWith("~") -> {
+                    val rawVer = tok.removePrefix("~").trim()
+                    val t = parseMcTuple(rawVer) ?: continue
+                    if (srvTuple.first != t.first || srvTuple.second != t.second || compareMcTuples(srvTuple, t) < 0) {
+                        return false
+                    }
+                }
+                tok.startsWith("^") -> {
+                    val rawVer = tok.removePrefix("^").trim()
+                    val t = parseMcTuple(rawVer) ?: continue
+                    if (srvTuple.first != t.first || compareMcTuples(srvTuple, t) < 0) {
+                        return false
+                    }
+                }
+                tok.matches(Regex("""^=?(\d+\.\d+(?:\.\d+)?)$""")) -> {
+                    val cleanTok = tok.removePrefix("=")
+                    if (cleanTok !in compatiblePatchAliases(serverMcVersion)) return false
+                }
+            }
+        }
+        return true
+    }
+
+    private fun isMinecraftDepSatisfied(mcNode: Any?, serverMcVersion: String): Boolean {
+        if (mcNode == null || serverMcVersion.isBlank()) return true
+        return when (mcNode) {
+            is String -> isSingleMcConstraintSatisfied(mcNode, serverMcVersion)
+            is JSONArray -> {
+                if (mcNode.length() == 0) true
+                else (0 until mcNode.length()).any { idx ->
+                    isSingleMcConstraintSatisfied(mcNode.optString(idx, "*"), serverMcVersion)
+                }
+            }
+            else -> true
+        }
+    }
+
+    private fun inspectModJarFile(jarFile: File, serverMcVersion: String, normalizedLoader: String): InspectedModJar {
+        val clientByName = isLikelyClientOnlyModFilename(jarFile.name)
+        return try {
+            ZipFile(jarFile).use { zip ->
+                val fabricEntry = zip.getEntry("fabric.mod.json")
+                val quiltEntry = zip.getEntry("quilt.mod.json")
+                val forgeEntry = zip.getEntry("META-INF/mods.toml") ?: zip.getEntry("mcmod.info")
+                val neoEntry = zip.getEntry("META-INF/neoforge.mods.toml")
+
+                if (fabricEntry == null && quiltEntry == null && forgeEntry == null && neoEntry == null) {
+                    return InspectedModJar(
+                        file = jarFile,
+                        modId = jarFile.nameWithoutExtension.lowercase(),
+                        displayName = jarFile.name,
+                        isCorrupt = false,
+                        isClientOnly = clientByName,
+                        isWrongLoader = true,
+                        isMcCompatible = false,
+                        providedIds = emptySet(),
+                        requiredDeps = emptySet()
+                    )
+                }
+
+                val wrongLoader = when (normalizedLoader) {
+                    "fabric" -> fabricEntry == null
+                    "quilt" -> quiltEntry == null && fabricEntry == null
+                    "forge" -> forgeEntry == null && neoEntry == null
+                    "neoforge" -> neoEntry == null && forgeEntry == null
+                    else -> false
+                }
+
+                if (fabricEntry != null) {
+                    val jsonText = zip.getInputStream(fabricEntry).bufferedReader(Charsets.UTF_8).use { it.readText() }
+                    val obj = JSONObject(jsonText)
+                    val modId = obj.optString("id", jarFile.nameWithoutExtension).trim().lowercase()
+                    val name = obj.optString("name", modId).trim()
+                    val env = obj.optString("environment", "*").trim().lowercase()
+                    val isClient = clientByName || env == "client"
+
+                    val provided = linkedSetOf(modId)
+                    when (val provNode = obj.opt("provides")) {
+                        is JSONArray -> {
+                            for (i in 0 until provNode.length()) {
+                                val p = provNode.optString(i).trim().lowercase()
+                                if (p.isNotBlank()) provided += p
+                            }
+                        }
+                        is JSONObject -> {
+                            provNode.keys().forEach { k ->
+                                val p = k.trim().lowercase()
+                                if (p.isNotBlank()) provided += p
+                            }
+                        }
+                    }
+
+                    // Quét các thư viện con đóng gói sẵn bên trong META-INF/jars/*.jar (Jar-in-Jar)
+                    val entries = zip.entries()
+                    while (entries.hasMoreElements()) {
+                        val e = entries.nextElement()
+                        if (!e.isDirectory && e.name.startsWith("META-INF/jars/") && e.name.endsWith(".jar", ignoreCase = true)) {
+                            val subName = e.name.substringAfterLast("/").removeSuffix(".jar").lowercase()
+                            val guessedPrefix = subName.substringBefore("-1.").substringBefore("-0.").substringBefore("-2.")
+                                .substringBefore("-mc").substringBefore("-fabric")
+                            if (guessedPrefix.isNotBlank()) {
+                                provided += guessedPrefix
+                                provided += guessedPrefix.replace("-", "_")
+                            }
+                            runCatching {
+                                java.util.jar.JarInputStream(zip.getInputStream(e)).use { jis ->
+                                    var je = jis.nextJarEntry
+                                    while (je != null) {
+                                        if (je.name == "fabric.mod.json") {
+                                            val subJson = jis.bufferedReader(Charsets.UTF_8).readText()
+                                            val subObj = JSONObject(subJson)
+                                            val subId = subObj.optString("id").trim().lowercase()
+                                            if (subId.isNotBlank()) provided += subId
+                                            break
+                                        }
+                                        je = jis.nextJarEntry
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    val depsObj = obj.optJSONObject("depends")
+                    val mcOk = isMinecraftDepSatisfied(depsObj?.opt("minecraft"), serverMcVersion)
+                    val reqDeps = linkedSetOf<String>()
+                    if (depsObj != null) {
+                        val keys = depsObj.keys()
+                        while (keys.hasNext()) {
+                            val rawKey = keys.next().trim().lowercase()
+                            if (rawKey.isBlank() || rawKey in ignoredModIds) continue
+                            if (rawKey == "fabric" || rawKey == "fabric-api" ||
+                                (rawKey.startsWith("fabric-") && rawKey != "fabric-language-kotlin" && rawKey != "fabric-permissions-api-v0")
+                            ) {
+                                reqDeps += "fabric-api"
+                            } else {
+                                reqDeps += rawKey
+                            }
+                        }
+                    }
+
+                    return InspectedModJar(
+                        file = jarFile,
+                        modId = modId,
+                        displayName = name,
+                        isCorrupt = false,
+                        isClientOnly = isClient,
+                        isWrongLoader = wrongLoader,
+                        isMcCompatible = mcOk,
+                        providedIds = provided,
+                        requiredDeps = reqDeps
+                    )
+                }
+
+                // Forge / NeoForge / Quilt basic inspection
+                val fallbackId = jarFile.nameWithoutExtension
+                    .substringBefore("-1.")
+                    .substringBefore("-0.")
+                    .substringBefore("-fabric")
+                    .substringBefore("-forge")
+                    .substringBefore("-neoforge")
+                    .lowercase()
+                InspectedModJar(
+                    file = jarFile,
+                    modId = fallbackId,
+                    displayName = jarFile.name,
+                    isCorrupt = false,
+                    isClientOnly = clientByName,
+                    isWrongLoader = wrongLoader,
+                    isMcCompatible = true,
+                    providedIds = setOf(fallbackId, fallbackId.replace("-", "_")),
+                    requiredDeps = emptySet()
+                )
+            }
+        } catch (_: Exception) {
+            InspectedModJar(
+                file = jarFile,
+                modId = jarFile.nameWithoutExtension.lowercase(),
+                displayName = jarFile.name,
+                isCorrupt = true,
+                isClientOnly = false,
+                isWrongLoader = false,
+                isMcCompatible = false,
+                providedIds = emptySet(),
+                requiredDeps = emptySet()
+            )
+        }
+    }
+
+    private fun extractOffendingModIdsFromCrashLog(logText: String): Set<String> {
+        if (logText.isBlank()) return emptySet()
+        val offending = linkedSetOf<String>()
+
+        fun addId(id: String) {
+            val clean = id.trim().lowercase()
+            if (clean.length >= 2 && clean !in ignoredModIds && clean != "fabric-api" && clean != "fabric") {
+                offending += clean
+            }
+        }
+
+        // 1. "- Replace mod 'X' (modid) 1.0 with any version that is compatible with:"
+        Regex("""-\s*Replace\s+mod\s+'[^']+'\s*\(([^)]+)\)""", RegexOption.IGNORE_CASE)
+            .findAll(logText).forEach { addId(it.groupValues[1]) }
+
+        // 2. "- Remove mod 'X' (modid)"
+        Regex("""-\s*Remove\s+mod\s+'[^']+'\s*\(([^)]+)\)""", RegexOption.IGNORE_CASE)
+            .findAll(logText).forEach { addId(it.groupValues[1]) }
+
+        // 3. "- Mod 'X' (modid) 1.0 requires version Y of 'Minecraft' (minecraft), but only the wrong version is present"
+        Regex("""-\s*Mod\s+'[^']+'\s*\(([^)]+)\)\s*[^\n]*?requires\s+version\s+[^\s]+\s+of\s+(?:'Minecraft'\s*\(minecraft\)|minecraft)\s*,\s*but\s+only\s+the\s+wrong\s+version""", RegexOption.IGNORE_CASE)
+            .findAll(logText).forEach { addId(it.groupValues[1]) }
+
+        // 4. "Mixin apply for mod modid failed" / "from mod modid"
+        Regex("""Mixin\s+apply\s+for\s+mod\s+([A-Za-z0-9_.-]+)\s+failed""", RegexOption.IGNORE_CASE)
+            .findAll(logText).forEach { addId(it.groupValues[1]) }
+
+        return offending
+    }
+
+    private fun disableModJar(file: File): Boolean {
+        if (!file.exists()) return false
+        val disabledTarget = File(file.parentFile, "${file.name}.disabled")
+        if (disabledTarget.exists()) {
+            disabledTarget.delete()
+        }
+        return file.renameTo(disabledTarget) || file.delete()
+    }
+
+    suspend fun smartRepairModsFolder(
+        serverDir: File,
+        mcVersion: String,
+        loader: String,
+        crashAndRunLogText: String,
+        onProgress: (String) -> Unit = {}
+    ): ModDoctorReport = withContext(Dispatchers.IO) {
+        val modsDir = File(serverDir, "mods").apply { mkdirs() }
+        val normalizedLoader = loader.lowercase().let {
+            when {
+                it.contains("neoforge") -> "neoforge"
+                it.contains("forge") -> "forge"
+                it.contains("quilt") -> "quilt"
+                else -> "fabric"
+            }
+        }
+
+        val downloadedDeps = mutableListOf<String>()
+        val upgradedMods = mutableListOf<String>()
+        val disabledMods = mutableListOf<String>()
+        val deduplicatedMods = mutableListOf<String>()
+
+        onProgress("🔍 Bước 1/4: Đang quét cấu trúc từng tệp .jar trong thư mục mods/...")
+        val offendingFromLog = extractOffendingModIdsFromCrashLog(crashAndRunLogText)
+
+        val initialJars = modsDir.listFiles { f -> f.isFile && f.name.endsWith(".jar", ignoreCase = true) }
+            ?.sortedByDescending { it.lastModified() }
+            .orEmpty()
+
+        val validInspected = mutableListOf<InspectedModJar>()
+
+        // Bước 1: Loại bỏ ngay file hỏng, Mod Client-only, Mod sai Loader
+        for (jar in initialJars) {
+            val info = inspectModJarFile(jar, mcVersion, normalizedLoader)
+            if (info.isCorrupt || info.isClientOnly || info.isWrongLoader) {
+                if (disableModJar(jar)) {
+                    disabledMods += jar.name
+                }
+            } else {
+                validInspected += info
+            }
+        }
+
+        // Bước 2: Khử trùng lặp (2 file .jar có cùng modId)
+        val groupedById = validInspected.groupBy { it.modId }
+        val uniqueInspected = mutableListOf<InspectedModJar>()
+        for ((_, list) in groupedById) {
+            if (list.size == 1) {
+                uniqueInspected += list.first()
+            } else {
+                // Ưu tiên giữ lại bản tương thích với mcVersion và mới nhất
+                val best = list.firstOrNull { it.isMcCompatible } ?: list.first()
+                uniqueInspected += best
+                list.filter { it.file != best.file }.forEach { dup ->
+                    if (disableModJar(dup.file)) {
+                        deduplicatedMods += dup.file.name
+                    }
+                }
+            }
+        }
+
+        // Bước 3: Xử lý các Mod bị lệch phiên bản MC hoặc bị điểm mặt trong Crash Log
+        onProgress("🔄 Bước 2/4: Đang kiểm tra & sửa các Mod lệch phiên bản Minecraft ($mcVersion)...")
+        val afterUpgradeInspected = mutableListOf<InspectedModJar>()
+        for (info in uniqueInspected) {
+            val isOffending = !info.isMcCompatible || info.modId in offendingFromLog
+            if (!isOffending) {
+                afterUpgradeInspected += info
+                continue
+            }
+
+            // Thử tìm bản tương thích chuẩn cho mcVersion trên Modrinth trước khi tắt
+            onProgress("🔄 Đang tìm bản '${info.displayName}' chuẩn cho MC $mcVersion...")
+            val depCandidate = MissingModDependency(
+                modId = info.modId,
+                modrinthSlug = knownDependencyCatalog[info.modId]?.first ?: info.modId.replace("_", "-"),
+                displayName = info.displayName
+            )
+            val replacedFile = downloadAndInstallModDependency(
+                dep = depCandidate,
+                mcVersion = mcVersion,
+                loader = normalizedLoader,
+                targetModsDir = modsDir
+            ).getOrNull()?.let { File(modsDir, it) }
+
+            val newInfo = replacedFile?.takeIf { it.isFile }?.let { inspectModJarFile(it, mcVersion, normalizedLoader) }
+            if (newInfo != null && newInfo.isMcCompatible && !newInfo.isClientOnly && newInfo.file.name != info.file.name) {
+                disableModJar(info.file)
+                upgradedMods += newInfo.file.name
+                afterUpgradeInspected += newInfo
+            } else {
+                // Nếu tải về vẫn là file không tương thích hoặc không có bản cho MC này -> Tạm tắt
+                if (replacedFile != null && replacedFile.name != info.file.name) {
+                    replacedFile.delete()
+                }
+                if (disableModJar(info.file)) {
+                    disabledMods += info.file.name
+                }
+            }
+        }
+
+        // Bước 4: Tự động tải bù toàn bộ thư viện phụ trợ còn thiếu (tối đa 2 vòng để lấy cả thư viện bắc cầu)
+        onProgress("📥 Bước 3/4: Đang kiểm tra & tải bù các thư viện Mod phụ trợ còn thiếu...")
+        val attemptedDeps = mutableSetOf<String>()
+        for (round in 1..2) {
+            val currentJars = modsDir.listFiles { f -> f.isFile && f.name.endsWith(".jar", ignoreCase = true) }
+                .orEmpty()
+                .map { inspectModJarFile(it, mcVersion, normalizedLoader) }
+
+            val allProvided = currentJars.flatMapTo(mutableSetOf()) { it.providedIds }
+            if ("fabric-api" in allProvided || "fabric" in allProvided) {
+                allProvided += "fabric-api"
+                allProvided += "fabric"
+            }
+
+            val missingDepsFromJars = currentJars.flatMap { it.requiredDeps }
+                .filter { dep -> dep !in allProvided && !isSatisfiedByFabricApi(dep, allProvided) }
+                .toSet()
+
+            val missingFromCrash = if (round == 1) {
+                detectMissingModDependencies(crashAndRunLogText)
+                    .map { it.modId.lowercase() }
+                    .filter { dep -> dep !in allProvided && !isSatisfiedByFabricApi(dep, allProvided) }
+                    .toSet()
+            } else emptySet()
+
+            val toDownload = (missingDepsFromJars + missingFromCrash).filter { attemptedDeps.add(it) }
+            if (toDownload.isEmpty()) break
+
+            for (depId in toDownload) {
+                val catalog = knownDependencyCatalog[depId]
+                val depObj = MissingModDependency(
+                    modId = depId,
+                    modrinthSlug = catalog?.first ?: depId.replace("_", "-"),
+                    displayName = catalog?.second ?: depId
+                )
+                onProgress("⬇️ Đang tải tự động thư viện '${depObj.displayName}' cho MC $mcVersion...")
+                val dlRes = downloadAndInstallModDependency(
+                    dep = depObj,
+                    mcVersion = mcVersion,
+                    loader = normalizedLoader,
+                    targetModsDir = modsDir
+                )
+                dlRes.onSuccess { fileName ->
+                    val dlFile = File(modsDir, fileName)
+                    val dlInfo = inspectModJarFile(dlFile, mcVersion, normalizedLoader)
+                    if (dlInfo.isMcCompatible && !dlInfo.isCorrupt && !dlInfo.isClientOnly) {
+                        downloadedDeps += fileName
+                    } else {
+                        dlFile.delete()
+                    }
+                }
+            }
+        }
+
+        // Bước 5: Tắt dây chuyền các Mod mà thư viện bắt buộc của nó vẫn chưa hỗ trợ bản MC hiện tại
+        onProgress("🧹 Bước 4/4: Đang kiểm tra tính toàn vẹn phụ thuộc lần cuối...")
+        while (true) {
+            val activeJars = modsDir.listFiles { f -> f.isFile && f.name.endsWith(".jar", ignoreCase = true) }
+                .orEmpty()
+                .map { inspectModJarFile(it, mcVersion, normalizedLoader) }
+
+            val allProvided = activeJars.flatMapTo(mutableSetOf()) { it.providedIds }
+            if ("fabric-api" in allProvided || "fabric" in allProvided) {
+                allProvided += "fabric-api"
+                allProvided += "fabric"
+            }
+
+            var disabledAnyInPass = false
+            for (jarInfo in activeJars) {
+                val unsatisfied = jarInfo.requiredDeps.filter { dep ->
+                    dep !in allProvided && !isSatisfiedByFabricApi(dep, allProvided) && dep.replace("-", "_") !in allProvided && dep.replace("_", "-") !in allProvided
+                }
+                if (unsatisfied.isNotEmpty()) {
+                    if (disableModJar(jarInfo.file)) {
+                        disabledMods += jarInfo.file.name
+                        disabledAnyInPass = true
+                    }
+                }
+            }
+            if (!disabledAnyInPass) break
+        }
+
+        val finalCount = modsDir.listFiles { f -> f.isFile && f.name.endsWith(".jar", ignoreCase = true) }?.size ?: 0
+        ModDoctorReport(
+            downloadedDeps = downloadedDeps.distinct(),
+            upgradedMods = upgradedMods.distinct(),
+            disabledMods = disabledMods.distinct(),
+            deduplicatedMods = deduplicatedMods.distinct(),
+            remainingActiveCount = finalCount
+        )
+    }
+
+    private fun isSatisfiedByFabricApi(depId: String, allProvided: Set<String>): Boolean {
+        val hasFabricApi = "fabric-api" in allProvided || "fabric" in allProvided
+        if (!hasFabricApi) return false
+        return depId == "fabric" || depId == "fabric-api" || depId == "fabric_api" ||
+            (depId.startsWith("fabric-") && depId != "fabric-language-kotlin" && depId != "fabric-permissions-api-v0")
     }
 }

@@ -1582,6 +1582,64 @@ private fun ModsTab(
                 modifier = Modifier.padding(vertical = 8.dp)
             )
         } else {
+            val modDoctorBusy by vm.modDoctorBusy.collectAsStateWithLifecycle()
+            val modDoctorProgress by vm.modDoctorProgress.collectAsStateWithLifecycle()
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0xFF064E3B).copy(alpha = 0.25f))
+                    .border(1.dp, Color(0xFF10B981), RoundedCornerShape(12.dp))
+                    .padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    "🛠️ Bác Sĩ Tự Động Sửa Lỗi Mod (Chống Văng Server FormattedException)",
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 12.sp,
+                    color = Color(0xFF34D399)
+                )
+                Text(
+                    "Tự động mổ xẻ toàn bộ ${mods.size} tệp .jar: tải bù thư viện thiếu (Fabric API...), thay thế hoặc tạm tắt các Mod bị lệch phiên bản Minecraft ($currentServerVersion) chỉ với 1 chạm:",
+                    fontSize = 11.sp,
+                    lineHeight = 14.5.sp
+                )
+                if (modDoctorBusy && !modDoctorProgress.isNullOrBlank()) {
+                    Text(
+                        modDoctorProgress.orEmpty(),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFFBBF24)
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = { vm.autoFixModCrashAndRestart(autoRestart = true) },
+                        enabled = !serverRunning && !modDoctorBusy,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF059669), contentColor = Color.White),
+                        shape = RoundedCornerShape(9.dp),
+                        modifier = Modifier.weight(1.3f)
+                    ) {
+                        Text(
+                            if (modDoctorBusy) "⏳ Đang sửa..." else "🚀 Tự Sửa Mod & Bật Server",
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 11.5.sp
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = { vm.autoFixModCrashAndRestart(autoRestart = false) },
+                        enabled = !serverRunning && !modDoctorBusy,
+                        shape = RoundedCornerShape(9.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("🔧 Chỉ Quét & Sửa", fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
             // ── Thanh thao tác hàng loạt thông minh: Tắt toàn bộ Mod / Bật toàn bộ Mod / Chỉ bật Mod Tối ưu & Lõi ──
             val pureOptPrefixes = remember {
                 listOf(

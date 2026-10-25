@@ -24,7 +24,8 @@ object CrashReportAnalyzer {
         val causedBy: List<String>,
         val exitCode: Int?,
         val components: List<String>,
-        val findings: List<Finding>
+        val findings: List<Finding>,
+        val modConflictDetails: List<String> = emptyList()
     ) { val primaryLabel: String get() = findings.firstOrNull()?.label ?: "Chưa xác định rõ nguyên nhân" }
 
     private val exception = Regex("""(?:[A-Za-z0-9_.]+)?(?:Exception|Error|Throwable)(?::[^\n]*)?""")
@@ -207,12 +208,92 @@ object CrashReportAnalyzer {
         return null
     }
 
+    private val fabricInstallRegex = Regex("""-\s*Install\s+(?:mod\s+'([^']+)'\s*\(([^)]+)\)|([A-Za-z0-9_.-]+))\s*,\s*([^\n.]+)""", RegexOption.IGNORE_CASE)
+    private val fabricReplaceRegex = Regex("""-\s*Replace\s+mod\s+'([^']+)'\s*\(([^)]+)\)\s*([^\s]*)\s+with\s+any\s+version\s+that\s+is\s+compatible\s+with""", RegexOption.IGNORE_CASE)
+    private val fabricRemoveRegex = Regex("""-\s*Remove\s+mod\s+'([^']+)'\s*\(([^)]+)\)""", RegexOption.IGNORE_CASE)
+    private val fabricMissingDepRegex = Regex("""-\s*Mod\s+'([^']+)'\s*\(([^)]+)\)\s*[^\n]*?requires\s+[^\n]*?(?:mod\s+'([^']+)'\s*\(([^)]+)\)|of\s+([A-Za-z0-9_.-]+))\s*,\s*which\s+is\s+missing""", RegexOption.IGNORE_CASE)
+    private val fabricWrongMcRegex = Regex("""-\s*Mod\s+'([^']+)'\s*\(([^)]+)\)\s*[^\n]*?requires\s+version\s+([^\s]+)\s+of\s+(?:'Minecraft'\s*\(minecraft\)|minecraft)\s*,\s*but\s+only\s+the\s+wrong\s+version\s+is\s+present:\s*([^\s!]+)""", RegexOption.IGNORE_CASE)
+    private val fabricWrongDepVerRegex = Regex("""-\s*Mod\s+'([^']+)'\s*\(([^)]+)\)\s*[^\n]*?requires\s+version\s+([^\s]+)\s+of\s+(?:mod\s+'([^']+)'\s*\(([^)]+)\)|([A-Za-z0-9_.-]+))\s*,\s*but\s+only\s+the\s+wrong\s+version\s+is\s+present:\s*([^\s!]+)""", RegexOption.IGNORE_CASE)
+    private val forgeMissingDepRegex = Regex("""Mod ID:\s*'([^']+)'\s*,\s*Requested by:\s*'([^']+)'""", RegexOption.IGNORE_CASE)
+    private val duplicateModRegex = Regex("""(?:DuplicateModFoundException|Found duplicate mods)[:\s]+([^\n]+)""", RegexOption.IGNORE_CASE)
+
+    fun extractModConflictDetails(text: String): List<String> {
+        val details = linkedSetOf<String>()
+
+        fabricInstallRegex.findAll(text).forEach { m ->
+            val name = m.groupValues[1].ifBlank { m.groupValues[3] }
+            val id = m.groupValues[2].ifBlank { m.groupValues[3] }
+            val verSpec = m.groupValues[4].trim()
+                .replace("any version", "bất kỳ phiên bản nào", ignoreCase = true)
+                .replace("version", "phiên bản", ignoreCase = true)
+                .replace("or later", "trở lên", ignoreCase = true)
+            details += "➕ Cần cài thêm Mod/Thư viện: '$name' ($id — $verSpec)"
+        }
+
+        fabricMissingDepRegex.findAll(text).forEach { m ->
+            val modName = m.groupValues[1]
+            val modId = m.groupValues[2]
+            val depName = m.groupValues[3].ifBlank { m.groupValues[5] }
+            val depId = m.groupValues[4].ifBlank { m.groupValues[5] }
+            details += "🧩 Mod '$modName' ($modId) đang thiếu thư viện bắt buộc: '$depName' ($depId)"
+        }
+
+        fabricWrongMcRegex.findAll(text).forEach { m ->
+            val modName = m.groupValues[1]
+            val modId = m.groupValues[2]
+            val reqVer = m.groupValues[3]
+            val curVer = m.groupValues[4]
+            details += "⚠️ Lệch phiên bản MC: Mod '$modName' ($modId) yêu cầu Minecraft $reqVer, nhưng Server đang chạy Minecraft $curVer!"
+        }
+
+        fabricWrongDepVerRegex.findAll(text).forEach { m ->
+            val modName = m.groupValues[1]
+            val modId = m.groupValues[2]
+            val reqVer = m.groupValues[3]
+            val depName = m.groupValues[4].ifBlank { m.groupValues[6] }
+            val curVer = m.groupValues[7]
+            if (!depName.equals("minecraft", ignoreCase = true)) {
+                details += "⚠️ Lệch phiên bản thư viện: Mod '$modName' ($modId) cần '$depName' bản $reqVer (hiện đang có bản $curVer)"
+            }
+        }
+
+        fabricReplaceRegex.findAll(text).forEach { m ->
+            val modName = m.groupValues[1]
+            val modId = m.groupValues[2]
+            val ver = m.groupValues[3]
+            details += "🔄 Cần thay thế hoặc tạm tắt: Mod '$modName' ($modId $ver) không tương thích với Server hiện tại"
+        }
+
+        fabricRemoveRegex.findAll(text).forEach { m ->
+            val modName = m.groupValues[1]
+            val modId = m.groupValues[2]
+            details += "🗑️ Cần gỡ/tắt Mod xung đột: '$modName' ($modId)"
+        }
+
+        forgeMissingDepRegex.findAll(text).forEach { m ->
+            val depId = m.groupValues[1]
+            val reqBy = m.groupValues[2]
+            details += "🧩 Mod '$reqBy' yêu cầu cài thêm thư viện '$depId' (đang bị thiếu)"
+        }
+
+        duplicateModRegex.findAll(text).forEach { m ->
+            details += "⚠️ Trùng lặp 2 file cùng 1 Mod trong thư mục mods/: ${m.groupValues[1].trim()}"
+        }
+
+        return details.take(10).toList()
+    }
+
     fun analyze(text: String): Analysis {
         val sanitizedText = CrashReportManager.localizeLegacyChineseText(text)
-        val first = exception.find(sanitizedText)?.value?.trim()
+        val rawFirst = exception.find(sanitizedText)?.value?.trim()
+        val first = rawFirst?.replace(
+            "Some of your mods are incompatible with the game or each other!",
+            "Một số Mod không tương thích với phiên bản Minecraft hiện tại hoặc thiếu thư viện phụ trợ!"
+        )
         val causes = causedBy.findAll(sanitizedText).map { it.groupValues[1].trim() }.distinct().take(6).toList()
         val code = exitCode.find(sanitizedText)?.groupValues?.getOrNull(1)?.toIntOrNull()
         val components = component.findAll(sanitizedText).map { it.groupValues[1] }.distinct().take(12).toList()
+        val modConflictDetails = extractModConflictDetails(sanitizedText)
 
         val findings = mutableListOf<Finding>()
         for (rule in rules) {
@@ -221,11 +302,17 @@ object CrashReportAnalyzer {
                 hit != null ||
                 (code != null && code in rule.exitCodes)
             if (!matched) continue
+            val baseEvidence = render(rule.evidence, hit)
+            val enrichedEvidence = if (rule.id == "mod-mismatch" && modConflictDetails.isNotEmpty()) {
+                modConflictDetails.joinToString("\n")
+            } else {
+                baseEvidence
+            }
             findings += Finding(
                 level = rule.level,
                 label = render(rule.label, hit).ifBlank { rule.id },
                 detail = render(rule.detail, hit),
-                evidence = render(rule.evidence, hit),
+                evidence = enrichedEvidence,
                 suggestion = render(rule.suggest, hit)
             )
         }
@@ -238,7 +325,7 @@ object CrashReportAnalyzer {
                 suggestion = "Hãy chuyển sang tab「Báo cáo gốc」hoặc「Nhật ký đầy đủ」để xem ngoại lệ đầu tiên và chuỗi Caused by, hoặc kiểm tra phiên bản Java / Mod vừa cài."
             )
         }
-        return Analysis(first ?: "Không tìm thấy ngoại lệ đầu tiên", first, causes, code, components, findings)
+        return Analysis(first ?: "Không tìm thấy ngoại lệ đầu tiên", first, causes, code, components, findings, modConflictDetails)
     }
 
     private val placeholder = Regex("""\$(\d+|java)""")

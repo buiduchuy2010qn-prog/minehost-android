@@ -41,8 +41,17 @@ import com.mineserve.mobile.ui.theme.McIcon
 import com.mineserve.mobile.ui.theme.Muted
 
 @Composable
-fun CrashReportsScreen(vm: McViewModel, onBack: () -> Unit, onGoToJavaInstall: () -> Unit) {
+fun CrashReportsScreen(
+    vm: McViewModel,
+    onBack: () -> Unit,
+    onGoToJavaInstall: () -> Unit,
+    onGoToModManager: (() -> Unit)? = null,
+    onGoToDiagnostics: (() -> Unit)? = null
+) {
     val reports by vm.crashReports.collectAsState()
+    val modDoctorBusy by vm.modDoctorBusy.collectAsState()
+    val modDoctorProgress by vm.modDoctorProgress.collectAsState()
+    val lastModDoctorReport by vm.lastModDoctorReport.collectAsState()
     LaunchedEffect(Unit) { vm.loadCrashReports() }
     Column(Modifier.fillMaxSize()) {
         Row(
@@ -61,6 +70,90 @@ fun CrashReportsScreen(vm: McViewModel, onBack: () -> Unit, onGoToJavaInstall: (
                     Icon(Icons.Outlined.DeleteOutline, contentDescription = null, tint = Coral, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
                     Text("Xóa tất cả (${reports.size})", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = Coral)
+                }
+            }
+        }
+
+        // Thẻ Bác sĩ Tự động Sửa lỗi Mod & Điều hướng nhanh ngay đầu trang Báo cáo lỗi
+        Card(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF064E3B).copy(alpha = 0.28f)),
+            border = BorderStroke(1.2.dp, Color(0xFF10B981))
+        ) {
+            Column(
+                modifier = Modifier.padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    "🛠️ Tự Động Sửa Lỗi Mod & Cứu Server 1 Chạm",
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 13.5.sp,
+                    color = Color(0xFF34D399)
+                )
+                Text(
+                    "Nếu Server bị lỗi nạp Mod / xung đột phiên bản (FormattedException), bấm nút dưới để MineHost tự tải bù thư viện thiếu (Fabric API...) và tự tạm tắt các Mod lệch phiên bản Minecraft:",
+                    fontSize = 11.5.sp,
+                    lineHeight = 15.5.sp
+                )
+                if (modDoctorBusy && !modDoctorProgress.isNullOrBlank()) {
+                    Text(
+                        modDoctorProgress.orEmpty(),
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFFBBF24)
+                    )
+                }
+                lastModDoctorReport?.takeIf { it.isNotBlank() }?.let { rep ->
+                    Surface(
+                        color = Color(0xFF0F172A),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            rep,
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp,
+                            color = Color(0xFFA7F3D0),
+                            modifier = Modifier.padding(8.dp)
+                        )
+                    }
+                }
+                Button(
+                    onClick = { vm.autoFixModCrashAndRestart(autoRestart = true) },
+                    enabled = !modDoctorBusy,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF059669), contentColor = Color.White),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        if (modDoctorBusy) "⏳ Đang tự động sửa lỗi Mod..." else "🛠️ Tự Động Sửa Lỗi Mod & Bật Lại Server Ngay",
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 12.sp
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (onGoToModManager != null) {
+                        OutlinedButton(
+                            onClick = onGoToModManager,
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("🧩 Quản Lý Mod", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    if (onGoToDiagnostics != null) {
+                        OutlinedButton(
+                            onClick = onGoToDiagnostics,
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("🩺 Chẩn Đoán", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
             }
         }
@@ -173,13 +266,32 @@ fun CrashReportDialog(
     analysis: CrashReportAnalyzer.Analysis,
     runLog: String,
     onDismiss: () -> Unit,
-    onGoToJavaInstall: (() -> Unit)? = null
+    vm: McViewModel? = null,
+    onGoToJavaInstall: (() -> Unit)? = null,
+    onGoToModManager: (() -> Unit)? = null,
+    onGoToDiagnostics: (() -> Unit)? = null,
+    onGoToProperties: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     var mode by remember { mutableStateOf(CrashViewMode.Summary) }
     val localizedContent = remember(content) { CrashReportManager.localizeLegacyChineseText(content) }
     val localizedRunLog = remember(runLog) { CrashReportManager.localizeLegacyChineseText(runLog) }
     val javaIssue = analysis.findings.any { it.label.startsWith("Java") }
+    val modIssue = analysis.modConflictDetails.isNotEmpty() || analysis.findings.any {
+        it.label.contains("Mod", ignoreCase = true) ||
+            it.label.contains("Mixin", ignoreCase = true) ||
+            it.label.contains("Plugin", ignoreCase = true) ||
+            it.label.contains("thư viện", ignoreCase = true)
+    }
+    val portIssue = analysis.findings.any { it.label.contains("cổng", ignoreCase = true) }
+    val envIssue = analysis.findings.any {
+        it.label.contains("quyền", ignoreCase = true) ||
+            it.label.contains("fontconfig", ignoreCase = true) ||
+            it.label.contains(".so", ignoreCase = true)
+    }
+    val modDoctorBusy = vm?.modDoctorBusy?.collectAsState()?.value ?: false
+    val modDoctorProgress = vm?.modDoctorProgress?.collectAsState()?.value
+    val lastModDoctorReport = vm?.lastModDoctorReport?.collectAsState()?.value
     val summary = remember(analysis) {
         buildString {
             appendLine("【Tóm tắt nguyên nhân】 ${analysis.primaryLabel}")
@@ -189,6 +301,10 @@ fun CrashReportDialog(
             }
             if (analysis.title.isNotBlank()) {
                 appendLine("• Ngoại lệ chính: ${analysis.title}")
+            }
+            if (analysis.modConflictDetails.isNotEmpty()) {
+                appendLine("• Chi tiết Mod xung đột / thiếu thư viện:")
+                analysis.modConflictDetails.forEach { appendLine("  $it") }
             }
             analysis.causedBy.forEach { appendLine("  ↳ Caused by: $it") }
             appendLine()
@@ -282,6 +398,120 @@ fun CrashReportDialog(
                                         fontWeight = FontWeight.Bold,
                                         color = Color(0xFFFBBF24)
                                     )
+                                }
+                            }
+                        }
+
+                        // Hộp Công Cụ Tự Động Sửa Lỗi & Dẫn Đường 1 Chạm Ngay Trong Báo Cáo
+                        if (vm != null) {
+                            Surface(
+                                color = Color(0xFF064E3B).copy(alpha = 0.28f),
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.2.dp, Color(0xFF10B981)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalArrangement = Arrangement.spacedBy(7.dp)
+                                ) {
+                                    Text(
+                                        "🛠️ Tự Động Khắc Phục & Dẫn Đường Sửa Lỗi Ngay:",
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontSize = 12.5.sp,
+                                        color = Color(0xFF34D399)
+                                    )
+                                    if (modDoctorBusy && !modDoctorProgress.isNullOrBlank()) {
+                                        Text(
+                                            modDoctorProgress,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFFFBBF24)
+                                        )
+                                    }
+                                    lastModDoctorReport?.takeIf { it.isNotBlank() }?.let { rep ->
+                                        Surface(
+                                            color = Color(0xFF0F172A),
+                                            shape = RoundedCornerShape(8.dp),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Text(
+                                                rep,
+                                                fontSize = 10.5.sp,
+                                                lineHeight = 14.5.sp,
+                                                color = Color(0xFFA7F3D0),
+                                                modifier = Modifier.padding(8.dp)
+                                            )
+                                        }
+                                    }
+                                    Button(
+                                        onClick = { vm.autoFixModCrashAndRestart(autoRestart = true) },
+                                        enabled = !modDoctorBusy,
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = Color(0xFF059669),
+                                            contentColor = Color.White
+                                        ),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(
+                                            if (modDoctorBusy) "⏳ Đang tự sửa lỗi Mod..."
+                                            else "🛠️ Tự Động Sửa Lỗi Mod & Bật Lại Server (1 Chạm)",
+                                            fontWeight = FontWeight.ExtraBold,
+                                            fontSize = 11.5.sp
+                                        )
+                                    }
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        OutlinedButton(
+                                            onClick = { vm.autoFixModCrashAndRestart(autoRestart = false) },
+                                            enabled = !modDoctorBusy,
+                                            shape = RoundedCornerShape(9.dp),
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Text("🔧 Chỉ Sửa Mod", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                        if (onGoToModManager != null) {
+                                            OutlinedButton(
+                                                onClick = onGoToModManager,
+                                                shape = RoundedCornerShape(9.dp),
+                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                                                modifier = Modifier.weight(1f)
+                                            ) {
+                                                Text("🧩 Mở Quản Lý Mod", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+                                    }
+                                    if (javaIssue && onGoToJavaInstall != null) {
+                                        Button(
+                                            onClick = onGoToJavaInstall,
+                                            colors = ButtonDefaults.buttonColors(containerColor = Indigo, contentColor = Color.White),
+                                            shape = RoundedCornerShape(9.dp),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Text("☕ Dẫn Tới Cài Đặt Môi Trường Java Ngay", fontWeight = FontWeight.ExtraBold, fontSize = 11.5.sp)
+                                        }
+                                    }
+                                    if (envIssue && onGoToDiagnostics != null) {
+                                        OutlinedButton(
+                                            onClick = onGoToDiagnostics,
+                                            shape = RoundedCornerShape(9.dp),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Text("🩺 Dẫn Tới Chẩn Đoán & Tự Sửa Môi Trường", fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
+                                        }
+                                    }
+                                    if (portIssue && onGoToProperties != null) {
+                                        OutlinedButton(
+                                            onClick = onGoToProperties,
+                                            shape = RoundedCornerShape(9.dp),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Text("🔌 Dẫn Tới Đổi Cổng Server (server.properties)", fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
+                                        }
+                                    }
                                 }
                             }
                         }
