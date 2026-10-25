@@ -3481,7 +3481,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                         }
                     }
 
-                    // ── THẺ PRO 4: BÁO TRẠNG THÁI DISCORD & TELEGRAM TỰ ĐỘNG + ĐIỀU KHIỂN WEB TỪ XA (:8585) ──
+                    // ── THẺ PRO 4: TRỢ LÝ DISCORD & TELEGRAM PRO (GỬI KÈM ẢNH TRẠNG THÁI HD 1080×640 & ĐIỀU KHIỂN BOT 2 CHIỀU) ──
                     Surface(
                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
                         shape = RoundedCornerShape(12.dp),
@@ -3490,31 +3490,51 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                     ) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(
-                                "🔔 Báo Trạng Thái Lên Discord & Telegram + Điều Khiển Web (:8585)",
+                                "🤖 Trợ Lý Discord & Telegram Pro (Kèm Ảnh Trạng Thái HD & Điều Khiển 2 Chiều)",
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = Color(0xFF6366F1)
                             )
                             Text(
-                                "Tự động bắn Địa chỉ IP PC + PE lên kênh Discord hoặc nhóm Telegram khi bật Server (tốn 0 MB RAM) & điều khiển Server từ máy tính qua trình duyệt Web:",
+                                "Tự động vẽ và đính kèm Ảnh Bảng Trạng Thái HD (1080×640 gồm IP PC, IP/Cổng PE, thanh TPS, Người chơi, Nhiệt độ & Pin) bắn thẳng lên nhóm Discord / Telegram & hỗ trợ gõ lệnh điều khiển Server ngay trên Telegram (0 MB RAM):",
                                 style = MaterialTheme.typography.bodySmall,
                                 fontSize = 11.sp
                             )
 
                             var webhookInput by remember(discordWebhookUrl) { mutableStateOf(discordWebhookUrl) }
                             val discordJoinLeaveEnabled by vm.discordNotifyJoinLeave.collectAsState()
+                            val attachVisualCard by vm.attachVisualStatusImage.collectAsState()
+                            val tgTwoWayEnabled by vm.telegramTwoWayBotEnabled.collectAsState()
+                            val lastTgCmdLog by vm.lastTelegramBotCommandLog.collectAsState()
                             val savedTgToken by vm.telegramBotToken.collectAsState()
                             val savedTgChatId by vm.telegramChatId.collectAsState()
                             var tgTokenInput by remember(savedTgToken) { mutableStateOf(savedTgToken) }
                             var tgChatIdInput by remember(savedTgChatId) { mutableStateOf(savedTgChatId) }
 
-                            OutlinedTextField(
-                                value = webhookInput,
-                                onValueChange = { webhookInput = it },
-                                label = { Text("Dán link Discord Webhook URL (https://discord.com/api/webhooks/...)", fontSize = 11.sp) },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
-                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        "📸 Đính kèm Ảnh Bảng Trạng Thái Trực Quan HD (1080×640)",
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = Color(0xFF10B981)
+                                    )
+                                    Text(
+                                        "Tự vẽ ảnh chứa IP PC + PE, TPS, số người chơi & nhiệt độ máy khi gửi lên Discord / Telegram",
+                                        fontSize = 10.5.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Switch(
+                                    checked = attachVisualCard,
+                                    onCheckedChange = { vm.setAttachVisualStatusImage(it) }
+                                )
+                            }
+
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -3531,6 +3551,14 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     onCheckedChange = { vm.setDiscordNotifyJoinLeave(it) }
                                 )
                             }
+
+                            OutlinedTextField(
+                                value = webhookInput,
+                                onValueChange = { webhookInput = it },
+                                label = { Text("Dán link Discord Webhook URL (https://discord.com/api/webhooks/...)", fontSize = 11.sp) },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
                                 OutlinedButton(
                                     onClick = { vm.saveDiscordWebhookUrl(webhookInput) },
@@ -3546,15 +3574,15 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     },
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4F46E5), contentColor = Color.White),
                                     shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier.weight(1.3f)
+                                    modifier = Modifier.weight(1.35f)
                                 ) {
-                                    Text("📨 Bắn Thử IP Lên Discord", fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
+                                    Text("📸 Bắn Thử Kèm Ảnh Lên Discord", fontWeight = FontWeight.ExtraBold, fontSize = 10.5.sp)
                                 }
                             }
 
                             HorizontalDivider()
                             Text(
-                                "✈️ Bot Thông Báo Telegram Tự Động (Không cần Discord — Tốn 0 MB RAM):",
+                                "✈️ Trợ Lý Bot Telegram 2 Chiều (Gửi Ảnh HD + Nhận Lệnh Điều Khiển — 0 MB RAM):",
                                 fontWeight = FontWeight.ExtraBold,
                                 fontSize = 11.5.sp,
                                 color = Color(0xFF0284C7)
@@ -3594,6 +3622,37 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     Text("🔍 Tự lấy Chat ID", fontWeight = FontWeight.ExtraBold, fontSize = 10.5.sp)
                                 }
                             }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        "🕹️ Điều khiển & Tra cứu 2 chiều ngay trong nhóm Telegram",
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = Color(0xFF0284C7)
+                                    )
+                                    Text(
+                                        "Gõ /ip hoặc /status (nhận Ảnh Trạng Thái HD), /list (xem ai đang chơi), /clearlag, /day, /save, /say <nội dung>",
+                                        fontSize = 10.5.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Switch(
+                                    checked = tgTwoWayEnabled,
+                                    onCheckedChange = { vm.setTelegramTwoWayBotEnabled(it) }
+                                )
+                            }
+                            if (lastTgCmdLog.isNotBlank()) {
+                                Text(
+                                    lastTgCmdLog,
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color(0xFF10B981)
+                                )
+                            }
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
                                 OutlinedButton(
                                     onClick = { vm.saveTelegramConfig(tgTokenInput, tgChatIdInput) },
@@ -3606,9 +3665,9 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     onClick = { vm.sendTelegramTestMessage(tgTokenInput, tgChatIdInput) },
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7), contentColor = Color.White),
                                     shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier.weight(1.3f)
+                                    modifier = Modifier.weight(1.35f)
                                 ) {
-                                    Text("✈️ Bắn Thử IP Lên Telegram", fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
+                                    Text("✈️ Bắn Thử Kèm Ảnh Lên Tele", fontWeight = FontWeight.ExtraBold, fontSize = 10.5.sp)
                                 }
                             }
 

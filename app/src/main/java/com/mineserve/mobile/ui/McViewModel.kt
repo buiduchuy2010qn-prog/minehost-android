@@ -11274,6 +11274,15 @@ class McViewModel(
     private val _telegramChatId = MutableStateFlow(proPrefs.getString("telegram_chat_id", "").orEmpty())
     val telegramChatId: StateFlow<String> = _telegramChatId.asStateFlow()
 
+    private val _attachVisualStatusImage = MutableStateFlow(proPrefs.getBoolean("attach_visual_status_image", true))
+    val attachVisualStatusImage: StateFlow<Boolean> = _attachVisualStatusImage.asStateFlow()
+
+    private val _telegramTwoWayBotEnabled = MutableStateFlow(proPrefs.getBoolean("telegram_two_way_bot_enabled", true))
+    val telegramTwoWayBotEnabled: StateFlow<Boolean> = _telegramTwoWayBotEnabled.asStateFlow()
+
+    private val _lastTelegramBotCommandLog = MutableStateFlow(proPrefs.getString("last_telegram_cmd_log", "").orEmpty())
+    val lastTelegramBotCommandLog: StateFlow<String> = _lastTelegramBotCommandLog.asStateFlow()
+
     private val _autoClearLag15m = MutableStateFlow(proPrefs.getBoolean("auto_clear_lag_15m", false))
     val autoClearLag15m: StateFlow<Boolean> = _autoClearLag15m.asStateFlow()
 
@@ -11287,6 +11296,47 @@ class McViewModel(
     @Volatile private var proMonitorsStarted = false
     private val locateRegex = Regex("""\[(-?\d+),\s*(?:~|(-?\d+)),\s*(-?\d+)]""")
 
+    private fun buildCurrentServerVisualCardBytes(overrideOnline: Boolean? = null): ByteArray? {
+        if (!_attachVisualStatusImage.value) return null
+        val st = serverState.value
+        val isOnline = overrideOnline ?: st.isRunning
+        val activeName = config.value.activeCoreName.orEmpty().ifBlank { "MineHost Server" }
+        val pcAddr = playitState.value.publicAddress.ifBlank { "${lanIp.value}:${serverPort.value}" }
+        val peAddr = playitState.value.bedrockAddress.ifBlank { "${lanIp.value}:19132" }
+        val therm = _thermalInfo.value
+        return com.mineserve.mobile.server.ProHostFeatures.renderServerVisualStatusCardPng(
+            serverName = activeName,
+            isOnline = isOnline,
+            pcAddress = pcAddr,
+            peAddress = peAddr,
+            onlinePlayers = if (isOnline) st.onlinePlayers else 0,
+            maxPlayers = st.maxPlayers.coerceAtLeast(1),
+            onlinePlayerNames = if (isOnline) _onlinePlayerNames.value else emptyList(),
+            tps = st.tps,
+            tempCelsius = therm.tempCelsius,
+            batteryPercent = therm.batteryPercent,
+            isCharging = therm.isCharging
+        )
+    }
+
+    fun setAttachVisualStatusImage(enabled: Boolean) {
+        _attachVisualStatusImage.value = enabled
+        proPrefs.edit().putBoolean("attach_visual_status_image", enabled).apply()
+        notifyActionDone(
+            if (enabled) "📸 Đã bật: Luôn đính kèm Ảnh Bảng Trạng Thái HD (1080×640) khi gửi thông báo Discord & Telegram!"
+            else "📝 Đã chuyển sang gửi tin nhắn văn bản gọn nhẹ."
+        )
+    }
+
+    fun setTelegramTwoWayBotEnabled(enabled: Boolean) {
+        _telegramTwoWayBotEnabled.value = enabled
+        proPrefs.edit().putBoolean("telegram_two_way_bot_enabled", enabled).apply()
+        notifyActionDone(
+            if (enabled) "🕹️ Đã bật Điều khiển 2 chiều từ Telegram (/ip, /status, /list, /clearlag, /day, /save, /say)!"
+            else "⏸️ Đã tạm tắt nhận lệnh điều khiển từ Telegram."
+        )
+    }
+
     fun ensureProMonitorsStarted() {
         val dir = activeDirName() ?: "default"
         _warpPoints.value = com.mineserve.mobile.server.ProHostFeatures.loadWarpPoints(proPrefs, dir)
@@ -11295,7 +11345,7 @@ class McViewModel(
         if (proMonitorsStarted) return
         proMonitorsStarted = true
 
-        // 1. Theo dõi trạng thái Server: Phát âm thanh "Level Up" khi mở xong + Tự động áp dụng Luật bảo vệ Map + Báo Discord & Telegram
+        // 1. Theo dõi trạng thái Server: Phát âm thanh "Level Up" khi mở xong + Tự động áp dụng Luật bảo vệ Map + Báo Discord & Telegram kèm Ảnh HD
         viewModelScope.launch {
             var lastRunningState = false
             serverState.collect { st ->
@@ -11318,22 +11368,27 @@ class McViewModel(
                     val pcAddr = playitState.value.publicAddress.ifBlank { "${lanIp.value}:${serverPort.value}" }
                     val peAddr = playitState.value.bedrockAddress.ifBlank { "${lanIp.value}:19132" }
                     val hook = _discordWebhookUrl.value.trim()
-                    if (hook.isNotBlank()) {
-                        com.mineserve.mobile.server.ProHostFeatures.sendDiscordWebhook(
-                            webhookUrl = hook,
-                            title = "🟢 Server '$activeName' Đã Bật!",
-                            description = "💻 **Địa chỉ PC (Java):** `$pcAddr`\n📱 **Địa chỉ Điện thoại (PE):** `$peAddr`\nHãy vào chơi ngay!",
-                            colorDecimal = 3066993
-                        )
-                    }
                     val tgToken = _telegramBotToken.value.trim()
                     val tgChat = _telegramChatId.value.trim()
-                    if (tgToken.isNotBlank() && tgChat.isNotBlank()) {
-                        com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
-                            botToken = tgToken,
-                            chatId = tgChat,
-                            textMessage = "🟢 Server '$activeName' Đã Bật!\n💻 Địa chỉ PC (Java): $pcAddr\n📱 Địa chỉ Điện thoại (PE): $peAddr\n🚀 Hãy vào chơi ngay!"
-                        )
+                    if (hook.isNotBlank() || (tgToken.isNotBlank() && tgChat.isNotBlank())) {
+                        val cardPng = withContext(Dispatchers.Default) { buildCurrentServerVisualCardBytes(overrideOnline = true) }
+                        if (hook.isNotBlank()) {
+                            com.mineserve.mobile.server.ProHostFeatures.sendDiscordWebhookWithVisualCard(
+                                webhookUrl = hook,
+                                title = "🟢 Server '$activeName' Đã Bật!",
+                                description = "💻 **Địa chỉ PC (Java):** `$pcAddr`\n📱 **Địa chỉ Điện thoại (PE):** `$peAddr`\n🌡️ **Nhiệt độ Host:** ${_thermalInfo.value.statusLabelVi}\n🚀 Hãy vào chơi ngay!",
+                                colorDecimal = 3066993,
+                                imagePngBytes = cardPng
+                            )
+                        }
+                        if (tgToken.isNotBlank() && tgChat.isNotBlank()) {
+                            com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotPhotoWithCaption(
+                                botToken = tgToken,
+                                chatId = tgChat,
+                                captionText = "🟢 Server '$activeName' Đã Bật!\n💻 Địa chỉ PC (Java): $pcAddr\n📱 Địa chỉ Điện thoại (PE): $peAddr\n🌡️ Thiết bị: ${_thermalInfo.value.statusLabelVi}\n🕹️ Gõ /status, /ip, /list, /clearlag ngay trong nhóm để điều khiển!",
+                                imagePngBytes = cardPng
+                            )
+                        }
                     }
                 } else if (!st.isRunning && lastRunningState) {
                     lastRunningState = false
@@ -11341,22 +11396,27 @@ class McViewModel(
                     refreshRecentInstalledMods()
                     val activeName = config.value.activeCoreName.orEmpty().ifBlank { "Minecraft Server" }
                     val hook = _discordWebhookUrl.value.trim()
-                    if (hook.isNotBlank()) {
-                        com.mineserve.mobile.server.ProHostFeatures.sendDiscordWebhook(
-                            webhookUrl = hook,
-                            title = "🔴 Server '$activeName' Đã Tắt",
-                            description = "Máy chủ đã lưu thế giới và tạm nghỉ.",
-                            colorDecimal = 15158332
-                        )
-                    }
                     val tgToken = _telegramBotToken.value.trim()
                     val tgChat = _telegramChatId.value.trim()
-                    if (tgToken.isNotBlank() && tgChat.isNotBlank()) {
-                        com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
-                            botToken = tgToken,
-                            chatId = tgChat,
-                            textMessage = "🔴 Server '$activeName' Đã Tắt\nMáy chủ đã lưu thế giới và tạm nghỉ."
-                        )
+                    if (hook.isNotBlank() || (tgToken.isNotBlank() && tgChat.isNotBlank())) {
+                        val cardPng = withContext(Dispatchers.Default) { buildCurrentServerVisualCardBytes(overrideOnline = false) }
+                        if (hook.isNotBlank()) {
+                            com.mineserve.mobile.server.ProHostFeatures.sendDiscordWebhookWithVisualCard(
+                                webhookUrl = hook,
+                                title = "🔴 Server '$activeName' Đã Tắt",
+                                description = "Máy chủ đã lưu thế giới an toàn và tạm nghỉ.",
+                                colorDecimal = 15158332,
+                                imagePngBytes = cardPng
+                            )
+                        }
+                        if (tgToken.isNotBlank() && tgChat.isNotBlank()) {
+                            com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotPhotoWithCaption(
+                                botToken = tgToken,
+                                chatId = tgChat,
+                                captionText = "🔴 Server '$activeName' Đã Tắt\nMáy chủ đã lưu thế giới an toàn và tạm nghỉ.",
+                                imagePngBytes = cardPng
+                            )
+                        }
                     }
                 }
             }
@@ -11524,9 +11584,160 @@ class McViewModel(
                 }
             }
         }
+
+        // 5. [v2.9.0] Vòng lặp Điều khiển & Tra cứu 2 chiều từ Bot Telegram (/ip, /status, /list, /clearlag, /day, /save, /say ...)
+        viewModelScope.launch(Dispatchers.IO) {
+            var lastOffsetUpdateId = proPrefs.getLong("tg_last_update_id", 0L)
+            var initializedBaseline = false
+            while (true) {
+                val token = _telegramBotToken.value.trim()
+                if (_telegramTwoWayBotEnabled.value && token.length >= 15 && token.contains(":")) {
+                    val incoming = com.mineserve.mobile.server.ProHostFeatures.fetchTelegramIncomingCommands(
+                        botToken = token,
+                        offsetUpdateId = if (lastOffsetUpdateId > 0L) lastOffsetUpdateId + 1L else 0L
+                    )
+                    if (!initializedBaseline) {
+                        initializedBaseline = true
+                        if (lastOffsetUpdateId == 0L && incoming.isNotEmpty()) {
+                            // Bỏ qua các tin nhắn cũ từ trước khi bật App, chỉ lưu mốc updateId mới nhất
+                            lastOffsetUpdateId = incoming.maxOf { it.updateId }
+                            proPrefs.edit().putLong("tg_last_update_id", lastOffsetUpdateId).apply()
+                            kotlinx.coroutines.delay(4000L)
+                            continue
+                        }
+                    }
+                    for (cmdItem in incoming) {
+                        if (cmdItem.updateId > lastOffsetUpdateId) {
+                            lastOffsetUpdateId = cmdItem.updateId
+                            proPrefs.edit().putLong("tg_last_update_id", lastOffsetUpdateId).apply()
+                        }
+                        val configuredChat = _telegramChatId.value.trim()
+                        if (configuredChat.isNotBlank() && cmdItem.chatId != configuredChat) {
+                            continue
+                        }
+                        if (configuredChat.isBlank()) {
+                            _telegramChatId.value = cmdItem.chatId
+                            proPrefs.edit().putString("telegram_chat_id", cmdItem.chatId).apply()
+                        }
+                        handleIncomingTelegramCommand(token, cmdItem)
+                    }
+                }
+                kotlinx.coroutines.delay(4000L)
+            }
+        }
     }
 
-    /** #2: Lưu & gửi thử Discord Webhook */
+    private suspend fun handleIncomingTelegramCommand(
+        botToken: String,
+        cmdItem: com.mineserve.mobile.server.ProHostFeatures.TelegramIncomingCommand
+    ) {
+        val st = serverState.value
+        val activeName = config.value.activeCoreName.orEmpty().ifBlank { "MineHost Server" }
+        val pcAddr = playitState.value.publicAddress.ifBlank { "${lanIp.value}:${serverPort.value}" }
+        val peAddr = playitState.value.bedrockAddress.ifBlank { "${lanIp.value}:19132" }
+        val timeStamp = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
+        val logText = "🕹️ [$timeStamp] ${cmdItem.senderName} vừa gõ lệnh '${cmdItem.command}' trên Telegram"
+        _lastTelegramBotCommandLog.value = logText
+        proPrefs.edit().putString("last_telegram_cmd_log", logText).apply()
+
+        when (cmdItem.command) {
+            "/ip", "/status", "/start", "/help" -> {
+                val cardPng = buildCurrentServerVisualCardBytes()
+                val caption = buildString {
+                    appendLine("📊 BẢNG TRẠNG THÁI TRỰC QUAN — $activeName")
+                    appendLine("• Trạng thái: ${if (st.isRunning) "🟢 ĐANG MỞ (ONLINE)" else "🔴 ĐANG TẮT (OFFLINE)"}")
+                    appendLine("• 💻 Địa chỉ PC (Java): $pcAddr")
+                    appendLine("• 📱 Địa chỉ Điện thoại (PE): $peAddr")
+                    appendLine("• ⚡ Hiệu năng: ${String.format(java.util.Locale.US, "%.1f", st.tps)} / 20.0 TPS")
+                    appendLine("• 👥 Online: ${st.onlinePlayers}/${st.maxPlayers} người chơi")
+                    appendLine("• 🌡️ Nhiệt độ & Pin: ${_thermalInfo.value.statusLabelVi}")
+                    appendLine("─────────────────")
+                    append("🕹️ Lệnh điều khiển nhanh: /ip • /status • /list • /clearlag • /day • /save • /say <tin nhắn>")
+                }
+                com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotPhotoWithCaption(
+                    botToken = botToken,
+                    chatId = cmdItem.chatId,
+                    captionText = caption,
+                    imagePngBytes = cardPng
+                )
+            }
+            "/list", "/players" -> {
+                val onlineList = _onlinePlayerNames.value
+                val knownList = knownServerPlayers.value
+                val msg = buildString {
+                    appendLine("👥 DANH SÁCH NGƯỜI CHƠI — $activeName")
+                    appendLine("• Trạng thái Server: ${if (st.isRunning) "🟢 Đang mở" else "🔴 Đang tắt"}")
+                    appendLine("• 🟢 Đang trực tuyến (${onlineList.size}/${st.maxPlayers}): ${if (onlineList.isEmpty()) "Chưa có ai đang online" else onlineList.joinToString(", ")}")
+                    if (knownList.isNotEmpty()) {
+                        append("• 🕒 Đã từng tham gia (${knownList.size}): ${knownList.take(15).joinToString(", ") { it.name }}")
+                    }
+                }
+                com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(botToken, cmdItem.chatId, msg)
+            }
+            "/clearlag" -> {
+                if (!st.isRunning) {
+                    com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
+                        botToken, cmdItem.chatId, "⚠️ Server hiện đang tắt nên không cần dọn Lag."
+                    )
+                } else {
+                    sendCommand("kill @e[type=item]")
+                    sendCommand("kill @e[type=experience_orb]")
+                    sendCommand("save-all")
+                    sendCommand("say [Telegram Bot] ${cmdItem.senderName} vua kich hoat don rac ClearLag & luu Map tu xa!")
+                    com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
+                        botToken,
+                        cmdItem.chatId,
+                        "🧹 Đã thực thi dọn sạch vật phẩm rơi dưới đất (ClearLag) & lưu thế giới (save-all) thành công!"
+                    )
+                }
+            }
+            "/day" -> {
+                if (!st.isRunning) {
+                    com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
+                        botToken, cmdItem.chatId, "⚠️ Hãy bật Server trước khi chỉnh thời tiết!"
+                    )
+                } else {
+                    sendCommand("time set day")
+                    sendCommand("weather clear")
+                    sendCommand("say [Telegram Bot] ${cmdItem.senderName} vua chinh Troi Sang & Tanh Mua tu Telegram!")
+                    com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
+                        botToken, cmdItem.chatId, "☀️ Đã chỉnh Trời Sáng & Tạnh Mưa cho toàn Server!"
+                    )
+                }
+            }
+            "/save" -> {
+                if (!st.isRunning) {
+                    com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
+                        botToken, cmdItem.chatId, "⚠️ Server hiện đang tắt (Map đã được lưu an toàn)."
+                    )
+                } else {
+                    sendCommand("save-all")
+                    com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
+                        botToken, cmdItem.chatId, "💾 Đã lưu toàn bộ dữ liệu Thế giới (save-all) thành công!"
+                    )
+                }
+            }
+            "/say" -> {
+                val content = cmdItem.argument.trim()
+                if (content.isBlank()) {
+                    com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
+                        botToken, cmdItem.chatId, "ℹ️ Cú pháp: /say <nội dung tin nhắn cần phát vào trong Server>"
+                    )
+                } else if (!st.isRunning) {
+                    com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
+                        botToken, cmdItem.chatId, "⚠️ Server đang tắt, chưa thể gửi tin nhắn vào game."
+                    )
+                } else {
+                    sendCommand("say [Telegram • ${cmdItem.senderName}] $content")
+                    com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
+                        botToken, cmdItem.chatId, "💬 Đã phát tin nhắn vào trong game: \"[Telegram • ${cmdItem.senderName}] $content\""
+                    )
+                }
+            }
+        }
+    }
+
+    /** #2: Lưu & gửi thử Discord Webhook kèm Ảnh Trạng Thái HD */
     fun saveDiscordWebhookUrl(url: String) {
         val clean = url.trim()
         _discordWebhookUrl.value = clean
@@ -11544,32 +11755,35 @@ class McViewModel(
             _liveTaskProgress.value = LiveTaskProgressState(
                 active = true,
                 progress = 0.45f,
-                title = "📨 Đang bắn thông báo IP Server lên kênh Discord...",
-                detail = "Kiểm tra kết nối Webhook trực tiếp"
+                title = "📨 Đang tạo Ảnh Trạng Thái HD & bắn lên kênh Discord...",
+                detail = "Đính kèm bảng thông tin máy chủ trực quan (1080×640)"
             )
             val activeName = config.value.activeCoreName.orEmpty().ifBlank { "MineHost Server" }
             val pcAddr = playitState.value.publicAddress.ifBlank { "${lanIp.value}:${serverPort.value}" }
             val peAddr = playitState.value.bedrockAddress.ifBlank { "${lanIp.value}:19132" }
-            val ok = com.mineserve.mobile.server.ProHostFeatures.sendDiscordWebhook(
+            val cardPng = withContext(Dispatchers.Default) { buildCurrentServerVisualCardBytes() }
+            val ok = com.mineserve.mobile.server.ProHostFeatures.sendDiscordWebhookWithVisualCard(
                 webhookUrl = url,
                 title = "🎉 Kết nối Discord Webhook Thành Công! ($activeName)",
-                description = "🟢 **Trạng thái:** ${if (serverState.value.isRunning) "Đang mở" else "Đang chờ bật"}\n" +
+                description = "🟢 **Trạng thái:** ${if (serverState.value.isRunning) "Đang mở (Online)" else "Đang chờ bật"}\n" +
                     "💻 **Địa chỉ PC (Java):** `$pcAddr`\n" +
                     "📱 **Địa chỉ Điện thoại (PE):** `$peAddr`\n" +
-                    "👥 **Online:** ${serverState.value.onlinePlayers}/${serverState.value.maxPlayers} người chơi",
-                colorDecimal = 3447003
+                    "👥 **Online:** ${serverState.value.onlinePlayers}/${serverState.value.maxPlayers} người chơi\n" +
+                    "🌡️ **Thiết bị:** ${_thermalInfo.value.statusLabelVi}",
+                colorDecimal = 3447003,
+                imagePngBytes = cardPng
             )
             _liveTaskProgress.value = LiveTaskProgressState()
             if (ok) {
                 com.mineserve.mobile.server.ProHostFeatures.playTaskCompleteChime()
-                notifyActionDone("✅ Đã bắn thông báo kèm IP Server lên kênh Discord thành công!")
+                notifyActionDone("✅ Đã bắn Ảnh Trạng Thái HD kèm IP Server lên kênh Discord thành công!")
             } else {
                 _errorFlow.tryEmit("❌ Không thể gửi tới Discord. Hãy kiểm tra lại link Webhook!")
             }
         }
     }
 
-    /** [v2.8.9] Lưu cấu hình Bot Telegram, tự động dò Chat ID & gửi thử tin nhắn lên Telegram */
+    /** [v2.9.0] Lưu cấu hình Bot Telegram, tự động dò Chat ID & gửi thử Ảnh Trạng Thái HD lên Telegram */
     fun saveTelegramConfig(botToken: String, chatId: String) {
         val cleanToken = botToken.trim()
         val cleanChatId = chatId.trim()
@@ -11626,28 +11840,32 @@ class McViewModel(
             _liveTaskProgress.value = LiveTaskProgressState(
                 active = true,
                 progress = 0.55f,
-                title = "✈️ Đang bắn thông báo IP Server lên Telegram...",
-                detail = "Gửi qua Telegram Bot API trực tiếp"
+                title = "✈️ Đang vẽ Ảnh Trạng Thái HD & bắn lên Telegram...",
+                detail = "Gửi kèm bảng thông tin máy chủ trực quan (1080×640) qua sendPhoto"
             )
             val activeName = config.value.activeCoreName.orEmpty().ifBlank { "MineHost Server" }
             val pcAddr = playitState.value.publicAddress.ifBlank { "${lanIp.value}:${serverPort.value}" }
             val peAddr = playitState.value.bedrockAddress.ifBlank { "${lanIp.value}:19132" }
+            val cardPng = withContext(Dispatchers.Default) { buildCurrentServerVisualCardBytes() }
             val msg = buildString {
-                appendLine("🎉 Kết nối Bot Telegram Thành Công! ($activeName)")
-                appendLine("🟢 Trạng thái: ${if (serverState.value.isRunning) "Đang mở" else "Đang chờ bật"}")
+                appendLine("🎉 Kết nối Trợ Lý Telegram Pro Thành Công! ($activeName)")
+                appendLine("🟢 Trạng thái: ${if (serverState.value.isRunning) "Đang mở (Online)" else "Đang chờ bật"}")
                 appendLine("💻 Địa chỉ PC (Java): $pcAddr")
                 appendLine("📱 Địa chỉ Điện thoại (PE): $peAddr")
-                append("👥 Online: ${serverState.value.onlinePlayers}/${serverState.value.maxPlayers} người chơi")
+                appendLine("👥 Online: ${serverState.value.onlinePlayers}/${serverState.value.maxPlayers} người chơi")
+                appendLine("🌡️ Thiết bị: ${_thermalInfo.value.statusLabelVi}")
+                append("🕹️ Gõ /ip, /status, /list, /clearlag, /day, /save, /say ngay tại đây để điều khiển Server!")
             }
-            val ok = com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
+            val ok = com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotPhotoWithCaption(
                 botToken = cleanToken,
                 chatId = cleanChatId,
-                textMessage = msg
+                captionText = msg,
+                imagePngBytes = cardPng
             )
             _liveTaskProgress.value = LiveTaskProgressState()
             if (ok) {
                 com.mineserve.mobile.server.ProHostFeatures.playTaskCompleteChime()
-                notifyActionDone("✅ Đã bắn thông báo kèm IP Server lên Telegram thành công!")
+                notifyActionDone("✅ Đã bắn Ảnh Trạng Thái HD kèm IP Server lên Telegram thành công!")
             } else {
                 _errorFlow.tryEmit("❌ Không thể gửi tới Telegram. Hãy kiểm tra lại Bot Token & Chat ID!")
             }

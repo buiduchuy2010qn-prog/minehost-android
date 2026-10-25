@@ -257,6 +257,474 @@ object ProHostFeatures {
         }
     }
 
+    /**
+     * [v2.9.0] Trình vẽ Ảnh Thông Tin Máy Chủ Trực Quan HD (1080×640 PNG)
+     * Để đính kèm trực tiếp vào thông báo Discord Webhook & Bot Telegram (sendPhoto).
+     */
+    fun renderServerVisualStatusCardPng(
+        serverName: String,
+        isOnline: Boolean,
+        pcAddress: String,
+        peAddress: String,
+        onlinePlayers: Int,
+        maxPlayers: Int,
+        onlinePlayerNames: List<String>,
+        tps: Double,
+        tempCelsius: Float,
+        batteryPercent: Int,
+        isCharging: Boolean,
+        subtitleBadge: String = "Crossplay PC + Điện Thoại PE • Bot Điều Khiển 2 Chiều"
+    ): ByteArray? {
+        return runCatching {
+            val w = 1080
+            val h = 640
+            val bmp = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+            val canvas = android.graphics.Canvas(bmp)
+            val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+
+            // 1. Nền Gradient tối hiện đại
+            paint.shader = android.graphics.LinearGradient(
+                0f, 0f, w.toFloat(), h.toFloat(),
+                intArrayOf(
+                    android.graphics.Color.parseColor("#080E1E"),
+                    android.graphics.Color.parseColor("#0F172A"),
+                    android.graphics.Color.parseColor("#132338")
+                ),
+                floatArrayOf(0f, 0.55f, 1f),
+                android.graphics.Shader.TileMode.CLAMP
+            )
+            canvas.drawRect(0f, 0f, w.toFloat(), h.toFloat(), paint)
+            paint.shader = null
+
+            // Viền khung phát sáng theo trạng thái Bật/Tắt
+            val accentColor = if (isOnline) {
+                android.graphics.Color.parseColor("#10B981")
+            } else {
+                android.graphics.Color.parseColor("#F43F5E")
+            }
+            paint.style = android.graphics.Paint.Style.STROKE
+            paint.strokeWidth = 4f
+            paint.color = accentColor
+            canvas.drawRoundRect(
+                android.graphics.RectF(16f, 16f, (w - 16).toFloat(), (h - 16).toFloat()),
+                28f, 28f, paint
+            )
+            paint.style = android.graphics.Paint.Style.FILL
+
+            // 2. Thanh tiêu đề trên cùng
+            paint.color = android.graphics.Color.parseColor("#38BDF8")
+            paint.textSize = 20f
+            paint.typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+            canvas.drawText("🇻🇳 MINEHOST PRO • BẢNG THÔNG TIN MÁY CHỦ TRỰC QUAN", 44f, 62f, paint)
+
+            val timeNow = java.text.SimpleDateFormat("HH:mm • dd/MM/yyyy", java.util.Locale.getDefault()).format(java.util.Date())
+            paint.color = android.graphics.Color.parseColor("#94A3B8")
+            paint.textSize = 18f
+            val timeWidth = paint.measureText(timeNow)
+            canvas.drawText(timeNow, w - 44f - timeWidth, 62f, paint)
+
+            // Tên Server + Huy hiệu Trạng thái
+            paint.color = android.graphics.Color.WHITE
+            paint.textSize = 38f
+            paint.typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+            val safeServerTitle = serverName.ifBlank { "Minecraft Server" }.take(28)
+            canvas.drawText("⛏️ $safeServerTitle", 44f, 114f, paint)
+
+            // Nút Pill trạng thái bên phải
+            val badgeText = if (isOnline) "🟢 ĐANG MỞ (ONLINE)" else "🔴 ĐANG TẮT (OFFLINE)"
+            paint.textSize = 20f
+            val badgeW = paint.measureText(badgeText) + 44f
+            val badgeRect = android.graphics.RectF(w - 44f - badgeW, 80f, w - 44f, 124f)
+            paint.color = if (isOnline) android.graphics.Color.parseColor("#065F46") else android.graphics.Color.parseColor("#881337")
+            canvas.drawRoundRect(badgeRect, 22f, 22f, paint)
+            paint.style = android.graphics.Paint.Style.STROKE
+            paint.strokeWidth = 2f
+            paint.color = accentColor
+            canvas.drawRoundRect(badgeRect, 22f, 22f, paint)
+            paint.style = android.graphics.Paint.Style.FILL
+            paint.color = android.graphics.Color.WHITE
+            canvas.drawText(badgeText, badgeRect.left + 22f, badgeRect.top + 30f, paint)
+
+            // 3. Hai hộp Địa chỉ IP lớn (PC Java & Điện thoại PE)
+            val boxTop = 144f
+            val boxBottom = 304f
+            val leftBox = android.graphics.RectF(44f, boxTop, 526f, boxBottom)
+            val rightBox = android.graphics.RectF(554f, boxTop, (w - 44).toFloat(), boxBottom)
+
+            // Hộp Trái: PC (Java Edition)
+            paint.color = android.graphics.Color.parseColor("#1E293B")
+            canvas.drawRoundRect(leftBox, 20f, 20f, paint)
+            paint.style = android.graphics.Paint.Style.STROKE
+            paint.strokeWidth = 2.5f
+            paint.color = android.graphics.Color.parseColor("#0EA5E9")
+            canvas.drawRoundRect(leftBox, 20f, 20f, paint)
+            paint.style = android.graphics.Paint.Style.FILL
+
+            paint.color = android.graphics.Color.parseColor("#7DD3FC")
+            paint.textSize = 19f
+            canvas.drawText("💻 ĐỊA CHỈ MÁY TÍNH (JAVA PC)", leftBox.left + 22f, leftBox.top + 38f, paint)
+            paint.color = android.graphics.Color.WHITE
+            paint.textSize = 29f
+            paint.typeface = android.graphics.Typeface.create(android.graphics.Typeface.MONOSPACE, android.graphics.Typeface.BOLD)
+            canvas.drawText(pcAddress.ifBlank { "Đang lấy IP..." }.take(27), leftBox.left + 22f, leftBox.top + 92f, paint)
+            paint.typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.NORMAL)
+            paint.color = android.graphics.Color.parseColor("#94A3B8")
+            paint.textSize = 16f
+            canvas.drawText("Nhập vào mục Multiplayer (Chơi mạng) trên PC", leftBox.left + 22f, leftBox.top + 132f, paint)
+
+            // Hộp Phải: Điện thoại (Bedrock / PE)
+            paint.color = android.graphics.Color.parseColor("#1E293B")
+            canvas.drawRoundRect(rightBox, 20f, 20f, paint)
+            paint.style = android.graphics.Paint.Style.STROKE
+            paint.strokeWidth = 2.5f
+            paint.color = android.graphics.Color.parseColor("#F59E0B")
+            canvas.drawRoundRect(rightBox, 20f, 20f, paint)
+            paint.style = android.graphics.Paint.Style.FILL
+
+            paint.typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+            paint.color = android.graphics.Color.parseColor("#FDE68A")
+            paint.textSize = 19f
+            canvas.drawText("📱 ĐỊA CHỈ ĐIỆN THOẠI (BEDROCK PE)", rightBox.left + 22f, rightBox.top + 38f, paint)
+            paint.color = android.graphics.Color.WHITE
+            paint.textSize = 29f
+            paint.typeface = android.graphics.Typeface.create(android.graphics.Typeface.MONOSPACE, android.graphics.Typeface.BOLD)
+            canvas.drawText(peAddress.ifBlank { "Đang lấy IP..." }.take(27), rightBox.left + 22f, rightBox.top + 92f, paint)
+            paint.typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.NORMAL)
+            paint.color = android.graphics.Color.parseColor("#94A3B8")
+            paint.textSize = 16f
+            val peParts = peAddress.split(":")
+            val peSubText = if (peParts.size == 2) {
+                "IP: ${peParts[0]}  •  Cổng (Port): ${peParts[1]}"
+            } else {
+                "Nhập địa chỉ & cổng vào tab Servers trên MCPE"
+            }
+            canvas.drawText(peSubText.take(40), rightBox.left + 22f, rightBox.top + 132f, paint)
+
+            // 4. Bốn ô chỉ số trực quan có Thanh Tiến Trình (TPS, Người chơi, Nhiệt độ/Pin, Chế độ)
+            fun drawMetricCard(
+                rect: android.graphics.RectF,
+                title: String,
+                mainVal: String,
+                subVal: String,
+                progress: Float,
+                barColor: Int
+            ) {
+                paint.color = android.graphics.Color.parseColor("#162032")
+                canvas.drawRoundRect(rect, 18f, 18f, paint)
+                paint.style = android.graphics.Paint.Style.STROKE
+                paint.strokeWidth = 1.5f
+                paint.color = android.graphics.Color.parseColor("#334155")
+                canvas.drawRoundRect(rect, 18f, 18f, paint)
+                paint.style = android.graphics.Paint.Style.FILL
+
+                paint.typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+                paint.color = android.graphics.Color.parseColor("#94A3B8")
+                paint.textSize = 16f
+                canvas.drawText(title, rect.left + 18f, rect.top + 30f, paint)
+
+                paint.color = android.graphics.Color.WHITE
+                paint.textSize = 23f
+                canvas.drawText(mainVal, rect.left + 18f, rect.top + 64f, paint)
+
+                // Thanh bar nền
+                val barLeft = rect.left + 18f
+                val barRight = rect.right - 18f
+                val barTop = rect.top + 78f
+                val barBottom = barTop + 10f
+                paint.color = android.graphics.Color.parseColor("#0F172A")
+                canvas.drawRoundRect(android.graphics.RectF(barLeft, barTop, barRight, barBottom), 5f, 5f, paint)
+                val fillW = ((barRight - barLeft) * progress.coerceIn(0.04f, 1f))
+                paint.color = barColor
+                canvas.drawRoundRect(android.graphics.RectF(barLeft, barTop, barLeft + fillW, barBottom), 5f, 5f, paint)
+
+                paint.typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.NORMAL)
+                paint.color = android.graphics.Color.parseColor("#CBD5E1")
+                paint.textSize = 15f
+                canvas.drawText(subVal.take(42), rect.left + 18f, rect.top + 112f, paint)
+            }
+
+            val safeTps = if (isOnline) tps.coerceIn(0.0, 20.0) else 20.0
+            val tpsRatio = (safeTps / 20.0).toFloat()
+            val tpsColor = when {
+                safeTps >= 18.0 -> android.graphics.Color.parseColor("#10B981")
+                safeTps >= 14.0 -> android.graphics.Color.parseColor("#F59E0B")
+                else -> android.graphics.Color.parseColor("#EF4444")
+            }
+            drawMetricCard(
+                rect = android.graphics.RectF(44f, 324f, 526f, 452f),
+                title = "⚡ HIỆU NĂNG MÁY CHỦ (TPS)",
+                mainVal = if (isOnline) "${String.format(java.util.Locale.US, "%.1f", safeTps)} / 20.0 TPS (Mượt)" else "20.0 TPS (Sẵn sàng)",
+                subVal = if (isOnline) "Độ ổn định nhịp xử lý Thế giới: ${(tpsRatio * 100).toInt()}%" else "Máy chủ đang ở chế độ nghỉ tiết kiệm pin",
+                progress = if (isOnline) tpsRatio else 1f,
+                barColor = tpsColor
+            )
+
+            val safeMaxP = maxPlayers.coerceAtLeast(1)
+            val playerRatio = (onlinePlayers.toFloat() / safeMaxP.toFloat()).coerceIn(0f, 1f)
+            val playersLine = if (onlinePlayerNames.isNotEmpty()) {
+                "Đang chơi: " + onlinePlayerNames.joinToString(", ")
+            } else {
+                "Chưa có người chơi nào đang trực tuyến"
+            }
+            drawMetricCard(
+                rect = android.graphics.RectF(554f, 324f, (w - 44).toFloat(), 452f),
+                title = "👥 NGƯỜI CHƠI TRỰC TUYẾN",
+                mainVal = "$onlinePlayers / $safeMaxP Người chơi",
+                subVal = playersLine,
+                progress = if (onlinePlayers > 0) playerRatio.coerceAtLeast(0.12f) else 0.06f,
+                barColor = android.graphics.Color.parseColor("#38BDF8")
+            )
+
+            val tempRatio = ((tempCelsius - 25f) / 25f).coerceIn(0.1f, 1f)
+            val tempColor = if (tempCelsius >= 43f) {
+                android.graphics.Color.parseColor("#EF4444")
+            } else {
+                android.graphics.Color.parseColor("#10B981")
+            }
+            drawMetricCard(
+                rect = android.graphics.RectF(44f, 470f, 526f, 566f),
+                title = "🌡️ NHIỆT ĐỘ & PIN THIẾT BỊ HOST",
+                mainVal = "${String.format(java.util.Locale.US, "%.1f", tempCelsius)}°C  •  Pin $batteryPercent%${if (isCharging) " ⚡ Đang sạc" else ""}",
+                subVal = "Lá chắn bảo vệ nhiệt độ & tự lưu Map đang bật",
+                progress = tempRatio,
+                barColor = tempColor
+            )
+
+            drawMetricCard(
+                rect = android.graphics.RectF(554f, 470f, (w - 44).toFloat(), 566f),
+                title = "🤖 TRỢ LÝ BOT ĐIỀU KHIỂN 2 CHIỀU",
+                mainVal = "Hỗ trợ Lệnh Telegram & Discord",
+                subVal = subtitleBadge,
+                progress = 1f,
+                barColor = android.graphics.Color.parseColor("#8B5CF6")
+            )
+
+            // 5. Chân trang hướng dẫn gõ lệnh nhanh trên Telegram
+            paint.typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+            paint.color = android.graphics.Color.parseColor("#38BDF8")
+            paint.textSize = 17f
+            canvas.drawText(
+                "🕹️ Gõ lệnh trực tiếp trong nhóm Telegram:  /ip  •  /status  •  /list  •  /clearlag  •  /day  •  /save  •  /say <nội dung>",
+                44f, 604f, paint
+            )
+
+            val bos = java.io.ByteArrayOutputStream()
+            bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, bos)
+            bmp.recycle()
+            bos.toByteArray()
+        }.getOrNull()
+    }
+
+    /**
+     * [v2.9.0] Gửi thông báo Discord Webhook kèm Ảnh Trạng Thái Trực Quan HD (multipart/form-data)
+     */
+    suspend fun sendDiscordWebhookWithVisualCard(
+        webhookUrl: String,
+        title: String,
+        description: String,
+        colorDecimal: Int = 3066993,
+        imagePngBytes: ByteArray?
+    ): Boolean = withContext(Dispatchers.IO) {
+        if (imagePngBytes == null || imagePngBytes.isEmpty()) {
+            return@withContext sendDiscordWebhook(webhookUrl, title, description, colorDecimal)
+        }
+        val cleanUrl = webhookUrl.trim()
+        if (!cleanUrl.startsWith("https://discord.com/api/webhooks/") &&
+            !cleanUrl.startsWith("https://discordapp.com/api/webhooks/")
+        ) {
+            return@withContext false
+        }
+        var conn: HttpURLConnection? = null
+        try {
+            val boundary = "----MineHostDiscordBoundary${System.currentTimeMillis()}"
+            val payload = JSONObject().apply {
+                put("username", "MineHost Android 🇻🇳")
+                put(
+                    "embeds",
+                    JSONArray().put(
+                        JSONObject().apply {
+                            put("title", title)
+                            put("description", description)
+                            put("color", colorDecimal)
+                            put("image", JSONObject().apply { put("url", "attachment://minehost_status.png") })
+                            put(
+                                "footer",
+                                JSONObject().apply {
+                                    put("text", "MineHost Pro • Bảng Trạng Thái Máy Chủ Trực Quan HD")
+                                }
+                            )
+                        }
+                    )
+                )
+            }
+            conn = (URL(cleanUrl).openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = 10000
+                readTimeout = 10000
+                doOutput = true
+                setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+                setRequestProperty("User-Agent", "MineHost/2.9.0")
+            }
+            conn.outputStream.use { os ->
+                val crlf = "\r\n"
+                // Part 1: payload_json
+                os.write("--$boundary$crlf".toByteArray(Charsets.UTF_8))
+                os.write("Content-Disposition: form-data; name=\"payload_json\"$crlf".toByteArray(Charsets.UTF_8))
+                os.write("Content-Type: application/json; charset=UTF-8$crlf$crlf".toByteArray(Charsets.UTF_8))
+                os.write(payload.toString().toByteArray(Charsets.UTF_8))
+                os.write(crlf.toByteArray(Charsets.UTF_8))
+
+                // Part 2: files[0] (minehost_status.png)
+                os.write("--$boundary$crlf".toByteArray(Charsets.UTF_8))
+                os.write("Content-Disposition: form-data; name=\"files[0]\"; filename=\"minehost_status.png\"$crlf".toByteArray(Charsets.UTF_8))
+                os.write("Content-Type: image/png$crlf$crlf".toByteArray(Charsets.UTF_8))
+                os.write(imagePngBytes)
+                os.write("$crlf--$boundary--$crlf".toByteArray(Charsets.UTF_8))
+                os.flush()
+            }
+            if (conn.responseCode in 200..299) {
+                true
+            } else {
+                sendDiscordWebhook(webhookUrl, title, description, colorDecimal)
+            }
+        } catch (_: Exception) {
+            sendDiscordWebhook(webhookUrl, title, description, colorDecimal)
+        } finally {
+            conn?.disconnect()
+        }
+    }
+
+    /**
+     * [v2.9.0] Gửi Ảnh Trạng Thái Trực Quan HD kèm chú thích lên Telegram (sendPhoto multipart/form-data)
+     */
+    suspend fun sendTelegramBotPhotoWithCaption(
+        botToken: String,
+        chatId: String,
+        captionText: String,
+        imagePngBytes: ByteArray?
+    ): Boolean = withContext(Dispatchers.IO) {
+        if (imagePngBytes == null || imagePngBytes.isEmpty()) {
+            return@withContext sendTelegramBotMessage(botToken, chatId, captionText)
+        }
+        val cleanToken = botToken.trim().removePrefix("bot")
+        val cleanChatId = chatId.trim()
+        if (cleanToken.length < 15 || !cleanToken.contains(":") || cleanChatId.isBlank()) {
+            return@withContext false
+        }
+        var conn: HttpURLConnection? = null
+        try {
+            val boundary = "----MineHostTelegramBoundary${System.currentTimeMillis()}"
+            val apiUrl = "https://api.telegram.org/bot$cleanToken/sendPhoto"
+            conn = (URL(apiUrl).openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = 10000
+                readTimeout = 10000
+                doOutput = true
+                setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+                setRequestProperty("User-Agent", "MineHost/2.9.0")
+            }
+            conn.outputStream.use { os ->
+                val crlf = "\r\n"
+                // chat_id
+                os.write("--$boundary$crlf".toByteArray(Charsets.UTF_8))
+                os.write("Content-Disposition: form-data; name=\"chat_id\"$crlf$crlf".toByteArray(Charsets.UTF_8))
+                os.write(cleanChatId.toByteArray(Charsets.UTF_8))
+                os.write(crlf.toByteArray(Charsets.UTF_8))
+
+                // caption
+                os.write("--$boundary$crlf".toByteArray(Charsets.UTF_8))
+                os.write("Content-Disposition: form-data; name=\"caption\"$crlf$crlf".toByteArray(Charsets.UTF_8))
+                os.write(captionText.take(1000).toByteArray(Charsets.UTF_8))
+                os.write(crlf.toByteArray(Charsets.UTF_8))
+
+                // photo
+                os.write("--$boundary$crlf".toByteArray(Charsets.UTF_8))
+                os.write("Content-Disposition: form-data; name=\"photo\"; filename=\"minehost_status.png\"$crlf".toByteArray(Charsets.UTF_8))
+                os.write("Content-Type: image/png$crlf$crlf".toByteArray(Charsets.UTF_8))
+                os.write(imagePngBytes)
+                os.write("$crlf--$boundary--$crlf".toByteArray(Charsets.UTF_8))
+                os.flush()
+            }
+            if (conn.responseCode in 200..299) {
+                true
+            } else {
+                sendTelegramBotMessage(botToken, chatId, captionText)
+            }
+        } catch (_: Exception) {
+            sendTelegramBotMessage(botToken, chatId, captionText)
+        } finally {
+            conn?.disconnect()
+        }
+    }
+
+    data class TelegramIncomingCommand(
+        val updateId: Long,
+        val chatId: String,
+        val senderName: String,
+        val command: String,
+        val argument: String
+    )
+
+    /**
+     * [v2.9.0] Đọc các lệnh điều khiển từ xa người dùng gõ trong nhóm Telegram (/ip, /status, /list, /clearlag, /day, /save, /say ...)
+     */
+    suspend fun fetchTelegramIncomingCommands(
+        botToken: String,
+        offsetUpdateId: Long
+    ): List<TelegramIncomingCommand> = withContext(Dispatchers.IO) {
+        val cleanToken = botToken.trim().removePrefix("bot")
+        if (cleanToken.length < 15 || !cleanToken.contains(":")) return@withContext emptyList()
+        var conn: HttpURLConnection? = null
+        try {
+            val offsetParam = if (offsetUpdateId > 0L) "offset=$offsetUpdateId&" else ""
+            val apiUrl = "https://api.telegram.org/bot$cleanToken/getUpdates?${offsetParam}limit=20&timeout=0"
+            conn = (URL(apiUrl).openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 6500
+                readTimeout = 6500
+                setRequestProperty("User-Agent", "MineHost/2.9.0")
+            }
+            if (conn.responseCode !in 200..299) return@withContext emptyList()
+            val body = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            val root = JSONObject(body)
+            if (!root.optBoolean("ok", false)) return@withContext emptyList()
+            val results = root.optJSONArray("result") ?: return@withContext emptyList()
+            val list = mutableListOf<TelegramIncomingCommand>()
+            for (i in 0 until results.length()) {
+                val item = results.optJSONObject(i) ?: continue
+                val updateId = item.optLong("update_id", 0L)
+                val msg = item.optJSONObject("message") ?: item.optJSONObject("channel_post") ?: continue
+                val text = msg.optString("text", "").trim()
+                if (!text.startsWith("/")) continue
+                val chat = msg.optJSONObject("chat") ?: continue
+                val chatId = chat.opt("id")?.toString().orEmpty()
+                if (chatId.isBlank()) continue
+                val from = msg.optJSONObject("from")
+                val sender = from?.optString("first_name")
+                    ?.ifBlank { from.optString("username") }
+                    .orEmpty()
+                    .ifBlank { "Admin" }
+                val firstToken = text.substringBefore(" ").trim()
+                val cmdClean = firstToken.substringBefore("@").lowercase()
+                val arg = text.substringAfter(" ", "").trim()
+                list.add(
+                    TelegramIncomingCommand(
+                        updateId = updateId,
+                        chatId = chatId,
+                        senderName = sender,
+                        command = cmdClean,
+                        argument = arg
+                    )
+                )
+            }
+            list
+        } catch (_: Exception) {
+            emptyList()
+        } finally {
+            conn?.disconnect()
+        }
+    }
+
     suspend fun installDatapackZip(
         context: Context,
         uri: Uri,
