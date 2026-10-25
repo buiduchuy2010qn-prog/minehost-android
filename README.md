@@ -1,65 +1,67 @@
-# 🇻🇳 MineHost Android — v2.8.4 (Build 51 • Bản Cộng Đồng Chính Thức)
+<div align="center">
 
-[![Phiên bản mới nhất](https://img.shields.io/badge/Release-v2.8.4%20(Build%2051)-2E7D32?style=for-the-badge&logo=android)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
-[![Nền tảng](https://img.shields.io/badge/Android-8.0%2B%20(ARM64)-0D9488?style=for-the-badge)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases)
-[![Cập nhật OTA](https://img.shields.io/badge/OTA-C%C3%A0i%20%C4%91%C3%A8%20100%25%20%26%20T%E1%BB%B1%20x%C3%B3a%20APK-2563EB?style=for-the-badge)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
-[![Giấy phép](https://img.shields.io/badge/License-GPLv3-blue?style=for-the-badge)](LICENSE)
+# 🇻🇳 MINEHOST PRO — ANDROID MINECRAFT SERVER ENGINE
+### **v2.8.5 (Build 52 • Official Community Edition)**
 
-**MineHost** (`vn.minehost.pro`) là ứng dụng Android mã nguồn mở giúp bạn **tự tạo, vận hành và quản trị máy chủ Minecraft Java & Bedrock (Chơi chung PC + Điện thoại PE)** trực tiếp ngay trên điện thoại Android mà không cần thuê VPS.
+[![Release](https://img.shields.io/badge/RELEASE-v2.8.5%20(Build%2052)-10B981?style=for-the-badge&logo=android&logoColor=white)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
+[![Platform](https://img.shields.io/badge/ANDROID-8.0%2B%20(ARM64)-0EA5E9?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases)
+[![Crossplay](https://img.shields.io/badge/CROSSPLAY-JAVA%20PC%20%2B%20BEDROCK%20PE-F59E0B?style=for-the-badge&logo=reverbnation&logoColor=white)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
+[![OTA](https://img.shields.io/badge/OTA%20UPDATE-ZERO%20CACHE%20•%20AUTO%20CLEAN-6366F1?style=for-the-badge)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
+[![License](https://img.shields.io/badge/LICENSE-GPLv3-3B82F6?style=for-the-badge)](LICENSE)
 
-👉 **[📥 TẢI NGAY APK MỚI NHẤT (minehost-2.8.4-arm64.apk)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)**
+**Biến điện thoại Android thành máy chủ Minecraft chuyên nghiệp (Paper, Purpur, Fabric, Forge, NeoForge, Vanilla, Bedrock) — Hỗ trợ chơi chung PC & Điện thoại PE không cần thuê VPS hay mở Port Router.**
 
----
+### 👉 [**📥 TẢI NGAY APK v2.8.5 MỚI NHẤT (`minehost-2.8.5-arm64.apk`)**](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
 
-## 🔥 Nâng Cấp Mới Nhất Trong Bản `v2.8.4` (Build 51) & `v2.8.3`
-
-### 🆕 0. 🩺 Việt Hóa 100% Hệ Thống Báo Lỗi Crash & Giao Diện Phân Tích Sự Cố Trực Quan (`v2.8.4`)
-- **Xóa sạch 100% chữ Trung Quốc còn sót** trong 18 quy tắc chẩn đoán lỗi (`server_errors.json`), trình tạo file báo cáo (`CrashReportManager`), bộ phân tích (`CrashReportAnalyzer`) và nhật ký hệ thống (`mineserve.log`), đồng thời **tự động dịch cả các file báo cáo lỗi cũ** đã lưu trên máy.
-- **Thẻ Chẩn Đoán Sự Cố Mới:** Tách bạch rõ **Nguyên nhân gốc**, **Mã thoát tiến trình** (`137 = Tràn RAM / Hệ thống buộc dừng`, `1 = Lỗi cấu hình/Java`), **Bằng chứng log** và hộp **`💡 Cách khắc phục`** nổi bật.
-- **Nút `🔍 Xem Phân Tích Lỗi Sập` ngay trên Thẻ Server Chính** khi khởi động thất bại + **Thu gọn bảng Chẩn đoán 6 bước** trên Trang chủ giúp nút Copy IP PC/PE hiển thị ngay lập tức.
-
-### 1. 🎯 Bong Bóng Menu Admin Nổi Ngay Trong Lúc Đang Chơi Game (Floating In-Game Admin Menu)
-- Khi vừa mở Server vừa vào chơi **Minecraft PE / PojavLauncher** trên cùng 1 điện thoại, một bong bóng nhỏ gọn (`⚡ SV CPU | RAM ▾`) nổi ở mép màn hình (kéo thả tự do).
-- Chạm vào bong bóng để bung ngay **6 nút Admin 1 chạm** mà không cần thoát game:
-  - **`☀️ Trời Sáng`** *(Chỉnh ngày sáng & tạnh mưa tức thì)*
-  - **`🧹 Dọn Lag`** *(Xóa vật phẩm rơi + lưu map + giải phóng RAM)*
-  - **`❤️ Hồi Máu @a`** *(Hồi đầy máu & thức ăn cho cả nhóm)*
-  - **`📋 Copy IP`** *(Sao chép nhanh địa chỉ Server)*
-  - **`🏠 Mở App`** *(Quay lại bảng điều khiển MineHost)*
-  - **`🛑 Lưu & Tắt`** *(Chạy `save-all` và tắt Server an toàn)*
-
-### 2. 💬 Khung Chat Trực Tiếp 2 Chiều Với Người Chơi Trong Game (Live Game Chat Messenger)
-- Tự động lọc riêng tin nhắn trò chuyện và thông báo vào/ra của người chơi trong game thành khung hội thoại kiểu Messenger/Zalo ngay trên Trang chủ (tự động loại bỏ sạch các dòng log kỹ thuật rối mắt).
-- Cho phép chủ host gõ tin nhắn trả lời trực tiếp vào trong game với danh hiệu màu vàng nổi bật **`[👑 Chủ Server]`**.
-
-### 3. 📦 Cài Gói Modpack `.mrpack` (Modrinth) 1 Chạm & Tự Lọc Bỏ Mod Đồ Họa Client
-- Chọn bất kỳ tệp Modpack `.mrpack` nào tải từ Modrinth -> ứng dụng tự động giải nén `overrides/` / `server-overrides/`, đọc `modrinth.index.json` và tải toàn bộ Mod Server vào `mods/`.
-- **Tự động lọc bỏ các Mod chỉ dành cho Client** (`Sodium`, `Iris`, `OptiFine`, `ModMenu`, `EntityCulling`, `ImmediatelyFast`, `env.server == "unsupported"`...) để ngăn chặn tuyệt đối lỗi văng Server khi cài gói Modpack!
-
-### 4. 🔄 Tự Động Bật Lại Khi Văng (Auto-Restart) & ⏪ Hoàn Tác Mod Vừa Cài Gây Lỗi 1 Chạm
-- **Auto-Restart on Crash:** Tự động khởi động lại Server nếu bị văng đột ngột giữa chừng (giới hạn tối đa 3 lần liên tiếp để bảo vệ máy).
-- **1-Tap Mod Rollback (`⏪ Hoàn Tác Mod Vừa Cài`):** Nếu vừa cài thêm Mod mới mà làm Server báo lỗi không lên được, chỉ cần bấm 1 nút để tự động tạm tắt (`.disabled`) các Mod vừa thêm gần nhất và mở lại Server an toàn.
-
-### 5. 🛡️ Lá Chắn Chống Bot & Spam Kết Nối (Anti-Bot & Connection Flood Guard)
-- Tự động giám sát luồng kết nối khi mở đường hầm công khai (Playit.gg / FRP): nếu phát hiện 1 địa chỉ IP bên ngoài spam **`≥ 6` kết nối trong 15 giây** hoặc dùng **`≥ 3` tên nhân vật ảo khác nhau từ cùng 1 IP trong 15 giây**, hệ thống tự động thực thi `ban-ip` ngay lập tức để bảo vệ TPS và chống sập Server.
+</div>
 
 ---
 
-## ⚡ Các Tính Năng Nổi Bật Đã Có Từ `v2.8.1` – `v2.8.2`
+## 🚀 Điểm Nhấn Đột Phá Trên Bản `v2.8.5` (Build 52)
 
-- **⚡ Giao Diện Trang Chủ 3 Phân Mục Trượt Ngang Gọn Mượt:** Chuyển nhanh giữa `🌐 Kết nối & Thẻ mời`, `⚡ Tối ưu & Bảo vệ Pin`, `🎮 Thế giới & VIP` và `📋 Xem tất cả` (giảm hơn 70% độ dài cuộn trang).
-- **🛡️ Bảo Vệ Map Tự Động Khi Điện Thoại Yếu Pin (`≤ 10%`) Hoặc Quá Nóng (`≥ 45.0°C`):** Tự động cảnh báo trong game, chạy `save-all` 2 lần rồi dừng Server an toàn trước khi điện thoại sập nguồn.
-- **📲 Thanh Thông Báo Nền Thông Minh (Live Rich Notification):** Hiện trực tiếp `Tên Server • Online • TPS • RAM • Pin & Nhiệt độ • IP` kèm 3 nút `📋 Copy IP`, `🧹 Dọn RAM`, `🛑 Lưu & Tắt`.
-- **🧩 Tự Động Phát Hiện Mod Thiếu Thư Viện Phụ Trợ & Tải Bù 1 Chạm:** Tự động nhận diện và tải bù `Fabric API`, `Cloth Config`, `Architectury API`, `GeckoLib`, `Curios`, `Trinkets`, `YACL`, `Balm`, `Kotlin for Forge`...
-- **🖼️ Tạo Ảnh Thẻ Mời Server Đẹp Chuẩn HD (`1080×640`) & Chọn Người Chơi 1 Chạm:** Vẽ ảnh Banner mời bạn bè gồm cả IP PC + Điện thoại PE và chọn người chơi 1 chạm không cần nhập tay.
-- **🔄 Cập Nhật OTA Cài Đè 100% & Tự Xóa File APK Sau Khi Cài:** Phát hiện bản mới trong `0ms` và tự động dọn sạch file `.apk` sau khi cập nhật hoàn tất.
+| Tính năng | Công nghệ & Cơ chế hoạt động |
+| :--- | :--- |
+| **🛠️ Smart Mod Doctor (1-Tap Auto-Fix)** | Tự động mổ xẻ `fabric.mod.json` / `mods.toml` của toàn bộ tệp `.jar` trong `mods/`: tự tải bù thư viện còn thiếu (`Fabric API`, `Cloth Config`, `Architectury`, `Bookshelf`, `GeckoLib`...), tự thay thế hoặc cách ly (`.disabled`) các Mod lệch phiên bản Minecraft / Client-only / trùng ID và tự bật lại Server chỉ với **1 chạm**. |
+| **🎯 Strict MC Version Resolver** | Khóa chặt tương thích nhị phân theo đúng phiên bản Minecraft của Server khi tải Mod từ Modrinth, chặn triệt để lỗi `FormattedException` và `DuplicateModFoundException`. |
+| **🩺 Chẩn Đoán Lỗi Crash Tiếng Việt 100%** | Phân tích ngoại lệ Java, chuỗi `Caused by`, mã thoát tiến trình (`Exit 137 / Exit 1`) và trích xuất đích danh tên Mod xung đột kèm nút dẫn đường trực tiếp (**Mở Quản Lý Mod**, **Môi Trường Java**, **Chẩn Đoán Hệ Thống**, **Đổi Cổng Server**). |
+| **🎯 Floating In-Game Admin Menu** | Bong bóng điều khiển nổi ngay trên màn hình khi đang chơi Minecraft (`☀️ Trời Sáng`, `🧹 Dọn Lag`, `❤️ Hồi Máu @a`, `📋 Copy IP`, `🏠 Mở App`, `🛑 Lưu & Tắt`). |
+| **💬 Live 2-Way Game Chat** | Khung trò chuyện trực tiếp 2 chiều giữa Chủ Host (`[👑 Chủ Server]`) và người chơi trong game ngay trên Trang chủ. |
+| **📦 Trình Cài Modpack `.mrpack` 1 Chạm** | Giải nén và cài đặt trọn gói Modpack chuẩn Modrinth, tự động lọc bỏ 100% các Mod đồ họa chỉ dành cho Client (`Sodium`, `Iris`, `OptiFine`, `ModMenu`...). |
+| **🛡️ Anti-Bot & Flood Guard** | Lá chắn tự động phát hiện và `ban-ip` tức thì các kết nối spam hoặc bot giả mạo hàng loạt tài khoản qua đường hầm công khai. |
 
 ---
 
-## ⚖️ Bản Quyền, Quyền Riêng Tư & Giấy Phép
+## ⚡ Hệ Sinh Thái Tính Năng Toàn Diện
 
-- **Giấy phép mã nguồn mở:** Phát hành theo giấy phép [GNU GPL-3.0-or-later](LICENSE), kế thừa nền tảng runtime từ dự án mã nguồn mở [Minexa](https://github.com/lovehutaocute/Minexa) ([NOTICE](NOTICE)).
-- **Chính sách Quyền riêng tư:** Cam kết **Zero Telemetry** — không thu thập bất kỳ dữ liệu cá nhân nào. Xem chi tiết tại [PRIVACY.md](PRIVACY.md).
-- **Tuyên bố miễn trừ thương hiệu Mojang / Microsoft:**
-  > **NOT AN OFFICIAL MINECRAFT PRODUCT. NOT APPROVED BY OR ASSOCIATED WITH MOJANG OR MICROSOFT.**  
-  > *(Không phải sản phẩm Minecraft chính thức. Không được phê duyệt bởi hoặc liên kết với Mojang hay Microsoft.)*
+### 🌐 1. Kết Nối Đa Nền Tảng (PC + Điện Thoại PE)
+- **Đường hầm mạng tích hợp sẵn:** Hỗ trợ **Playit.gg**, **FRP** và **Bore** giúp bạn bè ở khác mạng Wi-Fi / 4G vào chơi ngay mà không cần mở Port modem.
+- **Crossplay GeyserMC + Floodgate + ViaVersion 1 chạm:** Tự động cấu hình đồng thời cổng TCP (cho PC Java) và cổng UDP (cho Điện thoại Bedrock/PE).
+- **Trình tạo Thẻ Mời Server HD (`1080×640`):** Xuất ảnh Banner mời vào Server hiển thị rõ IP PC & IP/Port PE để chia sẻ qua Discord, Zalo, Messenger.
+
+### 🔋 2. Tối Ưu Hóa Phần Cứng & Bảo Vệ Dữ Liệu Thế Giới
+- **Thermal & Battery Guard:** Tự động phát cảnh báo trong game, thực thi `save-all` kép và tắt máy chủ an toàn khi pin xuống `≤ 10%` hoặc nhiệt độ máy chạm ngưỡng `≥ 45.0°C`.
+- **Auto-Sleep Idle Mode:** Tự động lưu thế giới và đưa máy chủ về chế độ nghỉ khi không có người chơi trực tuyến sau `15 / 30 / 60 phút`.
+- **1-Tap Low-RAM Optimizer:** Tự động tinh chỉnh `view-distance`, `simulation-distance`, Aikar's Flags và dọn rác bộ nhớ RAM trước khi khởi chạy JVM.
+
+### 👑 3. Quản Trị Máy Chủ & Sự Kiện In-Game (0 MB RAM Overhead)
+- **Quản lý người chơi 1 chạm:** Cấp/gỡ OP, đổi chế độ chơi (`Survival` / `Creative` / `Spectator`), tặng Starter Kit, quản lý túi đồ NBT trực quan, Whitelist & Ban.
+- **OP Guard cho Server Cracked:** Tự động khóa quyền Admin khi tài khoản chưa được chủ máy xác thực trên ứng dụng.
+- **Xưởng Danh Hiệu VIP & Sự Kiện Mini:** Gắn prefix màu sắc (`[👑 Chủ Server]`, `[⚔️ Chiến Thần]`, `[💎 Đại Gia]`), thả Rương Tiếp Tế, Mưa Kinh Nghiệm, Siêu Tốc Độ Đào và Radar tìm công trình (`/locate` + dịch chuyển cả nhóm).
+
+---
+
+## 📦 Thông Số Kỹ Thuật & Cài Đặt
+
+- **Định danh gói (`applicationId`):** `vn.minehost.pro`
+- **Kiến trúc hỗ trợ:** `arm64-v8a` (Android 8.0 / API 26 trở lên)
+- **Môi trường Java hỗ trợ:** OpenJDK `8`, `17`, `21`, `25` (Termux glibc/proot & FCL Native Runtime)
+- **Cơ chế cập nhật OTA:** Kiểm tra trực tiếp từ GitHub API + Manifest Raw chống lưu đệm (`no-cache`), hỗ trợ cài đè giữ nguyên 100% dữ liệu Thế giới/Mod và tự động dọn sạch tệp `.apk` sau khi nâng cấp.
+
+---
+
+## ⚖️ Giấy Phép & Bản Quyền
+
+- Phát hành theo giấy phép mã nguồn mở **[GNU GPL-3.0-or-later](LICENSE)**, kế thừa nền tảng runtime từ dự án [Minexa](https://github.com/lovehutaocute/Minexa) ([NOTICE](NOTICE)).
+- **Quyền riêng tư ([PRIVACY.md](PRIVACY.md)):** Cam kết **Zero Telemetry** — không thu thập dữ liệu cá nhân, không chứa quảng cáo hay trình theo dõi.
+- **Tuyên bố miễn trừ Mojang / Microsoft:**
+  > **NOT AN OFFICIAL MINECRAFT PRODUCT. NOT APPROVED BY OR ASSOCIATED WITH MOJANG OR MICROSOFT.**
