@@ -4134,7 +4134,7 @@ fun MineHostManage(vm: McViewModel, navigate: (SubPage) -> Unit) {
     ) {
         item(key = "daily_tools") {
             HostCard("Công cụ thường dùng") {
-                HostAction("Điều khiển từ xa", "Kết nối Telegram, Discord và Web nội bộ.", Icons.Outlined.RemoteTv) {
+                HostAction("Điều khiển từ xa", "Kết nối Telegram, Discord và Web nội bộ.", Icons.Outlined.Cloud) {
                     navigate(SubPage.Remote)
                 }
                 HostAction("Tối ưu & luật chơi", "RAM, bảo vệ pin, chống lag và các công cụ quản trị.", Icons.Outlined.Tune) {

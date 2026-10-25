@@ -40,6 +40,7 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
     val importStatus by vm.worldImportStatus.collectAsState()
     val healthReport by vm.worldHealthReport.collectAsState()
     val config by vm.config.collectAsState()
+    val supportsJavaWorldCreation = !vm.isPowerNukkitXActive()
     val serverStorageMap by vm.serverStorageMap.collectAsState()
     val activeStorage = config.activeCoreName?.let { serverStorageMap[it] }
     val autoBackupOnStop by vm.autoBackupOnStop.collectAsState()
@@ -160,6 +161,7 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
     }
 
     fun selectPlayableMode(modeId: String, title: String) {
+        if (vm.isPowerNukkitXActive()) return
         val folder = ProHostFeatures.PLAYABLE_WORLD_MODES.firstOrNull { it.id == modeId }?.folderName
         val existingWorld = worlds.firstOrNull { it.name == folder }
         if (existingWorld != null) {
@@ -379,9 +381,15 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
 
             // NÂNG CẤP PRO MAX: CHẾ ĐỘ CHƠI & BẢN ĐỒ DỰNG SẴN 1 CHẠM (ONEBLOCK, SKYBLOCK, PARKOUR, LUCKY ISLAND)
             item(key = "playable_mode_worlds_pro_card") {
-                WorldToolsSection("Tạo map chế độ chơi", "OneBlock, SkyBlock, Parkour và Đảo kho báu", expandForTask = liveTask.active) {
+                WorldToolsSection(
+                    "Tạo map chế độ chơi",
+                    if (supportsJavaWorldCreation) "Java · OneBlock, SkyBlock, Parkour và Đảo kho báu"
+                    else "PowerNukkitX không hỗ trợ datapack Java",
+                    expandForTask = liveTask.active
+                ) {
                     Text(
-                        "Tạo map mới kèm datapack, điểm hồi sinh và rương khởi đầu. Bạn sẽ xác nhận trước khi tạo và chuyển map.",
+                        if (supportsJavaWorldCreation) "Tạo map mới kèm datapack, điểm hồi sinh và rương khởi đầu. Bạn sẽ xác nhận trước khi tạo và chuyển map."
+                        else "Các chế độ này chỉ hỗ trợ máy chủ Java. Với PowerNukkitX, hãy nhập map Bedrock hoặc chuyển map đã có trong danh sách.",
                         fontSize = 14.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -415,14 +423,14 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                         Button(
                             onClick = { selectPlayableMode("oneblock", "OneBlock") },
-                            enabled = ready && !running && !importing && !liveTask.active,
+                            enabled = supportsJavaWorldCreation && ready && !running && !importing && !liveTask.active,
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                             shape = McShape.ControlCompact,
                             modifier = Modifier.heightIn(min = 48.dp)
                         ) { Text("OneBlock", fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
                         Button(
                             onClick = { selectPlayableMode("skyblock", "SkyBlock") },
-                            enabled = ready && !running && !importing && !liveTask.active,
+                            enabled = supportsJavaWorldCreation && ready && !running && !importing && !liveTask.active,
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                             shape = McShape.ControlCompact,
                             modifier = Modifier.heightIn(min = 48.dp)
@@ -432,14 +440,14 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                         Button(
                             onClick = { selectPlayableMode("parkour", "Parkour") },
-                            enabled = ready && !running && !importing && !liveTask.active,
+                            enabled = supportsJavaWorldCreation && ready && !running && !importing && !liveTask.active,
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                             shape = McShape.ControlCompact,
                             modifier = Modifier.heightIn(min = 48.dp)
                         ) { Text("Parkour", fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
                         Button(
                             onClick = { selectPlayableMode("lucky_island", "Đảo kho báu") },
-                            enabled = ready && !running && !importing && !liveTask.active,
+                            enabled = supportsJavaWorldCreation && ready && !running && !importing && !liveTask.active,
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                             shape = McShape.ControlCompact,
                             modifier = Modifier.heightIn(min = 48.dp)
@@ -486,7 +494,18 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
                     )
                 }
 
-                WorldToolsSection("Tạo map từ seed", "Chọn địa hình, seed có sẵn hoặc nhập seed của bạn") {
+                WorldToolsSection(
+                    "Tạo map từ seed",
+                    if (supportsJavaWorldCreation) "Java · Chọn địa hình và seed"
+                    else "Ứng dụng chưa hỗ trợ tạo map theo seed trên PowerNukkitX"
+                ) {
+                    if (!supportsJavaWorldCreation) {
+                        Text(
+                            "Seed và địa hình trong mục này chỉ áp dụng cho máy chủ Java. Với PowerNukkitX, bạn vẫn có thể nhập, chuyển và sao lưu map Bedrock.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     Text(
                         "1. Chọn kiểu địa hình thế giới (giữ nguyên các thế giới cũ, chuyển qua lại bất kỳ lúc nào):",
                         fontSize = 14.sp,
@@ -501,6 +520,7 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
                             val selected = presetWorldType == typeId
                             FilterChip(
                                 selected = selected,
+                                enabled = supportsJavaWorldCreation,
                                 onClick = {
                                     presetWorldType = typeId
                                     presetWorldLabel = labelVi
@@ -531,6 +551,7 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
                             val selectedSeed = presetSeedInput == seedCode
                             FilterChip(
                                 selected = selectedSeed,
+                                enabled = supportsJavaWorldCreation,
                                 onClick = {
                                     presetSeedInput = seedCode
                                     presetNameInput = suggestedName
@@ -554,6 +575,7 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
                         OutlinedTextField(
                             value = presetNameInput,
                             onValueChange = { presetNameInput = it },
+                            enabled = supportsJavaWorldCreation,
                             label = { Text("Tên Thế Giới mới") },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
@@ -561,6 +583,7 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
                         OutlinedTextField(
                             value = presetSeedInput,
                             onValueChange = { presetSeedInput = it },
+                            enabled = supportsJavaWorldCreation,
                             label = { Text("Mã Seed (Tùy chọn)") },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
@@ -570,6 +593,7 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
                     Spacer(Modifier.height(6.dp))
                     Button(
                         onClick = {
+                            if (vm.isPowerNukkitXActive()) return@Button
                             pendingPresetWorld = PresetWorldRequest(
                                 name = presetNameInput,
                                 seed = presetSeedInput,
@@ -577,7 +601,7 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
                                 label = presetWorldLabel
                             )
                         },
-                        enabled = ready && !running && !importing && !liveTask.active,
+                        enabled = supportsJavaWorldCreation && ready && !running && !importing && !liveTask.active,
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                         shape = McShape.ControlCompact,
                         modifier = Modifier.fillMaxWidth()
@@ -1149,7 +1173,7 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
         }
     }
 
-    pendingPlayableMode?.let { (modeId, title) ->
+    pendingPlayableMode?.takeIf { supportsJavaWorldCreation }?.let { (modeId, title) ->
         val folder = ProHostFeatures.PLAYABLE_WORLD_MODES.firstOrNull { it.id == modeId }?.folderName.orEmpty()
         AlertDialog(
             onDismissRequest = { pendingPlayableMode = null },
@@ -1165,9 +1189,10 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
                 TextButton(
                     onClick = {
                         pendingPlayableMode = null
+                        if (vm.isPowerNukkitXActive()) return@TextButton
                         vm.createPlayableModeWorldOneTap(modeId)
                     },
-                    enabled = ready && !running && !importing && !liveTask.active
+                    enabled = supportsJavaWorldCreation && ready && !running && !importing && !liveTask.active
                 ) { Text("Tạo và chuyển map") }
             },
             dismissButton = {
@@ -1176,7 +1201,7 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
         )
     }
 
-    pendingPresetWorld?.let { request ->
+    pendingPresetWorld?.takeIf { supportsJavaWorldCreation }?.let { request ->
         AlertDialog(
             onDismissRequest = { pendingPresetWorld = null },
             title = { Text("Tạo map '${request.name.ifBlank { "world_new" }}'?") },
@@ -1192,6 +1217,7 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
                 TextButton(
                     onClick = {
                         pendingPresetWorld = null
+                        if (vm.isPowerNukkitXActive()) return@TextButton
                         vm.createPresetWorldWithSeed(
                             baseWorldName = request.name,
                             seed = request.seed,
@@ -1199,7 +1225,7 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
                             presetLabelVi = request.label
                         )
                     },
-                    enabled = ready && !running && !importing && !liveTask.active
+                    enabled = supportsJavaWorldCreation && ready && !running && !importing && !liveTask.active
                 ) { Text("Tạo và chuyển map") }
             },
             dismissButton = {

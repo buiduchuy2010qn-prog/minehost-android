@@ -12867,7 +12867,7 @@ class McViewModel(
                 active = true,
                 progress = 0.08f,
                 title = "🗺️ Đang dựng chế độ chơi mới...",
-                detail = "Giữ nguyên 100% các thế giới cũ của bạn"
+                detail = "Đang tạo thư mục map cho chế độ đã chọn. Nên sao lưu map trước khi thay đổi."
             )
             try {
                 val res = com.mineserve.mobile.server.ProHostFeatures.createPlayableModeWorldOneTap(
