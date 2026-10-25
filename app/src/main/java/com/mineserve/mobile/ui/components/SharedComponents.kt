@@ -705,7 +705,6 @@ fun MinecraftPixelArtIcon(
         painter = painterResource(resourceId),
         contentDescription = kind.titleVi,
         contentScale = androidx.compose.ui.layout.ContentScale.FillBounds,
-        filterQuality = androidx.compose.ui.graphics.FilterQuality.None,
         modifier = modifier
             .size(size)
             .clip(RoundedCornerShape(6.dp))
