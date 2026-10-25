@@ -292,7 +292,26 @@ object CrashReportAnalyzer {
         )
         val causes = causedBy.findAll(sanitizedText).map { it.groupValues[1].trim() }.distinct().take(6).toList()
         val code = exitCode.find(sanitizedText)?.groupValues?.getOrNull(1)?.toIntOrNull()
-        val components = component.findAll(sanitizedText).map { it.groupValues[1] }.distinct().take(12).toList()
+        val ignoredInternalComponents = setOf(
+            "net.minecraft.class",
+            "mixin.0.8.7.jar",
+            "server.jar",
+            "server-intermediary.jar"
+        )
+        val components = component.findAll(sanitizedText)
+            .map { it.groupValues[1] }
+            .filter { comp ->
+                val lower = comp.lowercase()
+                lower !in ignoredInternalComponents &&
+                    !lower.startsWith("net.minecraft.") &&
+                    !lower.startsWith("sponge-mixin") &&
+                    !lower.startsWith("fabric-loader") &&
+                    !lower.startsWith("mixin-") &&
+                    !lower.startsWith("java.")
+            }
+            .distinct()
+            .take(12)
+            .toList()
         val modConflictDetails = extractModConflictDetails(sanitizedText)
 
         val findings = mutableListOf<Finding>()

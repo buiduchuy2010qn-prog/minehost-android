@@ -92,6 +92,37 @@
       "suggest": "Hãy kiểm tra lại quá trình tải Core máy chủ; với Forge/NeoForge/Quilt cần chạy trình cài đặt hoàn tất trước khi bật."
     },
     {
+      "id": "port-bind",
+      "level": "Identified",
+      "contains": [
+        "Address already in use",
+        "BindException",
+        "Failed to bind",
+        "FAILED TO BIND TO PORT",
+        "端口被占用",
+        "Cổng đang bị chiếm dụng",
+        "Cannot assign requested address"
+      ],
+      "regex": "Failed to bind to port\\s+(\\d+)",
+      "label": "Không thể mở cổng mạng (Trùng cổng)",
+      "detail": "Máy chủ không thể lắng nghe trên địa chỉ hoặc cổng đã cấu hình{{ (cổng $1)}}, thường do tiến trình cũ chưa tắt hẳn hoặc cổng đang bị ứng dụng khác chiếm.",
+      "evidence": "Phát hiện lỗi BindException / Failed to bind $1",
+      "suggest": "Hãy bấm nút「🛠️ Tự Động Sửa Lỗi Server & Bật Lại Ngay」bên dưới (MineHost sẽ tự dọn tiến trình cũ hoặc tự chuyển sang cổng trống kế tiếp)."
+    },
+    {
+      "id": "eula-not-accepted",
+      "level": "Identified",
+      "contains": [
+        "You need to agree to the EULA",
+        "eula=false",
+        "EULA"
+      ],
+      "label": "Chưa đồng ý điều khoản Minecraft EULA",
+      "detail": "Máy chủ từ chối khởi động vì tệp eula.txt đang ở trạng thái eula=false.",
+      "evidence": "Phát hiện thông báo EULA / eula=false",
+      "suggest": "Hãy bấm Bật Server và chọn「Tôi đồng ý và bật server」trong hộp thoại Minecraft EULA."
+    },
+    {
       "id": "classpath-mismatch",
       "level": "Identified",
       "contains": [
@@ -101,10 +132,10 @@
         "NoSuchFieldError",
         "IncompatibleClassChangeError"
       ],
-      "label": "Xung đột thư viện hoặc lệch phiên bản Mod/Plugin",
-      "detail": "Khi chạy không tìm thấy Class, Method hoặc Field — thường do cài Mod/Plugin sai phiên bản Minecraft hoặc thiếu thư viện phụ trợ (API).",
-      "evidence": "Phát hiện lỗi liên kết Class/Method/Field (NoClassDefFoundError / NoSuchMethodError)",
-      "suggest": "Hãy kiểm tra Mod hoặc Plugin vừa cài gần nhất, dùng nút「Quét lỗi thiếu thư viện Mod phụ trợ」hoặc「Hoàn tác Mod vừa cài」trên Trang chủ."
+      "label": "Lỗi bộ đệm lõi (.fabric/remappedJars) hoặc lệch thư viện",
+      "detail": "Không nạp được lớp lõi Minecraft (net.minecraft.class / mixin) — thường xảy ra khi lần trước bạn bấm Dừng Server lúc đang ở 62% (làm bộ đệm .fabric/remappedJars bị ghi dở dang) hoặc do lệch phiên bản thư viện.",
+      "evidence": "Phát hiện lỗi liên kết Class/Method (NoClassDefFoundError / bộ đệm remappedJars bị gián đoạn)",
+      "suggest": "Hãy bấm nút「🛠️ Tự Động Sửa Lỗi Server & Bật Lại Ngay (1 Chạm)」bên dưới để MineHost tự động xóa bộ đệm .fabric/remappedJars bị lỗi và bật lại Server sạch 100%!"
     },
     {
       "id": "mod-mismatch",
@@ -123,7 +154,7 @@
       "label": "Xung đột Mod, lệch phiên bản MC hoặc thiếu thư viện Mod",
       "detail": "Một hoặc nhiều Mod trong thư mục mods/ đang bị thiếu thư viện phụ trợ (như Fabric API), cài lệch phiên bản Minecraft của Server, hoặc là Mod chỉ dành cho máy chơi (Client-only).",
       "evidence": "Phát hiện lỗi xung đột phiên bản Mod / thiếu thư viện phụ trợ",
-      "suggest": "Hãy bấm nút「🛠️ Tự Động Sửa Lỗi Mod & Bật Lại Server」ngay bên dưới để MineHost tự tải bù thư viện thiếu và tự tạm tắt các Mod lệch phiên bản!"
+      "suggest": "Hãy bấm nút「🛠️ Tự Động Sửa Lỗi Server & Bật Lại Ngay」ngay bên dưới để MineHost tự tải bù thư viện thiếu và tự tạm tắt các Mod lệch phiên bản!"
     },
     {
       "id": "plugin-mismatch",
@@ -142,37 +173,6 @@
       "detail": "Nhật ký ghi nhận Plugin không nạp được, không hỗ trợ phiên bản API hiện tại hoặc file plugin.yml bị lỗi.",
       "evidence": "Phát hiện lỗi nạp Plugin / Unsupported API version",
       "suggest": "Hãy kiểm tra tên Plugin xuất hiện ngay trước dòng báo lỗi và tải bản Plugin tương thích với phiên bản Minecraft hiện tại."
-    },
-    {
-      "id": "port-bind",
-      "level": "Identified",
-      "contains": [
-        "Address already in use",
-        "BindException",
-        "Failed to bind",
-        "FAILED TO BIND TO PORT",
-        "端口被占用",
-        "Cổng đang bị chiếm dụng",
-        "Cannot assign requested address"
-      ],
-      "regex": "Failed to bind to port\\s+(\\d+)",
-      "label": "Không thể mở cổng mạng (Trùng cổng)",
-      "detail": "Máy chủ không thể lắng nghe trên địa chỉ hoặc cổng đã cấu hình{{ (cổng $1)}}, thường do tiến trình cũ chưa tắt hẳn hoặc cổng đang bị ứng dụng khác chiếm.",
-      "evidence": "Phát hiện lỗi BindException / Failed to bind $1",
-      "suggest": "Hãy đợi vài giây rồi bật lại Server (MineHost sẽ tự dọn tiến trình cũ), hoặc đổi cổng server-port trong phần Cài đặt thuộc tính{{ (cổng hiện tại: $1)}}."
-    },
-    {
-      "id": "eula-not-accepted",
-      "level": "Identified",
-      "contains": [
-        "You need to agree to the EULA",
-        "eula=false",
-        "EULA"
-      ],
-      "label": "Chưa đồng ý điều khoản Minecraft EULA",
-      "detail": "Máy chủ từ chối khởi động vì tệp eula.txt đang ở trạng thái eula=false.",
-      "evidence": "Phát hiện thông báo EULA / eula=false",
-      "suggest": "Hãy bấm Bật Server và chọn「Tôi đồng ý và bật server」trong hộp thoại Minecraft EULA."
     },
     {
       "id": "runtime-permission",

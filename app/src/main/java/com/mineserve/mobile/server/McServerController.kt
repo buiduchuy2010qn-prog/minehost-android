@@ -2051,8 +2051,33 @@ class McServerController(
         }
     }.getOrDefault(false)
 
+    private fun isLocalTcpPortInUse(port: Int): Boolean {
+        if (port !in 1..65535) return false
+        return try {
+            java.net.ServerSocket().use { ss ->
+                ss.reuseAddress = true
+                ss.bind(java.net.InetSocketAddress("127.0.0.1", port))
+                false
+            }
+        } catch (_: Throwable) {
+            true
+        }
+    }
+
     private fun optimizeCoreConfigsForFastBoot(serverDir: File, coreType: ServerCore) {
         runCatching {
+            // 0. Tự động kiểm tra & dọn sạch bộ đệm .fabric/remappedJars bị ghi dở dang (do tắt lúc 62%) và mở khóa session.lock
+            val hadRecentFailure = lastStartupFailure != null
+            val (repairedCaches, unlockedLocks) = ProHostFeatures.repairCorruptedCoreCachesAndLocks(
+                serverDir = serverDir,
+                forcePurgeFabricRemapped = hadRecentFailure
+            )
+            if (repairedCaches > 0 || unlockedLocks > 0) {
+                termux.emitLog(
+                    "[MineHost] Đã tự động dọn $repairedCaches bộ đệm lõi (.fabric/remappedJars) bị lỗi & mở khóa $unlockedLocks tệp session.lock!"
+                )
+            }
+
             // 1. Tắt kiểm tra cập nhật Mod qua mạng của Forge/NeoForge (fml.toml) để tránh ngâm lâu ở 62% (LoadingCore)
             if (coreType == ServerCore.Forge || coreType == ServerCore.NeoForge) {
                 val configDir = File(serverDir, "config").apply { mkdirs() }
@@ -2072,18 +2097,32 @@ class McServerController(
                     )
                 }
             }
-            // 2. Bật ghi chunk bất đồng bộ (sync-chunk-writes=false) giúp tạo vùng Spawn khi Mở và lưu Map khi Đóng nhanh gấp 3-5 lần
+            // 2. Bật ghi chunk bất đồng bộ (sync-chunk-writes=false) & tự động tránh xung đột cổng mạng nếu cổng mặc định đang bị chiếm
             if (!coreType.isBedrock && coreType !in setOf(ServerCore.Velocity, ServerCore.BungeeCord, ServerCore.Unknown)) {
                 val propsFile = File(serverDir, "server.properties")
                 if (propsFile.isFile) {
-                    val text = propsFile.readText()
+                    var text = propsFile.readText()
                     if (text.contains(Regex("""(?m)^sync-chunk-writes\s*=\s*true\s*$"""))) {
-                        propsFile.writeText(
-                            text.replace(Regex("""(?m)^sync-chunk-writes\s*=\s*true\s*$"""), "sync-chunk-writes=false")
-                        )
+                        text = text.replace(Regex("""(?m)^sync-chunk-writes\s*=\s*true\s*$"""), "sync-chunk-writes=false")
                     } else if (!text.contains("sync-chunk-writes=")) {
-                        propsFile.appendText((if (text.endsWith("\n")) "" else "\n") + "sync-chunk-writes=false\n")
+                        text += (if (text.endsWith("\n")) "" else "\n") + "sync-chunk-writes=false\n"
                     }
+
+                    // Kiểm tra nếu cổng server-port đang bị ứng dụng khác chiếm dụng -> tự động tìm cổng trống kế tiếp
+                    val portMatch = Regex("""(?m)^server-port\s*=\s*(\d+)\s*$""").find(text)
+                    val configuredPort = portMatch?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 25565
+                    if (isLocalTcpPortInUse(configuredPort)) {
+                        val freePort = ((configuredPort + 1)..(configuredPort + 35)).firstOrNull { !isLocalTcpPortInUse(it) }
+                        if (freePort != null) {
+                            text = if (portMatch != null) {
+                                text.replace(Regex("""(?m)^server-port\s*=\s*\d+\s*$"""), "server-port=$freePort")
+                            } else {
+                                text + "server-port=$freePort\n"
+                            }
+                            termux.emitLog("[MineHost] Phát hiện cổng $configuredPort đang bận -> Đã tự động chuyển sang cổng trống $freePort để mở Server không bị lỗi!")
+                        }
+                    }
+                    propsFile.writeText(text)
                 }
             }
         }

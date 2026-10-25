@@ -1040,18 +1040,26 @@ object ProHostFeatures {
         val upgradedMods: List<String>,
         val disabledMods: List<String>,
         val deduplicatedMods: List<String>,
-        val remainingActiveCount: Int
+        val remainingActiveCount: Int,
+        val repairedCoreCacheCount: Int = 0,
+        val unlockedWorldLocks: Int = 0
     ) {
         val totalFixedCount: Int
-            get() = downloadedDeps.size + upgradedMods.size + disabledMods.size + deduplicatedMods.size
+            get() = downloadedDeps.size + upgradedMods.size + disabledMods.size + deduplicatedMods.size + repairedCoreCacheCount + unlockedWorldLocks
 
         fun toVietnameseSummary(mcVersion: String, loader: String): String = buildString {
-            appendLine("🛠️ Kết quả Tự Động Sửa Lỗi Mod ($loader $mcVersion):")
+            appendLine("🛠️ Kết quả Tự Động Sửa Lỗi Server & Mod ($loader $mcVersion):")
+            if (repairedCoreCacheCount > 0) {
+                appendLine("• ♻️ Đã dọn sạch & làm mới $repairedCoreCacheCount bộ đệm lõi (.fabric/remappedJars / libraries) bị ghi dở dang!")
+            }
+            if (unlockedWorldLocks > 0) {
+                appendLine("• 🔓 Đã mở khóa $unlockedWorldLocks tệp session.lock bị kẹt từ lần tắt trước.")
+            }
             if (downloadedDeps.isNotEmpty()) {
                 appendLine("• 📥 Đã tự tải bù ${downloadedDeps.size} thư viện thiếu: ${downloadedDeps.joinToString(", ")}")
             }
             if (upgradedMods.isNotEmpty()) {
-                appendLine("• 🔄 Đã đổi sang bản khớp MC $mcVersion cho ${upgradedMods.size} Mod: ${upgradedMods.joinToString(", ")}")
+                appendLine("• 🔄 Đã đổi sang bản khớp MC $mcVersion cho ${upgradedMods.size} Mod: ${upgradedMods.size} tệp")
             }
             if (disabledMods.isNotEmpty()) {
                 appendLine("• ⏸️ Đã tạm tắt (.disabled) ${disabledMods.size} Mod xung đột / lệch bản MC: ${disabledMods.joinToString(", ")}")
@@ -1059,12 +1067,97 @@ object ProHostFeatures {
             if (deduplicatedMods.isNotEmpty()) {
                 appendLine("• 🧹 Đã dọn ${deduplicatedMods.size} tệp Mod trùng lặp: ${deduplicatedMods.joinToString(", ")}")
             }
-            if (totalFixedCount == 0) {
+            if (remainingActiveCount == 0) {
+                appendLine("• ✅ Máy chủ đang chạy thuần (0 Mod trong mods/) — Đã làm mới bộ đệm lõi & khóa thế giới để khởi chạy sạch 100%!")
+            } else if (totalFixedCount == 0) {
                 appendLine("• ✅ Toàn bộ $remainingActiveCount Mod đang bật trong mods/ đều hợp lệ và khớp phiên bản MC $mcVersion!")
             } else {
                 appendLine("• 🚀 Hiện có $remainingActiveCount Mod tương thích hoàn toàn đang bật — sẵn sàng chạy Server!")
             }
         }.trim()
+    }
+
+    /**
+     * Kiểm tra & dọn sạch các tệp bộ đệm lõi (.fabric/remappedJars, .fabric/server, versions/, libraries/)
+     * bị cắt cụt do người dùng bấm Dừng Server ở bước 62% (Đang nạp Core), cùng các khóa session.lock bị kẹt.
+     */
+    fun repairCorruptedCoreCachesAndLocks(
+        serverDir: File,
+        forcePurgeFabricRemapped: Boolean = false
+    ): Pair<Int, Int> {
+        var repairedCaches = 0
+        var unlockedLocks = 0
+
+        runCatching {
+            // 1. Kiểm tra & dọn .fabric/remappedJars và .fabric/processedMods
+            val fabricDir = File(serverDir, ".fabric")
+            if (fabricDir.isDirectory) {
+                val remappedDir = File(fabricDir, "remappedJars")
+                val processedDir = File(fabricDir, "processedMods")
+                var shouldPurgeRemapped = forcePurgeFabricRemapped
+                if (!shouldPurgeRemapped && remappedDir.isDirectory) {
+                    val jars = remappedDir.walkTopDown().filter { it.isFile && it.name.endsWith(".jar", ignoreCase = true) }.toList()
+                    val hasTemp = remappedDir.walkTopDown().any { it.isFile && (it.name.endsWith(".tmp") || it.name.endsWith(".part")) }
+                    if (jars.isEmpty() || hasTemp) {
+                        shouldPurgeRemapped = true
+                    } else {
+                        for (jar in jars) {
+                            val valid = runCatching {
+                                if (jar.length() < 1_000_000L) false
+                                else ZipFile(jar).use { z -> z.size() > 100 }
+                            }.getOrDefault(false)
+                            if (!valid) {
+                                shouldPurgeRemapped = true
+                                break
+                            }
+                        }
+                    }
+                }
+                if (shouldPurgeRemapped) {
+                    if (remappedDir.exists() && remappedDir.deleteRecursively()) repairedCaches++
+                    if (processedDir.exists() && processedDir.deleteRecursively()) repairedCaches++
+                }
+            }
+
+            // 2. Kiểm tra toàn bộ tệp .jar trong .fabric/server, versions/ và libraries/ xem có tệp nào bị tải dở dang (hỏng ZIP) không
+            listOf(
+                File(serverDir, ".fabric/server"),
+                File(serverDir, "versions"),
+                File(serverDir, "libraries"),
+                File(serverDir, "cache")
+            ).forEach { dir ->
+                if (dir.isDirectory) {
+                    dir.walkTopDown().filter { it.isFile }.forEach { f ->
+                        val nameLower = f.name.lowercase()
+                        if (nameLower.endsWith(".tmp") || nameLower.endsWith(".part")) {
+                            if (f.delete()) repairedCaches++
+                        } else if (nameLower.endsWith(".jar")) {
+                            val isValidZip = runCatching {
+                                f.length() > 256L && ZipFile(f).use { z -> z.size() > 0 }
+                            }.getOrDefault(false)
+                            if (!isValidZip) {
+                                if (f.delete()) repairedCaches++
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 3. Mở khóa session.lock bị kẹt trong các thư mục thế giới
+            serverDir.listFiles()?.filter { it.isDirectory }?.forEach { sub ->
+                val lockFile = File(sub, "session.lock")
+                if (lockFile.isFile && lockFile.delete()) {
+                    unlockedLocks++
+                }
+            }
+
+            // 4. Đảm bảo eula.txt luôn được bật eula=true
+            val eulaFile = File(serverDir, "eula.txt")
+            if (!eulaFile.exists() || !eulaFile.readText().contains("eula=true", ignoreCase = true)) {
+                eulaFile.writeText("eula=true\n")
+            }
+        }
+        return repairedCaches to unlockedLocks
     }
 
     private data class InspectedModJar(
@@ -1559,12 +1652,19 @@ object ProHostFeatures {
         }
 
         val finalCount = modsDir.listFiles { f -> f.isFile && f.name.endsWith(".jar", ignoreCase = true) }?.size ?: 0
+        onProgress("♻️ Đang làm mới bộ đệm lõi (.fabric/remappedJars) & mở khóa session.lock...")
+        val (repairedCaches, unlockedLocks) = repairCorruptedCoreCachesAndLocks(
+            serverDir = serverDir,
+            forcePurgeFabricRemapped = true
+        )
         ModDoctorReport(
             downloadedDeps = downloadedDeps.distinct(),
             upgradedMods = upgradedMods.distinct(),
             disabledMods = disabledMods.distinct(),
             deduplicatedMods = deduplicatedMods.distinct(),
-            remainingActiveCount = finalCount
+            remainingActiveCount = finalCount,
+            repairedCoreCacheCount = repairedCaches,
+            unlockedWorldLocks = unlockedLocks
         )
     }
 

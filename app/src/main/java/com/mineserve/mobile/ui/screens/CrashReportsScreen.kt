@@ -454,8 +454,8 @@ fun CrashReportDialog(
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Text(
-                                            if (modDoctorBusy) "⏳ Đang tự sửa lỗi Mod..."
-                                            else "🛠️ Tự Động Sửa Lỗi Mod & Bật Lại Server (1 Chạm)",
+                                            if (modDoctorBusy) "⏳ Đang làm mới bộ đệm Core & sửa lỗi..."
+                                            else "🛠️ Tự Động Sửa Lỗi Server & Bật Lại Ngay (1 Chạm)",
                                             fontWeight = FontWeight.ExtraBold,
                                             fontSize = 11.5.sp
                                         )
@@ -471,7 +471,7 @@ fun CrashReportDialog(
                                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
                                             modifier = Modifier.weight(1f)
                                         ) {
-                                            Text("🔧 Chỉ Sửa Mod", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                            Text("♻️ Làm Mới Bộ Đệm & Sửa", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                         }
                                         if (onGoToModManager != null) {
                                             OutlinedButton(
