@@ -15,9 +15,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.IntOffset
@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -54,7 +55,6 @@ import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -63,7 +63,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -86,14 +85,17 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mineserve.mobile.data.JavaRuntime
@@ -104,13 +106,11 @@ import com.mineserve.mobile.data.ServerState
 import com.mineserve.mobile.data.StepStatus
 import kotlinx.coroutines.delay
 import com.mineserve.mobile.ui.theme.Coral
-import com.mineserve.mobile.ui.theme.CoralSoft
 import com.mineserve.mobile.ui.theme.FieldBg
 import com.mineserve.mobile.ui.theme.FieldGray
-import com.mineserve.mobile.ui.theme.Indigo
-import com.mineserve.mobile.ui.theme.IndigoDark
 import com.mineserve.mobile.ui.theme.IndigoSoft
-import com.mineserve.mobile.ui.theme.Line
+import com.mineserve.mobile.ui.theme.LightIndigo
+import com.mineserve.mobile.ui.theme.LightIndigoDark
 import com.mineserve.mobile.ui.theme.McIcon
 import com.mineserve.mobile.ui.theme.McShape
 import com.mineserve.mobile.ui.theme.McSpacing
@@ -146,9 +146,7 @@ fun HeaderBlock(
             Text(
                 text = eyebrow,
                 color = Muted,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 0.6.sp
+                style = MaterialTheme.typography.bodyMedium
             )
             Spacer(Modifier.height(3.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -160,9 +158,8 @@ fun HeaderBlock(
                 Text(
                     text = title,
                     color = MaterialTheme.colorScheme.onBackground,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
+                    style = MaterialTheme.typography.headlineSmall,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
@@ -197,12 +194,11 @@ fun BackBar(title: String, onBack: () -> Unit) {
             }
             Text(
                 title,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
+                style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onBackground,
-                maxLines = 1,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(start = 2.dp)
+                modifier = Modifier.weight(1f).padding(start = 8.dp)
             )
         }
     }
@@ -219,7 +215,7 @@ fun EmptyHint(icon: ImageVector, text: String, modifier: Modifier = Modifier) {
     ) {
         Icon(icon, contentDescription = null, tint = Muted, modifier = Modifier.size(40.dp))
         Spacer(Modifier.height(10.dp))
-        Text(text, color = Muted, fontSize = 13.sp)
+        Text(text, color = Muted, style = MaterialTheme.typography.bodyLarge)
     }
 }
 
@@ -261,7 +257,7 @@ fun HeroBlock(
             .padding(horizontal = McSpacing.Page, vertical = 8.dp)
             .clip(McShape.Card)
             .background(
-                Brush.linearGradient(colors = listOf(Indigo, IndigoDark))
+                Brush.linearGradient(colors = listOf(LightIndigo, LightIndigoDark))
             )
             .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
@@ -303,10 +299,10 @@ fun HeroBlock(
                             state.isRunning -> stringResource(R.string.hero_running, coreLabel)
                             else -> stringResource(R.string.hero_stopped)
                         },
-                        color = Color.White.copy(alpha = 0.9f),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
@@ -343,17 +339,20 @@ fun HeroBlock(
             Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
                 HeroStat(
                     if (state.isRunning) String.format("%.1f", state.tps) else "--",
-                    stringResource(R.string.hero_tps)
+                    stringResource(R.string.hero_tps),
+                    modifier = Modifier.weight(1f)
                 )
                 HeroStat(
                     if (state.isRunning) "${state.onlinePlayers}/${state.maxPlayers}" else "--/--",
-                    stringResource(R.string.hero_online)
+                    stringResource(R.string.hero_online),
+                    modifier = Modifier.weight(1f)
                 )
                 HeroStat(
                     if (state.isRunning && state.runningSinceMs > 0)
                         formatUptime(android.os.SystemClock.elapsedRealtime() - state.runningSinceMs)
                     else "--",
-                    stringResource(R.string.hero_uptime)
+                    stringResource(R.string.hero_uptime),
+                    modifier = Modifier.weight(1f)
                 )
             }
             // CPU 与内存同为水平进度条，各占一行；CPU 是整机读数，未运行服务端时也照常显示。
@@ -371,8 +370,8 @@ fun HeroBlock(
                 Spacer(Modifier.height(4.dp))
                 Text(
                     "Đã cập nhật · ${formatRefreshAgo(lastRefreshAtMs)}",
-                    color = Color.White.copy(alpha = 0.55f),
-                    fontSize = 9.sp
+                    color = Color.White.copy(alpha = 0.85f),
+                    fontSize = 12.sp
                 )
             }
             if (onlineModeEnabled) {
@@ -380,7 +379,7 @@ fun HeroBlock(
                 Text(
                     stringResource(R.string.hero_online_mode_warning),
                     color = Color(0xFFFF8A80),
-                    fontSize = 10.sp
+                    fontSize = 14.sp
                 )
             }
             if (whitelistEnabled) {
@@ -388,7 +387,7 @@ fun HeroBlock(
                 Text(
                     stringResource(R.string.hero_whitelist_on),
                     color = Color(0xFFFFD180),
-                    fontSize = 10.sp
+                    fontSize = 14.sp
                 )
             }
             // 启动中提示：适配启动耗时较长的场景
@@ -413,13 +412,13 @@ fun HeroBlock(
                 }
                 Text(
                     "Giai đoạn khởi động: $viPhaseLabel (${(state.startupPhase.progress * 100).toInt()}%)",
-                    color = Color.White.copy(alpha = 0.7f),
-                    fontSize = 10.sp
+                    color = Color.White.copy(alpha = 0.9f),
+                    fontSize = 14.sp
                 )
                 Text(
                     "Chuẩn bị môi trường · Tải thư viện · Khởi chạy Java · Nạp Core · Tạo thế giới · Mở mạng",
-                    color = Color.White.copy(alpha = 0.52f),
-                    fontSize = 9.sp,
+                    color = Color.White.copy(alpha = 0.85f),
+                    fontSize = 12.sp,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -479,35 +478,34 @@ private fun HeroMeterBar(label: String, ratio: Float, valueText: String) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 label,
-                color = Color.White.copy(alpha = 0.75f),
-                fontSize = 9.sp
+                color = Color.White.copy(alpha = 0.9f),
+                fontSize = 12.sp,
+                modifier = Modifier.weight(1f)
             )
-            Spacer(Modifier.width(8.dp))
-            // 进度条占据剩余空间，右端留给数值文本。
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(7.dp)
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(Color.White.copy(alpha = 0.22f))
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth(ratio.coerceIn(0f, 1f))
-                        .height(7.dp)
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(
-                            Brush.linearGradient(listOf(MintBright, Mint))
-                        )
-                )
-            }
             Spacer(Modifier.width(8.dp))
             Text(
                 valueText,
                 color = Color.White,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                textAlign = TextAlign.End,
+                modifier = Modifier.weight(2f)
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(7.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(Color.White.copy(alpha = 0.22f))
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(ratio.coerceIn(0f, 1f))
+                    .height(7.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(Brush.linearGradient(listOf(MintBright, Mint)))
             )
         }
     }
@@ -518,22 +516,22 @@ private fun formatMemoryFull(mb: Long): String =
     if (mb >= 1024) String.format(java.util.Locale.US, "%.1f GB", mb / 1024.0) else "${mb} MB"
 
 @Composable
-private fun HeroStat(value: String, label: String) {
+private fun HeroStat(value: String, label: String, modifier: Modifier = Modifier) {
     Column(
-        modifier = Modifier.clearAndSetSemantics {
+        modifier = modifier.clearAndSetSemantics {
             contentDescription = "$value, $label"
         }
     ) {
         Text(
             value,
             color = Color.White,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Bold
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Medium
         )
         Text(
             label,
-            color = Color.White.copy(alpha = 0.75f),
-            fontSize = 9.sp
+            color = Color.White.copy(alpha = 0.9f),
+            fontSize = 12.sp
         )
     }
 }
@@ -780,10 +778,8 @@ private fun inferCardArtKind(title: String): MinecraftArtKind {
     }
 }
 
-private val McCardTopBarBrush = Brush.horizontalGradient(listOf(Indigo, Mint, IndigoDark))
-
 /**
- * 通用卡片容器：Phong cách Minecraft hiện đại với viền Emerald mỏng + biểu tượng khối Pixel trực quan.
+ * Thẻ nội dung thống nhất: nền rõ ràng, tiêu đề vừa và khoảng cách thoáng.
  */
 @Composable
 fun McCard(
@@ -803,16 +799,9 @@ fun McCard(
             ),
         shape = McShape.Card,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Line)
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(3.dp)
-                    .background(McCardTopBarBrush)
-            )
             Column(
                 Modifier.padding(
                     if (compact) McSpacing.CardInnerCompact else McSpacing.CardInner
@@ -827,13 +816,11 @@ fun McCard(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.weight(1f)
                     ) {
-                        MinecraftPixelArtIcon(kind = artKind, size = 18.dp)
+                        MinecraftPixelArtIcon(kind = artKind, size = 20.dp)
                         Spacer(Modifier.width(8.dp))
                         Text(
                             title,
-                            fontSize = 13.5.sp,
-                            lineHeight = 18.sp,
-                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.weight(1f, fill = false)
                         )
@@ -873,8 +860,8 @@ fun StepRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         val (bg, fg, text) = when (status) {
-            StepStatus.Done -> Triple(MintSoft, Mint, "✓")
-            StepStatus.Active -> Triple(IndigoSoft, Indigo, "•")
+            StepStatus.Done -> Triple(MintSoft, MaterialTheme.colorScheme.onSecondaryContainer, "✓")
+            StepStatus.Active -> Triple(IndigoSoft, MaterialTheme.colorScheme.onPrimaryContainer, "•")
             StepStatus.Wait -> Triple(FieldGray, Muted, "○")
         }
         Box(
@@ -890,10 +877,10 @@ fun StepRow(
         Text(
             name,
             color = if (status == StepStatus.Wait) Muted else MaterialTheme.colorScheme.onSurface,
-            fontSize = 13.sp,
+            style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.weight(1f)
         )
-        Text(tag, color = Muted, fontSize = 10.sp)
+        Text(tag, color = Muted, style = MaterialTheme.typography.bodySmall)
     }
 }
 
@@ -914,11 +901,7 @@ fun ProgressTrack(percent: Int) {
                 .fillMaxWidth(percent / 100f)
                 .height(8.dp)
                 .clip(RoundedCornerShape(4.dp))
-                .background(
-                    Brush.linearGradient(
-                        colors = listOf(Indigo, Color(0xFF6E7FD6))
-                    )
-                )
+                .background(MaterialTheme.colorScheme.primary)
         )
     }
 }
@@ -937,16 +920,17 @@ fun SegPill(
 ) {
     Box(
         modifier = modifier
+            .heightIn(min = 48.dp)
             .clip(McShape.Chip)
-            .background(if (selected) Indigo else unselectedBackground)
-            .clickable { onClick() }
-            .padding(horizontal = if (compact) 10.dp else 14.dp, vertical = if (compact) 6.dp else 8.dp)
+            .background(if (selected) MaterialTheme.colorScheme.primary else unselectedBackground)
+            .selectable(selected = selected, role = Role.Tab, onClick = onClick)
+            .padding(horizontal = if (compact) 10.dp else 14.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center
     ) {
         Text(
             text,
-            color = if (selected) Color.White else Muted,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.SemiBold
+            color = if (selected) MaterialTheme.colorScheme.onPrimary else Muted,
+            style = MaterialTheme.typography.labelLarge
         )
     }
 }
@@ -974,8 +958,8 @@ fun DebouncedTextField(
     minLines: Int = 1,
     maxLines: Int = Int.MAX_VALUE,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
-    textStyle: TextStyle = TextStyle.Default,
-    shape: Shape = OutlinedTextFieldDefaults.shape
+    textStyle: TextStyle = MaterialTheme.typography.bodyLarge,
+    shape: Shape = McShape.Control
 ) {
     var text by remember { mutableStateOf(value) }
     var isFocused by remember { mutableStateOf(false) }
@@ -1067,7 +1051,7 @@ fun StatusPill(text: String, color: Color, modifier: Modifier = Modifier) {
             .background(color.copy(alpha = 0.12f))
             .padding(horizontal = 10.dp, vertical = 3.dp)
     ) {
-        Text(text, color = color, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+        Text(text, color = color, style = MaterialTheme.typography.labelMedium)
     }
 }
 
@@ -1082,13 +1066,14 @@ fun AddressCopyRow(
     value: String,
     onCopy: () -> Unit,
     icon: ImageVector = Icons.Outlined.Public,
-    accent: Color = Indigo,
+    accent: Color = MaterialTheme.colorScheme.primary,
     containerColor: Color = FieldBg,
     borderColor: Color? = null
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .heightIn(min = 48.dp)
             .clip(McShape.Row)
             .background(containerColor)
             .then(
@@ -1101,12 +1086,12 @@ fun AddressCopyRow(
         Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(McIcon.Action))
         Spacer(Modifier.size(10.dp))
         Column(Modifier.weight(1f)) {
-            Text(label, color = Muted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+            Text(label, color = Muted, style = MaterialTheme.typography.bodyMedium)
             Spacer(Modifier.height(2.dp))
             Text(
                 value,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium,
                 fontFamily = FontFamily.Monospace,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -1140,7 +1125,7 @@ fun StatLine(icon: ImageVector, text: String) {
     ) {
         Icon(icon, contentDescription = null, tint = Muted, modifier = Modifier.size(McIcon.Inline))
         Spacer(Modifier.size(8.dp))
-        Text(text, color = Muted, fontSize = 11.sp)
+        Text(text, color = Muted, style = MaterialTheme.typography.bodyMedium)
     }
 }
 
@@ -1158,9 +1143,9 @@ fun HintNote(text: String, icon: ImageVector = Icons.Outlined.Info) {
             .background(FieldBg)
             .padding(12.dp)
     ) {
-        Icon(icon, contentDescription = null, tint = Indigo, modifier = Modifier.size(McIcon.Inline))
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(McIcon.Inline))
         Spacer(Modifier.size(8.dp))
-        Text(text, color = Muted, fontSize = 11.sp, lineHeight = 16.sp)
+        Text(text, color = Muted, style = MaterialTheme.typography.bodyMedium)
     }
 }
 
@@ -1175,18 +1160,17 @@ fun WarnNote(text: String) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(McShape.Row)
-            .background(CoralSoft)
-            .border(1.dp, Coral, McShape.Row)
+            .background(MaterialTheme.colorScheme.errorContainer)
             .padding(12.dp)
     ) {
         Icon(
             Icons.Outlined.WarningAmber,
             contentDescription = null,
-            tint = Coral,
+            tint = MaterialTheme.colorScheme.onErrorContainer,
             modifier = Modifier.size(McIcon.Inline)
         )
         Spacer(Modifier.size(8.dp))
-        Text(text, color = Coral, fontSize = 11.sp, lineHeight = 16.sp)
+        Text(text, color = MaterialTheme.colorScheme.onErrorContainer, style = MaterialTheme.typography.bodyMedium)
     }
 }
 
@@ -1215,28 +1199,24 @@ fun QqGroupCard() {
     McCard(title = stringResource(R.string.s1051)) {
         Text(
             stringResource(R.string.s1052),
-            fontSize = 13.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = Indigo
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface
         )
         Spacer(Modifier.height(4.dp))
         Text(
             stringResource(R.string.s1053),
             color = Muted,
-            fontSize = 11.sp
+            style = MaterialTheme.typography.bodyMedium
         )
         Spacer(Modifier.height(10.dp))
         Button(
             onClick = { openQqGroup(context) },
-            colors = ButtonDefaults.buttonColors(containerColor = Indigo),
-            shape = RoundedCornerShape(10.dp),
-            modifier = Modifier.fillMaxWidth()
+            shape = McShape.Control,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
         ) {
             Text(
                 stringResource(R.string.s1054),
-                color = Color.White,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold
+                style = MaterialTheme.typography.labelLarge
             )
         }
     }
@@ -1260,15 +1240,14 @@ fun QqGroupDialog(onDismiss: () -> Unit) {
             Icon(
                 painter = painterResource(R.drawable.ic_qq_penguin),
                 contentDescription = null,
-                tint = Indigo,
+                tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(40.dp)
             )
         },
         title = {
             Text(
                 stringResource(R.string.s1051),
-                fontWeight = FontWeight.Bold,
-                fontSize = 16.sp
+                style = MaterialTheme.typography.titleLarge
             )
         },
         text = {
@@ -1276,7 +1255,7 @@ fun QqGroupDialog(onDismiss: () -> Unit) {
                 Text(
                     stringResource(R.string.s1053),
                     color = Muted,
-                    fontSize = 11.sp
+                    style = MaterialTheme.typography.bodyMedium
                 )
                 Spacer(Modifier.height(12.dp))
                 // 群号展示块
@@ -1292,25 +1271,23 @@ fun QqGroupDialog(onDismiss: () -> Unit) {
                         Text(
                             stringResource(R.string.qq_group_label),
                             color = Muted,
-                            fontSize = 10.sp
+                            style = MaterialTheme.typography.bodyMedium
                         )
                         Text(
                             QQ_GROUP_NUMBER,
                             color = MaterialTheme.colorScheme.onBackground,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 1.sp
+                            style = MaterialTheme.typography.bodyLarge
                         )
                     }
                     TextButton(onClick = { clipboard.setText(AnnotatedString(QQ_GROUP_NUMBER)) }) {
                         Icon(
                             Icons.Outlined.ContentCopy,
                             contentDescription = null,
-                            tint = Indigo,
+                            tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(Modifier.width(4.dp))
-                        Text(stringResource(R.string.qq_copy_group), color = Indigo, fontSize = 12.sp)
+                        Text(stringResource(R.string.qq_copy_group), style = MaterialTheme.typography.labelLarge)
                     }
                 }
             }
@@ -1318,14 +1295,12 @@ fun QqGroupDialog(onDismiss: () -> Unit) {
         confirmButton = {
             Button(
                 onClick = { openQqGroup(context) },
-                colors = ButtonDefaults.buttonColors(containerColor = Indigo),
-                shape = RoundedCornerShape(10.dp)
+                shape = McShape.Control,
+                modifier = Modifier.heightIn(min = 48.dp)
             ) {
                 Text(
                     stringResource(R.string.s1054),
-                    color = Color.White,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold
+                    style = MaterialTheme.typography.labelLarge
                 )
             }
         },
@@ -1365,6 +1340,7 @@ fun RuntimeGroupHeader(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .heightIn(min = 48.dp)
             .clip(McShape.Row)
             .clickable(enabled = enabled) { onToggle() }
             .padding(top = 8.dp, start = 4.dp, end = 4.dp, bottom = 2.dp),
@@ -1373,18 +1349,17 @@ fun RuntimeGroupHeader(
         Column(Modifier.weight(1f)) {
             Text(
                 title,
-                color = Indigo,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold
+                color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.titleSmall
             )
-            Text(note, color = Muted, fontSize = 10.sp)
+            Text(note, color = Muted, style = MaterialTheme.typography.bodyMedium)
         }
         Icon(
             // 展开时朝上、折叠时朝下：箭头指向「点下去会发生什么」的相反方向是常态，
             // 但这里用「当前状态」语义更直观 —— 朝下代表内容被收起。
             imageVector = if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
             contentDescription = null,
-            tint = Indigo,
+            tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(McIcon.Item)
         )
     }
@@ -1415,10 +1390,11 @@ fun SegmentedTabs(
 ) {
     if (options.isEmpty()) return
     val safeIndex = selectedIndex.coerceIn(0, options.lastIndex)
+    val tabHeight = maxOf(48.dp, with(LocalDensity.current) { 36.sp.toDp() } + 12.dp)
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .height(36.dp)
+            .height(tabHeight)
             .clip(McShape.Chip)
             .background(FieldGray)
             .alpha(if (enabled) 1f else 0.5f)
@@ -1437,7 +1413,7 @@ fun SegmentedTabs(
                 .fillMaxHeight()
                 .padding(3.dp)
                 .clip(RoundedCornerShape(9.dp))
-                .background(Indigo)
+                .background(MaterialTheme.colorScheme.primary)
         )
         Row(Modifier.fillMaxSize()) {
             options.forEachIndexed { index, label ->
@@ -1446,15 +1422,23 @@ fun SegmentedTabs(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
-                        .clickable(enabled = enabled) { onSelect(index) },
+                        .selectable(
+                            selected = isSelected,
+                            enabled = enabled,
+                            role = Role.Tab,
+                            onClick = { onSelect(index) }
+                        )
+                        .padding(horizontal = 6.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         label,
-                        color = if (isSelected) Color.White else Muted,
-                        fontSize = 12.sp,
-                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                        maxLines = 1,
+                        color = if (isSelected) MaterialTheme.colorScheme.onPrimary else Muted,
+                        fontSize = 14.sp,
+                        lineHeight = 18.sp,
+                        fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,
+                        textAlign = TextAlign.Center,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
@@ -1540,11 +1524,12 @@ fun RuntimeVersionRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .heightIn(min = 48.dp)
             .clip(McShape.Row)
-            .background(if (selected) Mint.copy(alpha = 0.12f) else Color.Transparent)
+            .background(if (selected) MintSoft else Color.Transparent)
             .border(
                 width = if (selected) 1.5.dp else 0.dp,
-                color = if (selected) Mint else Color.Transparent,
+                color = if (selected) MaterialTheme.colorScheme.secondary else Color.Transparent,
                 shape = McShape.Row
             )
             .clickable { onClick() }
@@ -1554,19 +1539,19 @@ fun RuntimeVersionRow(
         Column(Modifier.weight(1f)) {
             Text(
                 label,
-                fontSize = 13.sp,
-                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                color = if (selected) Mint else Color.Unspecified
+                fontSize = 16.sp,
+                fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+                color = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface
             )
             note?.let {
-                Text(it, color = Muted, fontSize = 10.sp)
+                Text(it, color = Muted, style = MaterialTheme.typography.bodyMedium)
             }
         }
         if (busy) {
-            CircularProgressIndicator(modifier = Modifier.size(McIcon.Inline), strokeWidth = 2.dp, color = Indigo)
+            CircularProgressIndicator(modifier = Modifier.size(McIcon.Inline), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.primary)
         } else {
             status?.let {
-                Text(it, color = statusColor, fontSize = 11.sp)
+                Text(it, color = statusColor, style = MaterialTheme.typography.bodyMedium)
             }
         }
     }
@@ -1656,7 +1641,7 @@ fun JavaRuntimeGroupList(
                             isInstalled -> stringResource(R.string.dash_java_installed)
                             else -> stringResource(R.string.env_java_not_installed)
                         },
-                        statusColor = if (isInstalled && !unavailable) Mint else Muted,
+                        statusColor = if (isInstalled && !unavailable) MaterialTheme.colorScheme.secondary else Muted,
                         selected = runtime == selected,
                         busy = runtime == inFlight,
                         onClick = { if (enabled && !unavailable) onSelect(runtime) }
@@ -1753,23 +1738,17 @@ fun SwipeableInstantSnackbarHost(
                     Text(
                         text = data.visuals.message,
                         color = Color(0xFFF1F8F3),
-                        fontSize = 11.5.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        lineHeight = 14.5.sp,
-                        maxLines = 2,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 3,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false)
                     )
-                    Text(
-                        text = "✕",
-                        color = accentColor,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        modifier = Modifier
-                            .clip(CircleShape)
-                            .clickable { data.dismiss() }
-                            .padding(2.dp)
-                    )
+                    IconButton(
+                        onClick = { data.dismiss() },
+                        modifier = Modifier.size(McIcon.Touch)
+                    ) {
+                        Text("✕", color = accentColor, fontSize = 18.sp)
+                    }
                 }
             }
         }

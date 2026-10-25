@@ -83,27 +83,31 @@ private val McShapes = Shapes(
 )
 
 private val McColorScheme = lightColorScheme(
-    primary = Indigo,
+    primary = LightIndigo,
     onPrimary = Color.White,
     primaryContainer = LightIndigoSoft,
-    onPrimaryContainer = IndigoDark,
-    secondary = Mint,
+    onPrimaryContainer = LightIndigoDark,
+    secondary = LightMint,
     onSecondary = Color.White,
     secondaryContainer = LightMintSoft,
-    onSecondaryContainer = Mint,
-    tertiary = Coral,
+    onSecondaryContainer = LightMint,
+    tertiary = LightCoral,
     onTertiary = Color.White,
     tertiaryContainer = LightCoralSoft,
-    onTertiaryContainer = Coral,
+    onTertiaryContainer = LightCoral,
     background = LightBg,
     onBackground = LightInk,
     surface = LightCard,
     onSurface = LightInk,
     surfaceVariant = LightFieldGray,
     onSurfaceVariant = LightMuted,
-    outline = LightLine,
+    outline = LightOutline,
     outlineVariant = LightLine,
-    surfaceTint = Indigo,
+    error = LightCoral,
+    onError = Color.White,
+    errorContainer = LightCoralSoft,
+    onErrorContainer = Color(0xFF7A1B14),
+    surfaceTint = LightIndigo,
     surfaceContainerLowest = LightContainerLowest,
     surfaceContainerLow = LightContainerLow,
     surfaceContainer = LightContainer,
@@ -136,8 +140,12 @@ private val McSoftSlateDarkScheme = darkColorScheme(
     onSurface = DarkInk,
     surfaceVariant = DarkFieldGray,
     onSurfaceVariant = DarkMuted,
-    outline = DarkLine,
+    outline = DarkOutline,
     outlineVariant = DarkLine,
+    error = Color(0xFFFFB4AB),
+    onError = Color(0xFF690005),
+    errorContainer = Color(0xFF6D2421),
+    onErrorContainer = Color(0xFFFFDAD6),
     surfaceTint = Color(0xFF7AA8F8),
     surfaceContainerLowest = DarkContainerLowest,
     surfaceContainerLow = DarkContainerLow,
@@ -171,8 +179,12 @@ private val McWarmMochaDarkScheme = darkColorScheme(
     onSurface = WarmDarkInk,
     surfaceVariant = WarmDarkFieldGray,
     onSurfaceVariant = WarmDarkMuted,
-    outline = WarmDarkLine,
+    outline = Color(0xFF93867B),
     outlineVariant = WarmDarkLine,
+    error = Color(0xFFFFB4AB),
+    onError = Color(0xFF690005),
+    errorContainer = Color(0xFF6D2421),
+    onErrorContainer = Color(0xFFFFDAD6),
     surfaceTint = Color(0xFFE5A965),
     surfaceContainerLowest = Color(0xFF161311),
     surfaceContainerLow = Color(0xFF201C1A),
@@ -200,16 +212,9 @@ fun MineServeMobileTheme(
     val fontScaleMultiplier by AppUiSettings.fontScale.collectAsState()
     val colorPreset by AppUiSettings.colorPreset.collectAsState()
     val baseDensity = LocalDensity.current
-    val config = androidx.compose.ui.platform.LocalConfiguration.current
-    val widthPx = context.resources.displayMetrics.widthPixels.toFloat()
-    val normalizedDensity = if (config.screenWidthDp in 1..404 && widthPx > 0f) {
-        (widthPx / 404f).coerceAtMost(baseDensity.density)
-    } else {
-        baseDensity.density
-    }
     val scaledDensity = Density(
-        density = normalizedDensity,
-        fontScale = fontScaleMultiplier.coerceIn(0.90f, 1.25f)
+        density = baseDensity.density,
+        fontScale = baseDensity.fontScale * fontScaleMultiplier.coerceIn(0.90f, 1.25f)
     )
 
     val activeColorScheme = when (colorPreset) {

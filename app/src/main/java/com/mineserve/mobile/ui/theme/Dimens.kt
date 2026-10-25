@@ -22,19 +22,19 @@ object McSpacing {
     val CardGapCompact = 4.dp
 
     /** 卡片内边距。 */
-    val CardInner = 14.dp
+    val CardInner = 16.dp
 
     /** 紧凑卡片内边距。 */
     val CardInnerCompact = 12.dp
 
     /** 卡片内分组之间的间距（标题→内容、分组→分组）。 */
-    val Section = 12.dp
+    val Section = 16.dp
 
     /** 行内元素之间的间距。 */
     val Row = 8.dp
 
     /** 卡片标题与内容之间的间距。 */
-    val CardHeader = 10.dp
+    val CardHeader = 12.dp
 
     /** 紧凑卡片标题与内容之间的间距。 */
     val CardHeaderCompact = 8.dp
@@ -92,9 +92,9 @@ object McIcon {
     /** 空状态、弹窗主图标。 */
     val Display = 24.dp
 
-    /** 图标按钮的最小命中区（≥ 平台建议的 40dp）。 */
-    val Touch = 40.dp
+    /** Vùng chạm tối thiểu theo hướng dẫn Android. */
+    val Touch = 48.dp
 
     /** 紧凑行内的图标按钮命中区。 */
-    val TouchCompact = 36.dp
+    val TouchCompact = 48.dp
 }
