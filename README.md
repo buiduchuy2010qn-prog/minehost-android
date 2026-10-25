@@ -1,9 +1,9 @@
 <div align="center">
 
 # 🇻🇳 MINEHOST PRO — ANDROID MINECRAFT SERVER ENGINE
-### **v2.8.5 (Build 52 • Official Community Edition)**
+### **v2.8.6 (Build 53 • Official Community Edition)**
 
-[![Release](https://img.shields.io/badge/RELEASE-v2.8.5%20(Build%2052)-10B981?style=for-the-badge&logo=android&logoColor=white)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
+[![Release](https://img.shields.io/badge/RELEASE-v2.8.6%20(Build%2053)-10B981?style=for-the-badge&logo=android&logoColor=white)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
 [![Platform](https://img.shields.io/badge/ANDROID-8.0%2B%20(ARM64)-0EA5E9?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases)
 [![Crossplay](https://img.shields.io/badge/CROSSPLAY-JAVA%20PC%20%2B%20BEDROCK%20PE-F59E0B?style=for-the-badge&logo=reverbnation&logoColor=white)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
 [![OTA](https://img.shields.io/badge/OTA%20UPDATE-ZERO%20CACHE%20•%20AUTO%20CLEAN-6366F1?style=for-the-badge)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
@@ -11,16 +11,17 @@
 
 **Biến điện thoại Android thành máy chủ Minecraft chuyên nghiệp (Paper, Purpur, Fabric, Forge, NeoForge, Vanilla, Bedrock) — Hỗ trợ chơi chung PC & Điện thoại PE không cần thuê VPS hay mở Port Router.**
 
-### 👉 [**📥 TẢI NGAY APK v2.8.5 MỚI NHẤT (`minehost-2.8.5-arm64.apk`)**](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
+### 👉 [**📥 TẢI NGAY APK v2.8.6 MỚI NHẤT (`minehost-2.8.6-arm64.apk`)**](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
 
 </div>
 
 ---
 
-## 🚀 Điểm Nhấn Đột Phá Trên Bản `v2.8.5` (Build 52)
+## 🚀 Điểm Nhấn Đột Phá Trên Bản `v2.8.6` (Build 53)
 
 | Tính năng | Công nghệ & Cơ chế hoạt động |
 | :--- | :--- |
+| **⚡ Turbo Boot & Instant Stop Engine** | Tăng tốc nạp Core (62%) và mở/đóng Server gấp 2–3 lần: bộ nhớ đệm xác thực môi trường `0ms`, bỏ chạy lặp `fc-cache -f`, tự động tắt kiểm tra phiên bản Mod trực tuyến (`fml.toml`), ghi chunk bất đồng bộ (`sync-chunk-writes=false`), giới hạn luồng JIT chống nghẽn CPU (`-XX:CICompilerCount=2`) và giải phóng nút **Dừng máy chủ** tức thì (`< 0.3s` khi đang nạp Core / `1–2s` sau khi lưu Map). |
 | **🛠️ Smart Mod Doctor (1-Tap Auto-Fix)** | Tự động mổ xẻ `fabric.mod.json` / `mods.toml` của toàn bộ tệp `.jar` trong `mods/`: tự tải bù thư viện còn thiếu (`Fabric API`, `Cloth Config`, `Architectury`, `Bookshelf`, `GeckoLib`...), tự thay thế hoặc cách ly (`.disabled`) các Mod lệch phiên bản Minecraft / Client-only / trùng ID và tự bật lại Server chỉ với **1 chạm**. |
 | **🎯 Strict MC Version Resolver** | Khóa chặt tương thích nhị phân theo đúng phiên bản Minecraft của Server khi tải Mod từ Modrinth, chặn triệt để lỗi `FormattedException` và `DuplicateModFoundException`. |
 | **🩺 Chẩn Đoán Lỗi Crash Tiếng Việt 100%** | Phân tích ngoại lệ Java, chuỗi `Caused by`, mã thoát tiến trình (`Exit 137 / Exit 1`) và trích xuất đích danh tên Mod xung đột kèm nút dẫn đường trực tiếp (**Mở Quản Lý Mod**, **Môi Trường Java**, **Chẩn Đoán Hệ Thống**, **Đổi Cổng Server**). |

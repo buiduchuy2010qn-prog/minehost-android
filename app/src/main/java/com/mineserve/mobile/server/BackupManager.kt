@@ -124,7 +124,8 @@ class BackupManager(private val termux: TermuxRuntime) {
 
     /** 打包目录列表到 zip（保留顶层目录名） */
     private fun zipDirs(dirs: List<File>, out: File): Boolean = try {
-        java.util.zip.ZipOutputStream(FileOutputStream(out)).use { zos ->
+        java.util.zip.ZipOutputStream(java.io.BufferedOutputStream(FileOutputStream(out), 64 * 1024)).use { zos ->
+            zos.setLevel(java.util.zip.Deflater.BEST_SPEED)
             dirs.forEach { dir ->
                 if (dir.isDirectory) {
                     dir.walkTopDown().forEach { f ->
@@ -134,7 +135,7 @@ class BackupManager(private val termux: TermuxRuntime) {
                             zos.closeEntry()
                         } else {
                             zos.putNextEntry(java.util.zip.ZipEntry(dir.name + "/" + rel.path))
-                            FileInputStream(f).use { it.copyTo(zos) }
+                            FileInputStream(f).use { it.copyTo(zos, 64 * 1024) }
                             zos.closeEntry()
                         }
                     }
@@ -146,7 +147,8 @@ class BackupManager(private val termux: TermuxRuntime) {
 
     /** 打包整个目录到 zip（排除 logs/ 与 session.lock） */
     private fun zipDirFiltered(dir: File, out: File): Boolean = try {
-        java.util.zip.ZipOutputStream(FileOutputStream(out)).use { zos ->
+        java.util.zip.ZipOutputStream(java.io.BufferedOutputStream(FileOutputStream(out), 64 * 1024)).use { zos ->
+            zos.setLevel(java.util.zip.Deflater.BEST_SPEED)
             dir.walkTopDown().forEach { f ->
                 val rel = f.relativeTo(dir)
                 val relStr = rel.path.replace('\\', '/')
@@ -158,7 +160,7 @@ class BackupManager(private val termux: TermuxRuntime) {
                     zos.closeEntry()
                 } else {
                     zos.putNextEntry(java.util.zip.ZipEntry(relStr))
-                    FileInputStream(f).use { it.copyTo(zos) }
+                    FileInputStream(f).use { it.copyTo(zos, 64 * 1024) }
                     zos.closeEntry()
                 }
             }

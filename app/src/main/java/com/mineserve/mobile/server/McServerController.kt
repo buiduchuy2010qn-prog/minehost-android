@@ -1776,11 +1776,7 @@ class McServerController(
         if (coreType == ServerCore.NeoForge && config.selectedJavaVersion != JavaVersion.Java8) {
             termux.emitLog("[startMc] NeoForge: Đã tự động cấu hình tham số OSHI/JNA tương thích Android")
         }
-        if ((coreType == ServerCore.Forge || coreType == ServerCore.NeoForge) &&
-            launchVendor == JavaVendor.Termux &&
-            effectiveLaunchJava != JavaVersion.Java8 && !termux.repairFontRuntime()) {
-            termux.emitLog("[startMc] Đã giữ chế độ khởi chạy không giao diện (nogui) cho Forge/NeoForge")
-        }
+        optimizeCoreConfigsForFastBoot(serverDir, coreType)
         val launchArgs = when (coreType) {
             ServerCore.Spigot, ServerCore.CraftBukkit -> {
                 val coreJar = jarPath?.let(::File)
@@ -2055,6 +2051,44 @@ class McServerController(
         }
     }.getOrDefault(false)
 
+    private fun optimizeCoreConfigsForFastBoot(serverDir: File, coreType: ServerCore) {
+        runCatching {
+            // 1. Tắt kiểm tra cập nhật Mod qua mạng của Forge/NeoForge (fml.toml) để tránh ngâm lâu ở 62% (LoadingCore)
+            if (coreType == ServerCore.Forge || coreType == ServerCore.NeoForge) {
+                val configDir = File(serverDir, "config").apply { mkdirs() }
+                val fmlToml = File(configDir, "fml.toml")
+                if (fmlToml.isFile) {
+                    val content = fmlToml.readText()
+                    if (content.contains(Regex("""versionCheck\s*=\s*true"""))) {
+                        fmlToml.writeText(content.replace(Regex("""versionCheck\s*=\s*true"""), "versionCheck = false"))
+                    }
+                } else {
+                    fmlToml.writeText(
+                        "splashscreen = false\n" +
+                            "maxThreads = -1\n" +
+                            "versionCheck = false\n" +
+                            "defaultConfigPath = \"defaultconfigs\"\n" +
+                            "disableOptimizedDFU = false\n"
+                    )
+                }
+            }
+            // 2. Bật ghi chunk bất đồng bộ (sync-chunk-writes=false) giúp tạo vùng Spawn khi Mở và lưu Map khi Đóng nhanh gấp 3-5 lần
+            if (!coreType.isBedrock && coreType !in setOf(ServerCore.Velocity, ServerCore.BungeeCord, ServerCore.Unknown)) {
+                val propsFile = File(serverDir, "server.properties")
+                if (propsFile.isFile) {
+                    val text = propsFile.readText()
+                    if (text.contains(Regex("""(?m)^sync-chunk-writes\s*=\s*true\s*$"""))) {
+                        propsFile.writeText(
+                            text.replace(Regex("""(?m)^sync-chunk-writes\s*=\s*true\s*$"""), "sync-chunk-writes=false")
+                        )
+                    } else if (!text.contains("sync-chunk-writes=")) {
+                        propsFile.appendText((if (text.endsWith("\n")) "" else "\n") + "sync-chunk-writes=false\n")
+                    }
+                }
+            }
+        }
+    }
+
     suspend fun stop() = withContext(Dispatchers.IO) {
         termux.stopMc()
         repo.updateServerState {
@@ -2062,8 +2096,9 @@ class McServerController(
         }
     }
 
-    suspend fun stopGracefully(): Boolean = withContext(Dispatchers.IO) {
-        val stopped = termux.stopMcGraceful()
+    suspend fun stopGracefully(wasWorldLoaded: Boolean? = null): Boolean = withContext(Dispatchers.IO) {
+        val worldLoaded = wasWorldLoaded ?: (repo.serverState.value.startupPhase == StartupPhase.Ready)
+        val stopped = termux.stopMcGraceful(wasWorldLoaded = worldLoaded)
         if (stopped) {
             repo.updateServerState {
                 it.copy(isRunning = false, runningSinceMs = 0L, startupPhase = StartupPhase.Idle)

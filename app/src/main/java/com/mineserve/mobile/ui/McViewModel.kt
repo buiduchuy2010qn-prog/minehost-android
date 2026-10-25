@@ -3267,43 +3267,50 @@ class McViewModel(
      */
     fun stopServer() {
         if (_stopInFlight.value) return
+        val wasReadyBeforeStop = serverState.value.startupPhase == StartupPhase.Ready
         _stopInFlight.value = true
         invalidateConnectionCheck()
         viewModelScope.launch {
+            var shouldRunAutoBackup = false
+            var backupDirName: String? = null
             try {
-                val stopped = controller.stopGracefully()
+                val stopped = controller.stopGracefully(wasWorldLoaded = wasReadyBeforeStop)
                 if (!stopped) {
                     _errorFlow.tryEmit(str(R.string.dash_stop_timeout_hint))
                     return@launch
                 }
                 _messageFlow.tryEmit(str(R.string.s198))
-                if (_autoBackupOnStop.value || config.value.stopAutoBackup) {
-                    val dirName = activeDirName() ?: return@launch
-                    val path = withContext(Dispatchers.IO) {
-                        val keepAutoCount = if (config.value.maxSnapshots == 10) 2 else config.value.maxSnapshots.coerceIn(1, 20)
-                        backupManager.backupWorldToExternal(
-                            dirName = dirName,
-                            origin = BackupManager.BackupOrigin.Automatic,
-                            maxAutomaticBackups = keepAutoCount,
-                            includeMods = true
-                        )
-                    }
-                    if (path != null) {
-                        _lastBackupFilePath.value = path
-                        val syncedCloud = withContext(Dispatchers.IO) {
-                            copyBackupFileToCloudFolderIfConfigured(java.io.File(path))
-                        }
-                        val cloudNote = if (syncedCloud) " & đồng bộ vào thư mục Google Drive/Cloud" else ""
-                        _messageFlow.tryEmit("✅ Đã tự động sao lưu Map + Mod khi đóng Server (${java.io.File(path).name})$cloudNote!")
-                        if (_autoUploadDriveOnStop.value) {
-                            _pendingDriveShareFileFlow.tryEmit(path)
-                        }
-                    }
+                if (wasReadyBeforeStop && (_autoBackupOnStop.value || config.value.stopAutoBackup)) {
+                    backupDirName = activeDirName()
+                    shouldRunAutoBackup = !backupDirName.isNullOrBlank()
                 }
             } catch (e: Exception) {
                 _errorFlow.tryEmit(str(R.string.s199, e.message))
             } finally {
+                // Giải phóng nút Dừng ngay tức khắc khi tiến trình Java đã tắt, không giữ khóa chờ nén ZIP sao lưu
                 _stopInFlight.value = false
+            }
+            if (shouldRunAutoBackup && backupDirName != null) {
+                viewModelScope.launch(Dispatchers.IO) {
+                    runCatching {
+                        val keepAutoCount = if (config.value.maxSnapshots == 10) 2 else config.value.maxSnapshots.coerceIn(1, 20)
+                        val path = backupManager.backupWorldToExternal(
+                            dirName = backupDirName,
+                            origin = BackupManager.BackupOrigin.Automatic,
+                            maxAutomaticBackups = keepAutoCount,
+                            includeMods = false
+                        )
+                        if (path != null) {
+                            _lastBackupFilePath.value = path
+                            val syncedCloud = copyBackupFileToCloudFolderIfConfigured(java.io.File(path))
+                            val cloudNote = if (syncedCloud) " & đồng bộ vào thư mục Google Drive/Cloud" else ""
+                            _messageFlow.tryEmit("✅ Đã tự động sao lưu Map ngầm sau khi đóng Server (${java.io.File(path).name})$cloudNote!")
+                            if (_autoUploadDriveOnStop.value) {
+                                _pendingDriveShareFileFlow.tryEmit(path)
+                            }
+                        }
+                    }
+                }
             }
         }
     }

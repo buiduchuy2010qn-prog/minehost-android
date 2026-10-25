@@ -1117,9 +1117,23 @@ class TermuxRuntime(context: Context) {
         return File(installer.rootDir, "etc/fonts/fonts.conf").isFile && isCommandInstalled("fc-cache")
     }
 
+    private fun hasBuiltTermuxFontCache(prefix: File): Boolean {
+        if (!File(prefix, "etc/fonts/fonts.conf").isFile) return false
+        val cacheDirs = listOf(
+            File(prefix, "var/cache/fontconfig"),
+            File(prefix, "data/data/com.termux/files/usr/var/cache/fontconfig")
+        )
+        return cacheDirs.any { dir ->
+            dir.isDirectory && (dir.listFiles()?.any { it.isFile && it.length() > 0L } == true)
+        }
+    }
+
     /** Rebuild fontconfig with the resolved executable path rather than PATH lookup. */
-    private fun rebuildTermuxFontCache(): Boolean {
+    private fun rebuildTermuxFontCache(forceRebuild: Boolean = false): Boolean {
         val prefix = installer.rootDir
+        if (!forceRebuild && hasBuiltTermuxFontCache(prefix)) {
+            return true
+        }
         val cache = listOf(
             File(prefix, "bin/fc-cache"),
             File(prefix, "usr/bin/fc-cache"),
@@ -1134,7 +1148,7 @@ class TermuxRuntime(context: Context) {
         return ready
     }
 
-    fun repairFontRuntime(): Boolean {
+    fun repairFontRuntime(forceRebuild: Boolean = true): Boolean {
         if (!isReady()) return false
         val prefix = installer.rootDir
         if (!File(prefix, "etc/fonts/fonts.conf").isFile || !isCommandInstalled("fc-cache")) {
@@ -1145,8 +1159,9 @@ class TermuxRuntime(context: Context) {
                 "--allow-unauthenticated", "-y", "fontconfig", "ttf-dejavu"
             )
             repairInstalledCommands()
+            return rebuildTermuxFontCache(forceRebuild = true)
         }
-        return rebuildTermuxFontCache()
+        return rebuildTermuxFontCache(forceRebuild = forceRebuild)
     }
 
     /**
@@ -1739,10 +1754,17 @@ class TermuxRuntime(context: Context) {
         value
     }.getOrDefault("")
 
+    private val verifiedUbuntuRootfsDirs = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private val verifiedRuntimeKeys = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
     /** Restore executable bits lost while a rootfs layer is applied. */
     private fun repairUbuntuRootfs(profile: ProotContainerProfile = legacyJava8Profile): Boolean {
         val rootfs = containerRootfs(profile)
         if (!rootfs.isDirectory) return false
+        val rootfsKey = rootfs.absolutePath
+        if (rootfsKey in verifiedUbuntuRootfsDirs && hasUsableUbuntuShell(rootfs)) {
+            return true
+        }
         var fixed = 0
         val visited = mutableSetOf<String>()
         val commandDirs = listOf("bin", "sbin", "usr/bin", "usr/sbin")
@@ -1752,21 +1774,23 @@ class TermuxRuntime(context: Context) {
                 if (!file.canExecute() && file.setExecutable(true, false)) fixed++
             }
         }
-        val chmodTargets = commandDirs.map { File(rootfs, it) }.filter { it.exists() }
-        if (chmodTargets.isNotEmpty()) {
-            val targetArgs = chmodTargets.joinToString(" ") { "'${it.absolutePath.replace("'", "'\\''")}'" }
-            runCatching {
-                val chmod = ProcessBuilder("/system/bin/sh", "-c", "chmod -R 755 $targetArgs")
-                    .redirectErrorStream(true)
-                    .start()
-                val output = chmod.inputStream.bufferedReader().use { it.readText() }
-                if (chmod.waitFor(30, TimeUnit.SECONDS) && chmod.exitValue() == 0) {
-                    if (output.isNotBlank()) Log.d(TAG, "repairUbuntuRootfs chmod: $output")
-                } else {
-                    chmod.destroyForcibly()
-                    Log.w(TAG, "repairUbuntuRootfs: chmod failed")
-                }
-            }.onFailure { Log.w(TAG, "repairUbuntuRootfs: chmod exception: ${it.message}") }
+        if (fixed > 0 || !hasUsableUbuntuShell(rootfs)) {
+            val chmodTargets = commandDirs.map { File(rootfs, it) }.filter { it.exists() }
+            if (chmodTargets.isNotEmpty()) {
+                val targetArgs = chmodTargets.joinToString(" ") { "'${it.absolutePath.replace("'", "'\\''")}'" }
+                runCatching {
+                    val chmod = ProcessBuilder("/system/bin/sh", "-c", "chmod -R 755 $targetArgs")
+                        .redirectErrorStream(true)
+                        .start()
+                    val output = chmod.inputStream.bufferedReader().use { it.readText() }
+                    if (chmod.waitFor(30, TimeUnit.SECONDS) && chmod.exitValue() == 0) {
+                        if (output.isNotBlank()) Log.d(TAG, "repairUbuntuRootfs chmod: $output")
+                    } else {
+                        chmod.destroyForcibly()
+                        Log.w(TAG, "repairUbuntuRootfs: chmod failed")
+                    }
+                }.onFailure { Log.w(TAG, "repairUbuntuRootfs: chmod exception: ${it.message}") }
+            }
         }
         listOf(
             "lib/ld-linux-aarch64.so.1",
@@ -1776,9 +1800,9 @@ class TermuxRuntime(context: Context) {
             if (loader.isFile && !loader.canExecute() && loader.setExecutable(true, false)) fixed++
         }
         if (fixed > 0) emitLog("[bootstrap] 修复 $fixed 个 Ubuntu rootfs 命令可执行权限")
-        return listOf("bin/sh", "bin/bash", "usr/bin/bash")
-            .map { File(rootfs, it) }
-            .any { it.isFile && it.canExecute() }
+        val usable = hasUsableUbuntuShell(rootfs)
+        if (usable) verifiedUbuntuRootfsDirs.add(rootfsKey)
+        return usable
     }
 
     /**
@@ -2435,19 +2459,17 @@ class TermuxRuntime(context: Context) {
         if (!isReady()) return 0
         val prefix = installer.rootDir
         // 所有「来宾容器」链路（Termux+Java8、Proot 全部版本）都必须走容器内修复。
-        //
-        // 早先这里只判 `javaVersion == Java8`：选中 Proot 来源 + Java 17 时会掉进
-        // 下面的宿主修复分支 —— 对着**宿主** prefix 跑 apt 补 fontconfig、
-        // 检查宿主 `etc/fonts/fonts.conf`，而来宾用的是容器里的那一套。
-        // 结果是容器缺字体时报告「已就绪」，或往宿主装一堆容器根本用不到的东西。
         if (isProotGuestRuntime(vendor, javaVersion)) {
             val profile = resolveProotProfile(vendor, javaVersion)
+            val rootfs = containerRootfs(profile)
             val ready = isContainerJavaReady(profile) || runBlocking { installProotJava(profile) }
             if (!ready) {
                 emitLog("[repair] ${profile.displayName} 运行环境不可用")
                 return 0
             }
-            val fontsReady = !needsFonts || runUbuntu(
+            val fontsReadyOnHost = File(rootfs, "etc/fonts/fonts.conf").isFile &&
+                File(rootfs, "usr/bin/fc-cache").canExecute()
+            val fontsReady = !needsFonts || fontsReadyOnHost || runUbuntu(
                 "test -f /etc/fonts/fonts.conf && test -x /usr/bin/fc-cache",
                 60_000,
                 profile = profile
@@ -2465,6 +2487,16 @@ class TermuxRuntime(context: Context) {
             }
             return 0
         }
+        val cacheKey = "${vendor.name}:${javaVersion.name}:$needsFonts"
+        val javaBinWrapper = File(prefix, "bin/java")
+        if (cacheKey in verifiedRuntimeKeys &&
+            javaBinWrapper.canExecute() &&
+            isJavaComplete(javaVersion) &&
+            (!needsFonts || hasBuiltTermuxFontCache(prefix))
+        ) {
+            return 0
+        }
+
         listOf(
             File(prefix, "tmp"),
             File(prefix, "home"),
@@ -2489,10 +2521,16 @@ class TermuxRuntime(context: Context) {
                 )
                 repaired += fixUsrBin() + ensureRootfsExecutable()
             }
-            if (repairFontRuntime()) repaired++
-            else emitLog("[repair] 字体缓存生成失败，将继续使用无图形模式启动")
+            if (repairFontRuntime(forceRebuild = false)) {
+                // Only count as repaired if we actually had to rebuild
+            } else {
+                emitLog("[repair] 字体缓存生成失败，将继续使用无图形模式启动")
+            }
         }
 
+        if (isJavaComplete(javaVersion) && (!needsFonts || hasBuiltTermuxFontCache(prefix))) {
+            verifiedRuntimeKeys.add(cacheKey)
+        }
         if (repaired > 0) emitLog("[repair] 自动修复完成，共处理 $repaired 项")
         return repaired
     }
@@ -3228,6 +3266,8 @@ class TermuxRuntime(context: Context) {
     private fun killOrphanMcProcess(serverDir: File?) {
         try {
             val target = serverDir?.absolutePath
+            val myPid = android.os.Process.myPid()
+            val myUid = runCatching { android.os.Process.myUid() }.getOrDefault(-1)
             val trackedPid = synchronized(mcProcessLock) { if (mcProcess?.isAlive == true) mcPid else null }
             // 托管进程自身的 pid 可能取不到（Android 上 Process.pid() 未必可用），
             // 此时退回用 findServerPid 反查，避免漏保护。
@@ -3242,7 +3282,11 @@ class TermuxRuntime(context: Context) {
                 val pid = name.toIntOrNull() ?: return@forEach
                 // 本进程托管的服务端及其后代不是孤儿，任何情况下都不动它。
                 if (pid in protectedPids) return@forEach
-                if (pid == android.os.Process.myPid()) return@forEach
+                if (pid == myPid) return@forEach
+                if (myUid >= 0) {
+                    val sameUid = runCatching { android.system.Os.stat(f.absolutePath).st_uid == myUid }.getOrDefault(true)
+                    if (!sameUid) return@forEach
+                }
                 val cmdline = try {
                     File(f, "cmdline").readText().replace('\u0000', ' ')
                 } catch (_: Exception) { return@forEach }
@@ -3251,11 +3295,6 @@ class TermuxRuntime(context: Context) {
                 } else {
                     cmdline.contains(".jar") && cmdline.contains("nogui")
                 }
-                // 兜底护栏：调用方没给目标目录、但此刻确实有一个服务端在跑时，
-                // 只清「不属于当前服务端」的进程是无法判定的 —— `.jar && nogui`
-                // 匹配不出归属。这种情形下宁可不杀：多实例场景里那些 java 很可能是
-                // 另一个正常服务端，误杀等于无故停服。真正的孤儿会在下次
-                // 带 serverDir 的启动/停止路径上被正确清理。
                 val ambiguousWhenRunning = target == null &&
                     synchronized(mcProcessLock) { mcProcess?.isAlive == true }
                 if (isMc && !ambiguousWhenRunning) {
@@ -3264,10 +3303,10 @@ class TermuxRuntime(context: Context) {
                     runCatching { android.os.Process.killProcess(pid) }
                     // 等待进程退出
                     runCatching {
-                        val deadline = System.currentTimeMillis() + 3000
+                        val deadline = System.currentTimeMillis() + 1200
                         while (System.currentTimeMillis() < deadline) {
                             if (!File("/proc/$pid").exists()) break
-                            Thread.sleep(100)
+                            Thread.sleep(40)
                         }
                     }
                 } else if (isMc) {
@@ -3484,6 +3523,7 @@ class TermuxRuntime(context: Context) {
                 var line = reader.readLine()
                 var lineCount = 0
                 while (line != null) {
+                    observeConsoleLineForShutdown(line)
                     executor.emit(line)
                     writer.appendLine(line)
                     if (++lineCount % 50 == 0) writer.flush()
@@ -3664,17 +3704,12 @@ class TermuxRuntime(context: Context) {
          * 我们的服务端一律以 nogui 运行，终端探测失败是安全的。
          */
         append("-Dorg.jline.terminal.providers=exec,jni,ffi ")
+        append("-Djava.security.egd=file:/dev/./urandom ")
+        append("-Dlog4j2.formatMsgNoLookups=true ")
+        append("-Dfml.queryResult=confirm ")
+        append("-Dpaper.disableStartupVersionCheck=true ")
+        append("-DIKnowWhatIAmDoingISwear=true ")
         append(memoryFootprintArgs())
-        /*
-         * 这里的取值来自 OSHI 的 GlobalConfig 常量表，只使用真实存在的键。
-         *
-         * 历史遗留的两个参数已移除，它们都是无效的：
-         *   -Doshi.util.use.jna=false   → OSHI 从未定义过该键，纯死参数
-         *   -Djna.nosys=true            → 禁止 JNA 加载「系统库」。libc 在 Android 上
-         *                                 就是系统库 libc.so，被禁后 JNA 只能退回按
-         *                                 Linux 习惯找 libc.so.6 → 必然失败。
-         *                                 这条很可能是崩溃的助推因素，故一并去掉。
-         */
         // 不加载 udev：Android 无 systemd/udev，探测只会白白触发原生库加载
         append("-Doshi.os.linux.allowudev=false ")
         // 不探测 systemd 会话：Android 没有
@@ -3685,28 +3720,6 @@ class TermuxRuntime(context: Context) {
         append("-Doshi.os.linux.procfs.logwarning=false ")
         // 关掉 Memoizer 缓存：避免 OSHI 缓存住首次探测失败的结果后反复重试
         append("-Doshi.util.memoizer.expiration=0 ")
-        /*
-         * 历史遗留参数已移除（保留说明以免再次被加回来）：
-         *
-         *   -Doshi.util.use.jna=false
-         *       OSHI 从未定义过该键，纯死参数。
-         *
-         *   -Djna.nosys=true
-         *       禁止 JNA 加载「系统库」。libc 在 Android 上就是系统库 libc.so，
-         *       被禁后 JNA 只能退回按 Linux 习惯找 libc.so.6 → 必然失败。
-         *       这条是崩溃的助推因素，已去掉。
-         *
-         *   -Djna.nounpack=true   ← 本次移除
-         *       禁止 JNA 从自己的 jar 里解包 libjnidispatch.so。但 jar 解包是
-         *       JNA 三层加载顺序里唯一「还可能成功」的一层：
-         *         1) jna.boot.library.path 目录
-         *         2) 系统库路径（受 jna.nosys 控制）
-         *         3) 从 jar 解包（受 jna.nounpack 控制）
-         *       关掉它并不会让 JNA 变得可用，只会让失败点后移、报错更难定位。
-         *       实测崩溃栈里的 /data/data/com.venti1112.edgecube/cache/jna*.tmp
-         *       就是第 3 步解包出来的文件——这个文件至少能被 dlopen 尝试打开，
-         *       关掉之后就只剩「找不到库」这种更含糊的报错。
-         */
     }
 
     /**
@@ -3717,47 +3730,27 @@ class TermuxRuntime(context: Context) {
     private fun serverTmpDirFor(serverDir: File): File =
         File(serverDir, ".mineserve/tmp")
 
-    /**
-     * 降低常驻内存的 `-XX` 参数。
-     *
-     * 背景：原先一个 `-XX` 参数都没有，全部走 JVM 默认值。而移动端 JVM 的默认值
-     * 是按「服务器/桌面」场景设计的，对手机来说普遍偏大。逐项说明：
-     *
-     * - `+UseSerialGC`：默认 GC 在 Android 上通常是 G1 或 Parallel。G1 会额外维护
-     *   并发标记线程、Remembered Set（卡表）、以及约 10% 堆大小的保留区。手机端
-     *   服务端通常玩家少、堆不大，Serial GC 单线程回收开销极小且无这些额外结构，
-     *   实际表现往往更快也更省内存。
-     *
-     * - `MaxMetaspaceSize=256m`：类元数据区，默认**无上限**。每个模组的类加载器
-     *   都会往这里放东西，不设上限时会只增不减。
-     *
-     * - `ReservedCodeCacheSize=128m`：JIT 编译后的机器码缓存，默认约 240MB。
-     *   手机端服务端长期运行的热点方法有限，砍到一半通常无感知。
-     *
-     * - `Xss768k`：每线程栈，arm64 默认 1MB。服务端网络/区块/IO 线程数量不少，
-     *   每个省 256KB，几十个线程即可省下十几 MB。
-     *   ⚠️ 不设得更小（如 512k）是因为部分模组递归较深，栈过小会 StackOverflow。
-     *
-     * 这些参数都是「只减不增」的安全项：不改变服务端行为，只压缩 JVM 的预留与开销。
-     */
     private fun memoryFootprintArgs(): String = buildString {
         append("-XX:+UseG1GC ")
         append("-XX:+ParallelRefProcEnabled ")
         append("-XX:MaxGCPauseMillis=100 ")
         append("-XX:+UnlockExperimentalVMOptions ")
         append("-XX:+DisableExplicitGC ")
+        append("-XX:+UseStringDeduplication ")
         append("-XX:G1NewSizePercent=20 ")
         append("-XX:G1ReservePercent=15 ")
         append("-XX:G1HeapRegionSize=16M ")
         append("-XX:MaxMetaspaceSize=384m ")
         append("-XX:ReservedCodeCacheSize=192m ")
+        append("-XX:CICompilerCount=2 ")
+        append("-Xshare:auto ")
         append("-Xss768k ")
-        append("-Dfml.readTimeout=120 ")
+        append("-Dfml.readTimeout=180 ")
     }
 
     /**
-     * Dọn dẹp bộ nhớ đệm tạm thời (.mineserve/tmp, tmp/, .mixin.out, log.gz cũ) và giải phóng RAM
-     * trước khi khởi động máy chủ để tăng tốc khởi chạy.
+     * Dọn dẹp bộ nhớ đệm tạm thời (.mineserve/tmp, tmp/, log.gz cũ)
+     * trước khi khởi động máy chủ mà không xóa cache Mixin hoặc quét /proc trùng lặp.
      */
     fun cleanCacheAndRamForStartup(dirName: String?): Long {
         var freedBytes = 0L
@@ -3787,11 +3780,6 @@ class TermuxRuntime(context: Context) {
                             if (f.deleteRecursively()) freedBytes += len
                         }
                     }
-                    val mixinOut = File(srvDir, ".mixin.out")
-                    if (mixinOut.isDirectory) {
-                        val len = mixinOut.walkTopDown().filter { it.isFile }.sumOf { it.length() }
-                        if (mixinOut.deleteRecursively()) freedBytes += len
-                    }
                 }
                 val logsDir = File(srvDir, "logs")
                 if (logsDir.isDirectory) {
@@ -3801,11 +3789,6 @@ class TermuxRuntime(context: Context) {
                     }
                 }
             }
-            if (!running) {
-                killOrphanMcProcess(null)
-            }
-            System.gc()
-            Runtime.getRuntime().gc()
         }
         return freedBytes
     }
@@ -4067,6 +4050,7 @@ class TermuxRuntime(context: Context) {
                 var line = reader.readLine()
                 var lineCount = 0
                 while (line != null) {
+                    observeConsoleLineForShutdown(line)
                     executor.emit(line)
                     writer.appendLine(line)
                     if (++lineCount % 50 == 0) writer.flush()
@@ -4165,6 +4149,7 @@ class TermuxRuntime(context: Context) {
                 var line = reader.readLine()
                 var lineCount = 0
                 while (line != null) {
+                    observeConsoleLineForShutdown(line)
                     executor.emit(line)
                     writer.appendLine(line)
                     if (++lineCount % 50 == 0) writer.flush()
@@ -4203,6 +4188,21 @@ class TermuxRuntime(context: Context) {
     var lastUserStopRequestAtMs: Long = 0L
         private set
 
+    @Volatile
+    private var lastWorldSaveCompletedAtMs: Long = 0L
+
+    private fun observeConsoleLineForShutdown(line: String) {
+        if (lastUserStopRequestAtMs == 0L) return
+        if (line.contains("All dimensions are saved", ignoreCase = true) ||
+            line.contains("AllChunkStorage: All dimensions are saved", ignoreCase = true) ||
+            line.contains("Closing Server", ignoreCase = true) ||
+            line.contains("Thread RCON Listener stopped", ignoreCase = true) ||
+            line.contains("Allay server stopped", ignoreCase = true)
+        ) {
+            lastWorldSaveCompletedAtMs = System.currentTimeMillis()
+        }
+    }
+
     /** 标记"用户主动请求停止"，供崩溃判定区分「主动停」与「真崩溃」。 */
     fun markUserStopRequested() {
         lastUserStopRequestAtMs = System.currentTimeMillis()
@@ -4211,6 +4211,7 @@ class TermuxRuntime(context: Context) {
     /** 新一次启动时清掉标记，否则本轮真实崩溃会被误判成正常停止而漏报。 */
     fun clearUserStopRequest() {
         lastUserStopRequestAtMs = 0L
+        lastWorldSaveCompletedAtMs = 0L
     }
 
     /**
@@ -4269,15 +4270,18 @@ class TermuxRuntime(context: Context) {
      * @return true 表示进程确实已退出；false 表示超时仍未退出（进程仍在登记中，
      *         [forceStopMc] 仍能停掉它）。
      */
-    suspend fun stopMcGraceful(waitMs: Long = STOP_GRACE_DEFAULT_MS): Boolean = withContext(Dispatchers.IO) {
+    suspend fun stopMcGraceful(
+        waitMs: Long = STOP_GRACE_DEFAULT_MS,
+        wasWorldLoaded: Boolean = true
+    ): Boolean = withContext(Dispatchers.IO) {
         // 只要走到这里就一定是"主动停止"，先把标记打上，
         // 再发停止命令 —— 否则进程可能在标记写入前就退出了。
+        val stopStartMs = System.currentTimeMillis()
+        lastWorldSaveCompletedAtMs = 0L
         markUserStopRequested()
         val proc = mcProcess ?: return@withContext true
         val serverDir = mcServerDir
         if (!proc.isAlive) {
-            // The shell/PRoot wrapper may have exited while its Java child survived.
-            // 只在"我们仍是当前登记进程"时才清孤儿——否则说明期间已有新进程接管。
             if (clearMcProcessIfCurrent(proc)) killOrphanMcProcess(serverDir)
             return@withContext true
         }
@@ -4287,23 +4291,82 @@ class TermuxRuntime(context: Context) {
         } catch (e: Exception) {
             Log.w(TAG, "stopMcGraceful: stdin write failed: ${e.message}")
         }
-        // 轮询等待进程退出。这里刻意不设强杀兜底 —— 见方法注释。
+
+        // Nếu Server chưa mở Map (đang ở bước Chuẩn bị / Khởi chạy Java / Nạp Core 62%),
+        // luồng đọc Console của Minecraft chưa hoạt động nên lệnh "stop\n" bị bỏ qua.
+        // Vì chưa nạp Map nên không có nguy cơ hỏng dữ liệu -> ngắt tiến trình ngay lập tức (< 0.3s)!
+        if (!wasWorldLoaded) {
+            emitLog("[stopMc] ⚡ Máy chủ chưa nạp Map, đang ngắt tiến trình khởi động ngay lập tức...")
+            val shortWaitDeadline = System.currentTimeMillis() + 250L
+            while (proc.isAlive && System.currentTimeMillis() < shortWaitDeadline) {
+                delay(30)
+            }
+            if (proc.isAlive) {
+                runCatching {
+                    val srvPid = mcServerPid ?: mcPid?.let(::findServerPid) ?: mcPid
+                    if (srvPid != null && srvPid > 0) {
+                        android.os.Process.sendSignal(srvPid, 15) // SIGTERM
+                    }
+                }
+                runCatching { proc.destroy() }
+                val termDeadline = System.currentTimeMillis() + 250L
+                while (proc.isAlive && System.currentTimeMillis() < termDeadline) {
+                    delay(30)
+                }
+            }
+            if (proc.isAlive) {
+                runCatching { proc.destroyForcibly() }
+                withTimeoutOrNull(800L) { while (proc.isAlive) delay(30) }
+            }
+            if (clearMcProcessIfCurrent(proc)) {
+                killOrphanMcProcess(serverDir)
+            }
+            return@withContext true
+        }
+
         val deadline = System.currentTimeMillis() + waitMs
+        var sigtermSent = false
         while (proc.isAlive && System.currentTimeMillis() < deadline) {
-            delay(100)
+            delay(40)
+            val now = System.currentTimeMillis()
+            val savedAt = lastWorldSaveCompletedAtMs
+            // Nếu Minecraft đã báo lưu xong toàn bộ các chiều không gian (All dimensions are saved),
+            // chờ thêm tối đa 450ms cho JVM tự thoát; nếu luồng phụ của Mod giữ treo JVM thì giải phóng ngay!
+            if (savedAt >= stopStartMs && now - savedAt >= 450L) {
+                emitLog("[stopMc] ✅ Đã lưu xong toàn bộ Map, đang đóng nhanh tiến trình JVM...")
+                runCatching {
+                    val srvPid = mcServerPid ?: mcPid?.let(::findServerPid)
+                    if (srvPid != null && srvPid > 0) android.os.Process.sendSignal(srvPid, 15)
+                }
+                runCatching { proc.destroy() }
+                withTimeoutOrNull(400L) { while (proc.isAlive) delay(30) }
+                if (proc.isAlive) {
+                    runCatching { proc.destroyForcibly() }
+                    withTimeoutOrNull(500L) { while (proc.isAlive) delay(30) }
+                }
+                break
+            }
+            // Nếu sau 2 giây gửi "stop\n" mà tiến trình vẫn chưa thoát, gửi kèm tín hiệu SIGTERM chuẩn
+            // tới JVM để kích hoạt ShutdownHook lưu Map và đóng các Mod cứng đầu.
+            if (!sigtermSent && now - stopStartMs >= 2_000L) {
+                sigtermSent = true
+                runCatching {
+                    mcStdin?.write("stop\n".toByteArray())
+                    mcStdin?.flush()
+                }
+                runCatching {
+                    val srvPid = mcServerPid ?: mcPid?.let(::findServerPid)
+                    if (srvPid != null && srvPid > 0) {
+                        android.os.Process.sendSignal(srvPid, 15) // SIGTERM triggers clean JVM shutdown hook
+                    }
+                }
+            }
         }
         if (proc.isAlive) {
             Log.w(TAG, "stopMcGraceful: 进程在 ${waitMs}ms 内未退出，保持登记等待强制停止")
             emitLog("[stopMc] 服务端仍在关停（已等待 ${waitMs / 1000}s），可点「强制停止」立即结束")
             return@withContext false
         }
-        // PRoot can leave its Java child alive after its outer process exits.
-        // Clear it before returning so a subsequent start never doubles servers.
-        //
-        // 但必须先确认「当前登记的仍然是我们要停的那个进程」再清孤儿：
-        // 用户在这段等待里点了「启动」的话，新进程的 cmdline 同样包含 serverDir，
-        // 无条件 killOrphanMcProcess(serverDir) 会把刚起来的服务端直接杀掉——
-        // 表现为「启动秒退、没有任何日志」，还会被上层误判成一次崩溃。
         if (clearMcProcessIfCurrent(proc)) {
             killOrphanMcProcess(serverDir)
         } else {
