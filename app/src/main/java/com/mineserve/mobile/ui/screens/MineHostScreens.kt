@@ -59,11 +59,11 @@ internal fun HostPage(
     LazyColumn(
         Modifier.fillMaxSize(),
         state = listState,
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         item(key = "heading") {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 if (!sharedChrome) Text(title, style = MaterialTheme.typography.headlineSmall)
                 Text(subtitle, style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -83,18 +83,18 @@ internal fun HostCard(
 ) {
     Card(
         Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 if (artKind != null) {
-                    MinecraftPixelArtIcon(kind = artKind, size = 26.dp)
+                    MinecraftPixelArtIcon(kind = artKind, size = 24.dp)
                 }
                 Column(
                     modifier = Modifier.weight(1f),
@@ -329,7 +329,7 @@ fun MineHostOverview(
         }
     }
     val overviewTab = section
-    var showConnectionDetails by rememberSaveable(active?.dirName) { mutableStateOf(false) }
+    var showConnectionDetails by rememberSaveable(active?.dirName, "connection-details-v3") { mutableStateOf(true) }
 
     HostPage(
         title = when (section) { 0 -> "Máy chủ"; 2 -> "Luật chơi & tọa độ"; 4 -> "Tiện ích người chơi"; 5 -> "Gói mở rộng"; else -> "Tối ưu & chạy nền" },
@@ -784,29 +784,33 @@ fun MineHostOverview(
                     }
 
                     // 3 Ô thông số nằm gọn ngay trong thẻ Server chính
-                    AdaptiveActionRow {
-                        Metric(
-                            label = "TPS Nhịp Game",
-                            value = if (state.isRunning && state.tps > 0) "%.1f".format(state.tps) else "—",
-                            artKind = MinecraftArtKind.REDSTONE,
-                            modifier = Modifier.weight(1f),
-                            onClick = onConsole
-                        )
-                        Metric(
-                            label = "Người chơi",
-                            value = if (state.isRunning && state.startupPhase == StartupPhase.Ready) "${state.onlinePlayers}" else "—",
-                            artKind = MinecraftArtKind.DIAMOND_SWORD,
-                            modifier = Modifier.weight(1f),
-                            onClick = { navigate(SubPage.PlayerList) }
-                        )
-                        Metric(
-                            label = "RAM / ${config.maxHeapMb}MB",
-                            value = if (state.isRunning && state.usedMemoryMb > 0) "${state.usedMemoryMb}" else "—",
-                            artKind = MinecraftArtKind.COMMAND_BLOCK,
-                            modifier = Modifier.weight(1f),
-                            onClick = { showRamSlider = !showRamSlider }
-                        )
-                    }
+                     Row(
+                         modifier = Modifier.fillMaxWidth(),
+                         horizontalArrangement = Arrangement.spacedBy(6.dp)
+                     ) {
+                         Metric(
+                             label = "TPS",
+                             value = if (state.isRunning && state.tps > 0) "%.1f".format(state.tps) else "?",
+                             artKind = MinecraftArtKind.REDSTONE,
+                             modifier = Modifier.weight(1f),
+                             onClick = onConsole
+                         )
+                         Metric(
+                             label = "Ng??i ch?i",
+                             value = if (state.isRunning && state.startupPhase == StartupPhase.Ready) "${state.onlinePlayers}" else "?",
+                             artKind = MinecraftArtKind.DIAMOND_SWORD,
+                             modifier = Modifier.weight(1f),
+                             onClick = { navigate(SubPage.PlayerList) }
+                         )
+                         Metric(
+                             label = "RAM / ${config.maxHeapMb}MB",
+                             value = if (state.isRunning && state.usedMemoryMb > 0) "${state.usedMemoryMb}" else "?",
+                             artKind = MinecraftArtKind.COMMAND_BLOCK,
+                             modifier = Modifier.weight(1f),
+                             onClick = { showRamSlider = !showRamSlider }
+                         )
+                     }
+
 
                     // Nút Bật / Dừng Server + Khởi động lại / Dọn RAM
                     AdaptiveActionRow {
@@ -1249,8 +1253,7 @@ fun MineHostOverview(
                     }
 
                     // Thanh điều khiển Đường hầm Playit.gg (khi ở chế độ Kết nối mọi nơi)
-                    if (playConnectionMode == PlayConnectionMode.Everywhere) {
-                        Surface(
+                    Surface(
                             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth()
@@ -1348,9 +1351,8 @@ fun MineHostOverview(
                                 }
                             }
                         }
-                    }
 
-                    // ── KHUNG 1: ĐỊA CHỈ CHO MÁY TÍNH PC / JAVA (CỔNG TCP) ──
+                     // ── KHUNG 1: ĐỊA CHỈ CHO MÁY TÍNH PC / JAVA (CỔNG TCP) ──
                     Surface(
                         color = MaterialTheme.colorScheme.secondaryContainer,
                         shape = RoundedCornerShape(14.dp),
@@ -3672,16 +3674,16 @@ private fun Metric(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.28f))
     ) {
-        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(value, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                 MinecraftPixelArtIcon(kind = artKind, size = 18.dp)
             }
-            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }

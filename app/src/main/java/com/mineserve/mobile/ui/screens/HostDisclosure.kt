@@ -35,7 +35,7 @@ internal fun HostDisclosure(
             Row(
                 Modifier.fillMaxWidth().semantics { stateDescription = if (expanded) "Đang mở" else "Đang thu gọn" }
                     .clickable(role = Role.Button, onClickLabel = if (expanded) "Thu gọn" else "Mở công cụ") { expanded = !expanded }
-                    .heightIn(min = 64.dp).padding(16.dp),
+                    .heightIn(min = 56.dp).padding(horizontal = 12.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
@@ -48,7 +48,7 @@ internal fun HostDisclosure(
             if (expanded) {
                 HorizontalDivider(Modifier.padding(horizontal = 16.dp))
                 savedContent.SaveableStateProvider("content") {
-                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp), content = content)
+                    Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp), content = content)
                 }
             }
         }

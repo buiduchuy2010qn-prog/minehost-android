@@ -691,16 +691,25 @@ fun MinecraftPixelArtIcon(
     size: androidx.compose.ui.unit.Dp = 32.dp,
     modifier: Modifier = Modifier
 ) {
-    val bitmap = remember(kind) { cachedPixelArtBitmap(kind) }
+    val resourceId = when (kind) {
+        MinecraftArtKind.GRASS -> R.drawable.minehost_minecraft_grass_block
+        MinecraftArtKind.CREEPER -> R.drawable.minehost_minecraft_creeper
+        MinecraftArtKind.COMMAND_BLOCK -> R.drawable.minehost_minecraft_command_block
+        MinecraftArtKind.DIAMOND_SWORD -> R.drawable.minehost_minecraft_diamond_sword
+        MinecraftArtKind.CHEST -> R.drawable.minehost_minecraft_chest
+        MinecraftArtKind.ENDER_EYE -> R.drawable.minehost_minecraft_ender_eye
+        MinecraftArtKind.GOLDEN_APPLE -> R.drawable.minehost_minecraft_golden_apple
+        MinecraftArtKind.REDSTONE -> R.drawable.minehost_minecraft_redstone
+    }
     androidx.compose.foundation.Image(
-        bitmap = bitmap,
-        contentDescription = null,
-        filterQuality = androidx.compose.ui.graphics.FilterQuality.None,
+        painter = painterResource(resourceId),
+        contentDescription = kind.titleVi,
         contentScale = androidx.compose.ui.layout.ContentScale.FillBounds,
+        filterQuality = androidx.compose.ui.graphics.FilterQuality.None,
         modifier = modifier
             .size(size)
             .clip(RoundedCornerShape(6.dp))
-            .border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(6.dp))
+            .border(1.dp, Color.White.copy(alpha = 0.22f), RoundedCornerShape(6.dp))
     )
 }
 
