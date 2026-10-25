@@ -165,7 +165,7 @@ class McApplication : Application(), Configuration.Provider {
             scope().launch {
                 try {
                     val lastCrash = crashLogFile.readText().takeLast(3000)
-                    termuxRuntime.emitLog("[crash] 上次崩溃日志:\n$lastCrash")
+                    termuxRuntime.emitLog("[crash] Nhật ký lỗi lần trước:\n$lastCrash")
                     crashLogFile.renameTo(java.io.File(filesDir, "home/crash_log_read.txt"))
                 } catch (_: Exception) {}
             }

@@ -572,7 +572,62 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                     }
 
                     if (state.isRunning && state.startupPhase != StartupPhase.Ready) {
-                        LinearProgressIndicator(Modifier.fillMaxWidth())
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            LinearProgressIndicator(Modifier.fillMaxWidth())
+                            Text(
+                                "⏳ Tiến trình: ${state.startupPhase.label} (${(state.startupPhase.progress * 100).toInt()}%)",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+
+                    // Khung mở nhanh Báo Cáo Lỗi Sập & Nhật Ký ngay trên thẻ chính khi khởi động thất bại
+                    if (state.startupPhase == StartupPhase.Failed && !state.isRunning) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.92f),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.2.dp, MaterialTheme.colorScheme.error),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(10.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    "⚠️ Máy chủ vừa dừng hoặc khởi động thất bại — Bấm xem ngay nguyên nhân & cách sửa:",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Button(
+                                        onClick = { vm.openLatestCrashReport { navigate(SubPage.CrashReports) } },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.error,
+                                            contentColor = MaterialTheme.colorScheme.onError
+                                        ),
+                                        shape = RoundedCornerShape(9.dp),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                        modifier = Modifier.weight(1.25f)
+                                    ) {
+                                        Text("🔍 Xem Phân Tích Lỗi Sập", fontSize = 11.5.sp, fontWeight = FontWeight.ExtraBold)
+                                    }
+                                    OutlinedButton(
+                                        onClick = onConsole,
+                                        shape = RoundedCornerShape(9.dp),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                        modifier = Modifier.weight(0.95f)
+                                    ) {
+                                        Text("📜 Mở Nhật Ký", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     // 3 Ô thông số nằm gọn ngay trong thẻ Server chính
@@ -917,45 +972,64 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                 val connectionReport by vm.connectionCheckReport.collectAsState()
                 val activeReport = connectionReport?.takeIf { it.serverId == active.dirName }
 
+                var showSixDiagnostics by remember { mutableStateOf(false) }
+
                 HostCard(
                     title = "🌐 Mời Bạn Bè & Đường Hầm Playit.gg (PC + PE)",
                     artKind = MinecraftArtKind.ENDER_EYE,
                     badgeText = if (playConnectionMode == PlayConnectionMode.SameNetwork) "Cùng Wi-Fi" else playitState.phaseDetail
                 ) {
-                    // Tách rõ 6 trạng thái kết nối độc lập (Mục B & G): không dùng một dấu xanh chung cho cả sáu trạng thái
+                    // Tách rõ 6 trạng thái kết nối độc lập (Thu gọn mặc định thành 1 dòng để nút Copy IP hiện ngay lập tức, bấm để bung chi tiết)
+                    val s1McRunning = state.isRunning && state.startupPhase == StartupPhase.Ready
+                    val s2AgentOnline = playitState.isAgentOnline
+                    val s3HasPublicAddr = playitState.hasPublicEndpoint
+                    val s4HasBridge = playitState.hasActiveForwardingBridge
+                    val s5McResponded = (activeReport?.localhostJava?.ok == true) ||
+                        (activeReport?.localhostBedrock?.ok == true) ||
+                        (activeReport?.lanJava?.ok == true) ||
+                        (activeReport?.lanBedrock?.ok == true)
+                    val s6ExternalVerified = (activeReport?.publicJava?.ok == true) ||
+                        (activeReport?.publicBedrock?.ok == true)
                     Surface(
                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
                         shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showSixDiagnostics = !showSixDiagnostics }
                     ) {
-                        Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                            val s1McRunning = state.isRunning && state.startupPhase == StartupPhase.Ready
-                            val s2AgentOnline = playitState.isAgentOnline
-                            val s3HasPublicAddr = playitState.hasPublicEndpoint
-                            val s4HasBridge = playitState.hasActiveForwardingBridge
-                            val s5McResponded = (activeReport?.localhostJava?.ok == true) ||
-                                (activeReport?.localhostBedrock?.ok == true) ||
-                                (activeReport?.lanJava?.ok == true) ||
-                                (activeReport?.lanBedrock?.ok == true)
-                            val s6ExternalVerified = (activeReport?.publicJava?.ok == true) ||
-                                (activeReport?.publicBedrock?.ok == true)
-                            Text(
-                                "📊 6 Trạng Thái Độc Lập (${active.name}):",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontSize = 11.5.sp,
-                                fontWeight = FontWeight.ExtraBold
-                            )
-                            Text(
-                                "1. Minecraft đang chạy: ${if (s1McRunning) "🟢 Sẵn sàng (Java:$port / PE:$bedrockPort)" else if (state.isRunning) "⏳ Đang khởi động (${state.startupPhase})" else "⚪ Đã dừng"}\n" +
-                                    "2. Agent online (Control): ${if (s2AgentOnline) "🟢 Online (${playitState.agentName.ifBlank { "Đã xác thực Pong" }})" else "⚪ Offline (${playitState.phaseDetail})"}\n" +
-                                    "3. Đã có địa chỉ public: ${if (s3HasPublicAddr) "🟢 Có (${listOfNotNull(playitState.publicAddress.takeIf { it.isNotBlank() }, playitState.bedrockAddress.takeIf { it.isNotBlank() }).joinToString(" | ")})" else "⚪ Chưa có cho server này"}\n" +
-                                    "4. Có bridge/traffic chuyển tiếp: ${if (s4HasBridge) "🟢 Đang chuyển tiếp (TCP:${playitState.forwardedTcpConnections} / UDP:${playitState.activeUdpSessions} phiên)" else "⚪ Chưa phát sinh cầu nối"}\n" +
-                                    "5. Đã nhận phản hồi Minecraft: ${if (s5McResponded) "🟢 Đã xác nhận gói Status/RakNet" else "⚪ Chưa kiểm tra / Chưa phản hồi"}\n" +
-                                    "6. Đã kiểm chứng từ mạng ngoài: ${if (s6ExternalVerified) "🟢 Đã kiểm chứng qua Playit" else "⚪ Chưa kiểm chứng (Bấm nút Kiểm tra bên dưới)"}",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontSize = 11.sp,
-                                lineHeight = 15.sp
-                            )
+                        Column(Modifier.padding(horizontal = 10.dp, vertical = 7.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    "📊 Chẩn đoán: ${if (s1McRunning) "🟢 MC" else "⚪ MC"} • ${if (s2AgentOnline) "🟢 Playit" else "⚪ Playit"} • ${if (s3HasPublicAddr) "🟢 Có IP" else "⚪ Chưa IP"}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(
+                                    if (showSixDiagnostics) "Ẩn chi tiết ▲" else "Chi tiết 6 bước ▼",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            if (showSixDiagnostics) {
+                                Text(
+                                    "1. Minecraft đang chạy: ${if (s1McRunning) "🟢 Sẵn sàng (Java:$port / PE:$bedrockPort)" else if (state.isRunning) "⏳ Đang khởi động (${state.startupPhase.label})" else "⚪ Đã dừng"}\n" +
+                                        "2. Agent online (Control): ${if (s2AgentOnline) "🟢 Online (${playitState.agentName.ifBlank { "Đã xác thực Pong" }})" else "⚪ Offline (${playitState.phaseDetail})"}\n" +
+                                        "3. Đã có địa chỉ public: ${if (s3HasPublicAddr) "🟢 Có (${listOfNotNull(playitState.publicAddress.takeIf { it.isNotBlank() }, playitState.bedrockAddress.takeIf { it.isNotBlank() }).joinToString(" | ")})" else "⚪ Chưa có cho server này"}\n" +
+                                        "4. Có bridge/traffic chuyển tiếp: ${if (s4HasBridge) "🟢 Đang chuyển tiếp (TCP:${playitState.forwardedTcpConnections} / UDP:${playitState.activeUdpSessions} phiên)" else "⚪ Chưa phát sinh cầu nối"}\n" +
+                                        "5. Đã nhận phản hồi Minecraft: ${if (s5McResponded) "🟢 Đã xác nhận gói Status/RakNet" else "⚪ Chưa kiểm tra / Chưa phản hồi"}\n" +
+                                        "6. Đã kiểm chứng từ mạng ngoài: ${if (s6ExternalVerified) "🟢 Đã kiểm chứng qua Playit" else "⚪ Chưa kiểm chứng (Bấm nút Kiểm tra bên dưới)"}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontSize = 11.sp,
+                                    lineHeight = 15.sp
+                                )
+                            }
                         }
                     }
 
@@ -1993,41 +2067,10 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
             item(key = "live_game_chat_messenger_card") {
                 var hostChatInput by remember { mutableStateOf("") }
                 HostCard(
-                    title = "💬 Chat Trực Tiếp Với Trong Game & Menu Nổi Admin",
+                    title = "💬 Chat Trực Tiếp 2 Chiều Với Người Chơi Trong Game",
                     artKind = MinecraftArtKind.DIAMOND_SWORD,
                     badgeText = if (liveChatMessages.isNotEmpty()) "${liveChatMessages.size} tin nhắn" else "Trực tiếp 2 chiều"
                 ) {
-                    // Công tắc bật nhanh Bong Bóng Menu Admin Nổi ngay trên màn hình khi vào Minecraft
-                    Surface(
-                        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.65f),
-                        shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.5f)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    "🎯 Bong Bóng Menu Admin Nổi Ngay Trong Game",
-                                    fontWeight = FontWeight.ExtraBold,
-                                    fontSize = 12.sp,
-                                    color = Color(0xFF10B981)
-                                )
-                                Text(
-                                    "Chạm bong bóng khi đang chơi Minecraft PE / Pojav để bấm ☀️ Trời Sáng • 🧹 Dọn Lag • ❤️ Hồi Máu @a • 📋 Copy IP • 🛑 Lưu & Tắt!",
-                                    fontSize = 10.5.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Switch(
-                                checked = config.keepStatusOverlay,
-                                onCheckedChange = { vm.toggleInGameAdminBubble(context, it) }
-                            )
-                        }
-                    }
-
                     // Khung hiển thị tin nhắn của người chơi (tự lọc sạch log kỹ thuật)
                     Surface(
                         color = Color(0xFF0F172A),

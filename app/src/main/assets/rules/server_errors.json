@@ -1,20 +1,9 @@
 {
   "version": 1,
   "_comment": [
-    "Minexa 崩溃日志规则表。",
-    "设计：把「识别一种崩溃 -> 给出主信息 + 建议操作」的知识从代码里抽出来，",
-    "改成数据驱动，新增/修订规则不需要改动 Kotlin 代码。",
-    "加载顺序（后者覆盖前者）：内置本文件 -> {filesDir}/error_rules/*.json（用户自定义，可用 App 内文件管理器写入）。",
-    "规则字段：",
-    "  id        必填，唯一标识。用户自定义规则同 id 时覆盖内置规则。",
-    "  level     可选，Identified | Possible | Reminder，默认 Identified。",
-    "  contains  可选，字符串数组；日志中出现任意一项即命中（不区分大小写）。",
-    "  regex     可选，正则表达式；与 contains 是「或」关系。",
-    "  label/detail/evidence/suggest  必填/可选文案。",
-    "占位符（四个文案字段内通用）：",
-    "  $1..$9    regex 的第 N 个捕获组（无 regex 或未捕获时为空串）。",
-    "  $java     classVersions 对正则第 1 个捕获组的查表结果，如 61 -> Java 17；查不到时为空串。",
-    "  $0        regex 整段匹配。"
+    "Bảng quy tắc phân tích báo cáo lỗi sập (Crash Report) của MineHost.",
+    "Thiết kế hướng dữ liệu: nhận diện mẫu lỗi -> trả về nguyên nhân chính + gợi ý khắc phục bằng tiếng Việt.",
+    "Thứ tự nạp (sau ghi đè trước): file tích hợp sẵn này -> {filesDir}/error_rules/*.json."
   ],
   "classVersions": {
     "45": 1,
@@ -54,10 +43,10 @@
         "has been compiled by a more recent version"
       ],
       "regex": "class file version\\s+(\\d+)",
-      "label": "Java 版本不兼容",
-      "detail": "核心、插件或模组使用了当前 Java 无法加载的 class 版本（$java）。",
-      "evidence": "检测到 class file version $1",
-      "suggest": "确认核心官方支持的 Java 范围，并把运行环境切换到对应版本（需要 $java）。"
+      "label": "Java không tương thích phiên bản",
+      "detail": "Core máy chủ, Plugin hoặc Mod yêu cầu phiên bản biên dịch mới hơn mức Java hiện tại có thể nạp ($java).",
+      "evidence": "Phát hiện lỗi class file version $1",
+      "suggest": "Hãy vào mục「Môi trường Java」và chuyển sang đúng phiên bản Java được yêu cầu (cần $java)."
     },
     {
       "id": "java-version-required",
@@ -71,15 +60,18 @@
         "Java 25 or higher",
         "Minecraft 1.20.5 requires Java 21",
         "Java 未安装",
+        "Java chưa được cài đặt",
+        "Không tìm thấy Java",
+        "java 未找到",
         "Java not installed",
         "Java 不支持",
         "Java version is not supported"
       ],
       "regex": "Java\\s+(\\d+)\\s+or\\s+higher",
-      "label": "Java 版本要求不满足",
-      "detail": "日志明确指出当前 Java 版本低于核心或依赖的要求。",
-      "evidence": "检测到 requires Java/更高 Java 版本提示",
-      "suggest": "切换到日志和核心官方文档要求的 Java 版本后重新启动。"
+      "label": "Java chưa đáp ứng yêu cầu phiên bản",
+      "detail": "Nhật ký báo rõ phiên bản Java hiện tại thấp hơn yêu cầu của máy chủ/Mod hoặc chưa cài đặt bản Java tương ứng.",
+      "evidence": "Phát hiện yêu cầu phiên bản Java cao hơn hoặc thiếu môi trường Java",
+      "suggest": "Hãy mở「Cài đặt → Môi trường Java」để cài đặt và chọn đúng phiên bản Java (MC 1.17–1.20.4 dùng Java 17, MC 1.20.5+ dùng Java 21) rồi bật lại Server."
     },
     {
       "id": "launch-file-missing",
@@ -90,12 +82,14 @@
         "unix_args.txt",
         "quilt-server-launch.jar",
         "server.jar 不存在",
-        "启动文件缺失"
+        "server.jar không tồn tại",
+        "启动文件缺失",
+        "Thiếu tệp khởi động"
       ],
-      "label": "核心启动文件不完整",
-      "detail": "启动入口或 installer 生成的产物缺失。",
-      "evidence": "检测到主类、jar 或启动参数文件缺失",
-      "suggest": "确认核心安装已完成；Forge/NeoForge/Quilt 需要先成功执行 installer。"
+      "label": "Thiếu tệp khởi động Core máy chủ",
+      "detail": "Không tìm thấy tệp .jar chính hoặc tệp tham số do trình cài đặt (Installer) tạo ra.",
+      "evidence": "Phát hiện lỗi thiếu lớp chính (main class), jarfile hoặc unix_args.txt",
+      "suggest": "Hãy kiểm tra lại quá trình tải Core máy chủ; với Forge/NeoForge/Quilt cần chạy trình cài đặt hoàn tất trước khi bật."
     },
     {
       "id": "classpath-mismatch",
@@ -107,10 +101,10 @@
         "NoSuchFieldError",
         "IncompatibleClassChangeError"
       ],
-      "label": "依赖或版本不匹配",
-      "detail": "运行时找不到类、方法或字段，通常来自核心、插件、模组或库版本不一致。",
-      "evidence": "检测到类/方法/字段链接错误",
-      "suggest": "检查首个异常涉及的 jar，移除最近添加的插件/模组，并核对 Minecraft 与加载器版本。"
+      "label": "Xung đột thư viện hoặc lệch phiên bản Mod/Plugin",
+      "detail": "Khi chạy không tìm thấy Class, Method hoặc Field — thường do cài Mod/Plugin sai phiên bản Minecraft hoặc thiếu thư viện phụ trợ (API).",
+      "evidence": "Phát hiện lỗi liên kết Class/Method/Field (NoClassDefFoundError / NoSuchMethodError)",
+      "suggest": "Hãy kiểm tra Mod hoặc Plugin vừa cài gần nhất, dùng nút「Quét lỗi thiếu thư viện Mod phụ trợ」hoặc「Hoàn tác Mod vừa cài」trên Trang chủ."
     },
     {
       "id": "mod-mismatch",
@@ -123,10 +117,10 @@
         "failed to load mod",
         "fabricloader"
       ],
-      "label": "模组不匹配",
-      "detail": "模组加载或 Mixin 注入失败。",
-      "evidence": "检测到模组加载/Mixin 错误",
-      "suggest": "核对 Minecraft、Forge/NeoForge/Fabric/Quilt 和所有模组版本；逐个停用最近更新的模组。"
+      "label": "Lỗi nạp Mod hoặc xung đột Mixin",
+      "detail": "Quá trình nạp Mod hoặc tiêm mã Mixin thất bại (có thể do cài nhầm Mod chỉ dành cho Client lên Server hoặc thiếu thư viện phụ trợ).",
+      "evidence": "Phát hiện lỗi nạp Mod / Mixin apply failed",
+      "suggest": "Hãy kiểm tra phiên bản Minecraft, Loader (Fabric/Forge/NeoForge) và bấm nút「Hoàn tác / Tạm tắt Mod vừa cài gây lỗi」trên Trang chủ."
     },
     {
       "id": "plugin-mismatch",
@@ -141,10 +135,10 @@
         "插件不匹配",
         "插件加载失败"
       ],
-      "label": "插件不匹配或加载失败",
-      "detail": "日志包含插件加载失败、API 版本不支持或插件描述异常。",
-      "evidence": "检测到插件加载/API 错误",
-      "suggest": "检查报错前后列出的插件，下载与当前服务端核心和 Minecraft 版本匹配的版本。"
+      "label": "Plugin không tương thích hoặc lỗi nạp Plugin",
+      "detail": "Nhật ký ghi nhận Plugin không nạp được, không hỗ trợ phiên bản API hiện tại hoặc file plugin.yml bị lỗi.",
+      "evidence": "Phát hiện lỗi nạp Plugin / Unsupported API version",
+      "suggest": "Hãy kiểm tra tên Plugin xuất hiện ngay trước dòng báo lỗi và tải bản Plugin tương thích với phiên bản Minecraft hiện tại."
     },
     {
       "id": "port-bind",
@@ -155,13 +149,14 @@
         "Failed to bind",
         "FAILED TO BIND TO PORT",
         "端口被占用",
+        "Cổng đang bị chiếm dụng",
         "Cannot assign requested address"
       ],
       "regex": "Failed to bind to port\\s+(\\d+)",
-      "label": "端口无法监听",
-      "detail": "服务端无法绑定配置的地址或端口{{（端口 $1）}}，通常是端口已被占用。",
-      "evidence": "检测到 bind 失败 $1",
-      "suggest": "关闭占用该端口的旧进程，或修改 server.properties/pnx.yml 里的端口后重启{{（当前端口 $1）}}。"
+      "label": "Không thể mở cổng mạng (Trùng cổng)",
+      "detail": "Máy chủ không thể lắng nghe trên địa chỉ hoặc cổng đã cấu hình{{ (cổng $1)}}, thường do tiến trình cũ chưa tắt hẳn hoặc cổng đang bị ứng dụng khác chiếm.",
+      "evidence": "Phát hiện lỗi BindException / Failed to bind $1",
+      "suggest": "Hãy đợi vài giây rồi bật lại Server (MineHost sẽ tự dọn tiến trình cũ), hoặc đổi cổng server-port trong phần Cài đặt thuộc tính{{ (cổng hiện tại: $1)}}."
     },
     {
       "id": "eula-not-accepted",
@@ -171,10 +166,10 @@
         "eula=false",
         "EULA"
       ],
-      "label": "EULA 未接受",
-      "detail": "服务端因为 EULA 状态未满足而拒绝启动。",
-      "evidence": "检测到 EULA/eula=false",
-      "suggest": "阅读对应服务端的最终用户许可协议，确认接受后再重新启动；本应用不会代替用户同意协议。"
+      "label": "Chưa đồng ý điều khoản Minecraft EULA",
+      "detail": "Máy chủ từ chối khởi động vì tệp eula.txt đang ở trạng thái eula=false.",
+      "evidence": "Phát hiện thông báo EULA / eula=false",
+      "suggest": "Hãy bấm Bật Server và chọn「Tôi đồng ý và bật server」trong hộp thoại Minecraft EULA."
     },
     {
       "id": "runtime-permission",
@@ -186,10 +181,10 @@
         "execve",
         "PROOT_TMP_DIR"
       ],
-      "label": "运行环境权限异常",
-      "detail": "启动脚本、临时目录或 PRoot 依赖没有可用权限。",
-      "evidence": "检测到 Permission denied/PROOT_TMP_DIR",
-      "suggest": "检查应用存储权限、临时目录可写性和运行环境诊断结果；不要删除服务器数据。"
+      "label": "Lỗi quyền thực thi trong môi trường chạy",
+      "detail": "Tệp kịch bản khởi động, thư mục tạm hoặc gói phụ trợ PRoot thiếu quyền thực thi (chmod).",
+      "evidence": "Phát hiện lỗi Permission denied / PROOT_TMP_DIR",
+      "suggest": "Hãy vào「Cài đặt → Chẩn đoán & Tự sửa lỗi」và bấm nút Tự động sửa chữa môi trường chạy (không làm mất dữ liệu Server)."
     },
     {
       "id": "network-download",
@@ -201,10 +196,10 @@
         "Connection timed out",
         "download failed"
       ],
-      "label": "依赖或资源下载失败",
-      "detail": "核心启动或安装过程需要的网络资源未能获取。",
-      "evidence": "检测到 DNS、超时或下载失败",
-      "suggest": "检查网络/VPN、镜像源和 libraries 缓存后重试。"
+      "label": "Lỗi tải thư viện hoặc kết nối mạng",
+      "detail": "Máy chủ không tải được các thư viện phụ thuộc cần thiết trong lúc khởi động hoặc cài đặt.",
+      "evidence": "Phát hiện lỗi phân giải DNS, quá thời gian chờ (Timeout) hoặc lỗi tải tệp",
+      "suggest": "Hãy kiểm tra kết nối Wi-Fi/4G, tắt VPN nếu đang bật hoặc đổi nguồn tải trong Cài đặt rồi thử lại."
     },
     {
       "id": "jna-native",
@@ -215,10 +210,10 @@
         "Did not JNA classes",
         "udev library"
       ],
-      "label": "Java/JNA 本地库限制",
-      "detail": "JNA/OSHI 需要的 glibc 或 udev 能力在 Android/Termux 中可能不存在。",
-      "evidence": "检测到 libc.so.6/JNA/udev",
-      "suggest": "这是运行环境兼容性提示，不等同于 Minecraft 主线程崩溃；以首个真正异常为准。"
+      "label": "Giới hạn thư viện gốc JNA trên Android",
+      "detail": "Thư viện JNA/OSHI tìm kiếm glibc hoặc udev vốn không có sẵn trên nhân Android/Termux.",
+      "evidence": "Phát hiện cảnh báo libc.so.6 / JNA / udev",
+      "suggest": "Đây thường chỉ là cảnh báo tương thích môi trường và không phải nguyên nhân chính làm sập Server; hãy xem ngoại lệ (Exception) đầu tiên bên dưới."
     },
     {
       "id": "out-of-memory",
@@ -229,10 +224,10 @@
         "GC overhead limit exceeded",
         "Cannot reserve enough space"
       ],
-      "label": "内存不足",
-      "detail": "Java 堆或系统内存不足。",
-      "evidence": "检测到 OOM/heap space",
-      "suggest": "降低视距、插件/模组数量和 -Xmx；同时检查 Android 是否终止后台进程。"
+      "label": "Tràn bộ nhớ RAM (OutOfMemoryError)",
+      "detail": "Bộ nhớ Heap cấp cho Java hoặc RAM trống của điện thoại không đủ để gánh máy chủ.",
+      "evidence": "Phát hiện lỗi OutOfMemoryError / Java heap space",
+      "suggest": "Hãy bấm nút「Bật Cấu Hình Siêu Nhẹ Cho Máy RAM Ít」trên Trang chủ, giảm tầm nhìn (view-distance), bớt số lượng Mod hoặc chỉnh mức RAM vừa phải."
     },
     {
       "id": "process-killed",
@@ -242,10 +237,10 @@
         "SIGKILL",
         "Killed"
       ],
-      "label": "进程被系统终止",
-      "detail": "exit=137 或 SIGKILL 通常表示进程被系统或外部强制终止。",
-      "evidence": "检测到 exit=137/SIGKILL",
-      "suggest": "检查设备内存压力、电池优化和后台限制；不要只根据此项断定是 Java 异常。"
+      "label": "Tiến trình bị hệ thống Android buộc dừng (Exit 137)",
+      "detail": "Mã thoát 137 (SIGKILL) thường xảy ra khi hệ điều hành Android thiếu RAM trống hoặc cơ chế tiết kiệm pin buộc đóng tiến trình chạy nền.",
+      "evidence": "Phát hiện mã thoát exit=137 / SIGKILL",
+      "suggest": "Hãy dọn RAM trước khi bật Server, hạ mức RAM cấp cho Server xuống mức an toàn (để chừa RAM cho Android), và tắt tối ưu hóa pin cho MineHost."
     },
     {
       "id": "fontconfig-missing",
@@ -256,10 +251,10 @@
         "fontconfig error",
         "Fontconfig head is null"
       ],
-      "label": "字体运行库缺失",
-      "detail": "Forge/NeoForge 等核心的字体初始化依赖未完整安装。",
-      "evidence": "检测到 fontconfig/fc-cache",
-      "suggest": "先补齐字体运行库和缓存；无图形模式可能仍可继续，但图形相关功能会受限。"
+      "label": "Thiếu thư viện phông chữ (fontconfig)",
+      "detail": "Gói khởi tạo phông chữ mà Forge/NeoForge yêu cầu chưa được nạp đầy đủ.",
+      "evidence": "Phát hiện lỗi fontconfig / fc-cache",
+      "suggest": "Hãy vào「Cài đặt → Chẩn đoán & Tự sửa lỗi」để tự động bổ sung thư viện phông chữ và tạo lại bộ đệm fc-cache."
     },
     {
       "id": "jvm-create-failed",
@@ -271,10 +266,10 @@
         "Unrecognized VM option",
         "no main manifest attribute"
       ],
-      "label": "JVM 启动参数错误",
-      "detail": "JVM 无法按给定参数启动，常见于手写的自定义启动命令里用了当前 Java 不支持的参数。",
-      "evidence": "检测到 VM 初始化失败/无法识别的选项",
-      "suggest": "检查高级设置里的自定义启动命令与 JVM 参数，去掉当前 Java 版本不支持的选项。"
+      "label": "Lỗi tham số khởi động máy ảo Java (JVM)",
+      "detail": "Máy ảo Java (JVM) không thể khởi tạo với các tham số hiện tại — thường do lệnh khởi động tùy chỉnh chứa cờ không được phiên bản Java này hỗ trợ.",
+      "evidence": "Phát hiện lỗi khởi tạo VM / Unrecognized VM option",
+      "suggest": "Hãy kiểm tra lại phần lệnh khởi động tùy chỉnh hoặc giảm mức RAM tối đa (-Xmx) xuống mức thiết bị hỗ trợ."
     },
     {
       "id": "corrupt-core",
@@ -285,10 +280,10 @@
         "invalid LOC header",
         "Unexpected end of ZLIB input stream"
       ],
-      "label": "核心文件损坏",
-      "detail": "服务端 jar 或某个依赖包下载不完整/已损坏。",
-      "evidence": "检测到 jar 损坏或 zip 结构错误",
-      "suggest": "删除并重新下载该核心（或对应的 libraries 缓存）后重试；下载中断是常见原因。"
+      "label": "Tệp Core hoặc Mod/Plugin bị hỏng (Corrupt Jar)",
+      "detail": "Tệp .jar của máy chủ hoặc một gói thư viện/Mod bị tải lỗi dở dang nên cấu trúc nén ZIP bị hỏng.",
+      "evidence": "Phát hiện lỗi Invalid or corrupt jarfile / lỗi cấu trúc nén ZIP",
+      "suggest": "Hãy xóa tệp Mod/Core vừa tải bị lỗi (hoặc tải lại Core máy chủ) khi có kết nối mạng ổn định."
     },
     {
       "id": "world-corrupt",
@@ -299,10 +294,10 @@
         "is missing or corrupt",
         "level.dat"
       ],
-      "label": "世界存档异常",
-      "detail": "服务端读取世界存档失败，通常是 level.dat 或区块文件损坏。",
-      "evidence": "检测到世界/区块读取失败",
-      "suggest": "先从备份快照恢复该世界；若没有备份，可考虑重置世界（会丢失存档，请先确认）。"
+      "label": "Dữ liệu Thế giới (World) bị lỗi",
+      "detail": "Máy chủ không đọc được dữ liệu thế giới, thường do tệp level.dat hoặc vùng đất (chunk) bị hỏng khi tắt máy đột ngột.",
+      "evidence": "Phát hiện lỗi đọc level.dat hoặc Chunk file",
+      "suggest": "Hãy khôi phục thế giới từ bản Sao lưu (Backup) gần nhất trong mục「Quản Lý Map & Sao Lưu」."
     },
     {
       "id": "missing-native-library",
@@ -318,10 +313,10 @@
         "GLIBC_"
       ],
       "regex": "[A-Za-z0-9_.+-]+\\.so(?:\\.[0-9.]+)?:?\\s*(?:cannot open shared object file|No such file)",
-      "label": "本地动态库(.so)缺失",
-      "detail": "运行所需的动态库（.so，如 libjvm.so、libc.so.6、libz.so 等）在 Android/Termux 环境里找不到或版本不满足。Android 使用的是 bionic libc，缺少完整 glibc 生态，很多服务端/插件/模组依赖的 .so 在这里本就不存在。",
-      "evidence": "检测到 error while loading shared libraries / cannot open shared object file / 缺少 .so",
-      "suggest": "推荐使用 PRoot 容器运行服务端：在「运行环境」里把来源切到 PRoot Linux 容器（Ubuntu 20.04 / 22.04），它提供标准 glibc 环境，能补齐这些 .so。若已在 PRoot 内仍报缺库，进入该容器执行 apt 安装对应依赖（如 libc6、zlib1g、libstdc++6）后重试。"
+      "label": "Thiếu thư viện hệ thống (.so) cho Java/Mod",
+      "detail": "Không tìm thấy thư viện động (.so như libjvm.so, libc.so.6, libz.so) hoặc xung đột phiên bản glibc trên môi trường hiện tại.",
+      "evidence": "Phát hiện lỗi error while loading shared libraries / thiếu tệp .so",
+      "suggest": "Hãy mở「Cài đặt → Môi trường Java」để chuyển sang bộ chạy FCL Native JRE hoặc dùng công cụ「Chẩn đoán & Tự sửa lỗi」để khôi phục liên kết thư viện."
     }
   ]
 }

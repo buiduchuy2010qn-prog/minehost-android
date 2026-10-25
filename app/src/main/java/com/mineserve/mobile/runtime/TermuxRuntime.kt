@@ -337,7 +337,11 @@ class TermuxRuntime(context: Context) {
         val file = appLogFile
         if (!file.isFile) return emptyList()
         return runCatching {
-            file.useLines { lines -> lines.toList().takeLast(maxLines) }
+            file.useLines { lines ->
+                lines.toList().takeLast(maxLines).map {
+                    com.mineserve.mobile.server.CrashReportManager.localizeLegacyChineseText(it)
+                }
+            }
         }.getOrDefault(emptyList())
     }
 
@@ -348,14 +352,17 @@ class TermuxRuntime(context: Context) {
 
     /** 设置日志回调，bootstrap 过程的日志会通过此回调输出 */
     fun setBootstrapLogCallback(cb: (String) -> Unit) {
-        installer.onLog = cb
+        installer.onLog = { raw ->
+            cb(com.mineserve.mobile.server.CrashReportManager.localizeLegacyChineseText(raw))
+        }
     }
 
     /** 向 consoleFlow 推送一条日志，并异步落盘到 mineserve.log */
     fun emitLog(line: String) {
-        executor.emit(line)
+        val localized = com.mineserve.mobile.server.CrashReportManager.localizeLegacyChineseText(line)
+        executor.emit(localized)
         // 落盘是「尽力而为」：任何异常都不能影响主流程
-        runCatching { persistAppLog(line) }
+        runCatching { persistAppLog(localized) }
     }
 
     fun isReady(): Boolean = installer.isReady()

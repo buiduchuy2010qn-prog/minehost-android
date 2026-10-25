@@ -60,11 +60,11 @@ enum class ServerCore(val displayName: String) {
  */
 @Serializable
 enum class TunnelType(val displayName: String, val description: String) {
-    Frp("frp", "自建服务器，功能最全，支持自定义端口"),
-    Bore("bore", "自建服务器，协议最简，纯手机端运行无需下载二进制"),
-    Stun("STUN 直连", "无需服务器，全锥形 NAT 下直连，带宽即家宽上行"),
-    SakuraFrp("SakuraFrp", "填入 Token 管理隧道，官方节点，无需自建服务器"),
-    MeFrp("ME Frp", "填入 Token 管理隧道，免费节点，无需自建服务器")
+    Frp("frp", "Máy chủ tự dựng, đầy đủ tính năng, hỗ trợ tùy chỉnh cổng"),
+    Bore("bore", "Máy chủ tự dựng, giao thức gọn nhẹ, chạy trực tiếp trên điện thoại"),
+    Stun("STUN Trực tiếp", "Không cần máy chủ trung gian, kết nối trực tiếp qua NAT"),
+    SakuraFrp("SakuraFrp", "Quản lý đường hầm bằng Token, cụm máy chủ chính thức"),
+    MeFrp("ME Frp", "Quản lý đường hầm bằng Token, cụm máy chủ miễn phí")
 }
 
 /**
@@ -544,7 +544,7 @@ data class McConfig(
     val selectedCore: ServerCore = ServerCore.Paper,
     /** 下载页当前选择的 MC 版本（临时 UI 状态） */
     val mcVersion: String = "1.20.4",
-    val coreSubDescription: String = "性能优化版，兼容大部分插件",
+    val coreSubDescription: String = "Bản tối ưu hiệu năng cao, tương thích hầu hết Plugin",
     /**
      * App 侧的本地端口（服务端端口的**镜像**）。
      *
@@ -828,24 +828,15 @@ data class ServerState(
 }
 
 enum class StartupPhase(val label: String, val progress: Float) {
-    Idle("未启动", 0f),
-    PreparingEnvironment("准备环境", 0.07f),
-    StartingJava("启动 Java", 0.20f),
-    DownloadingDependencies("下载依赖", 0.40f),
-    LoadingCore("加载核心", 0.62f),
-    /**
-     * 网络监听。
-     *
-     * 进度**低于**"创建世界"是刻意的：真实日志顺序是
-     * `Starting Minecraft server on *:25565`（绑定端口）
-     * **先于** `Preparing level "world"`（创建世界）。
-     * 若这里给更高的值，进度条会先冲到 92% 再跌回 80%，
-     * 出现可见的回退跳动。
-     */
-    StartingNetwork("启动网络", 0.72f),
-    CreatingWorld("创建世界", 0.82f),
-    Ready("已完成", 1f),
-    Failed("启动失败", 0f)
+    Idle("Chưa chạy", 0f),
+    PreparingEnvironment("Chuẩn bị môi trường", 0.07f),
+    StartingJava("Khởi chạy Java", 0.20f),
+    DownloadingDependencies("Tải thư viện phụ thuộc", 0.40f),
+    LoadingCore("Nạp Core máy chủ", 0.62f),
+    StartingNetwork("Khởi động mạng & cổng", 0.72f),
+    CreatingWorld("Đang tải / tạo thế giới", 0.82f),
+    Ready("Đã sẵn sàng", 1f),
+    Failed("Khởi động thất bại", 0f)
 }
 
 /**
@@ -1048,32 +1039,20 @@ fun startupPhaseForLog(line: String): StartupPhase? {
             text.contains("正在生成密钥对") -> StartupPhase.LoadingCore
 
         // ── 启动 Java（关键词收窄，不再匹配裸 "jvm"） ──────
-        text.contains("[startmc] java 路径") || text.contains("正在启动 java") ||
+        text.contains("[startmc] java 路径") || text.contains("[startmc] đường dẫn java") ||
+            text.contains("正在启动 java") || text.contains("đang khởi chạy java") ||
             text.contains("starting java") ||
-            // ⚠️ 不要把 "正在启动 net.fabricmc.loader…" 放这里。
-            // 它是 "Starting net.fabricmc.loader…BundlerClassPathCapture" 的译文，
-            // 而那句属于**加载核心**（类加载器已接手，Java 进程早起来了）。
-            // 用户真实日志里它正是「加载核心」段的第一行；若归到这一档(20%)，
-            // 进度条会从 62% 掉回 20%。核心档的 `正在启动 minecraft` 已覆盖它。
-            // 只认带上下文的版本声明，避免命中任意含 "jvm" 的日志。
-            // 汉化插件会把 "version" 翻成"版本"，所以 `openjdk 版本` 也要认。
             text.contains("openjdk version") || text.contains("openjdk 版本") ||
             text.contains("java version") || text.contains("java 版本") ||
             text.contains("java hotspot") -> StartupPhase.StartingJava
 
         // ── 准备环境（最早期，进度最低，放最后） ──────────
-        // App 自身的引导日志走这里。以前**没有任何关键词覆盖这一段**，
-        // 于是启动的头几秒进度条停在初始值不动（表现为"启动卡住"）。
-        //
-        // 位置说明：`when` 是短路求值，**前面的分支优先**。这一档 progress 最低
-        // （0.07），所以必须放在所有其他阶段之后，否则会抢走更靠后阶段的日志。
-        // 例如 "[startMc] java 路径: ..." 含 "[startmc]" 但不含 [bootstrap]，
-        // 两档不冲突；但任何同时命中的行都会先被判为 Java 启动 —— 这是对的，
-        // 因为出现 java 路径就说明环境准备已经过了。
         text.contains("[bootstrap]") || text.contains("[repair]") ||
             text.contains("[jvm]") || text.contains("[proot]") ||
             text.contains("修复") && text.contains("脚本路径") ||
             text.contains("wrapper 脚本") || text.contains("脚本已创建") ||
+            text.contains("script wrapper") || text.contains("đang kiểm tra môi trường") ||
+            text.contains("chuẩn bị môi trường") ||
             text.contains("正在检查环境") || text.contains("准备环境") -> StartupPhase.PreparingEnvironment
 
         else -> null

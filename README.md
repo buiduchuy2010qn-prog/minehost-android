@@ -1,17 +1,22 @@
-# 🇻🇳 MineHost Android — v2.8.3 (Build 50 • Bản Cộng Đồng Chính Thức)
+# 🇻🇳 MineHost Android — v2.8.4 (Build 51 • Bản Cộng Đồng Chính Thức)
 
-[![Phiên bản mới nhất](https://img.shields.io/badge/Release-v2.8.3%20(Build%2050)-2E7D32?style=for-the-badge&logo=android)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
+[![Phiên bản mới nhất](https://img.shields.io/badge/Release-v2.8.4%20(Build%2051)-2E7D32?style=for-the-badge&logo=android)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
 [![Nền tảng](https://img.shields.io/badge/Android-8.0%2B%20(ARM64)-0D9488?style=for-the-badge)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases)
 [![Cập nhật OTA](https://img.shields.io/badge/OTA-C%C3%A0i%20%C4%91%C3%A8%20100%25%20%26%20T%E1%BB%B1%20x%C3%B3a%20APK-2563EB?style=for-the-badge)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
 [![Giấy phép](https://img.shields.io/badge/License-GPLv3-blue?style=for-the-badge)](LICENSE)
 
 **MineHost** (`vn.minehost.pro`) là ứng dụng Android mã nguồn mở giúp bạn **tự tạo, vận hành và quản trị máy chủ Minecraft Java & Bedrock (Chơi chung PC + Điện thoại PE)** trực tiếp ngay trên điện thoại Android mà không cần thuê VPS.
 
-👉 **[📥 TẢI NGAY APK MỚI NHẤT (minehost-2.8.3-arm64.apk)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)**
+👉 **[📥 TẢI NGAY APK MỚI NHẤT (minehost-2.8.4-arm64.apk)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)**
 
 ---
 
-## 🔥 5 Nâng Cấp Đỉnh Cao Mới Trong Bản `v2.8.3` (Build 50)
+## 🔥 Nâng Cấp Mới Nhất Trong Bản `v2.8.4` (Build 51) & `v2.8.3`
+
+### 🆕 0. 🩺 Việt Hóa 100% Hệ Thống Báo Lỗi Crash & Giao Diện Phân Tích Sự Cố Trực Quan (`v2.8.4`)
+- **Xóa sạch 100% chữ Trung Quốc còn sót** trong 18 quy tắc chẩn đoán lỗi (`server_errors.json`), trình tạo file báo cáo (`CrashReportManager`), bộ phân tích (`CrashReportAnalyzer`) và nhật ký hệ thống (`mineserve.log`), đồng thời **tự động dịch cả các file báo cáo lỗi cũ** đã lưu trên máy.
+- **Thẻ Chẩn Đoán Sự Cố Mới:** Tách bạch rõ **Nguyên nhân gốc**, **Mã thoát tiến trình** (`137 = Tràn RAM / Hệ thống buộc dừng`, `1 = Lỗi cấu hình/Java`), **Bằng chứng log** và hộp **`💡 Cách khắc phục`** nổi bật.
+- **Nút `🔍 Xem Phân Tích Lỗi Sập` ngay trên Thẻ Server Chính** khi khởi động thất bại + **Thu gọn bảng Chẩn đoán 6 bước** trên Trang chủ giúp nút Copy IP PC/PE hiển thị ngay lập tức.
 
 ### 1. 🎯 Bong Bóng Menu Admin Nổi Ngay Trong Lúc Đang Chơi Game (Floating In-Game Admin Menu)
 - Khi vừa mở Server vừa vào chơi **Minecraft PE / PojavLauncher** trên cùng 1 điện thoại, một bong bóng nhỏ gọn (`⚡ SV CPU | RAM ▾`) nổi ở mép màn hình (kéo thả tự do).

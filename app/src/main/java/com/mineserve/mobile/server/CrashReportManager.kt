@@ -8,20 +8,15 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * 崩溃报告管理器：
- *  - captureCrash：MC 进程异常退出时收集最近日志，生成崩溃报告
- *  - listCrashReports / listNativeCrashReports：列出应用自建 / MC 原生崩溃报告
- *  - readCrashReport / deleteCrashReport / clearAllCrashReports：读取、删除、清空
- *
- * 报告目录说明：
- *  - 自建报告：home/crash-logs/crash_yyyyMMdd_HHmmss.txt（应用生成，含最近日志 + 原生报告）
- *  - MC 原生：home/servers/{dirName}/crash-reports/（Minecraft 服务端自动生成）
+ * Bộ quản lý Báo cáo Sự cố (Crash Report) của MineHost:
+ *  - captureCrash: Tự động thu thập nhật ký gần nhất khi tiến trình Minecraft thoát bất thường
+ *  - listCrashReports / listNativeCrashReports: Liệt kê báo cáo lỗi của MineHost và báo cáo gốc của Minecraft
+ *  - readCrashReport / deleteCrashReport / clearAllCrashReports: Đọc, xóa từng báo cáo hoặc dọn sạch toàn bộ
  */
 class CrashReportManager(private val termux: TermuxRuntime) {
 
     private val TAG = "CrashReportManager"
 
-    /** 崩溃报告信息 */
     data class CrashReport(
         val fileName: String,
         val path: String,
@@ -29,31 +24,19 @@ class CrashReportManager(private val termux: TermuxRuntime) {
         val sizeText: String,
         val createdTime: Long,
         val createdText: String,
-        val preview: String    // 前 500 字符预览
+        val preview: String
     )
 
-    /** 自建崩溃报告目录（home/crash-logs） */
     private val crashLogsDir: File
         get() = File(termux.installer.rootDir, "home/crash-logs").apply { mkdirs() }
 
-    /** MC 原生崩溃报告目录（home/servers/{dirName}/crash-reports） */
     private fun nativeCrashReportsDir(dirName: String): File =
         File(termux.installer.rootDir, "home/servers/$dirName/crash-reports")
 
-    /** MC latest.log 路径 */
     private fun latestLogFile(dirName: String): File =
         File(termux.installer.rootDir, "home/servers/$dirName/logs/latest.log")
 
-    /**
-     * 收集崩溃日志。
-     * 当 MC 进程异常退出时调用，收集最近的日志写入报告文件。
-     * @param exitCode 进程退出码
-     * @param wasRunningBefore 是否之前在运行（区分正常停止和崩溃）
-     * @return 生成的报告路径，失败返回 null
-     */
     fun captureCrash(exitCode: Int, wasRunningBefore: Boolean, dirName: String, allowCleanExit: Boolean = false): String? {
-        // 只在之前在运行且非正常退出时生成报告（正常 stop 命令退出码通常是 0；
-        // 启动后快速退出即使 exit=0 也按异常处理）
         if (!wasRunningBefore || (exitCode == 0 && !allowCleanExit)) {
             return null
         }
@@ -64,119 +47,92 @@ class CrashReportManager(private val termux: TermuxRuntime) {
 
         return try {
             val sb = StringBuilder()
-            // ── 头部 ──
             sb.appendLine("====================================")
-            sb.appendLine("Minexa 崩溃报告")
-            sb.appendLine("时间: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(now)}")
-            sb.appendLine("退出码: $exitCode")
-            sb.appendLine("进程状态: 异常退出")
+            sb.appendLine("Báo Cáo Sự Cố MineHost")
+            sb.appendLine("Thời gian: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(now)}")
+            sb.appendLine("Mã thoát: $exitCode")
+            sb.appendLine("Trạng thái tiến trình: Thoát bất thường")
             if (exitCode == 137) {
-                sb.appendLine("说明: exit=137 通常表示进程被 SIGKILL 终止，可能是 Android 内存压力、系统后台限制或外部强制停止；请结合下方首个 Java 异常判断根因。")
+                sb.appendLine("Giải thích: Mã thoát 137 (SIGKILL) thường do hệ điều hành Android thiếu RAM hoặc giới hạn chạy nền buộc dừng tiến trình; hãy kiểm tra ngoại lệ Java đầu tiên bên dưới hoặc giảm mức RAM cấp cho Server.")
             }
             sb.appendLine("====================================")
             sb.appendLine()
 
-            // ── 最近日志 ──
-            // Paper 的 Watchdog 转储一次就有几百行线程栈，单纯取"最后 N 行"会把
-            // 最关键的「Server thread 卡在哪」整段截掉。这里改为：
-            //   1) 先按关键词提取重点段落（Watchdog / Server thread / 异常栈等）完整保留
-            //   2) 再补上最后 N 行作为上下文
-            //   3) 两者去重后按原顺序输出
             val logFile = latestLogFile(dirName)
             val logExists = logFile.exists()
             val tailCount = 800
-            // 单遍流式扫描：latest.log 可达数十至上百 MB，readLines() 会把整份文件载入
-            // List<String> 造成 OOM（且这里运行在崩溃退出的回调线程上）。流式处理只保留
-            // 尾部 tailCount 行与命中的关键片段，同时统计总行数（报告头需要「共 N 行」）。
             val scan: LogScan = if (logExists) {
                 try {
                     scanLatestLog(logFile, tailCount)
                 } catch (e: Exception) {
-                    LogScan(1, listOf("(读取 latest.log 失败: ${e.message})"), emptyList())
+                    LogScan(1, listOf("(Đọc tệp latest.log thất bại: ${e.message})"), emptyList())
                 }
             } else {
-                LogScan(1, listOf("(latest.log 不存在)"), emptyList())
+                LogScan(1, listOf("(Tệp latest.log chưa tồn tại)"), emptyList())
             }
             val allLines = scan.tailLines
 
-            // latest.log 是空的 / 不存在时，补上应用侧日志。
-            //
-            // 背景：latest.log 只装「MC 服务端自己输出的内容」。一旦服务端在启动阶段
-            // 就失败（例如启动命令不完整、Java 缺失、核心不匹配），它一个字节都不会输出，
-            // 报告就只剩「共 0 行」——没有任何诊断价值。而真正的原因往往记录在
-            // Minexa 自己的日志里（java 路径解析、启动命令、缺库警告）。
-            //
-            // 因此这里把 app 侧日志作为独立小节补出来，并明确标注状态，
-            // 避免读者再对着一个空文件猜。
             val appLogLines = termux.readAppLogTail()
             if (appLogLines.isNotEmpty()) {
-                sb.appendLine("--- Minexa 应用日志 (最后 ${minOf(400, appLogLines.size)} 行，共 ${appLogLines.size} 行) ---")
-                appLogLines.forEach { sb.appendLine(it) }
+                sb.appendLine("--- Nhật ký ứng dụng MineHost (${minOf(400, appLogLines.size)} dòng cuối / tổng ${appLogLines.size} dòng) ---")
+                appLogLines.forEach { sb.appendLine(localizeLegacyChineseText(it)) }
                 sb.appendLine()
             }
 
             val highlights = scan.highlights
             if (highlights.isNotEmpty()) {
-                sb.appendLine("--- 关键片段 (Watchdog / 异常栈 / 致命错误) ---")
+                sb.appendLine("--- Đoạn lỗi quan trọng (Watchdog / StackTrace / Lỗi nghiêm trọng) ---")
                 highlights.forEach { sb.appendLine(it) }
                 sb.appendLine()
             }
 
-            // 明确区分三种状态，不再输出无信息量的「共 0 行」
             val logState = when {
-                !logExists -> "latest.log 不存在（服务端目录可能还没建好）"
-                scan.totalLines == 0 -> "latest.log 存在但为空 —— 服务端进程从未产生任何输出，" +
-                    "说明它很可能根本没被启动起来；请结合上方「Minexa 应用日志」判断"
+                !logExists -> "Tệp latest.log chưa tồn tại (thư mục máy chủ có thể chưa khởi tạo xong)"
+                scan.totalLines == 0 -> "Tệp latest.log có tồn tại nhưng trống rỗng — tiến trình máy chủ chưa kịp xuất dòng log nào, " +
+                    "thường do lỗi tham số JVM hoặc chưa cài đúng bản Java; hãy xem phần「Nhật ký ứng dụng MineHost」ở trên"
                 else -> null
             }
-            sb.appendLine("--- 最近日志 (最后 ${minOf(tailCount, scan.totalLines)} 行，共 ${scan.totalLines} 行) ---")
+            sb.appendLine("--- Nhật ký máy chủ gần nhất (${minOf(tailCount, scan.totalLines)} dòng cuối / tổng ${scan.totalLines} dòng) ---")
             if (logState != null) {
-                sb.appendLine("(说明: $logState)")
+                sb.appendLine("(Ghi chú: $logState)")
             }
             allLines.forEach { sb.appendLine(it) }
             sb.appendLine()
 
-            // ── MC 原生崩溃报告 ──
-            sb.appendLine("--- MC 原生崩溃报告 ---")
+            sb.appendLine("--- Báo cáo Crash gốc của Minecraft ---")
             val nativeLatest = findLatestNativeCrashReport(dirName)
             if (nativeLatest != null) {
-                sb.appendLine("(来源: ${nativeLatest.name})")
+                sb.appendLine("(Nguồn: ${nativeLatest.name})")
                 try {
                     sb.appendLine(nativeLatest.readText())
                 } catch (e: Exception) {
-                    sb.appendLine("(读取原生崩溃报告失败: ${e.message})")
+                    sb.appendLine("(Đọc báo cáo Crash gốc thất bại: ${e.message})")
                 }
             } else {
-                sb.appendLine("(无 MC 原生崩溃报告)")
+                sb.appendLine("(Không có báo cáo Crash gốc của Minecraft)")
             }
 
             reportFile.writeText(sb.toString())
             reportFile.absolutePath
         } catch (e: Exception) {
-            // 不能静默吞掉：报告生成失败时用户看到的是「没有崩溃报告」，无从判断原因。
-            // 历史上就是这里吞掉了 parseNativeFilename 抛出的 ParseException，
-            // 掩盖了「有原生报告就再也不生成报告」这个 bug。
-            Log.e(TAG, "生成崩溃报告失败（将返回 null，界面会显示无报告）", e)
+            Log.e(TAG, "Tạo báo cáo sự cố thất bại: ${e.message}", e)
             null
         }
     }
 
-    /** 列出所有崩溃报告，按时间倒序 */
     fun listCrashReports(): List<CrashReport> {
         return listReportsFrom(crashLogsDir, isNative = false)
     }
 
-    /** 读取完整崩溃报告内容 */
     fun readCrashReport(fileName: String): String? {
         val file = File(crashLogsDir, fileName)
         return if (file.exists() && file.isFile) {
-            try { file.readText() } catch (e: Exception) { null }
+            try { localizeLegacyChineseText(file.readText()) } catch (e: Exception) { null }
         } else {
             null
         }
     }
 
-    /** 删除崩溃报告 */
     fun deleteCrashReport(fileName: String): Boolean {
         val file = File(crashLogsDir, fileName)
         return if (file.exists() && file.isFile) {
@@ -186,7 +142,6 @@ class CrashReportManager(private val termux: TermuxRuntime) {
         }
     }
 
-    /** 清空所有崩溃报告 */
     fun clearAllCrashReports(): Int {
         val dir = crashLogsDir
         if (!dir.exists() || !dir.isDirectory) return 0
@@ -197,29 +152,12 @@ class CrashReportManager(private val termux: TermuxRuntime) {
         return count
     }
 
-    /** 读取 MC 原生 crash-reports 目录下的报告（MC 自动生成的） */
     fun listNativeCrashReports(dirName: String): List<CrashReport> {
         return listReportsFrom(nativeCrashReportsDir(dirName), isNative = true)
     }
 
-    // ── 内部工具 ──
-
-    /**
-     * 流式扫描结果：总行数 + 尾部若干行 + 关键片段。内存占用与文件大小无关（有界）。
-     */
     private class LogScan(val totalLines: Int, val tailLines: List<String>, val highlights: List<String>)
 
-    /**
-     * 单遍流式扫描日志，同时完成原先「提取关键片段」与 `takeLast(n)` 两件事：
-     *
-     *  - 用 [ArrayDeque] 保留最后 [tailCount] 行（内存有界）；
-     *  - 命中 [KEY_MARKERS] 的行连同随后的缩进栈行、命中 [SEVERE_MARKERS] 的行，
-     *    按原顺序收集为关键片段（最多 [MAX_HIGHLIGHT_LINES] 行）；
-     *  - 统计总行数供报告头使用。
-     *
-     * 保持与原先 `readLines() + 关键片段提取 + takeLast` 完全一致的输出语义，
-     * 只是不再把整份文件读进内存。
-     */
     private fun scanLatestLog(file: File, tailCount: Int): LogScan {
         val tail = ArrayDeque<String>(tailCount + 1)
         val highlights = mutableListOf<String>()
@@ -232,15 +170,11 @@ class CrashReportManager(private val termux: TermuxRuntime) {
                 total++
                 tail.addLast(line)
                 if (tail.size > tailCount) tail.removeFirst()
-                // 关键片段必须**边扫边截断**：刷屏日志里 `Could not`/`Caused by:` 命中率很高，
-                // 攒到最后再 take(MAX) 意味着崩溃收集线程上可能先持有百万级字符串。
-                // OOM 恰好会杀掉这次要保住的崩溃报告，所以这里按「行数 + 总字符数」双上限收紧。
                 if (highlights.size < MAX_HIGHLIGHT_LINES && highlightChars < MAX_HIGHLIGHT_CHARS) {
                     when {
                         KEY_MARKERS.any { line.contains(it, ignoreCase = true) } -> {
                             highlights.add(line)
                             highlightChars += line.length
-                            // 块起点：随后最多 60 行的缩进栈行一并保留
                             stackBudget = 60
                         }
                         stackBudget > 0 && isStackLine(line) -> {
@@ -263,11 +197,9 @@ class CrashReportManager(private val termux: TermuxRuntime) {
         return LogScan(total, tail.toList(), highlights.take(MAX_HIGHLIGHT_LINES))
     }
 
-    /** 栈行/续行判定：以空白字符开头（Java 栈、at ... 等） */
     private fun isStackLine(line: String): Boolean =
         line.isNotEmpty() && (line[0] == '\t' || line[0] == ' ')
 
-    /** 需要连同后续栈一起完整保留的标志行 */
     private val KEY_MARKERS = listOf(
         "Paper Watchdog Thread/ERROR",
         "The server has not responded",
@@ -278,7 +210,6 @@ class CrashReportManager(private val termux: TermuxRuntime) {
         "Caused by:"
     )
 
-    /** 单独成行的严重错误标志 */
     private val SEVERE_MARKERS = listOf(
         "OutOfMemoryError",
         "StackOverflowError",
@@ -291,15 +222,8 @@ class CrashReportManager(private val termux: TermuxRuntime) {
     )
 
     private val MAX_HIGHLIGHT_LINES = 600
-
-    /**
-     * 关键片段的字符总量上限（约 256KB 文本）。
-     * 只有行数上限是不够的——单行异常/路径拼接可以很长；
-     * 而且这是崩溃回调线程，内存爆掉会把崩溃报告本身一起丢掉。
-     */
     private val MAX_HIGHLIGHT_CHARS = 256 * 1024
 
-    /** 扫描指定目录下的报告文件，解析文件名时间戳并按时间倒序排列 */
     private fun listReportsFrom(dir: File, isNative: Boolean): List<CrashReport> {
         if (!dir.exists() || !dir.isDirectory) return emptyList()
         val files = dir.listFiles { f -> f.isFile && f.name.endsWith(".txt") }
@@ -318,17 +242,15 @@ class CrashReportManager(private val termux: TermuxRuntime) {
         }.sortedByDescending { it.createdTime }
     }
 
-    /** 读取文件前 500 字符作为预览 */
     private fun readPreview(file: File): String {
         return try {
-            val text = file.readText()
+            val text = localizeLegacyChineseText(file.readText())
             if (text.length <= 500) text else text.substring(0, 500)
         } catch (e: Exception) {
             ""
         }
     }
 
-    /** 解析报告文件名中的时间戳；解析失败回退到文件最后修改时间 */
     private fun parseReportTime(file: File, isNative: Boolean): Pair<Long, String> {
         val fallback = file.lastModified()
         val fmt = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
@@ -349,50 +271,140 @@ class CrashReportManager(private val termux: TermuxRuntime) {
         }
     }
 
-    /** 解析自建报告文件名 crash_yyyyMMdd_HHmmss.txt */
     private fun parseOwnFilename(name: String): Long? {
         if (!name.startsWith("crash_") || !name.endsWith(".txt")) return null
-        val core = name.removePrefix("crash_").removeSuffix(".txt") // yyyyMMdd_HHmmss
+        val core = name.removePrefix("crash_").removeSuffix(".txt")
         return SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).parse(core)?.time
     }
 
-    internal companion object {
-        /** 解析 MC 原生报告文件名 crash-yyyy-MM-dd_HH.mm.ss-server.txt */
+    companion object {
         fun parseNativeFilename(name: String): Long? {
             if (!name.startsWith("crash-") || !name.endsWith(".txt")) return null
-            // 取 `crash-` 与后缀之间的**完整**时间戳。
-            //
-            // 旧实现是 `substringBefore("-")`，而时间戳本身是 `2024-01-02_12.34.56`，
-            // 于是只截到 "2024"，SimpleDateFormat 按 "yyyy-MM-dd_HH.mm.ss" 解析 "2024"
-            // 必抛 ParseException（实测：Unparseable date: "2024"）。
-            // 该异常从 maxByOrNull 的 selector 里冒出去，被 captureCrash 的外层 catch 吞成 null，
-            // 结果是**只要目录里存在原生崩溃报告，应用自己的崩溃报告就完全不会生成**。
             val core = name.removePrefix("crash-").removeSuffix(".txt").substringBefore("-server")
             if (core.isEmpty()) return null
-            // 解析失败不能抛：调用点在 maxByOrNull 的 selector 里，异常会毁掉整次报告生成。
             return try {
                 SimpleDateFormat("yyyy-MM-dd_HH.mm.ss", Locale.US).parse(core)?.time
             } catch (_: Throwable) {
                 null
             }
         }
+
+        private val LEGACY_SECTION_APP_LOG = Regex("""---\s*Minexa\s*应用日志\s*\(最后\s*(\d+)\s*行，共\s*(\d+)\s*行\)\s*---""")
+        private val LEGACY_SECTION_RECENT_LOG = Regex("""---\s*最近日志\s*\(最后\s*(\d+)\s*行，共\s*(\d+)\s*行\)\s*---""")
+        private val LEGACY_WRAPPER_CREATED = Regex("""\[bootstrap\]\s*(.+?)\s*wrapper\s*脚本已创建完成:\s*(\d+)\s*个命令已就绪""")
+
+        /**
+         * Tự động dịch các tiêu đề và dòng nhật ký tiếng Trung còn sót trong các file báo cáo lỗi cũ
+         * hoặc log runtime sang tiếng Việt dễ hiểu.
+         */
+        fun localizeLegacyChineseText(raw: String): String {
+            if (raw.isEmpty()) return raw
+            var out = raw
+                .replace("Minexa 崩溃报告", "Báo Cáo Sự Cố MineHost")
+                .replace("时间:", "Thời gian:")
+                .replace("退出码:", "Mã thoát:")
+                .replace("进程状态: 异常退出", "Trạng thái tiến trình: Thoát bất thường")
+                .replace(
+                    "说明: exit=137 通常表示进程被 SIGKILL 终止，可能是 Android 内存压力、系统后台限制或外部强制停止；请结合下方首个 Java 异常判断根因。",
+                    "Giải thích: Mã thoát 137 (SIGKILL) thường do hệ điều hành Android thiếu RAM hoặc giới hạn chạy nền buộc dừng tiến trình; hãy kiểm tra ngoại lệ Java đầu tiên bên dưới hoặc giảm mức RAM cấp cho Server."
+                )
+                .replace("--- 关键片段 (Watchdog / 异常栈 / 致命错误) ---", "--- Đoạn lỗi quan trọng (Watchdog / StackTrace / Lỗi nghiêm trọng) ---")
+                .replace("--- MC 原生崩溃报告 ---", "--- Báo cáo Crash gốc của Minecraft ---")
+                .replace("(无 MC 原生崩溃报告)", "(Không có báo cáo Crash gốc của Minecraft)")
+                .replace("(latest.log 不存在)", "(Tệp latest.log chưa tồn tại)")
+                .replace(
+                    "latest.log 不存在（服务端目录可能还没建好）",
+                    "Tệp latest.log chưa tồn tại (thư mục máy chủ có thể chưa khởi tạo xong)"
+                )
+                .replace(
+                    "latest.log 存在但为空 —— 服务端进程从未产生任何输出，说明它很可能根本没被启动起来；请结合上方「Minexa 应用日志」判断",
+                    "Tệp latest.log có tồn tại nhưng trống rỗng — tiến trình máy chủ chưa kịp xuất dòng log nào, thường do lỗi tham số JVM hoặc chưa cài đúng bản Java; hãy xem phần「Nhật ký ứng dụng MineHost」ở trên"
+                )
+                .replace("(说明:", "(Ghi chú:")
+                .replace("(来源:", "(Nguồn:")
+                .replace("(读取原生崩溃报告失败:", "(Đọc báo cáo Crash gốc thất bại:")
+                .replace("(读取 latest.log 失败:", "(Đọc tệp latest.log thất bại:")
+                .replace("[crash] 上次崩溃日志:", "[crash] Nhật ký lỗi lần trước:")
+                .replace("[startMc] 清理残留服务器进程", "[startMc] Dọn tiến trình máy chủ cũ còn sót")
+                .replace("[startMc] java 路径:", "[startMc] Đường dẫn Java:")
+                .replace("[startMc] 自定义启动命令:", "[startMc] Lệnh khởi động tùy chỉnh:")
+                .replace("[startMc] 实际命令:", "[startMc] Lệnh thực tế:")
+                .replace("[startMc] 启动命令不完整", "[startMc] Lệnh khởi động chưa đầy đủ")
+                .replace("请反馈此问题，日志中已记录完整命令。", "Vui lòng kiểm tra lại cấu hình khởi động.")
+                .replace("[startMc] JVM 实现: FCL 原生 JRE（自带 IPv6 支持，server-ip 可写 ::）", "[startMc] Bộ chạy JVM: FCL Native JRE (Hỗ trợ sẵn IPv6)")
+                .replace("[startMc] JVM 实现: Termux JDK（IPv6 监听不可用，server-ip 请留空或 0.0.0.0）", "[startMc] Bộ chạy JVM: Termux JDK (IPv4 0.0.0.0)")
+                .replace("JVM 实现: Termux JDK + IPv6 兼容层", "Bộ chạy JVM: Termux JDK + Lớp tương thích IPv6")
+                .replace("已注入）", "đã nạp)")
+                .replace("[startMc] 错误: java 未找到，请检查 openjdk-17 是否已安装", "[startMc] Lỗi: Không tìm thấy Java, vui lòng kiểm tra cài đặt trong mục Môi trường Java")
+                .replace("请先在「依赖与环境管理」里安装该运行环境", "vui lòng cài đặt bản Java này trong mục「Môi trường & Phụ thuộc」trước")
+                .replace("请在「依赖与环境管理」里改选发行版或 Java 版本。", "Vui lòng chọn lại bản phân phối hoặc phiên bản Java trong mục「Môi trường & Phụ thuộc」.")
+                .replace("[startMc] 错误: 找不到 ", "[startMc] Lỗi: Không tìm thấy ")
+                .replace("运行环境未安装或不完整", "môi trường chạy chưa được cài đặt hoặc chưa đầy đủ")
+                .replace("PRoot 临时目录:", "Thư mục tạm PRoot:")
+                .replace("正在启动 ", "Đang khởi chạy ")
+                .replace(" 服务端...", " máy chủ...")
+                .replace("服务端已退出", "Máy chủ đã thoát")
+                .replace("不可用，将不关闭堆指针标签（可能多占内存）", "không khả dụng, bỏ qua tối ưu hóa con trỏ bộ nhớ Heap")
+                .replace("运行在 proot 容器内，", "chạy trong container PRoot, ")
+                .replace("无法注入，IPv6 监听仍不可用", "không thể nạp, lắng nghe IPv6 tạm thời không khả dụng")
+                .replace("服务端仍在关停（已等待 ", "Máy chủ vẫn đang tắt (đã chờ ")
+                .replace("），可点「强制停止」立即结束", "), có thể bấm「Buộc dừng」để kết thúc ngay")
+                .replace("[stopMc] 执行强制停止", "[stopMc] Thực thi buộc dừng máy chủ")
+                .replace("[bootstrap] 环境已就绪，跳过依赖安装", "[bootstrap] Môi trường đã sẵn sàng, bỏ qua cài đặt gói phụ thuộc")
+                .replace("[bootstrap] 安装依赖包（JDK-25/wget）...", "[bootstrap] Đang cài đặt gói phụ thuộc (JDK-25/wget)...")
+                .replace("[bootstrap] 警告: 未找到完整的 OpenJDK 安装目录，跳过 wrapper 修复", "[bootstrap] Cảnh báo: Chưa tìm thấy thư mục OpenJDK đầy đủ, bỏ qua sửa wrapper")
+                .replace("[bootstrap] 依赖已就绪:", "[bootstrap] Phụ thuộc đã sẵn sàng:")
+                .replace("[bootstrap] 警告: 依赖 ", "[bootstrap] Cảnh báo: Phụ thuộc ")
+                .replace(" 未找到", " không tìm thấy")
+                .replace("[bootstrap] 已固定 proot 动态库启动环境", "[bootstrap] Đã cố định môi trường thư viện động cho proot")
+                .replace("[bootstrap] proot 启动校验通过", "[bootstrap] Kiểm tra khởi chạy proot thành công")
+                .replace("[repair] 正在补齐字体运行库...", "[repair] Đang bổ sung thư viện phông chữ...")
+                .replace("[repair] 字体缓存已生成", "[repair] Đã tạo bộ nhớ đệm phông chữ")
+                .replace("[repair] 字体缓存生成失败，将继续使用无图形模式启动", "[repair] Tạo bộ nhớ đệm phông chữ thất bại, tiếp tục khởi chạy ở chế độ không giao diện (headless)")
+                .replace("[repair] 自动修复完成，共处理 ", "[repair] Tự động sửa lỗi hoàn tất, đã xử lý ")
+                .replace(" 个命令可执行权限", " quyền thực thi lệnh")
+                .replace(" 个脚本路径", " đường dẫn kịch bản")
+                .replace(" 个缺失命令/链接", " lệnh/liên kết còn thiếu")
+                .replace(" 个 apt 配置", " cấu hình apt")
+                .replace("[java] 正在安装 ", "[java] Đang cài đặt ")
+                .replace(" 正在下载并配置，首次安装可能需要数分钟", " đang tải xuống và cấu hình, lần đầu cài đặt có thể mất vài phút")
+                .replace(" 安装完成", " cài đặt hoàn tất")
+                .replace(" 安装失败", " cài đặt thất bại")
+                .replace("[fcl-jre] 开始下载 ", "[fcl-jre] Bắt đầu tải ")
+                .replace("校验通过", "Kiểm tra toàn vẹn thành công")
+                .replace("开始解压", "bắt đầu giải nén")
+                .replace("Termux 环境初始化完成", "Khởi tạo môi trường Termux hoàn tất")
+                .replace("下载 Termux 运行环境", "Đang tải môi trường chạy Termux")
+                .replace("正在检查环境", "Đang kiểm tra môi trường")
+                .replace("准备环境", "Chuẩn bị môi trường")
+                .replace("未能明确归因", "Chưa xác định rõ nguyên nhân")
+                .replace("未找到首个异常", "Không tìm thấy ngoại lệ đầu tiên")
+                .replace("未找到明确异常", "Không tìm thấy ngoại lệ rõ ràng")
+                .replace("未知错误", "Lỗi không xác định")
+            out = LEGACY_SECTION_APP_LOG.replace(out) { m ->
+                "--- Nhật ký ứng dụng MineHost (${m.groupValues[1]} dòng cuối / tổng ${m.groupValues[2]} dòng) ---"
+            }
+            out = LEGACY_SECTION_RECENT_LOG.replace(out) { m ->
+                "--- Nhật ký máy chủ gần nhất (${m.groupValues[1]} dòng cuối / tổng ${m.groupValues[2]} dòng) ---"
+            }
+            out = LEGACY_WRAPPER_CREATED.replace(out) { m ->
+                "[bootstrap] Đã tạo kịch bản wrapper cho ${m.groupValues[1]}: ${m.groupValues[2]} lệnh sẵn sàng"
+            }
+            return out
+        }
     }
 
-    /** 查找 MC 原生 crash-reports 目录下最新的报告文件 */
     private fun findLatestNativeCrashReport(dirName: String): File? {
         val dir = nativeCrashReportsDir(dirName)
         if (!dir.exists() || !dir.isDirectory) return null
         val files = dir.listFiles { f -> f.isFile && f.name.endsWith(".txt") }
             ?: return null
         if (files.isEmpty()) return null
-        // 按解析出的时间戳排序，解析失败回退到 lastModified。
-        // runCatching 作为兜底：任何意外文件名都不该让「生成崩溃报告」整体失败。
         return files.maxByOrNull { f ->
             runCatching { parseNativeFilename(f.name) }.getOrNull() ?: f.lastModified()
         }
     }
 
-    /** 格式化文件大小为 KB/MB */
     private fun formatSize(bytes: Long): String {
         return when {
             bytes >= 1024 * 1024 -> String.format(Locale.US, "%.2f MB", bytes / (1024.0 * 1024.0))

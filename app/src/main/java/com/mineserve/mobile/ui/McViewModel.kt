@@ -8242,13 +8242,14 @@ class McViewModel(
 
     /** Shows a structured report when validation fails before a process can create its own crash file. */
     private fun showStartupFailureReport(error: Throwable) {
-        val text = buildString {
+        val rawText = buildString {
             appendLine(str(R.string.startup_report_title))
             appendLine(str(R.string.startup_report_time, timeNow()))
             appendLine(str(R.string.startup_report_exception, error::class.java.name, error.message ?: str(R.string.startup_report_no_detail)))
             appendLine()
             append(error.stackTraceToString())
         }
+        val text = CrashReportManager.localizeLegacyChineseText(rawText)
         _currentCrashContent.value = text
         _currentCrashAnalysis.value = CrashReportAnalyzer.analyze(text)
     }
@@ -8256,16 +8257,40 @@ class McViewModel(
     private fun showStartupFailureReport(failure: McServerController.StartupFailure) {
         viewModelScope.launch(Dispatchers.IO) {
             val report = failure.reportPath?.let { runCatching { File(it).readText() }.getOrNull() }
-            val text = report ?: buildString {
+            val rawText = report ?: buildString {
                 appendLine(str(R.string.startup_report_title))
                 appendLine(str(R.string.startup_report_time, timeNow()))
                 appendLine(str(R.string.startup_report_exitcode, failure.code))
                 appendLine(str(R.string.startup_report_reason, failure.detail))
                 appendLine(str(R.string.startup_report_hint))
             }
+            val text = CrashReportManager.localizeLegacyChineseText(rawText)
             withContext(kotlinx.coroutines.Dispatchers.Main) {
                 _currentCrashContent.value = text
                 _currentCrashAnalysis.value = CrashReportAnalyzer.analyze(text)
+            }
+        }
+    }
+
+    /** Mở nhanh báo cáo lỗi sập gần nhất ngay từ Trang chủ */
+    fun openLatestCrashReport(onFallbackNavigate: () -> Unit) {
+        controller.recentStartupFailure(maxAgeMs = 24L * 3600_000L)?.let {
+            showStartupFailureReport(it)
+            return
+        }
+        viewModelScope.launch {
+            val latest = withContext(Dispatchers.IO) {
+                val native = config.value.installedCores.flatMap { core ->
+                    crashReportManager.listNativeCrashReports(core.dirName)
+                }
+                val all = (crashReportManager.listCrashReports() + native).sortedByDescending { it.createdTime }
+                _crashReports.value = all
+                all.firstOrNull()
+            }
+            if (latest != null) {
+                readCrashReport(latest.fileName)
+            } else {
+                onFallbackNavigate()
             }
         }
     }
@@ -8274,8 +8299,13 @@ class McViewModel(
     fun readCrashReport(fileName: String) {
         viewModelScope.launch {
             try {
-                _currentCrashContent.value = withContext(Dispatchers.IO) { java.io.File(_crashReports.value.firstOrNull { it.fileName == fileName }?.path ?: "").takeIf { it.isFile }?.readText() }
-                _currentCrashAnalysis.value = _currentCrashContent.value?.let(CrashReportAnalyzer::analyze)
+                val raw = withContext(Dispatchers.IO) {
+                    java.io.File(_crashReports.value.firstOrNull { it.fileName == fileName }?.path ?: "")
+                        .takeIf { it.isFile }?.readText()
+                }
+                val sanitized = raw?.let { CrashReportManager.localizeLegacyChineseText(it) }
+                _currentCrashContent.value = sanitized
+                _currentCrashAnalysis.value = sanitized?.let(CrashReportAnalyzer::analyze)
                 if (_currentCrashContent.value == null) {
                     _errorFlow.tryEmit(str(R.string.s288))
                 }
@@ -8295,11 +8325,36 @@ class McViewModel(
     fun deleteCrashReport(fileName: String) {
         viewModelScope.launch {
             try {
-                withContext(Dispatchers.IO) { crashReportManager.deleteCrashReport(fileName) }
+                withContext(Dispatchers.IO) {
+                    _crashReports.value.firstOrNull { it.fileName == fileName }?.path?.let { p ->
+                        runCatching { java.io.File(p).delete() }
+                    }
+                    crashReportManager.deleteCrashReport(fileName)
+                }
                 _messageFlow.tryEmit(str(R.string.s290, fileName))
                 loadCrashReports()
             } catch (e: Exception) {
                 _errorFlow.tryEmit(str(R.string.s291, e.message))
+            }
+        }
+    }
+
+    /** Xóa toàn bộ báo cáo lỗi sập cũ */
+    fun clearAllCrashReports() {
+        viewModelScope.launch {
+            try {
+                val snapshot = _crashReports.value
+                val count = snapshot.size
+                withContext(Dispatchers.IO) {
+                    snapshot.forEach { report ->
+                        runCatching { java.io.File(report.path).delete() }
+                    }
+                    crashReportManager.clearAllCrashReports()
+                }
+                _messageFlow.tryEmit("🗑️ Đã xóa sạch $count báo cáo lỗi sập cũ.")
+                loadCrashReports()
+            } catch (e: Exception) {
+                _errorFlow.tryEmit("Không thể xóa báo cáo lỗi: ${e.message}")
             }
         }
     }
