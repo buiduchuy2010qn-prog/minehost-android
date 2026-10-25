@@ -141,27 +141,31 @@ internal fun HostCard(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 if (artKind != null) {
-                    MinecraftPixelArtIcon(kind = artKind, size = 24.dp)
+                    MinecraftPixelArtIcon(kind = artKind, size = 26.dp)
                 }
-                Text(
-                    title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.weight(1f)
-                )
-                if (!badgeText.isNullOrBlank()) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Text(
-                            badgeText,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    if (!badgeText.isNullOrBlank()) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text(
+                                badgeText,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -2702,7 +2706,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                 HostCard(
                     title = "🪶 Tiện Ích Tốn 0 MB RAM (Chuyên Biệt Cho Máy RAM Ít)",
                     artKind = MinecraftArtKind.DIAMOND_SWORD,
-                    badgeText = "v2.8.9 • 0 MB RAM"
+                    badgeText = "v2.9.2 • 0 MB RAM"
                 ) {
                     // 1. Khóa Biên Giới Thế Giới 1 chạm (WorldBorder — chống đi xa làm tràn RAM)
                     Surface(
@@ -2725,31 +2729,29 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                 fontSize = 13.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                                 Button(
                                     onClick = { vm.applyQuickWorldBorder(500, "Siêu Nhẹ RAM (500 ô)") },
-                                    shape = RoundedCornerShape(8.dp),
-                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                                    shape = RoundedCornerShape(10.dp),
                                     modifier = Modifier.weight(1f)
-                                ) { Text("🧱 500 ô (Máy yếu)", fontSize = 12.5.sp, fontWeight = FontWeight.ExtraBold) }
+                                ) { Text("🧱 500 ô (Máy yếu)", fontSize = 12.5.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1) }
                                 OutlinedButton(
                                     onClick = { vm.applyQuickWorldBorder(1000, "Chuẩn Nhẹ (1.000 ô)") },
-                                    shape = RoundedCornerShape(8.dp),
-                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                                    shape = RoundedCornerShape(10.dp),
                                     modifier = Modifier.weight(1f)
-                                ) { Text("🧱 1.000 ô", fontSize = 12.5.sp, fontWeight = FontWeight.Bold) }
+                                ) { Text("🧱 1.000 ô (Chuẩn)", fontSize = 12.5.sp, fontWeight = FontWeight.Bold, maxLines = 1) }
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                                 OutlinedButton(
                                     onClick = { vm.applyQuickWorldBorder(2500, "Rộng Vừa (2.500 ô)") },
-                                    shape = RoundedCornerShape(8.dp),
-                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                                    shape = RoundedCornerShape(10.dp),
                                     modifier = Modifier.weight(1f)
-                                ) { Text("🧱 2.500 ô", fontSize = 12.5.sp, fontWeight = FontWeight.Bold) }
+                                ) { Text("🧱 2.500 ô (Rộng)", fontSize = 12.5.sp, fontWeight = FontWeight.Bold, maxLines = 1) }
                                 OutlinedButton(
                                     onClick = { vm.applyQuickWorldBorder(29999984, "Mở Khóa Biên Giới") },
-                                    shape = RoundedCornerShape(8.dp),
-                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
-                                    modifier = Modifier.weight(0.85f)
-                                ) { Text("🔓 Mở", fontSize = 12.5.sp, fontWeight = FontWeight.Bold) }
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) { Text("🔓 Mở Biên Giới", fontSize = 12.5.sp, fontWeight = FontWeight.Bold, maxLines = 1) }
                             }
                         }
                     }
@@ -2812,73 +2814,69 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
-                            // Hàng nút Cấp Quyền 1 chạm (OP / Gỡ OP / Whitelist / Kick)
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                            // Hàng nút Cấp Quyền 1 chạm (Bố cục lưới 2 cột rộng rãi, không bao giờ rớt chữ)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                                 Button(
                                     onClick = { vm.quickPlayerAction(selectedTargetPlayer, "op") },
-                                    shape = RoundedCornerShape(8.dp),
+                                    shape = RoundedCornerShape(10.dp),
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD97706), contentColor = Color.White),
-                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
                                     modifier = Modifier.weight(1f)
-                                ) { Text("👑 Cấp OP", fontSize = 12.5.sp, fontWeight = FontWeight.ExtraBold) }
+                                ) { Text("👑 Cấp OP (Admin)", fontSize = 12.5.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1) }
                                 OutlinedButton(
                                     onClick = { vm.quickPlayerAction(selectedTargetPlayer, "deop") },
-                                    shape = RoundedCornerShape(8.dp),
-                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                                    shape = RoundedCornerShape(10.dp),
                                     modifier = Modifier.weight(1f)
-                                ) { Text("🚫 Gỡ OP", fontSize = 12.5.sp, fontWeight = FontWeight.Bold) }
+                                ) { Text("🚫 Gỡ Quyền OP", fontSize = 12.5.sp, fontWeight = FontWeight.Bold, maxLines = 1) }
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                                 OutlinedButton(
                                     onClick = { vm.quickPlayerAction(selectedTargetPlayer, "whitelist_add") },
-                                    shape = RoundedCornerShape(8.dp),
-                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
-                                    modifier = Modifier.weight(1.15f)
-                                ) { Text("🛡️ +Whitelist", fontSize = 12.5.sp, fontWeight = FontWeight.Bold) }
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) { Text("🛡️ Thêm Whitelist", fontSize = 12.5.sp, fontWeight = FontWeight.Bold, maxLines = 1) }
                                 OutlinedButton(
                                     onClick = { vm.quickPlayerAction(selectedTargetPlayer, "kick") },
-                                    shape = RoundedCornerShape(8.dp),
-                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
-                                    modifier = Modifier.weight(0.85f)
-                                ) { Text("👢 Kick", fontSize = 12.5.sp, fontWeight = FontWeight.Bold) }
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) { Text("👢 Đuổi Ra (Kick)", fontSize = 12.5.sp, fontWeight = FontWeight.Bold, maxLines = 1) }
                             }
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                                 Button(
                                     onClick = { vm.quickPlayerAction(selectedTargetPlayer, "heal") },
-                                    shape = RoundedCornerShape(8.dp),
+                                    shape = RoundedCornerShape(10.dp),
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE11D48), contentColor = Color.White),
                                     modifier = Modifier.weight(1f)
-                                ) { Text("❤️ Hồi Đầy Máu & Ăn", fontSize = 13.sp, fontWeight = FontWeight.ExtraBold) }
+                                ) { Text("❤️ Hồi Đầy Máu & Ăn", fontSize = 12.5.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1) }
                                 Button(
                                     onClick = { vm.quickPlayerAction(selectedTargetPlayer, "starter_kit") },
-                                    shape = RoundedCornerShape(8.dp),
+                                    shape = RoundedCornerShape(10.dp),
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D9488), contentColor = Color.White),
                                     modifier = Modifier.weight(1f)
-                                ) { Text("🎁 Tặng Starter Kit", fontSize = 13.sp, fontWeight = FontWeight.ExtraBold) }
+                                ) { Text("🎁 Tặng Starter Kit", fontSize = 12.5.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1) }
                             }
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                                 OutlinedButton(
                                     onClick = { vm.quickPlayerAction(selectedTargetPlayer, "gm_survival") },
-                                    shape = RoundedCornerShape(8.dp),
-                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                                    shape = RoundedCornerShape(10.dp),
                                     modifier = Modifier.weight(1f)
-                                ) { Text("🗡️ Sinh Tồn", fontSize = 12.5.sp, fontWeight = FontWeight.Bold) }
+                                ) { Text("🗡️ Chế Độ Sinh Tồn", fontSize = 12.5.sp, fontWeight = FontWeight.Bold, maxLines = 1) }
                                 OutlinedButton(
                                     onClick = { vm.quickPlayerAction(selectedTargetPlayer, "gm_creative") },
-                                    shape = RoundedCornerShape(8.dp),
-                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                                    shape = RoundedCornerShape(10.dp),
                                     modifier = Modifier.weight(1f)
-                                ) { Text("🧱 Sáng Tạo", fontSize = 12.5.sp, fontWeight = FontWeight.Bold) }
+                                ) { Text("🧱 Chế Độ Sáng Tạo", fontSize = 12.5.sp, fontWeight = FontWeight.Bold, maxLines = 1) }
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                                 OutlinedButton(
                                     onClick = { vm.quickPlayerAction(selectedTargetPlayer, "gm_spectator") },
-                                    shape = RoundedCornerShape(8.dp),
-                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                                    shape = RoundedCornerShape(10.dp),
                                     modifier = Modifier.weight(1f)
-                                ) { Text("👻 Khán Giả", fontSize = 12.5.sp, fontWeight = FontWeight.Bold) }
+                                ) { Text("👻 Chế Độ Khán Giả", fontSize = 12.5.sp, fontWeight = FontWeight.Bold, maxLines = 1) }
                                 OutlinedButton(
                                     onClick = { vm.quickPlayerAction(selectedTargetPlayer, "tp_spawn") },
-                                    shape = RoundedCornerShape(8.dp),
-                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                                    shape = RoundedCornerShape(10.dp),
                                     modifier = Modifier.weight(1f)
-                                ) { Text("📍 Về Spawn", fontSize = 12.5.sp, fontWeight = FontWeight.Bold) }
+                                ) { Text("📍 Dịch Chuyển Về Spawn", fontSize = 12.5.sp, fontWeight = FontWeight.Bold, maxLines = 1) }
                             }
                         }
                     }
@@ -4092,57 +4090,81 @@ fun MineHostManage(vm: McViewModel, navigate: (SubPage) -> Unit) {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    listOf(
-                        0.92f to "Nhỏ Gọn",
-                        1.00f to "Chuẩn",
-                        1.08f to "Chữ Vừa",
-                        1.16f to "Chữ To"
-                    ).forEach { (scaleVal, label) ->
-                        val selected = kotlin.math.abs(fontScale - scaleVal) < 0.04f
-                        FilterChip(
-                            selected = selected,
-                            onClick = {
-                                com.mineserve.mobile.ui.theme.AppUiSettings.setFontScale(context, scaleVal)
-                                vm.notifyActionDone("🔤 Đã đổi cỡ chữ ứng dụng sang: $label")
-                            },
-                            label = {
-                                Text(
-                                    label,
-                                    fontSize = 13.2.sp,
-                                    fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.SemiBold
-                                )
+                val fontOptions = listOf(
+                    0.95f to "🔤 Nhỏ Gọn",
+                    1.04f to "🔤 Chuẩn Đẹp",
+                    1.10f to "🔤 Chữ Vừa",
+                    1.16f to "🔤 Chữ To"
+                )
+                fontOptions.chunked(2).forEach { pair ->
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        pair.forEach { (scaleVal, label) ->
+                            val selected = kotlin.math.abs(fontScale - scaleVal) < 0.035f
+                            if (selected) {
+                                Button(
+                                    onClick = {
+                                        com.mineserve.mobile.ui.theme.AppUiSettings.setFontScale(context, scaleVal)
+                                        vm.notifyActionDone("🔤 Đã đổi cỡ chữ ứng dụng sang: $label")
+                                    },
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text(label, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+                                }
+                            } else {
+                                OutlinedButton(
+                                    onClick = {
+                                        com.mineserve.mobile.ui.theme.AppUiSettings.setFontScale(context, scaleVal)
+                                        vm.notifyActionDone("🔤 Đã đổi cỡ chữ ứng dụng sang: $label")
+                                    },
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text(label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                }
                             }
-                        )
+                        }
                     }
                 }
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    listOf(
-                        com.mineserve.mobile.ui.theme.EyeCareColorPreset.SoftSlate to "🌙 Xanh Đá Dịu",
-                        com.mineserve.mobile.ui.theme.EyeCareColorPreset.WarmMocha to "☕ Đêm Ấm",
-                        com.mineserve.mobile.ui.theme.EyeCareColorPreset.WarmPaperLight to "🌤️ Sáng Giấy Ấm"
-                    ).forEach { (preset, label) ->
-                        val selected = colorPreset == preset
-                        FilterChip(
-                            selected = selected,
-                            onClick = {
-                                com.mineserve.mobile.ui.theme.AppUiSettings.setColorPreset(context, preset)
-                                vm.notifyActionDone("🎨 Đã áp dụng bảng màu: $label")
-                            },
-                            label = {
-                                Text(
-                                    label,
-                                    fontSize = 13.2.sp,
-                                    fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.SemiBold
-                                )
+                val colorOptions = listOf(
+                    com.mineserve.mobile.ui.theme.EyeCareColorPreset.SoftSlate to "🌙 Xanh Đá Dịu",
+                    com.mineserve.mobile.ui.theme.EyeCareColorPreset.WarmMocha to "☕ Đêm Ấm",
+                    com.mineserve.mobile.ui.theme.EyeCareColorPreset.WarmPaperLight to "🌤️ Sáng Giấy Ấm"
+                )
+                colorOptions.chunked(2).forEach { pair ->
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        pair.forEach { (preset, label) ->
+                            val selected = colorPreset == preset
+                            if (selected) {
+                                Button(
+                                    onClick = {
+                                        com.mineserve.mobile.ui.theme.AppUiSettings.setColorPreset(context, preset)
+                                        vm.notifyActionDone("🎨 Đã áp dụng bảng màu: $label")
+                                    },
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text(label, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+                                }
+                            } else {
+                                OutlinedButton(
+                                    onClick = {
+                                        com.mineserve.mobile.ui.theme.AppUiSettings.setColorPreset(context, preset)
+                                        vm.notifyActionDone("🎨 Đã áp dụng bảng màu: $label")
+                                    },
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text(label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                }
                             }
-                        )
+                        }
                     }
                 }
             }
