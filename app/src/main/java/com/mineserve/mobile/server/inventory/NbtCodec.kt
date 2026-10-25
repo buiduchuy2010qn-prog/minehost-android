@@ -292,10 +292,37 @@ object NbtCodec {
         val armorFeet: InventoryItemStack?,
         val offhand: InventoryItemStack?,
         val enderChest: List<InventoryItemStack?>
-    )
+    ) {
+        val totalOccupiedCount: Int
+            get() = hotbar.count { it != null } +
+                mainInventory.count { it != null } +
+                listOf(armorHead, armorChest, armorLegs, armorFeet, offhand).count { it != null } +
+                enderChest.count { it != null }
+    }
+
+    fun resolvePlayerSubCompound(root: NbtTag.CompoundVal): NbtTag.CompoundVal {
+        if (root.entries.containsKey("Inventory") ||
+            root.entries.containsKey("inventory") ||
+            root.entries.containsKey("equipment") ||
+            root.entries.containsKey("EnderItems")
+        ) {
+            return root
+        }
+        root.getCompound("Player")?.let { return it }
+        root.getCompound("Data")?.getCompound("Player")?.let { return it }
+        return root
+    }
+
+    fun extractKnownPlayerNameFromRoot(root: NbtTag.CompoundVal): String? {
+        val eff = resolvePlayerSubCompound(root)
+        return eff.getCompound("bukkit")?.getString("lastKnownName")?.takeIf { it.isNotBlank() }
+            ?: eff.getCompound("Paper")?.getString("LastKnownName")?.takeIf { it.isNotBlank() }
+            ?: eff.getString("lastKnownName")?.takeIf { it.isNotBlank() }
+    }
 
     fun extractInventoryFromPlayerRoot(root: NbtTag.CompoundVal, isPocketMine: Boolean = false): ParsedNbtInventory {
-        val selectedSlot = (root.getInt("SelectedItemSlot") ?: root.getInt("SelectedInventorySlot") ?: 0).coerceIn(0, 8)
+        val effRoot = resolvePlayerSubCompound(root)
+        val selectedSlot = (effRoot.getInt("SelectedItemSlot") ?: effRoot.getInt("SelectedInventorySlot") ?: 0).coerceIn(0, 8)
         val hotbar = MutableList<InventoryItemStack?>(9) { null }
         val main = MutableList<InventoryItemStack?>(27) { null }
         var armorHead: InventoryItemStack? = null
@@ -305,25 +332,30 @@ object NbtCodec {
         var offhand: InventoryItemStack? = null
         val ender = MutableList<InventoryItemStack?>(27) { null }
 
-        val invList = root.getList("Inventory")?.elements.orEmpty()
+        val invList = (effRoot.getList("Inventory") ?: effRoot.getList("inventory"))?.elements.orEmpty()
         for (elem in invList) {
             val comp = elem as? NbtTag.CompoundVal ?: continue
-            val rawSlot = comp.getByte("Slot")?.toInt() ?: comp.getInt("Slot") ?: continue
+            val rawSlot = comp.getByte("Slot")?.toInt()
+                ?: comp.getInt("Slot")
+                ?: comp.getByte("slot")?.toInt()
+                ?: comp.getInt("slot")
+                ?: continue
             // PocketMine-MP đôi khi lưu giáp ở slot 100..103 hoặc trong Armorinventory
-            val parsed = parseItemCompound(comp, rawSlot, InventoryItemStack.sectionForNbtSlot(rawSlot)) ?: continue
-            when (rawSlot) {
-                in 0..8 -> hotbar[rawSlot] = parsed.copy(section = InventorySection.HOTBAR)
-                in 9..35 -> main[rawSlot - 9] = parsed.copy(section = InventorySection.MAIN)
+            val normSlot = if (rawSlot == 150) -106 else rawSlot
+            val parsed = parseItemCompound(comp, normSlot, InventoryItemStack.sectionForNbtSlot(normSlot)) ?: continue
+            when (normSlot) {
+                in 0..8 -> hotbar[normSlot] = parsed.copy(section = InventorySection.HOTBAR)
+                in 9..35 -> main[normSlot - 9] = parsed.copy(section = InventorySection.MAIN)
                 100 -> armorFeet = parsed.copy(slot = 100, section = InventorySection.ARMOR)
                 101 -> armorLegs = parsed.copy(slot = 101, section = InventorySection.ARMOR)
                 102 -> armorChest = parsed.copy(slot = 102, section = InventorySection.ARMOR)
                 103 -> armorHead = parsed.copy(slot = 103, section = InventorySection.ARMOR)
-                -106, 40 -> offhand = parsed.copy(slot = -106, section = InventorySection.OFFHAND)
+                -106, 40, 150 -> offhand = parsed.copy(slot = -106, section = InventorySection.OFFHAND)
             }
         }
 
         // Hỗ trợ định dạng `equipment` mới của Minecraft 1.21.5+
-        root.getCompound("equipment")?.let { eq ->
+        effRoot.getCompound("equipment")?.let { eq ->
             eq.getCompound("head")?.let { c ->
                 parseItemCompound(c, 103, InventorySection.ARMOR)?.let { armorHead = it }
             }
@@ -343,7 +375,7 @@ object NbtCodec {
 
         // PocketMine-MP ArmorInventory / OffHandInventory riêng nếu có
         if (isPocketMine) {
-            root.getList("ArmorInventory")?.elements?.forEachIndexed { idx, elem ->
+            effRoot.getList("ArmorInventory")?.elements?.forEachIndexed { idx, elem ->
                 val comp = elem as? NbtTag.CompoundVal ?: return@forEachIndexed
                 val targetSlot = 103 - idx
                 val item = parseItemCompound(comp, targetSlot, InventorySection.ARMOR) ?: return@forEachIndexed
@@ -356,10 +388,14 @@ object NbtCodec {
             }
         }
 
-        val enderList = (root.getList("EnderItems") ?: root.getList("EnderChestInventory"))?.elements.orEmpty()
+        val enderList = (effRoot.getList("EnderItems") ?: effRoot.getList("EnderChestInventory"))?.elements.orEmpty()
         for (elem in enderList) {
             val comp = elem as? NbtTag.CompoundVal ?: continue
-            val rawSlot = comp.getByte("Slot")?.toInt() ?: comp.getInt("Slot") ?: continue
+            val rawSlot = comp.getByte("Slot")?.toInt()
+                ?: comp.getInt("Slot")
+                ?: comp.getByte("slot")?.toInt()
+                ?: comp.getInt("slot")
+                ?: continue
             if (rawSlot in 0..26) {
                 val parsed = parseItemCompound(comp, rawSlot, InventorySection.ENDER_CHEST)
                 if (parsed != null) {

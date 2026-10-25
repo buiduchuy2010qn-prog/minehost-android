@@ -433,17 +433,27 @@ class PlayerInventoryManager(
         return Triple(resolvedUuid, resolvedXuid, edition)
     }
 
-    private fun findJavaPlayerDataFile(serverDirName: String, playerName: String, resolvedUuid: String?): File? {
+    private fun findJavaPlayerDataFile(
+        serverDirName: String,
+        playerName: String,
+        resolvedUuid: String?,
+        resolvedXuid: String? = null
+    ): File? {
         val worldDir = resolveSafeWorldDir(serverDirName)
         val playerDataDir = File(worldDir, "playerdata")
         if (!playerDataDir.isDirectory) return null
 
-        // Nếu đã xác định được UUID (từ tham số, từ Floodgate XUID hoặc từ lịch sử định danh),
-        // TUYỆT ĐỐI chỉ đọc đúng tệp <resolvedUuid>.dat, không bao giờ tự ý fallback sang UUID khác cùng tên!
+        val isBedrockFloodgate = !resolvedXuid.isNullOrBlank() ||
+            resolvedUuid?.startsWith("00000000-0000-0000-") == true
+
+        // Nếu đã xác định được UUID từ Floodgate XUID, TUYỆT ĐỐI chỉ đọc đúng tệp <resolvedUuid>.dat
         if (!resolvedUuid.isNullOrBlank()) {
             if (!isSafePlayerFileToken(resolvedUuid)) return null
             val exact = File(playerDataDir, "$resolvedUuid.dat")
-            return if (exact.isFile && exact.length() > 0L) exact else null
+            if (exact.isFile && exact.length() > 0L) return exact
+            val exactOld = File(playerDataDir, "$resolvedUuid.dat_old")
+            if (exactOld.isFile && exactOld.length() > 0L) return exactOld
+            if (isBedrockFloodgate) return null
         }
 
         val matchingCacheUuids = runCatching { playerManager.readUserCache(serverDirName) }
@@ -460,8 +470,116 @@ class PlayerInventoryManager(
         if (ucUuid != null && isSafePlayerFileToken(ucUuid)) {
             val candidate = File(playerDataDir, "$ucUuid.dat")
             if (candidate.isFile && candidate.length() > 0L) return candidate
+            val candidateOld = File(playerDataDir, "$ucUuid.dat_old")
+            if (candidateOld.isFile && candidateOld.length() > 0L) return candidateOld
         }
         return null
+    }
+
+    private fun loadJavaPlayerInventoryWithFallback(
+        serverDirName: String,
+        playerName: String,
+        resolvedUuid: String?,
+        resolvedXuid: String?,
+        primaryDatFile: File
+    ): Pair<File, NbtCodec.ParsedNbtInventory> {
+        val primaryRoot = NbtCodec.readFile(primaryDatFile)
+        val primaryParsed = NbtCodec.extractInventoryFromPlayerRoot(primaryRoot.compound, isPocketMine = false)
+        if (primaryParsed.totalOccupiedCount > 0) {
+            return primaryDatFile to primaryParsed
+        }
+
+        val isBedrockFloodgate = !resolvedXuid.isNullOrBlank() ||
+            resolvedUuid?.startsWith("00000000-0000-0000-") == true
+        val worldDir = resolveSafeWorldDir(serverDirName)
+        val playerDataDir = primaryDatFile.parentFile ?: File(worldDir, "playerdata")
+        val candidateFiles = LinkedHashSet<File>()
+
+        // 1. Kiểm tra bản lưu dự phòng .dat_old / .dat.bak của chính tệp hiện tại
+        val baseUuidName = primaryDatFile.name.removeSuffix("_old").removeSuffix(".bak")
+        candidateFiles.add(File(playerDataDir, "${baseUuidName}_old"))
+        candidateFiles.add(File(playerDataDir, "$baseUuidName.bak"))
+
+        if (!isBedrockFloodgate) {
+            // 2. Kiểm tra UUID trong usercache.json (trường hợp ops.json sinh OfflineUUID khác với UUID khi đăng nhập)
+            val cacheUuids = runCatching { playerManager.readUserCache(serverDirName) }
+                .getOrDefault(emptyList())
+                .filter { it.name.equals(playerName, ignoreCase = true) }
+                .mapNotNull { playerManager.normalizeUuid(it.uuid) }
+                .distinct()
+            if (cacheUuids.size == 1) {
+                val ucUuid = cacheUuids.first()
+                if (isSafePlayerFileToken(ucUuid)) {
+                    candidateFiles.add(File(playerDataDir, "$ucUuid.dat"))
+                    candidateFiles.add(File(playerDataDir, "$ucUuid.dat_old"))
+                }
+            }
+
+            // 3. Kiểm tra các tệp .dat trong playerdata có chứa lastKnownName trùng khớp với playerName
+            val allDatFiles = playerDataDir.listFiles { f ->
+                f.isFile && f.length() > 0L && (f.name.endsWith(".dat") || f.name.endsWith(".dat_old"))
+            }?.toList().orEmpty()
+            for (f in allDatFiles) {
+                if (f == primaryDatFile) continue
+                val knownName = runCatching {
+                    NbtCodec.extractKnownPlayerNameFromRoot(NbtCodec.readFile(f).compound)
+                }.getOrNull()
+                if (knownName != null && knownName.equals(playerName, ignoreCase = true)) {
+                    candidateFiles.add(f)
+                }
+            }
+            // Nếu chỉ có đúng 1 tệp .dat khác trong thư mục playerdata của server cá nhân
+            val distinctDatFiles = allDatFiles.filter { it.name.endsWith(".dat") }
+            if (distinctDatFiles.size <= 2) {
+                for (f in distinctDatFiles) {
+                    if (f != primaryDatFile && !f.name.startsWith("00000000-0000-0000-")) {
+                        val knownName = runCatching {
+                            NbtCodec.extractKnownPlayerNameFromRoot(NbtCodec.readFile(f).compound)
+                        }.getOrNull()
+                        if (knownName == null || knownName.equals(playerName, ignoreCase = true)) {
+                            candidateFiles.add(f)
+                        }
+                    }
+                }
+            }
+
+            // 4. Kiểm tra các thư mục world khác trong cùng server (nếu người chơi đổi level-name hoặc có nhiều world)
+            val serverDir = termux.serverDirFor(serverDirName)
+            serverDir.listFiles { f -> f.isDirectory && f != worldDir }?.forEach { subDir ->
+                val subPd = File(subDir, "playerdata")
+                if (subPd.isDirectory) {
+                    candidateFiles.add(File(subPd, baseUuidName))
+                    candidateFiles.add(File(subPd, "${baseUuidName}_old"))
+                    if (cacheUuids.size == 1) {
+                        val ucUuid = cacheUuids.first()
+                        if (isSafePlayerFileToken(ucUuid)) {
+                            candidateFiles.add(File(subPd, "$ucUuid.dat"))
+                        }
+                    }
+                }
+            }
+
+            // 5. Kiểm tra level.dat (Data.Player) nếu map được nhập từ Singleplayer / LAN
+            if (distinctDatFiles.size <= 1) {
+                val levelDat = File(worldDir, "level.dat")
+                if (levelDat.isFile && levelDat.length() > 0L) {
+                    candidateFiles.add(levelDat)
+                }
+            }
+        }
+
+        for (candidate in candidateFiles) {
+            if (!candidate.isFile || candidate.length() <= 0L || candidate == primaryDatFile) continue
+            val parsedCandidate = runCatching {
+                val root = NbtCodec.readFile(candidate)
+                NbtCodec.extractInventoryFromPlayerRoot(root.compound, isPocketMine = false)
+            }.getOrNull() ?: continue
+            if (parsedCandidate.totalOccupiedCount > 0) {
+                return candidate to parsedCandidate
+            }
+        }
+
+        return primaryDatFile to primaryParsed
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -496,15 +614,71 @@ class PlayerInventoryManager(
                     error("Tên người chơi '${request.playerName}' chứa ký tự không hợp lệ để truy vấn console.")
                 }
                 if (!SnbtParser.isMcVersionBelow113(request.mcVersion)) {
-                    return@runCatching queryOnlineViaConsoleBridge(request, uuid, xuid, edition)
+                    val liveSnapResult = runCatching {
+                        queryOnlineViaConsoleBridge(request, uuid, xuid, edition)
+                    }
+                    liveSnapResult.getOrNull()?.let { liveSnap ->
+                        return@runCatching liveSnap
+                    }
+                    // Nếu truy vấn Console bị timeout hoặc người chơi vừa rời server, ép server save-all và đọc từ tệp .dat
+                    runCatching {
+                        dispatchConsoleCommand("save-all")
+                        delay(380)
+                    }
+                    val diskFallback = runCatching {
+                        val df = findJavaPlayerDataFile(request.serverDirName, request.playerName, uuid, xuid)
+                        if (df != null) {
+                            loadJavaPlayerInventoryWithFallback(request.serverDirName, request.playerName, uuid, xuid, df)
+                        } else null
+                    }.getOrNull()
+                    if (diskFallback != null) {
+                        val (usedFile, parsed) = diskFallback
+                        val nowMs = System.currentTimeMillis()
+                        return@runCatching PlayerInventorySnapshot(
+                            serverDirName = request.serverDirName,
+                            serverCore = request.serverCore,
+                            mcVersion = request.mcVersion,
+                            playerName = request.playerName,
+                            playerUuid = uuid,
+                            playerXuid = xuid,
+                            playerEdition = edition,
+                            isPlayerOnline = true,
+                            sourceMode = InventorySourceMode.LIVE_ONLINE_CONSOLE_BRIDGE,
+                            capturedAtMs = nowMs,
+                            capturedAtText = nowTimeStr(),
+                            isStale = false,
+                            selectedHotbarSlot = parsed.selectedHotbarSlot,
+                            hotbar = parsed.hotbar,
+                            mainInventory = parsed.mainInventory,
+                            armorHead = parsed.armorHead,
+                            armorChest = parsed.armorChest,
+                            armorLegs = parsed.armorLegs,
+                            armorFeet = parsed.armorFeet,
+                            offhand = parsed.offhand,
+                            enderChest = parsed.enderChest,
+                            offhandSupported = true,
+                            enderChestSupported = true,
+                            canEdit = true,
+                            editDisabledReason = null,
+                            statusNoticeVi = "Đã đồng bộ trực tiếp từ Server & '${usedFile.name}' lúc ${nowTimeStr()}."
+                        )
+                    }
+                    liveSnapResult.getOrThrow()
                 }
                 // Với MC < 1.13: gửi save-all để server ghi playerdata rồi đọc file .dat
                 dispatchConsoleCommand("save-all")
                 delay(450)
+            } else if (request.isServerRunning) {
+                // Khi Server vẫn đang chạy nhưng người chơi vừa thoát (hoặc chuyển sang app MineHost),
+                // gửi save-all để Server xả ngay túi đồ từ RAM xuống tệp playerdata/<uuid>.dat
+                runCatching {
+                    dispatchConsoleCommand("save-all")
+                    delay(350)
+                }
             }
 
             // Chế độ Offline hoặc người chơi đang không online trên server
-            val datFile = findJavaPlayerDataFile(request.serverDirName, request.playerName, uuid)
+            val primaryDatFile = findJavaPlayerDataFile(request.serverDirName, request.playerName, uuid, xuid)
                 ?: error(
                     if (uuid == null) {
                         "Chưa xác định được UUID thực tế của '${request.playerName}' trong usercache.json / lịch sử để tìm tệp playerdata/<uuid>.dat. Hãy chọn người chơi khi đang online ít nhất 1 lần."
@@ -513,8 +687,13 @@ class PlayerInventoryManager(
                     }
                 )
 
-            val namedRoot = NbtCodec.readFile(datFile)
-            val parsed = NbtCodec.extractInventoryFromPlayerRoot(namedRoot.compound, isPocketMine = false)
+            val (datFile, parsed) = loadJavaPlayerInventoryWithFallback(
+                serverDirName = request.serverDirName,
+                playerName = request.playerName,
+                resolvedUuid = uuid,
+                resolvedXuid = xuid,
+                primaryDatFile = primaryDatFile
+            )
             val nowMs = System.currentTimeMillis()
             val canOfflineEdit = !request.isServerRunning
             val sourceMode = if (request.isServerRunning) {
@@ -548,10 +727,10 @@ class PlayerInventoryManager(
                 enderChestSupported = true,
                 canEdit = canOfflineEdit,
                 editDisabledReason = if (canOfflineEdit) null else {
-                    "Người chơi đang ngoại tuyến nhưng Server vẫn đang chạy. Để tránh xung đột dữ liệu bộ nhớ đệm của Server (Phần 7), chỉ cho phép sửa tệp playerdata khi người chơi đang Online hoặc khi Server đã dừng hoàn toàn."
+                    "Người chơi đang ngoại tuyến nhưng Server vẫn đang chạy. Để tránh xung đột dữ liệu bộ nhớ đệm của Server, chỉ cho phép sửa tệp playerdata khi người chơi đang Online hoặc khi Server đã dừng hoàn toàn."
                 },
                 statusNoticeVi = if (request.isServerRunning) {
-                    "Đang xem bản lưu lần cuối từ '${datFile.name}' (Chế độ chỉ đọc vì người chơi đang offline trong khi server đang chạy)."
+                    "Đang xem bản lưu mới nhất từ '${datFile.name}' (Đã đồng bộ save-all từ Server)."
                 } else {
                     "Đang đọc trực tiếp từ tệp '${datFile.name}' (Server đã dừng — hỗ trợ chỉnh sửa an toàn có sao lưu .bak)."
                 }
@@ -749,9 +928,16 @@ class PlayerInventoryManager(
             check(!q.isServerRunning && !isServerProcessActive()) {
                 "Không được phép ghi trực tiếp tệp playerdata khi Server đang hoạt động (tránh xung đột dữ liệu bộ nhớ). Hãy dừng Server hoặc đợi người chơi vào online."
             }
-            val (uuid, _, _) = resolvePlayerIdentity(q)
-            val datFile = findJavaPlayerDataFile(q.serverDirName, q.playerName, uuid)
+            val (uuid, xuid, _) = resolvePlayerIdentity(q)
+            val primaryDatFile = findJavaPlayerDataFile(q.serverDirName, q.playerName, uuid, xuid)
                 ?: error("Không tìm thấy tệp playerdata của '${q.playerName}' để chỉnh sửa ngoại tuyến.")
+            val (datFile, _) = loadJavaPlayerInventoryWithFallback(
+                serverDirName = q.serverDirName,
+                playerName = q.playerName,
+                resolvedUuid = uuid,
+                resolvedXuid = xuid,
+                primaryDatFile = primaryDatFile
+            )
 
             val namedRoot = NbtCodec.readFile(datFile)
             NbtCodec.applySlotUpdateToPlayerRoot(
@@ -762,6 +948,9 @@ class PlayerInventoryManager(
                 isPocketMine = false
             )
             NbtCodec.writeFileSafely(datFile, namedRoot)
+            if (datFile != primaryDatFile && primaryDatFile.name.endsWith(".dat") && datFile.name != "level.dat") {
+                runCatching { NbtCodec.writeFileSafely(primaryDatFile, namedRoot) }
+            }
             val updatedOffline = fetchInventory(q.copy(isServerRunning = false, isPlayerOnline = false)).getOrThrow()
             check(verifyItemMatchesExpected(request.newItem, updatedOffline.itemAt(request.section, request.slot))) {
                 "Hậu kiểm tệp NBT sau khi ghi không khớp với vật phẩm dự kiến."
@@ -815,9 +1004,16 @@ class PlayerInventoryManager(
             check(!q.isServerRunning && !isServerProcessActive()) {
                 "Hãy dừng Server hoàn toàn trước khi chuyển ô túi đồ ở chế độ ngoại tuyến."
             }
-            val (uuid, _, _) = resolvePlayerIdentity(q)
-            val datFile = findJavaPlayerDataFile(q.serverDirName, q.playerName, uuid)
+            val (uuid, xuid, _) = resolvePlayerIdentity(q)
+            val primaryDatFile = findJavaPlayerDataFile(q.serverDirName, q.playerName, uuid, xuid)
                 ?: error("Không tìm thấy tệp playerdata của '${q.playerName}'.")
+            val (datFile, _) = loadJavaPlayerInventoryWithFallback(
+                serverDirName = q.serverDirName,
+                playerName = q.playerName,
+                resolvedUuid = uuid,
+                resolvedXuid = xuid,
+                primaryDatFile = primaryDatFile
+            )
             val namedRoot = NbtCodec.readFile(datFile)
             NbtCodec.applySlotUpdateToPlayerRoot(
                 root = namedRoot.compound,
@@ -834,6 +1030,9 @@ class PlayerInventoryManager(
                 isPocketMine = false
             )
             NbtCodec.writeFileSafely(datFile, namedRoot)
+            if (datFile != primaryDatFile && primaryDatFile.name.endsWith(".dat") && datFile.name != "level.dat") {
+                runCatching { NbtCodec.writeFileSafely(primaryDatFile, namedRoot) }
+            }
             val updatedOffline = fetchInventory(q.copy(isServerRunning = false, isPlayerOnline = false)).getOrThrow()
             check(verifyItemMatchesExpected(fromItem, updatedOffline.itemAt(request.toSection, request.toSlot))) {
                 "Hậu kiểm ô đích sau khi chuyển ngoại tuyến không khớp."

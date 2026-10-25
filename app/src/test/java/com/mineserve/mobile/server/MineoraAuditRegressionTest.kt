@@ -1612,6 +1612,42 @@ class MineoraAuditRegressionTest {
                 bedrockSteveReq.copy(playerName = "Alex", playerUuid = null, playerXuid = null)
             )
             assertTrue("Trùng tên khác UUID trong usercache.json khi thiếu UUID phải bị chặn", ambiguousAlexRes.isFailure)
+
+            // 5. Kiểm tra xử lý mã màu ANSI trên Console Paper/Purpur 1.21+ và fallback .dat_old / usercache UUID khi .dat gốc rỗng (0/41 ô)
+            val ansiLine = "\u001B[0;36m[18:30:00 INFO]: \u001B[0;32mDream\u001B[0m has the following entity data: \u001B[0;33m[{Slot: 0b, id: \"minecraft:netherite_sword\", count: 1}, {Slot: 1b, id: \"minecraft:golden_apple\", count: 64}]\u001B[0m"
+            val matchedAnsi = com.mineserve.mobile.server.inventory.SnbtParser.matchEntityDataLine(ansiLine)
+            assertNotNull("SnbtParser phải lọc sạch mã màu ANSI trong log console", matchedAnsi)
+            assertEquals("Dream", matchedAnsi!!.playerName)
+            val parsedAnsiItems = com.mineserve.mobile.server.inventory.SnbtParser.parseItemListSnbt(matchedAnsi.snbtPayload)
+            assertEquals(2, parsedAnsiItems.size)
+            assertEquals("minecraft:netherite_sword", parsedAnsiItems[0].id)
+            assertEquals(64, parsedAnsiItems[1].count)
+
+            // Kiểm tra khi tệp <offlineOpsUuid>.dat bị trống (0 ô) nhưng tệp .dat_old có đầy đủ vật phẩm
+            val dreamOfflineUuid = "e6135a83-d680-39d6-b4be-65a3d8bb97ad"
+            val emptyDreamRoot = com.mineserve.mobile.server.inventory.NbtCodec.NbtTag.CompoundVal(
+                linkedMapOf(
+                    "DataVersion" to com.mineserve.mobile.server.inventory.NbtCodec.NbtTag.IntVal(3953),
+                    "Inventory" to com.mineserve.mobile.server.inventory.NbtCodec.NbtTag.ListVal(
+                        com.mineserve.mobile.server.inventory.NbtCodec.TAG_COMPOUND,
+                        mutableListOf()
+                    )
+                )
+            )
+            com.mineserve.mobile.server.inventory.NbtCodec.writeFileSafely(
+                File(customPlayerDataDir, "$dreamOfflineUuid.dat"),
+                com.mineserve.mobile.server.inventory.NbtCodec.NamedRoot("", emptyDreamRoot)
+            )
+            com.mineserve.mobile.server.inventory.NbtCodec.writeFileSafely(
+                File(customPlayerDataDir, "$dreamOfflineUuid.dat_old"),
+                com.mineserve.mobile.server.inventory.NbtCodec.NamedRoot("", javaSteveRoot)
+            )
+            val dreamFallbackRes = invManager.fetchInventory(
+                bedrockSteveReq.copy(playerName = "Dream", playerUuid = dreamOfflineUuid, playerXuid = null)
+            )
+            assertTrue("Khi .dat trống nhưng .dat_old có vật phẩm, phải khôi phục đúng vật phẩm từ .dat_old", dreamFallbackRes.isSuccess)
+            assertEquals(1, dreamFallbackRes.getOrThrow().totalOccupiedSlots)
+            assertEquals("minecraft:diamond", dreamFallbackRes.getOrThrow().hotbar[0]?.id)
         } finally {
             tempServerDir.deleteRecursively()
         }

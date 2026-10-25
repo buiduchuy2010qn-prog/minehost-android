@@ -106,8 +106,8 @@ private enum class PlayerListTab(val labelRes: Int) {
 
 private enum class HistoryFilterMode(val label: String) {
     ALL("Tất cả"),
-    ONLINE("Đang trực tuyến"),
-    OFFLINE("Đã từng tham gia")
+    ONLINE("🟢 Online"),
+    OFFLINE("⚪ Offline")
 }
 
 private enum class HistorySortMode(val label: String) {
@@ -650,80 +650,114 @@ private fun OnlinePlayerRow(
     onSetGameMode: (Int) -> Unit
 ) {
     var modeMenuOpen by remember { mutableStateOf(false) }
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
             .background(IndigoSoft)
             .clickable(onClick = onShowDetail)
-            .padding(10.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(10.dp)
     ) {
-        MinecraftPlayerAvatar(name = name, isOnline = true, size = 38.dp)
-        Spacer(Modifier.size(10.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                if (isOp) "👑 $name" else name,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            val joinText = summary?.currentSessionJoinTime ?: summary?.lastJoinTime
-            val sessionSec = summary?.currentSessionSeconds ?: 0L
-            Text(
-                buildString {
-                    append(stringResource(R.string.s318))
-                    if (isOp) append(" • Đang là OP")
-                    if (!joinText.isNullOrBlank()) append(" • Vào lúc: $joinText")
-                    if (sessionSec > 0L) append(" • Phiên này: ${formatActivitySeconds(sessionSec)}")
-                },
-                color = Mint,
-                fontSize = 10.sp
-            )
-        }
-        // Cấp / Gỡ OP 1 chạm ngay trên dòng
-        TextButton(
-            onClick = onToggleOp,
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 2.dp),
-            modifier = Modifier.height(28.dp)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                if (isOp) "👑 Gỡ OP" else "👑 +OP",
-                color = if (isOp) Coral else Color(0xFFD97706),
-                fontSize = 10.sp,
-                fontWeight = FontWeight.ExtraBold
-            )
-        }
-        // Mở nhanh Túi đồ người chơi
-        TextButton(
-            onClick = onOpenInventory,
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 2.dp),
-            modifier = Modifier.height(28.dp)
-        ) {
-            Text("🎒 Túi đồ", color = Indigo, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-        }
-        // 复制玩家名
-        IconButton(onClick = onCopy, modifier = Modifier.size(McIcon.TouchCompact)) {
-            Icon(Icons.Outlined.ContentCopy, contentDescription = stringResource(R.string.s687), tint = Indigo, modifier = Modifier.size(16.dp))
-        }
-        // 踢出玩家
-        IconButton(onClick = onKick, modifier = Modifier.size(McIcon.TouchCompact)) {
-            Icon(Icons.AutoMirrored.Outlined.Logout, contentDescription = stringResource(R.string.s688), tint = Coral, modifier = Modifier.size(16.dp))
-        }
-        // 切换游戏模式
-        Box {
-            IconButton(onClick = { modeMenuOpen = true }, modifier = Modifier.size(McIcon.TouchCompact)) {
-                Icon(Icons.Outlined.VideogameAsset, contentDescription = stringResource(R.string.s689), tint = Indigo, modifier = Modifier.size(16.dp))
-            }
-            DropdownMenu(expanded = modeMenuOpen, onDismissRequest = { modeMenuOpen = false }) {
-                listOf(R.string.s281 to 0, R.string.s282 to 1, R.string.s283 to 2, R.string.s284 to 3).forEach { (labelRes, mode) ->
-                    DropdownMenuItem(
-                        text = { Text(stringResource(labelRes), fontSize = 12.sp) },
-                        onClick = { modeMenuOpen = false; onSetGameMode(mode) }
+            MinecraftPlayerAvatar(name = name, isOnline = true, size = 38.dp)
+            Spacer(Modifier.size(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        if (isOp) "👑 $name" else name,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(Mint.copy(alpha = 0.18f))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            "🟢 Trực tuyến",
+                            color = Mint,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                    }
+                }
+                val joinText = summary?.currentSessionJoinTime ?: summary?.lastJoinTime
+                val sessionSec = summary?.currentSessionSeconds ?: 0L
+                Text(
+                    buildString {
+                        if (isOp) append("Đang là OP • ")
+                        if (!joinText.isNullOrBlank()) append("Vào lúc: $joinText")
+                        if (sessionSec > 0L) append(" • Phiên này: ${formatActivitySeconds(sessionSec)}")
+                    }.ifBlank { stringResource(R.string.s318) },
+                    color = Mint,
+                    fontSize = 10.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            // Sao chép tên người chơi
+            IconButton(onClick = onCopy, modifier = Modifier.size(McIcon.TouchCompact)) {
+                Icon(Icons.Outlined.ContentCopy, contentDescription = stringResource(R.string.s687), tint = Indigo, modifier = Modifier.size(16.dp))
+            }
+            // Đuổi (Kick) người chơi
+            IconButton(onClick = onKick, modifier = Modifier.size(McIcon.TouchCompact)) {
+                Icon(Icons.AutoMirrored.Outlined.Logout, contentDescription = stringResource(R.string.s688), tint = Coral, modifier = Modifier.size(16.dp))
+            }
+            // Chuyển chế độ chơi
+            Box {
+                IconButton(onClick = { modeMenuOpen = true }, modifier = Modifier.size(McIcon.TouchCompact)) {
+                    Icon(Icons.Outlined.VideogameAsset, contentDescription = stringResource(R.string.s689), tint = Indigo, modifier = Modifier.size(16.dp))
+                }
+                DropdownMenu(expanded = modeMenuOpen, onDismissRequest = { modeMenuOpen = false }) {
+                    listOf(R.string.s281 to 0, R.string.s282 to 1, R.string.s283 to 2, R.string.s284 to 3).forEach { (labelRes, mode) ->
+                        DropdownMenuItem(
+                            text = { Text(stringResource(labelRes), fontSize = 12.sp) },
+                            onClick = { modeMenuOpen = false; onSetGameMode(mode) }
+                        )
+                    }
                 }
             }
+        }
+        Spacer(Modifier.height(6.dp))
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            AssistChip(
+                onClick = onOpenInventory,
+                label = {
+                    Text(
+                        "🎒 Mở Túi đồ",
+                        color = Indigo,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                }
+            )
+            AssistChip(
+                onClick = onToggleOp,
+                label = {
+                    Text(
+                        if (isOp) "👑 Đang là OP (Bấm gỡ)" else "👑 Cấp OP (1 chạm)",
+                        color = if (isOp) Coral else Color(0xFFD97706),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                }
+            )
         }
     }
 }
@@ -819,45 +853,51 @@ private fun PersistentPlayerHistorySection(
 
         Spacer(Modifier.height(10.dp))
 
-        // Ô tìm kiếm + nút Sắp xếp
-        Row(
+        // Ô tìm kiếm toàn chiều ngang + Nút Sắp xếp tách dòng gọn gàng
+        OutlinedTextField(
+            value = search,
+            onValueChange = { search = it },
+            placeholder = { Text("Tìm theo tên người chơi hoặc UUID...", fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null, modifier = Modifier.size(15.dp)) },
+            singleLine = true,
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            OutlinedTextField(
-                value = search,
-                onValueChange = { search = it },
-                placeholder = { Text("Tìm theo tên người chơi hoặc UUID...", fontSize = 11.sp) },
-                leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null, modifier = Modifier.size(14.dp)) },
-                singleLine = true,
-                modifier = Modifier.weight(1f),
-                shape = McShape.ControlCompact
-            )
-            Box {
-                OutlinedButton(
-                    onClick = { sortMenuOpen = true },
-                    shape = McShape.ControlCompact
-                ) {
-                    Text(sortMode.label, color = Indigo, fontSize = 10.sp)
-                }
-                DropdownMenu(expanded = sortMenuOpen, onDismissRequest = { sortMenuOpen = false }) {
-                    HistorySortMode.values().forEach { mode ->
-                        DropdownMenuItem(
-                            text = { Text(mode.label, fontSize = 11.sp) },
-                            onClick = {
-                                sortMode = mode
-                                sortMenuOpen = false
-                            }
-                        )
-                    }
+            shape = McShape.ControlCompact
+        )
+
+        Spacer(Modifier.height(6.dp))
+
+        Box(modifier = Modifier.fillMaxWidth()) {
+            OutlinedButton(
+                onClick = { sortMenuOpen = true },
+                shape = McShape.ControlCompact,
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                modifier = Modifier.fillMaxWidth().height(34.dp)
+            ) {
+                Text(
+                    "🔃 Sắp xếp: ${sortMode.label} ▾",
+                    color = Indigo,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            DropdownMenu(expanded = sortMenuOpen, onDismissRequest = { sortMenuOpen = false }) {
+                HistorySortMode.values().forEach { mode ->
+                    DropdownMenuItem(
+                        text = { Text(mode.label, fontSize = 12.sp) },
+                        onClick = {
+                            sortMode = mode
+                            sortMenuOpen = false
+                        }
+                    )
                 }
             }
         }
 
         Spacer(Modifier.height(8.dp))
 
-        // Bộ lọc trạng thái: Tất cả / Đang trực tuyến / Đã từng tham gia
+        // Bộ lọc trạng thái: Tất cả / Online / Offline (vừa khít 1 dòng, không bị cắt "...")
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -874,19 +914,19 @@ private fun PersistentPlayerHistorySection(
                         onClick = { filterMode = mode },
                         colors = ButtonDefaults.buttonColors(containerColor = Indigo),
                         shape = McShape.ControlCompact,
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                        modifier = Modifier.weight(1f).height(32.dp)
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 4.dp),
+                        modifier = Modifier.weight(1f).height(34.dp)
                     ) {
-                        Text("${mode.label} ($count)", color = Color.White, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text("${mode.label} ($count)", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
                     }
                 } else {
                     OutlinedButton(
                         onClick = { filterMode = mode },
                         shape = McShape.ControlCompact,
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                        modifier = Modifier.weight(1f).height(32.dp)
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 4.dp),
+                        modifier = Modifier.weight(1f).height(34.dp)
                     ) {
-                        Text("${mode.label} ($count)", color = Indigo, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text("${mode.label} ($count)", color = Indigo, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
                     }
                 }
             }
@@ -924,13 +964,17 @@ private fun PersistentPlayerHistorySection(
                             MinecraftPlayerAvatar(name = item.player, isOnline = item.active, size = 38.dp)
                             Spacer(Modifier.size(10.dp))
                             Column(modifier = Modifier.weight(1f)) {
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
                                     Text(
                                         if (isPlayerOp) "👑 ${item.player}" else item.player,
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.Bold,
                                         maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f, fill = false)
                                     )
                                     Box(
                                         modifier = Modifier
@@ -939,10 +983,12 @@ private fun PersistentPlayerHistorySection(
                                             .padding(horizontal = 6.dp, vertical = 2.dp)
                                     ) {
                                         Text(
-                                            if (item.active) "Đang trực tuyến" else "Ngoại tuyến",
+                                            if (item.active) "🟢 Trực tuyến" else "⚪ Ngoại tuyến",
                                             color = if (item.active) Mint else Muted,
                                             fontSize = 9.sp,
-                                            fontWeight = FontWeight.Bold
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            softWrap = false
                                         )
                                     }
                                 }
@@ -953,13 +999,6 @@ private fun PersistentPlayerHistorySection(
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                            }
-                            TextButton(
-                                onClick = { onOpenInventory(item.player) },
-                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 2.dp),
-                                modifier = Modifier.height(28.dp)
-                            ) {
-                                Text("🎒 Túi đồ", color = Indigo, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                             }
                             IconButton(
                                 onClick = { onCopyText(item.uuid ?: item.player) },
@@ -976,12 +1015,23 @@ private fun PersistentPlayerHistorySection(
                         }
 
                         Spacer(Modifier.height(6.dp))
-                        // Thanh Cấp Quyền & Đổi Chế Độ Chơi 1 chạm ngay trên từng thẻ người chơi
+                        // Thanh Mở Túi Đồ, Cấp Quyền & Đổi Chế Độ Chơi 1 chạm ngay trên từng thẻ người chơi
                         FlowRow(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalArrangement = Arrangement.spacedBy(4.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
+                            AssistChip(
+                                onClick = { onOpenInventory(item.player) },
+                                label = {
+                                    Text(
+                                        "🎒 Mở Túi đồ",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = Indigo
+                                    )
+                                }
+                            )
                             AssistChip(
                                 onClick = { onToggleOp(item.player, isPlayerOp) },
                                 label = {
@@ -1042,16 +1092,32 @@ private fun PersistentPlayerHistorySection(
                 OutlinedButton(
                     onClick = onExportCsv,
                     shape = McShape.ControlCompact,
-                    modifier = Modifier.weight(1f)
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                    modifier = Modifier.weight(1f).height(40.dp)
                 ) {
-                    Text(stringResource(R.string.player_export_csv), color = Indigo, fontSize = 11.sp)
+                    Text(
+                        stringResource(R.string.player_export_csv),
+                        color = Indigo,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
                 OutlinedButton(
                     onClick = { confirmClearAll = true },
                     shape = McShape.ControlCompact,
-                    modifier = Modifier.weight(1f)
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                    modifier = Modifier.weight(1f).height(40.dp)
                 ) {
-                    Text("🗑️ Xóa toàn bộ lịch sử", color = Coral, fontSize = 11.sp)
+                    Text(
+                        "🗑️ Xóa lịch sử",
+                        color = Coral,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
         }
@@ -1659,6 +1725,8 @@ private fun PlayerDetailDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+        modifier = Modifier.fillMaxWidth(0.95f),
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 MinecraftPlayerAvatar(name = playerName, isOnline = isPlayerOnline || activity?.active == true, size = 34.dp)
@@ -1697,6 +1765,20 @@ private fun PlayerDetailDialog(
                             vm.loadPlayerInventory(
                                 playerName = playerName,
                                 playerUuid = resolvedUuid
+                            )
+                        },
+                        onForceSaveAndRefresh = {
+                            vm.forceSaveAndReloadPlayerInventory(
+                                playerName = playerName,
+                                playerUuid = resolvedUuid
+                            )
+                        },
+                        onEquipStarterKit = { useNetherite ->
+                            vm.equipStarterKitForPlayer(
+                                playerName = playerName,
+                                playerUuid = resolvedUuid,
+                                playerXuid = null,
+                                useNetherite = useNetherite
                             )
                         },
                         onUpdateSlot = { section, slot, newItem, actionDesc ->

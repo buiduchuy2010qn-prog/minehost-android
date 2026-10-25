@@ -9,9 +9,11 @@ object SnbtParser {
 
     private val SAFE_PLAYER_NAME_REGEX = Regex("^[.A-Za-z0-9_\\-]{1,32}$")
     private val SAFE_ITEM_ID_REGEX = Regex("^[a-z0-9_\\-./]+:[a-z0-9_\\-./]+$|^[a-z0-9_\\-./]+$", RegexOption.IGNORE_CASE)
+    private val ANSI_ESCAPE_REGEX = Regex("\\u001B\\[[0-9;?]*[ -/]*[@-~]|\\u001B\\][^\\u0007\\u001B]*(?:\\u0007|\\u001B\\\\)")
+    private val MC_SECTION_COLOR_REGEX = Regex("§[0-9A-FK-ORXa-fk-orx]")
 
     private val ENTITY_DATA_LINE_REGEX = Regex(
-        "(?:\\]:\\s*|^)([.A-Za-z0-9_\\-]{1,32})\\s+has the following entity data:\\s*(.+)$"
+        "(?:\\]:\\s*|INFO\\]:\\s*|^)([.A-Za-z0-9_\\-]{1,32})\\s+has the following entity data:\\s*(.+)$"
     )
     private val NO_ENTITY_FOUND_REGEX = Regex(
         "(?:No entity was found|Entity .+ cannot be found|No player was found)",
@@ -25,6 +27,18 @@ object SnbtParser {
         "(?:Replaced a slot on|Replaced slot|Gave \\d+|Cleared the inventory of)",
         RegexOption.IGNORE_CASE
     )
+
+    fun stripAnsiAndFormatting(raw: String): String {
+        if (raw.isEmpty()) return raw
+        var cleaned = raw
+        if (cleaned.indexOf('\u001B') >= 0) {
+            cleaned = ANSI_ESCAPE_REGEX.replace(cleaned, "")
+        }
+        if (cleaned.indexOf('§') >= 0) {
+            cleaned = MC_SECTION_COLOR_REGEX.replace(cleaned, "")
+        }
+        return cleaned
+    }
 
     fun isValidPlayerCommandTarget(name: String): Boolean {
         val trimmed = name.trim()
@@ -57,8 +71,9 @@ object SnbtParser {
     )
 
     fun matchEntityDataLine(line: String): ConsoleEntityDataMatch? {
-        if (!line.contains("has the following entity data:")) return null
-        val m = ENTITY_DATA_LINE_REGEX.find(line.trim()) ?: return null
+        val cleanLine = stripAnsiAndFormatting(line)
+        if (!cleanLine.contains("has the following entity data:")) return null
+        val m = ENTITY_DATA_LINE_REGEX.find(cleanLine.trim()) ?: return null
         return ConsoleEntityDataMatch(
             playerName = m.groupValues[1].trim(),
             snbtPayload = m.groupValues[2].trim()
@@ -66,13 +81,13 @@ object SnbtParser {
     }
 
     fun isNoEntityFoundLine(line: String): Boolean =
-        NO_ENTITY_FOUND_REGEX.containsMatchIn(line)
+        NO_ENTITY_FOUND_REGEX.containsMatchIn(stripAnsiAndFormatting(line))
 
     fun matchEmptyPathLine(line: String): String? =
-        NO_ELEMENTS_MATCHING_REGEX.find(line)?.groupValues?.getOrNull(1)
+        NO_ELEMENTS_MATCHING_REGEX.find(stripAnsiAndFormatting(line))?.groupValues?.getOrNull(1)
 
     fun isSlotMutationSuccessLine(line: String): Boolean =
-        REPLACED_SLOT_SUCCESS_REGEX.containsMatchIn(line)
+        REPLACED_SLOT_SUCCESS_REGEX.containsMatchIn(stripAnsiAndFormatting(line))
 
     /**
      * Phân tích danh sách SNBT `[{Slot: 0b, id: "minecraft:...", ...}, ...]` thành danh sách `InventoryItemStack`.
@@ -81,7 +96,7 @@ object SnbtParser {
         snbtList: String,
         defaultSection: InventorySection? = null
     ): List<InventoryItemStack> {
-        val trimmed = snbtList.trim()
+        val trimmed = stripAnsiAndFormatting(snbtList).trim()
         if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) return emptyList()
         val inner = trimmed.substring(1, trimmed.length - 1).trim()
         if (inner.isEmpty()) return emptyList()
@@ -96,7 +111,7 @@ object SnbtParser {
      * Phân tích gói `equipment` của MC 1.21.5+ `{head: {...}, chest: {...}, legs: {...}, feet: {...}, offhand: {...}}`.
      */
     fun parseEquipmentCompoundSnbt(snbtCompound: String): List<InventoryItemStack> {
-        val fields = parseCompoundTopLevelFields(snbtCompound)
+        val fields = parseCompoundTopLevelFields(stripAnsiAndFormatting(snbtCompound))
         if (fields.isEmpty()) return emptyList()
         val result = mutableListOf<InventoryItemStack>()
         val mapping = listOf(
@@ -119,12 +134,13 @@ object SnbtParser {
         defaultSection: InventorySection? = null,
         forcedSlot: Int? = null
     ): InventoryItemStack? {
-        val fields = parseCompoundTopLevelFields(compoundStr)
+        val fields = parseCompoundTopLevelFields(stripAnsiAndFormatting(compoundStr))
         if (fields.isEmpty()) return null
         val rawId = unquoteSnbtString(fields["id"] ?: fields["Name"] ?: return null)
         if (rawId.isBlank() || rawId == "minecraft:air" || rawId == "air") return null
 
-        val slot = forcedSlot ?: parseSnbtInt(fields["Slot"]) ?: 0
+        val rawSlotParsed = forcedSlot ?: parseSnbtInt(fields["Slot"] ?: fields["slot"]) ?: 0
+        val slot = if (rawSlotParsed == 150) -106 else rawSlotParsed
         val count = (parseSnbtInt(fields["count"] ?: fields["Count"]) ?: 1).coerceAtLeast(0)
         if (count <= 0) return null
 
@@ -267,12 +283,12 @@ object SnbtParser {
 
     fun parseSnbtInt(raw: String?): Int? {
         if (raw.isNullOrBlank()) return null
-        val clean = raw.trim().trimEnd('b', 'B', 's', 'S', 'l', 'L')
+        val clean = stripAnsiAndFormatting(raw).trim().trimEnd('b', 'B', 's', 'S', 'l', 'L')
         return clean.toIntOrNull()
     }
 
     fun unquoteSnbtString(raw: String): String {
-        val t = raw.trim()
+        val t = stripAnsiAndFormatting(raw).trim()
         if (t.length >= 2 && ((t.startsWith("\"") && t.endsWith("\"")) || (t.startsWith("'") && t.endsWith("'")))) {
             val quote = t.first()
             return t.substring(1, t.length - 1)

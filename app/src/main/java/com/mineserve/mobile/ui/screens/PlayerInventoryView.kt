@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -86,6 +87,8 @@ fun PlayerInventoryTabContent(
     isMutating: Boolean,
     errorMessage: String?,
     onRefresh: () -> Unit,
+    onForceSaveAndRefresh: (() -> Unit)? = null,
+    onEquipStarterKit: ((Boolean) -> Unit)? = null,
     onUpdateSlot: (InventorySection, Int, InventoryItemStack?, String) -> Unit,
     onMoveOrSwapSlot: (InventorySection, Int, InventorySection, Int) -> Unit
 ) {
@@ -154,16 +157,70 @@ fun PlayerInventoryTabContent(
                         color = Muted,
                         fontSize = 10.sp
                     )
+                    val notice = snapshot.statusNoticeVi
+                    if (!notice.isNullOrBlank()) {
+                        Text(
+                            notice,
+                            color = Muted,
+                            fontSize = 9.sp,
+                            lineHeight = 12.sp
+                        )
+                    }
                 }
             }
             IconButton(
-                onClick = onRefresh,
+                onClick = onForceSaveAndRefresh ?: onRefresh,
                 enabled = !isLoading && !isMutating
             ) {
                 if (isLoading || isMutating) {
                     CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Indigo)
                 } else {
                     Icon(Icons.Outlined.Refresh, contentDescription = "Làm mới túi đồ", tint = Indigo)
+                }
+            }
+        }
+
+        // Thanh công cụ Đồng bộ nhanh & Trang bị nhanh 1 chạm
+        if (snapshot != null) {
+            Spacer(Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onForceSaveAndRefresh ?: onRefresh,
+                    enabled = !isLoading && !isMutating,
+                    shape = McShape.ControlCompact,
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                    modifier = Modifier.weight(1f).height(32.dp)
+                ) {
+                    Text(
+                        "💾 Lưu & Đồng bộ túi đồ",
+                        color = Indigo,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                if (snapshot.canEdit && onEquipStarterKit != null) {
+                    Button(
+                        onClick = { onEquipStarterKit(true) },
+                        enabled = !isLoading && !isMutating,
+                        colors = ButtonDefaults.buttonColors(containerColor = Indigo),
+                        shape = McShape.ControlCompact,
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        modifier = Modifier.weight(1f).height(32.dp)
+                    ) {
+                        Text(
+                            "💎 Trang bị Bộ Netherite",
+                            color = Color.White,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }
         }
@@ -354,13 +411,15 @@ fun PlayerInventoryTabContent(
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(8.dp))
                 .background(Color(0xFF1E222D))
-                .horizontalScroll(rememberScrollState())
-                .padding(8.dp),
+                .padding(6.dp),
             verticalArrangement = Arrangement.spacedBy(3.dp)
         ) {
-            // 3 hàng túi đồ chính (slot 9..17, 18..26, 27..35)
+            // 3 hàng túi đồ chính (slot 9..17, 18..26, 27..35) — tự co giãn vừa khít 9 cột không bị khuất
             for (row in 0 until 3) {
-                Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
                     for (col in 0 until 9) {
                         val slotIndex = 9 + row * 9 + col
                         val item = snapshot.mainInventory.getOrNull(slotIndex - 9)
@@ -370,17 +429,21 @@ fun PlayerInventoryTabContent(
                             isSelected = selectedSlot == SelectedInventorySlot(InventorySection.MAIN, slotIndex),
                             isActiveHotbarSlot = false,
                             isMoveSource = pendingMoveSource == SelectedInventorySlot(InventorySection.MAIN, slotIndex),
-                            slotSize = 31.dp,
+                            slotSize = 32.dp,
+                            modifier = Modifier.weight(1f).aspectRatio(1f),
                             onClick = { handleSlotClick(InventorySection.MAIN, slotIndex) }
                         )
                     }
                 }
             }
 
-            Spacer(Modifier.height(5.dp))
+            Spacer(Modifier.height(4.dp))
 
             // 1 hàng Hotbar (slot 0..8)
-            Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(3.dp)
+            ) {
                 for (col in 0 until 9) {
                     val item = snapshot.hotbar.getOrNull(col)
                     MinecraftInventorySlotBox(
@@ -389,7 +452,8 @@ fun PlayerInventoryTabContent(
                         isSelected = selectedSlot == SelectedInventorySlot(InventorySection.HOTBAR, col),
                         isActiveHotbarSlot = snapshot.selectedHotbarSlot == col,
                         isMoveSource = pendingMoveSource == SelectedInventorySlot(InventorySection.HOTBAR, col),
-                        slotSize = 31.dp,
+                        slotSize = 32.dp,
+                        modifier = Modifier.weight(1f).aspectRatio(1f),
                         onClick = { handleSlotClick(InventorySection.HOTBAR, col) }
                     )
                 }
@@ -429,12 +493,14 @@ fun PlayerInventoryTabContent(
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(8.dp))
                         .background(Color(0xFF1F162B))
-                        .horizontalScroll(rememberScrollState())
-                        .padding(8.dp),
+                        .padding(6.dp),
                     verticalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
                     for (row in 0 until 3) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
                             for (col in 0 until 9) {
                                 val slotIdx = row * 9 + col
                                 val item = snapshot.enderChest.getOrNull(slotIdx)
@@ -444,7 +510,8 @@ fun PlayerInventoryTabContent(
                                     isSelected = selectedSlot == SelectedInventorySlot(InventorySection.ENDER_CHEST, slotIdx),
                                     isActiveHotbarSlot = false,
                                     isMoveSource = pendingMoveSource == SelectedInventorySlot(InventorySection.ENDER_CHEST, slotIdx),
-                                    slotSize = 31.dp,
+                                    slotSize = 32.dp,
+                                    modifier = Modifier.weight(1f).aspectRatio(1f),
                                     onClick = { handleSlotClick(InventorySection.ENDER_CHEST, slotIdx) }
                                 )
                             }
@@ -558,6 +625,7 @@ private fun MinecraftInventorySlotBox(
     isActiveHotbarSlot: Boolean,
     isMoveSource: Boolean,
     slotSize: Dp,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
     val bgColor = when {
@@ -575,9 +643,9 @@ private fun MinecraftInventorySlotBox(
     }
     val borderWidth = if (isSelected || isActiveHotbarSlot || isMoveSource) 1.8.dp else 1.dp
 
+    val sizeModifier = if (modifier === Modifier) Modifier.size(slotSize) else modifier
     Box(
-        modifier = Modifier
-            .size(slotSize)
+        modifier = sizeModifier
             .clip(RoundedCornerShape(5.dp))
             .background(bgColor)
             .border(borderWidth, borderColor, RoundedCornerShape(5.dp))

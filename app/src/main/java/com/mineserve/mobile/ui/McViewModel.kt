@@ -2098,6 +2098,10 @@ class McViewModel(
                     } else removeOnlinePlayer(name)
                     recordPlayerEvent(name, if (joined) "Vào server" else "Rời server")
                     notifyPlayerEvent(name, joined)
+                    viewModelScope.launch {
+                        delay(450)
+                        if (serverState.value.isRunning) repo.termuxRuntime.sendCommand("save-all")
+                    }
                     handled = true
                 }
                 line.contains("joined the game") -> {
@@ -2110,6 +2114,10 @@ class McViewModel(
                         recordPlayerEvent(name, "Vào server")
                         refreshPlayers()
                         notifyPlayerEvent(name, true)
+                        viewModelScope.launch {
+                            delay(450)
+                            if (serverState.value.isRunning) repo.termuxRuntime.sendCommand("save-all")
+                        }
                     }
                     handled = true
                 }
@@ -2121,6 +2129,10 @@ class McViewModel(
                         removeOnlinePlayer(name)
                         recordPlayerEvent(name, "Rời server")
                         notifyPlayerEvent(name, false)
+                        viewModelScope.launch {
+                            delay(350)
+                            if (serverState.value.isRunning) repo.termuxRuntime.sendCommand("save-all")
+                        }
                     }
                     handled = true
                 }
@@ -6458,7 +6470,7 @@ class McViewModel(
 
     private fun refreshKnownUuidsFromServerFiles(dirName: String) {
         runCatching {
-            playerManager.readUserCache(dirName).forEach { entry ->
+            playerManager.readWhitelist(dirName).forEach { entry ->
                 if (entry.name.isNotBlank() && entry.uuid.isNotBlank()) {
                     val key = entry.name.lowercase(java.util.Locale.ROOT)
                     knownPlayerUuids[key] = entry.uuid
@@ -6472,7 +6484,8 @@ class McViewModel(
                     playerManager.extractXuidFromFloodgateUuid(entry.uuid)?.let { knownPlayerXuids[key] = it }
                 }
             }
-            playerManager.readWhitelist(dirName).forEach { entry ->
+            // Đọc usercache.json sau cùng (đảo ngược để bản ghi đăng nhập mới nhất ở đầu danh sách được ưu tiên cao nhất)
+            playerManager.readUserCache(dirName).asReversed().forEach { entry ->
                 if (entry.name.isNotBlank() && entry.uuid.isNotBlank()) {
                     val key = entry.name.lowercase(java.util.Locale.ROOT)
                     knownPlayerUuids[key] = entry.uuid
@@ -6964,16 +6977,22 @@ class McViewModel(
         playerXuid: String?
     ): com.mineserve.mobile.server.inventory.InventoryQueryRequest? {
         val dir = activeDirName() ?: return null
+        refreshKnownUuidsFromServerFiles(dir)
         val activeInstalled = config.value.installedCores.firstOrNull { it.name == config.value.activeCoreName }
         val core = activeInstalled?.core ?: config.value.selectedCore
         val ver = activeInstalled?.version ?: config.value.mcVersion
         val lower = playerName.lowercase(java.util.Locale.ROOT)
-        val effUuid = playerUuid?.takeIf { it.isNotBlank() } ?: knownPlayerUuids[lower]
+        val effUuid = knownPlayerUuids[lower] ?: playerUuid?.takeIf { it.isNotBlank() }
         val effXuid = playerXuid?.takeIf { it.isNotBlank() }
             ?: knownPlayerXuids[lower]
             ?: playerManager.extractXuidFromFloodgateUuid(effUuid)
         val isRunning = serverState.value.isRunning
-        val isOnline = isRunning && _onlinePlayerNames.value.any { it.equals(playerName, ignoreCase = true) }
+        val hasOpenSession = _playerHistory.value.any {
+            it.player.equals(playerName, ignoreCase = true) && isJoinEvent(it.event) && it.sessionEnd == null && !it.interrupted
+        }
+        val isOnline = isRunning && (
+            _onlinePlayerNames.value.any { it.equals(playerName, ignoreCase = true) } || hasOpenSession
+        )
         return com.mineserve.mobile.server.inventory.InventoryQueryRequest(
             serverDirName = dir,
             serverCore = core,
@@ -6984,6 +7003,83 @@ class McViewModel(
             isServerRunning = isRunning,
             isPlayerOnline = isOnline
         )
+    }
+
+    fun forceSaveAndReloadPlayerInventory(
+        playerName: String,
+        playerUuid: String? = null,
+        playerXuid: String? = null
+    ) {
+        viewModelScope.launch {
+            _isInventoryLoading.value = true
+            _inventoryErrorMessage.value = null
+            if (serverState.value.isRunning) {
+                runCatching {
+                    repo.termuxRuntime.sendCommand("save-all")
+                    repo.termuxRuntime.sendCommand("list")
+                    delay(500)
+                }
+            }
+            loadPlayerInventory(playerName, playerUuid, playerXuid)
+        }
+    }
+
+    fun equipStarterKitForPlayer(
+        playerName: String,
+        playerUuid: String? = null,
+        playerXuid: String? = null,
+        useNetherite: Boolean = true
+    ) {
+        val req = buildInventoryQueryRequest(playerName, playerUuid, playerXuid) ?: return
+        _isInventoryMutating.value = true
+        _inventoryErrorMessage.value = null
+        viewModelScope.launch {
+            try {
+                val prefix = if (useNetherite) "netherite" else "diamond"
+                val kitSlots = listOf(
+                    Triple(com.mineserve.mobile.server.inventory.InventorySection.ARMOR, 103, com.mineserve.mobile.server.inventory.InventoryItemStack("minecraft:${prefix}_helmet", 1, 103, com.mineserve.mobile.server.inventory.InventorySection.ARMOR)),
+                    Triple(com.mineserve.mobile.server.inventory.InventorySection.ARMOR, 102, com.mineserve.mobile.server.inventory.InventoryItemStack("minecraft:${prefix}_chestplate", 1, 102, com.mineserve.mobile.server.inventory.InventorySection.ARMOR)),
+                    Triple(com.mineserve.mobile.server.inventory.InventorySection.ARMOR, 101, com.mineserve.mobile.server.inventory.InventoryItemStack("minecraft:${prefix}_leggings", 1, 101, com.mineserve.mobile.server.inventory.InventorySection.ARMOR)),
+                    Triple(com.mineserve.mobile.server.inventory.InventorySection.ARMOR, 100, com.mineserve.mobile.server.inventory.InventoryItemStack("minecraft:${prefix}_boots", 1, 100, com.mineserve.mobile.server.inventory.InventorySection.ARMOR)),
+                    Triple(com.mineserve.mobile.server.inventory.InventorySection.OFFHAND, -106, com.mineserve.mobile.server.inventory.InventoryItemStack("minecraft:totem_of_undying", 1, -106, com.mineserve.mobile.server.inventory.InventorySection.OFFHAND)),
+                    Triple(com.mineserve.mobile.server.inventory.InventorySection.HOTBAR, 0, com.mineserve.mobile.server.inventory.InventoryItemStack("minecraft:${prefix}_sword", 1, 0, com.mineserve.mobile.server.inventory.InventorySection.HOTBAR)),
+                    Triple(com.mineserve.mobile.server.inventory.InventorySection.HOTBAR, 1, com.mineserve.mobile.server.inventory.InventoryItemStack("minecraft:${prefix}_pickaxe", 1, 1, com.mineserve.mobile.server.inventory.InventorySection.HOTBAR)),
+                    Triple(com.mineserve.mobile.server.inventory.InventorySection.HOTBAR, 2, com.mineserve.mobile.server.inventory.InventoryItemStack("minecraft:${prefix}_axe", 1, 2, com.mineserve.mobile.server.inventory.InventorySection.HOTBAR)),
+                    Triple(com.mineserve.mobile.server.inventory.InventorySection.HOTBAR, 3, com.mineserve.mobile.server.inventory.InventoryItemStack("minecraft:${prefix}_shovel", 1, 3, com.mineserve.mobile.server.inventory.InventorySection.HOTBAR)),
+                    Triple(com.mineserve.mobile.server.inventory.InventorySection.HOTBAR, 4, com.mineserve.mobile.server.inventory.InventoryItemStack("minecraft:bow", 1, 4, com.mineserve.mobile.server.inventory.InventorySection.HOTBAR)),
+                    Triple(com.mineserve.mobile.server.inventory.InventorySection.HOTBAR, 5, com.mineserve.mobile.server.inventory.InventoryItemStack("minecraft:enchanted_golden_apple", 16, 5, com.mineserve.mobile.server.inventory.InventorySection.HOTBAR)),
+                    Triple(com.mineserve.mobile.server.inventory.InventorySection.HOTBAR, 6, com.mineserve.mobile.server.inventory.InventoryItemStack("minecraft:golden_carrot", 64, 6, com.mineserve.mobile.server.inventory.InventorySection.HOTBAR)),
+                    Triple(com.mineserve.mobile.server.inventory.InventorySection.HOTBAR, 7, com.mineserve.mobile.server.inventory.InventoryItemStack("minecraft:ender_pearl", 16, 7, com.mineserve.mobile.server.inventory.InventorySection.HOTBAR)),
+                    Triple(com.mineserve.mobile.server.inventory.InventorySection.HOTBAR, 8, com.mineserve.mobile.server.inventory.InventoryItemStack("minecraft:firework_rocket", 64, 8, com.mineserve.mobile.server.inventory.InventorySection.HOTBAR))
+                )
+                var lastSnap: com.mineserve.mobile.server.inventory.PlayerInventorySnapshot? = null
+                for ((sec, sl, item) in kitSlots) {
+                    val res = playerInventoryManager.updateSlot(
+                        com.mineserve.mobile.server.inventory.InventorySlotMutationRequest(
+                            query = req,
+                            section = sec,
+                            slot = sl,
+                            newItem = item,
+                            adminConfirmed = true,
+                            actionDescriptionVi = "Trang bị nhanh bộ ${if (useNetherite) "Netherite" else "Kim Cương"}"
+                        )
+                    )
+                    if (res.isSuccess) {
+                        lastSnap = res.getOrNull()
+                    }
+                }
+                if (lastSnap != null) {
+                    _activePlayerInventory.value = lastSnap
+                    _messageFlow.tryEmit("✅ Đã trang bị đầy đủ bộ ${if (useNetherite) "Netherite" else "Kim Cương"} cho $playerName!")
+                } else {
+                    loadPlayerInventory(playerName, playerUuid, playerXuid)
+                }
+            } catch (e: Exception) {
+                _inventoryErrorMessage.value = e.message ?: "Không thể trang bị bộ đồ nhanh."
+            } finally {
+                _isInventoryMutating.value = false
+            }
+        }
     }
 
     fun loadPlayerInventory(
