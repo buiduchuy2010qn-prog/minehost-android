@@ -10,6 +10,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material.icons.Icons
@@ -50,11 +52,13 @@ internal fun HostPage(
     title: String,
     subtitle: String,
     trailingHeader: (@Composable () -> Unit)? = null,
+    listState: LazyListState = rememberLazyListState(),
     content: LazyListScope.() -> Unit
 ) {
     val sharedChrome = com.mineserve.mobile.ui.LocalMineHostChrome.current
     LazyColumn(
         Modifier.fillMaxSize(),
+        state = listState,
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {

@@ -2,6 +2,7 @@ package com.mineserve.mobile.ui
 
 import android.app.Application
 import android.graphics.Bitmap
+import android.graphics.Canvas
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
@@ -11,7 +12,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.getOrNull
@@ -24,6 +25,8 @@ import com.mineserve.mobile.ui.screens.AdaptiveActionRow
 import com.mineserve.mobile.ui.screens.HostAction
 import com.mineserve.mobile.ui.screens.HostDisclosure
 import com.mineserve.mobile.ui.theme.McTypography
+import com.mineserve.mobile.ui.theme.EyeCareColorPreset
+import com.mineserve.mobile.ui.theme.mineHostColorScheme
 import java.io.File
 import org.junit.After
 import org.junit.Assert.*
@@ -38,7 +41,7 @@ import org.robolectric.annotation.GraphicsMode
 
 /** Runs on the GitHub runner, with no server/VM/network side effects. */
 @RunWith(RobolectricTestRunner::class)
-@Config(application = Application::class, sdk = [28], qualifiers = "w320dp-h760dp-mdpi")
+@Config(application = Application::class, sdk = [34], qualifiers = "w320dp-h760dp-mdpi")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class MineHostNavigationLayoutTest {
     @get:Rule val compose = createEmptyComposeRule()
@@ -47,7 +50,7 @@ class MineHostNavigationLayoutTest {
     private fun show(fontScale: Float = 1f, dark: Boolean = false, content: @Composable () -> Unit) {
         controller = Robolectric.buildActivity(ComponentActivity::class.java).setup()
         controller!!.get().setContent {
-            MaterialTheme(colorScheme = if (dark) darkColorScheme() else lightColorScheme(), typography = McTypography) {
+            MaterialTheme(colorScheme = mineHostColorScheme(if (dark) EyeCareColorPreset.SoftSlate else EyeCareColorPreset.WarmPaperLight), typography = McTypography) {
                 val density = LocalDensity.current
                 CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale)) {
                     Surface(Modifier.fillMaxSize(), content = content)
@@ -65,16 +68,21 @@ class MineHostNavigationLayoutTest {
                 val layouts = mutableListOf<TextLayoutResult>()
                 node.config.getOrNull(SemanticsActions.GetTextLayoutResult)?.action?.invoke(layouts)
                 layouts.forEach { result ->
-                    assertFalse("Text clipped: ${result.layoutInput.text}", result.hasVisualOverflow)
+                    assertFalse("Text clipped: ${result.layoutInput.text}; size=${result.size}; paragraph=${result.multiParagraph.width}x${result.multiParagraph.height}; lines=${result.lineCount}; constraints=${result.layoutInput.constraints}", result.hasVisualOverflow)
                 }
             }
     }
 
     private fun screenshot(name: String) {
         val file = File("build/reports/ui-layout/$name.png")
-        file.parentFile.mkdirs()
-        compose.onRoot().captureToImage().asAndroidBitmap().let { bitmap ->
+        file.parentFile?.mkdirs()
+        // Draw the actual view on the runner; PixelCopy requires a real display.
+        compose.runOnUiThread {
+            val view = controller!!.get().window.decorView
+            val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
+            view.draw(Canvas(bitmap))
             file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            bitmap.recycle()
         }
     }
 
@@ -94,10 +102,10 @@ class MineHostNavigationLayoutTest {
             }
         }
         mineHostMainTabs.forEach { (_, label) -> compose.onNodeWithText(label).assertIsDisplayed() }
+        screenshot("bottom-320-large-font")
         assertTextFits()
         compose.onNodeWithText("Console").performClick()
         assertEquals(McTab.Terminal, selected)
-        screenshot("bottom-320-large-font")
     }
 
     @Test fun menuOpensWithoutNavigatingAndSelectionClosesIt() {
@@ -113,8 +121,8 @@ class MineHostNavigationLayoutTest {
         compose.onNodeWithContentDescription("Đóng danh mục").assertIsDisplayed()
         assertNull(selected)
         assertNull(selectedTool)
-        assertTextFits()
         screenshot("drawer-320")
+        assertTextFits()
         compose.onNodeWithText("Console").performClick()
         compose.waitForIdle()
         assertEquals(McTab.Terminal, selected)
@@ -156,7 +164,25 @@ class MineHostNavigationLayoutTest {
         val first = compose.onNodeWithText("Sao lưu thế giới hiện tại").fetchSemanticsNode().boundsInRoot
         val second = compose.onNodeWithText("Xuất bản sao lưu ZIP").fetchSemanticsNode().boundsInRoot
         assertTrue(second.top > first.bottom)
-        assertTextFits()
         screenshot("actions-320-large-font")
+        assertTextFits()
+    }
+
+    @Test fun allPalettesKeepBodyAndButtonTextReadable() {
+        EyeCareColorPreset.entries.forEach { preset ->
+            val scheme = mineHostColorScheme(preset)
+            listOf(
+                scheme.onSurface to scheme.surface,
+                scheme.onSurfaceVariant to scheme.surface,
+                scheme.onSurfaceVariant to scheme.surfaceVariant,
+                scheme.onPrimary to scheme.primary,
+                scheme.onPrimaryContainer to scheme.primaryContainer
+            ).forEach { (text, background) ->
+                val a = text.luminance()
+                val b = background.luminance()
+                val ratio = (maxOf(a, b) + 0.05f) / (minOf(a, b) + 0.05f)
+                assertTrue("$preset has insufficient text contrast: $ratio", ratio >= 4.5f)
+            }
+        }
     }
 }

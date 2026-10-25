@@ -12,6 +12,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -57,6 +58,7 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {},
     var hasStoragePerm by remember { mutableStateOf(ExternalBackupStore.hasPermission(context)) }
 
     var selectedWorldName by rememberSaveable(config.activeCoreName) { mutableStateOf<String?>(null) }
+    val worldListState = rememberLazyListState()
     var sectionTab by rememberSaveable(config.activeCoreName) { mutableStateOf(0) } // 0: Thế giới trong SV, 1: Bản sao lưu Map, 2: File Map trên ĐT, 3: Tất cả File ZIP
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var selectedPaths by remember(config.activeCoreName) { mutableStateOf(setOf<String>()) }
@@ -178,12 +180,14 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {},
     }
 
     BackHandler(enabled = selectedWorldName != null) { selectedWorldName = null }
+    LaunchedEffect(sectionTab, selectedWorldName) { worldListState.scrollToItem(0) }
     LaunchedEffect(worlds, loading) {
         if (!loading && selectedWorldName != null && worlds.none { it.name == selectedWorldName }) selectedWorldName = null
     }
     HostPage(
         "Thế giới",
-        "Máy chủ: ${config.activeCoreName ?: "Chưa chọn"} · ${if (loading) "Đang tải map…" else "${worlds.size} map"}"
+        "Máy chủ: ${config.activeCoreName ?: "Chưa chọn"} · ${if (loading) "Đang tải map…" else "${worlds.size} map"}",
+        listState = worldListState
     ) {
         item {
             Row(

@@ -199,6 +199,12 @@ private val McWarmMochaDarkScheme = darkColorScheme(
     scrim = Color(0xFF000000)
 )
 
+internal fun mineHostColorScheme(preset: EyeCareColorPreset) = when (preset) {
+    EyeCareColorPreset.SoftSlate -> McSoftSlateDarkScheme
+    EyeCareColorPreset.WarmMocha -> McWarmMochaDarkScheme
+    EyeCareColorPreset.WarmPaperLight -> McColorScheme
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MineServeMobileTheme(
@@ -217,11 +223,7 @@ fun MineServeMobileTheme(
         fontScale = baseDensity.fontScale * fontScaleMultiplier.coerceIn(0.90f, 1.25f)
     )
 
-    val activeColorScheme = when (colorPreset) {
-        EyeCareColorPreset.SoftSlate -> McSoftSlateDarkScheme
-        EyeCareColorPreset.WarmMocha -> McWarmMochaDarkScheme
-        EyeCareColorPreset.WarmPaperLight -> McColorScheme
-    }
+    val activeColorScheme = mineHostColorScheme(colorPreset)
 
     MaterialTheme(
         colorScheme = activeColorScheme,
