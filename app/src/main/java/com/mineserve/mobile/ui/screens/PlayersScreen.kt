@@ -161,7 +161,8 @@ private fun matchesPlayerQuery(name: String, query: String): Boolean {
 fun PlayersScreen(
     vm: McViewModel,
     onNavigateProperties: () -> Unit = {},
-    onNavigateOpGuide: () -> Unit = {}
+    onNavigateOpGuide: () -> Unit = {},
+    onPlayerTools: () -> Unit = {}
 ) {
     val serverState by vm.serverState.collectAsState()
     val ops by vm.ops.collectAsState()
@@ -215,6 +216,9 @@ fun PlayersScreen(
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
         ) {
+            TextButton(onClick = onPlayerTools, modifier = Modifier.padding(horizontal = 16.dp)) {
+                Text("Skin, danh hiệu & bảo vệ OP →")
+            }
             Row(
                 modifier = Modifier
                     .fillMaxWidth()

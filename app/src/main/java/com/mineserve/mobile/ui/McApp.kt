@@ -35,6 +35,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -75,7 +76,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 
 /** 子页面类型（从设置页进入的二级页面） */
-enum class SubPage { Properties, Network, Backup, WorldManage, WorldImport, DownloadHelp, MtGuide, KeepAlive, OpLevelGuide, Diagnostics, Plugins, ServerIcon, CrashReports, WidgetSettings, Mcp, EnvManager, Ftp, FrpProfileEditor, More, Automation, Cores, ServerList, PlayerList, AppSettings, Crossplay, Files, Console, Remote, Performance }
+enum class SubPage { Properties, Network, Backup, WorldManage, WorldImport, DownloadHelp, MtGuide, KeepAlive, OpLevelGuide, Diagnostics, Plugins, ServerIcon, CrashReports, WidgetSettings, Mcp, EnvManager, Ftp, FrpProfileEditor, More, Automation, Cores, ServerList, PlayerList, AppSettings, Crossplay, Files, Console, Remote, Performance, WorldRules, PlayerTools, AddonTools }
 
 /**
  * Five primary destinations; secondary tools retain their own back navigation.
@@ -83,6 +84,7 @@ enum class SubPage { Properties, Network, Backup, WorldManage, WorldImport, Down
 @Composable
 fun McApp() {
     val vm: McViewModel = viewModel(factory = McViewModel.Factory)
+    val config by vm.config.collectAsState()
     val currentCrashContent by vm.currentCrashContent.collectAsState()
     val currentCrashAnalysis by vm.currentCrashAnalysis.collectAsState()
     val lastRunLog by vm.lastRunLog.collectAsState()
@@ -91,13 +93,18 @@ fun McApp() {
     var subPage by rememberSaveable { mutableStateOf<SubPage?>(null) }
     var worldImportFromTab by rememberSaveable { mutableStateOf(false) }
     var mtGuideFromFiles by rememberSaveable { mutableStateOf(false) }
+    val pageState = rememberSaveableStateHolder()
 
     fun navigateTo(target: SubPage) {
         showLogs = false
         when (target) {
+            SubPage.Console -> { subPage = null; tab = McTab.Terminal }
             SubPage.Plugins -> { subPage = null; tab = McTab.Download }
             SubPage.WorldManage -> { subPage = null; tab = McTab.Worlds }
             SubPage.PlayerList -> { subPage = null; tab = McTab.Players }
+            SubPage.WorldRules -> { tab = McTab.Worlds; subPage = target }
+            SubPage.PlayerTools -> { tab = McTab.Players; subPage = target }
+            SubPage.AddonTools -> { tab = McTab.Download; subPage = target }
             SubPage.WorldImport -> {
                 worldImportFromTab = tab == McTab.Worlds && subPage == null
                 subPage = target
@@ -163,64 +170,41 @@ fun McApp() {
         }
     }
 
+    MineHostNavigation(
+        title = mineHostPageTitle(tab, subPage, showLogs),
+        serverName = config.activeCoreName,
+        tab = tab,
+        page = subPage,
+        onTab = { tab = it; showLogs = false; subPage = null },
+        onNavigate = ::navigateTo
+    ) {
     Scaffold(
         // 全屏展示：内容延伸到状态栏，顶部状态栏区域由各页面首个组件（HeaderBlock/返回栏）
         // 以白色背景覆盖，不再显示系统状态栏灰色条
         contentWindowInsets = WindowInsets(0.dp),
         snackbarHost = { SwipeableInstantSnackbarHost(snackbars) },
         bottomBar = {
-            NavigationBar(
-                containerColor = MaterialTheme.colorScheme.surface,
-                tonalElevation = 0.dp
-            ) {
-                val destinations = listOf(
-                    McTab.Dashboard to "Máy chủ",
-                    McTab.Worlds to "Map",
-                    McTab.Players to "Người chơi",
-                    McTab.Download to "Mod",
-                    McTab.Settings to "Công cụ"
-                )
-                val selectedTab = when (tab) {
-                    McTab.Files, McTab.Terminal -> McTab.Settings
-                    McTab.ServerManagement -> McTab.Dashboard
+            MineHostBottomBar(
+                selected = when {
+                    subPage == SubPage.WorldRules -> McTab.Worlds
+                    subPage == SubPage.PlayerTools -> McTab.Players
+                    subPage == SubPage.AddonTools -> McTab.Download
+                    subPage != null || showLogs -> null
                     else -> tab
-                }
-                destinations.forEach { (t, label) ->
-                    NavigationBarItem(
-                        selected = selectedTab == t,
-                        onClick = { tab = t; showLogs = false; subPage = null },
-                        icon = { Icon(t.icon, contentDescription = null) },
-                        label = {
-                            Text(
-                                label,
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Medium,
-                                textAlign = TextAlign.Center,
-                                maxLines = 2
-                            )
-                        },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                            selectedTextColor = MaterialTheme.colorScheme.primary,
-                            indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    )
-                }
-
-            }
+                },
+                onSelect = { tab = it; showLogs = false; subPage = null }
+            )
         }
     ) { padding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
-                .statusBarsPadding()
                 .padding(padding)
                 .consumeWindowInsets(WindowInsets.statusBars)
         ) {
             val page = Triple(showLogs, subPage, tab)
+            pageState.SaveableStateProvider("${config.activeCoreName}:${page.first}:${page.second}:${page.third}") {
             when {
                 page.first -> LogsScreen(vm = vm, onBack = { showLogs = false })
                 page.second != null -> {
@@ -243,7 +227,8 @@ fun McApp() {
                         SubPage.WorldManage -> WorldsScreen(
                             vm = vm,
                             onBack = { subPage = null },
-                            onImport = { navigateTo(SubPage.WorldImport) }
+                            onImport = { navigateTo(SubPage.WorldImport) },
+                            onWorldRules = { navigateTo(SubPage.WorldRules) }
                         )
                         SubPage.WorldImport -> WorldImportScreen(
                             vm = vm,
@@ -261,7 +246,7 @@ fun McApp() {
                             onNavigatePlugins = { navigateTo(SubPage.Plugins) }
                         )
                         SubPage.Diagnostics -> DiagnosticsScreen(vm = vm, onBack = { subPage = null })
-                        SubPage.Plugins -> PluginsScreen(vm = vm)
+                        SubPage.Plugins -> PluginsScreen(vm = vm, onAddonTools = { navigateTo(SubPage.AddonTools) })
                         SubPage.ServerIcon -> ServerIconScreen(vm = vm, onBack = { subPage = null })
                         SubPage.CrashReports -> CrashReportsScreen(
                             vm = vm,
@@ -305,7 +290,8 @@ fun McApp() {
                             onBack = { subPage = null })
                         SubPage.PlayerList -> PlayersScreen(vm,
                             onNavigateProperties = { subPage = SubPage.Properties },
-                            onNavigateOpGuide = { subPage = SubPage.OpLevelGuide })
+                            onNavigateOpGuide = { subPage = SubPage.OpLevelGuide },
+                        onPlayerTools = { navigateTo(SubPage.PlayerTools) })
                         SubPage.AppSettings -> SettingsScreen(vm, onNavigate = ::navigateTo)
                         SubPage.Crossplay -> MineHostCrossplay(vm = vm, onBack = { subPage = null })
                         SubPage.Files -> ToolSubPage(onBack = { subPage = null }) {
@@ -323,6 +309,17 @@ fun McApp() {
                             onBack = { subPage = null },
                             navigate = ::navigateTo
                         )
+                        SubPage.WorldRules, SubPage.PlayerTools, SubPage.AddonTools -> MineHostOverview(
+                            vm = vm,
+                            navigate = ::navigateTo,
+                            onConsole = { navigateTo(SubPage.Console) },
+                            section = when (page.second) {
+                                SubPage.WorldRules -> 2
+                                SubPage.PlayerTools -> 4
+                                else -> 5
+                            },
+                            onBack = { subPage = null }
+                        )
                         null -> {}
                     }
                 }
@@ -333,9 +330,10 @@ fun McApp() {
                     McTab.Worlds -> WorldsScreen(
                         vm = vm,
                         onBack = { tab = McTab.Dashboard },
-                        onImport = { navigateTo(SubPage.WorldImport) }
+                        onImport = { navigateTo(SubPage.WorldImport) },
+                            onWorldRules = { navigateTo(SubPage.WorldRules) }
                     )
-                    McTab.Download -> PluginsScreen(vm = vm)
+                    McTab.Download -> PluginsScreen(vm = vm, onAddonTools = { navigateTo(SubPage.AddonTools) })
                     McTab.ServerManagement -> ServerManagementScreen(
                         vm = vm,
                         onPlugins = { subPage = null; tab = McTab.Download },
@@ -347,7 +345,8 @@ fun McApp() {
                     McTab.Players -> PlayersScreen(
                         vm = vm,
                         onNavigateProperties = { subPage = SubPage.Properties },
-                        onNavigateOpGuide = { subPage = SubPage.OpLevelGuide }
+                        onNavigateOpGuide = { subPage = SubPage.OpLevelGuide },
+                        onPlayerTools = { navigateTo(SubPage.PlayerTools) }
                     )
                     McTab.Files -> FileManagerScreen(vm = vm, onOpenMtGuide = {
                         mtGuideFromFiles = false
@@ -356,6 +355,7 @@ fun McApp() {
                     McTab.Terminal -> TerminalScreen(vm = vm)
                     McTab.Settings -> MineHostManage(vm = vm, navigate = ::navigateTo)
                 }
+            }
             }
         }
 
@@ -406,6 +406,7 @@ fun McApp() {
                 }
             )
         }
+    }
     }
 }
 

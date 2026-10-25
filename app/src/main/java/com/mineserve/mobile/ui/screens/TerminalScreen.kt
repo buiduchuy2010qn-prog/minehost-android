@@ -416,20 +416,18 @@ fun TerminalScreen(vm: McViewModel) {
                     .padding(horizontal = 12.dp, vertical = 6.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Row(
+                Column(
                     Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Text(
-                        "Bảng điều khiển Pro",
+                        "Lệnh & nhật ký trực tiếp",
                         color = Color(0xFFE8E8E8),
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        maxLines = 1
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium
                     )
-                    Row {
-                        IconButton(onClick = { showFilterBar = !showFilterBar }, modifier = Modifier.size(34.dp)) {
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                        IconButton(onClick = { showFilterBar = !showFilterBar }, modifier = Modifier.size(48.dp)) {
                             Icon(
                                 Icons.Outlined.Search,
                                 "Tìm & Lọc nhật ký",
@@ -437,10 +435,10 @@ fun TerminalScreen(vm: McViewModel) {
                                 modifier = Modifier.size(19.dp)
                             )
                         }
-                        IconButton(onClick = { showViewDistDialog = true }, modifier = Modifier.size(34.dp)) {
+                        IconButton(onClick = { showViewDistDialog = true }, modifier = Modifier.size(48.dp)) {
                             Icon(Icons.Outlined.Tune, "Chỉnh tầm nhìn", tint = Color(0xFFA6E3A1), modifier = Modifier.size(19.dp))
                         }
-                        IconButton(onClick = { autoScrollPaused = !autoScrollPaused }, modifier = Modifier.size(34.dp)) {
+                        IconButton(onClick = { autoScrollPaused = !autoScrollPaused }, modifier = Modifier.size(48.dp)) {
                             Icon(
                                 if (autoScrollPaused) Icons.Outlined.PlayArrow else Icons.Outlined.Pause,
                                 if (autoScrollPaused) "Tiếp tục tự cuộn" else "Tạm dừng tự cuộn",
@@ -452,19 +450,19 @@ fun TerminalScreen(vm: McViewModel) {
                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                             clipboard.setPrimaryClip(android.content.ClipData.newPlainText(active.name, rawLines.joinToString("\n") { it.text }))
                             vm.notifyActionDone("📋 Đã sao chép nhật ký hiện tại")
-                        }, modifier = Modifier.size(34.dp)) {
+                        }, modifier = Modifier.size(48.dp)) {
                             Icon(Icons.Outlined.ContentCopy, "Sao chép nhật ký", tint = Color.White, modifier = Modifier.size(18.dp))
                         }
                         IconButton(onClick = {
                             if (active.type == TerminalSessionType.Minecraft) vm.clearConsole()
                             else vm.clearTerminalSession(active.id)
-                        }, modifier = Modifier.size(34.dp)) {
+                        }, modifier = Modifier.size(48.dp)) {
                             Icon(Icons.Outlined.Delete, "Xóa màn hình", tint = Color(0xFFFFA7A7), modifier = Modifier.size(18.dp))
                         }
-                        IconButton(onClick = { showSettings = true }, modifier = Modifier.size(34.dp)) {
+                        IconButton(onClick = { showSettings = true }, modifier = Modifier.size(48.dp)) {
                             Icon(Icons.Outlined.Settings, "Cài đặt", tint = Color.White, modifier = Modifier.size(18.dp))
                         }
-                        IconButton(onClick = vm::createTerminalSession, modifier = Modifier.size(34.dp)) {
+                        IconButton(onClick = vm::createTerminalSession, modifier = Modifier.size(48.dp)) {
                             Icon(Icons.Outlined.Add, "Tạo phiên mới", tint = Color.White, modifier = Modifier.size(19.dp))
                         }
                     }

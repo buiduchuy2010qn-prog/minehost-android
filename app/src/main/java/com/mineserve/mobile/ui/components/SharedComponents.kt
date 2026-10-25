@@ -132,6 +132,13 @@ fun HeaderBlock(
     statusBarPadding: Boolean = true,
     trailing: (@Composable () -> Unit)? = null
 ) {
+    if (LocalMineHostChrome.current) {
+        Column(modifier.padding(horizontal = McSpacing.Page, vertical = 8.dp)) {
+            Text(eyebrow, style = MaterialTheme.typography.bodyMedium, color = Muted)
+            trailing?.invoke()
+        }
+        return
+    }
     Column(
         modifier = modifier
             .fillMaxWidth()

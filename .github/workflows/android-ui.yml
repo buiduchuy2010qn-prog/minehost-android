@@ -65,7 +65,19 @@ jobs:
         shell: bash
         run: |
           chmod +x gradlew
-          ./gradlew :app:testReleaseUnitTest --tests "com.mineserve.mobile.server.MineoraAuditRegressionTest" :app:assembleRelease --build-cache --parallel --max-workers=4 -Dorg.gradle.jvmargs="-Xmx4g -Dfile.encoding=UTF-8"
+          ./gradlew :app:testReleaseUnitTest --tests "com.mineserve.mobile.server.MineoraAuditRegressionTest" --tests "com.mineserve.mobile.server.MineHostSafetyTest" --tests "com.mineserve.mobile.ui.MineHostNavigationLayoutTest" :app:assembleRelease --build-cache --parallel --max-workers=4 -Dorg.gradle.jvmargs="-Xmx4g -Dfile.encoding=UTF-8"
+
+      - name: Upload UI layout checks
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MineHost-UI-layout-checks
+          path: |
+            app/build/reports/ui-layout/
+            app/build/reports/tests/testReleaseUnitTest/
+            app/build/test-results/testReleaseUnitTest/
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Verify APK can update the previous release
         shell: bash
@@ -80,21 +92,21 @@ jobs:
           ACTUAL=$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' dist/SIGNATURE.txt)
           test "$EXPECTED" = "$ACTUAL"
           test "$ACTUAL" = '886ac552e731c821babfa1377138b5e722b7252bce0f732bef620ab2d0f0d295'
-          curl --fail --location --retry 3 --output "$RUNNER_TEMP/minehost-previous.apk" 'https://github.com/buiduchuy2010qn-prog/minehost-android/releases/download/v2.9.3/minehost-2.9.3-arm64.apk'
+          curl --fail --location --retry 3 --output "$RUNNER_TEMP/minehost-previous.apk" 'https://github.com/buiduchuy2010qn-prog/minehost-android/releases/download/v2.9.4/minehost-2.9.4-arm64.apk'
           "$TOOLS/apksigner" verify --print-certs "$RUNNER_TEMP/minehost-previous.apk" > "$RUNNER_TEMP/minehost-previous-signature.txt"
           PREVIOUS=$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/minehost-previous-signature.txt")
           test "$ACTUAL" = "$PREVIOUS"
           "$TOOLS/aapt" dump badging "$APK" > dist/APK-INFO.txt
-          grep -Eq "^package: name='vn.minehost.pro' versionCode='61' versionName='2.9.4'" dist/APK-INFO.txt
+          grep -Eq "^package: name='vn.minehost.pro' versionCode='62' versionName='2.9.5'" dist/APK-INFO.txt
           grep -Eq "^native-code: 'arm64-v8a'[[:space:]]*$" dist/APK-INFO.txt
           ! grep -q 'application-debuggable' dist/APK-INFO.txt
-          cp "$APK" dist/minehost-2.9.4-arm64.apk
+          cp "$APK" dist/minehost-2.9.5-arm64.apk
           git rev-parse HEAD > dist/SOURCE-COMMIT.txt
-          (cd dist && sha256sum minehost-2.9.4-arm64.apk > SHA256SUMS.txt)
+          (cd dist && sha256sum minehost-2.9.5-arm64.apk > SHA256SUMS.txt)
 
       - uses: actions/upload-artifact@v4
         with:
-          name: MineHost-2.9.4-ARM64-update
+          name: MineHost-2.9.5-ARM64-update
           path: dist/
           if-no-files-found: error
           retention-days: 14

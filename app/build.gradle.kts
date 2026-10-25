@@ -27,8 +27,8 @@ android {
         applicationId = "vn.minehost.pro"
         minSdk = 26
         targetSdk = 28
-        versionCode = 61
-        versionName = "2.9.4"
+        versionCode = 62
+        versionName = "2.9.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
@@ -152,6 +152,7 @@ dependencies {
     // 用于验证「隧道启动是否把网络请求切出主线程」—— 见 FrpcBackendStartThreadTest。
     testImplementation(libs.robolectric)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation("androidx.compose.ui:ui-test-junit4")
 
     debugImplementation(libs.androidx.ui.tooling)
 }

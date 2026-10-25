@@ -170,7 +170,7 @@ private enum class InstalledFilter(val labelRes: Int) { All(R.string.s747), Enab
  *  - P1-6 删除时询问清理数据目录
  */
 @Composable
-fun PluginsScreen(vm: McViewModel) {
+fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
     // Nạp mô tả tiếng Việt + Server/Client của danh mục 56 mod để mod ĐÃ CÀI cũng hiện đúng thông tin
     remember {
         vm.userScreenshot56ModItems().forEach {
@@ -370,6 +370,10 @@ fun PluginsScreen(vm: McViewModel) {
                 )
             }
             HeaderBlock(eyebrow = stringResource(R.string.eyebrow_plugins), title = stringResource(R.string.s750))
+
+            TextButton(onClick = onAddonTools, modifier = Modifier.padding(horizontal = 16.dp)) {
+                Text("Addon PE, Voice Chat & Datapack →")
+            }
 
             // ── 当前核心状态卡片 ──
             McCard(

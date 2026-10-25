@@ -3,6 +3,9 @@ package com.mineserve.mobile.ui.screens
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import androidx.activity.compose.BackHandler
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Public
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -28,7 +31,7 @@ import kotlinx.coroutines.flow.map
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {}) {
+fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {}, onWorldRules: () -> Unit = {}) {
     val context = LocalContext.current
     val worlds by vm.worlds.collectAsState()
     val allServerWorlds by vm.allServerWorlds.collectAsState()
@@ -49,11 +52,14 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
     val lastBackupFilePath by vm.lastBackupFilePath.collectAsState()
     val runningFlow = remember(vm) { vm.serverState.map { it.isRunning }.distinctUntilChanged() }
     val running by runningFlow.collectAsState(initial = true)
+    val activeWorldExists = active.isNotBlank() && worlds.any { it.name == active }
+    val canManageWorlds = ready && config.activeCoreName != null && !loading && !running && !importing
     var hasStoragePerm by remember { mutableStateOf(ExternalBackupStore.hasPermission(context)) }
 
-    var sectionTab by rememberSaveable { mutableStateOf(0) } // 0: Thế giới trong SV, 1: Bản sao lưu Map, 2: File Map trên ĐT, 3: Tất cả File ZIP
+    var selectedWorldName by rememberSaveable(config.activeCoreName) { mutableStateOf<String?>(null) }
+    var sectionTab by rememberSaveable(config.activeCoreName) { mutableStateOf(0) } // 0: Thế giới trong SV, 1: Bản sao lưu Map, 2: File Map trên ĐT, 3: Tất cả File ZIP
     var searchQuery by rememberSaveable { mutableStateOf("") }
-    var selectedPaths by remember { mutableStateOf(setOf<String>()) }
+    var selectedPaths by remember(config.activeCoreName) { mutableStateOf(setOf<String>()) }
 
     val openPermissionSettings: () -> Unit = {
         try {
@@ -79,19 +85,19 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
 
     var pendingExport by remember { mutableStateOf<String?>(null) }
     var exportServer by remember { mutableStateOf<String?>(null) }
-    var reset by remember { mutableStateOf<Worlds.WorldInfo?>(null) }
-    var deleteDirectTarget by remember { mutableStateOf<Worlds.WorldInfo?>(null) }
-    var deleteOtherServerWorldTarget by remember { mutableStateOf<McViewModel.ServerWorldSummary?>(null) }
+    var reset by remember(config.activeCoreName) { mutableStateOf<Worlds.WorldInfo?>(null) }
+    var deleteDirectTarget by remember(config.activeCoreName) { mutableStateOf<Worlds.WorldInfo?>(null) }
+    var deleteOtherServerWorldTarget by remember(config.activeCoreName) { mutableStateOf<McViewModel.ServerWorldSummary?>(null) }
     var activate by remember(config.activeCoreName) { mutableStateOf<Worlds.WorldInfo?>(null) }
-    var renameTarget by remember { mutableStateOf<Worlds.WorldInfo?>(null) }
+    var renameTarget by remember(config.activeCoreName) { mutableStateOf<Worlds.WorldInfo?>(null) }
     var renameInput by remember { mutableStateOf("") }
     var pendingFolderUri by remember { mutableStateOf<Uri?>(null) }
     var folderWorldName by remember { mutableStateOf("") }
-    var pendingDeleteArchive by remember { mutableStateOf<McViewModel.LocalArchiveItem?>(null) }
-    var pendingImportArchive by remember { mutableStateOf<McViewModel.LocalArchiveItem?>(null) }
+    var pendingDeleteArchive by remember(config.activeCoreName) { mutableStateOf<McViewModel.LocalArchiveItem?>(null) }
+    var pendingImportArchive by remember(config.activeCoreName) { mutableStateOf<McViewModel.LocalArchiveItem?>(null) }
     var importWorldCustomName by remember { mutableStateOf("") }
-    var confirmCleanupAllAuto by remember { mutableStateOf(false) }
-    var confirmBatchDelete by remember { mutableStateOf(false) }
+    var confirmCleanupAllAuto by remember(config.activeCoreName) { mutableStateOf(false) }
+    var confirmBatchDelete by remember(config.activeCoreName) { mutableStateOf(false) }
     var pendingPlayableMode by remember(config.activeCoreName) { mutableStateOf<Pair<String, String>?>(null) }
     var pendingPresetWorld by remember(config.activeCoreName) { mutableStateOf<PresetWorldRequest?>(null) }
     val liveTask by vm.liveTaskProgress.collectAsState()
@@ -171,9 +177,13 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
         }
     }
 
+    BackHandler(enabled = selectedWorldName != null) { selectedWorldName = null }
+    LaunchedEffect(worlds, loading) {
+        if (!loading && selectedWorldName != null && worlds.none { it.name == selectedWorldName }) selectedWorldName = null
+    }
     HostPage(
-        "Map & thế giới",
-        "Máy chủ: ${config.activeCoreName ?: "Chưa chọn"} · Map đang chọn: ${active.ifBlank { "world" }}"
+        "Thế giới",
+        "Máy chủ: ${config.activeCoreName ?: "Chưa chọn"} · ${if (loading) "Đang tải map…" else "${worlds.size} map"}"
     ) {
         item {
             Row(
@@ -181,7 +191,9 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                TextButton(onClick = onBack) { Text("← Quay lại") }
+                TextButton(onClick = { if (selectedWorldName != null) selectedWorldName = null else onBack() }) {
+                    Text(if (selectedWorldName != null) "← Danh sách map" else "← Máy chủ")
+                }
                 TextButton(
                     onClick = refreshAllData,
                     enabled = !loading && !importing
@@ -191,10 +203,10 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
             }
         }
 
-        item(key = "current_world_summary") {
+        if (sectionTab == 0 && selectedWorldName == null) item(key = "current_world_summary") {
             HostCard("Map đang chọn") {
                 Text(
-                    active.ifBlank { "world" },
+                    active.ifBlank { "Chưa có map được chọn" },
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -210,17 +222,17 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
                 ) {
                     Button(
                         onClick = { vm.backupWorldToExternal(shareToDrive = false) },
-                        enabled = ready && !running && !importing,
+                        enabled = canManageWorlds && activeWorldExists,
                         shape = McShape.ControlCompact
                     ) { Text("Sao lưu ngay") }
                     OutlinedButton(
                         onClick = {
-                            val worldName = active.ifBlank { "world" }
+                            val worldName = active
                             pendingExport = worldName
                             exportServer = config.activeCoreName
                             exporter.launch("World_${worldName}.zip")
                         },
-                        enabled = ready && !running && !importing,
+                        enabled = canManageWorlds && activeWorldExists,
                         shape = McShape.ControlCompact
                     ) { Text("Xuất ZIP") }
                 }
@@ -236,8 +248,8 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
 
         // Register secondary tools after the current world's list.
         fun LazyListScope.additionalWorldTools() {
-            item {
-                WorldToolsSection("Nhập map & quản lý bộ nhớ", "Nhập tệp, addon, kiểm tra dung lượng và dọn bản sao lưu") {
+            if (sectionTab == 2 && selectedWorldName == null) item {
+                WorldToolsSection("Nhập map & quản lý bộ nhớ", "Nhập tệp, addon, kiểm tra dung lượng và dọn bản sao lưu", initiallyExpanded = true) {
                     Surface(
                         color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
                         shape = McShape.ControlCompact,
@@ -340,7 +352,7 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
                     ) {
                         Button(
                             onClick = onImport,
-                            enabled = ready && !running && !importing,
+                            enabled = ready && config.activeCoreName != null && !loading && !running && !importing,
                             modifier = Modifier.fillMaxWidth(),
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                             shape = McShape.ControlCompact
@@ -349,7 +361,7 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
                         }
                         OutlinedButton(
                             onClick = { folderImporter.launch(null) },
-                            enabled = ready && !running && !importing,
+                            enabled = ready && config.activeCoreName != null && !loading && !running && !importing,
                             modifier = Modifier.fillMaxWidth(),
                             shape = McShape.ControlCompact,
                             border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary)
@@ -380,7 +392,7 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
             }
 
             // NÂNG CẤP PRO MAX: CHẾ ĐỘ CHƠI & BẢN ĐỒ DỰNG SẴN 1 CHẠM (ONEBLOCK, SKYBLOCK, PARKOUR, LUCKY ISLAND)
-            item(key = "playable_mode_worlds_pro_card") {
+            if (sectionTab == 4 && selectedWorldName == null) item(key = "playable_mode_worlds_pro_card") {
                 WorldToolsSection(
                     "Tạo map chế độ chơi",
                     if (supportsJavaWorldCreation) "Java · OneBlock, SkyBlock, Parkour và Đảo kho báu"
@@ -470,7 +482,7 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
             }
 
             // NÂNG CẤP 4: BỘ CHỌN NHANH KIỂU THẾ GIỚI & KHO SEED ĐẸP (WORLD PRESETS & SEED GALLERY)
-            item(key = "world_presets_seed_gallery_card") {
+            if (sectionTab == 4 && selectedWorldName == null) item(key = "world_presets_seed_gallery_card") {
                 var presetWorldType by rememberSaveable { mutableStateOf("minecraft:normal") }
                 var presetWorldLabel by rememberSaveable { mutableStateOf("Sinh tồn chuẩn") }
                 var presetSeedInput by rememberSaveable { mutableStateOf("") }
@@ -616,61 +628,25 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
             }
         }
 
-        // BỘ CHUYỂN TAB QUẢN LÝ MAP TOÀN DIỆN
-        item {
-            HostCard("Danh sách map & bản sao lưu") {
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    FilterChip(
-                        selected = sectionTab == 0,
-                        onClick = { sectionTab = 0 },
-                        label = {
-                            Text(
-                                "Map (${allServerWorlds.size.coerceAtLeast(worlds.size)})",
-                                fontWeight = if (sectionTab == 0) FontWeight.Medium else FontWeight.Normal,
-                                fontSize = 14.sp
-                            )
-                        }
-                    )
-                    FilterChip(
-                        selected = sectionTab == 1,
-                        onClick = { sectionTab = 1 },
-                        label = {
-                            Text(
-                                "Sao lưu (${backupItems.size})",
-                                fontWeight = if (sectionTab == 1) FontWeight.Medium else FontWeight.Normal,
-                                fontSize = 14.sp
-                            )
-                        }
-                    )
-                    FilterChip(
-                        selected = sectionTab == 2,
-                        onClick = { sectionTab = 2 },
-                        label = {
-                            Text(
-                                "Tệp tải về (${downloadItems.size})",
-                                fontWeight = if (sectionTab == 2) FontWeight.Medium else FontWeight.Normal,
-                                fontSize = 14.sp
-                            )
-                        }
-                    )
-                    FilterChip(
-                        selected = sectionTab == 3,
-                        onClick = { sectionTab = 3 },
-                        label = {
-                            Text(
-                                "Tất cả tệp (${localArchives.size})",
-                                fontWeight = if (sectionTab == 3) FontWeight.Medium else FontWeight.Normal,
-                                fontSize = 14.sp
-                            )
-                        }
-                    )
+        if (selectedWorldName == null) item(key = "world_sections") {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                listOf(0 to "Map (${worlds.size})", 4 to "Tạo mới", 2 to "Nhập map", 1 to "Sao lưu").forEach { (id, label) ->
+                    FilterChip(selected = sectionTab == id || (id == 1 && sectionTab == 3),
+                        onClick = { sectionTab = id; selectedPaths = emptySet() }, label = { Text(label) })
+                }
+            }
+            if (sectionTab == 0) TextButton(onClick = onWorldRules) { Text("Luật chơi, thời tiết & tọa độ →") }
+            if (sectionTab == 1 || sectionTab == 3) {
+                Text("Bản sao lưu và tệp trên điện thoại có thể thuộc nhiều server. Kiểm tra tên trước khi phục hồi.",
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = sectionTab == 1, onClick = { sectionTab = 1; selectedPaths = emptySet() }, label = { Text("Bản sao lưu") })
+                    FilterChip(selected = sectionTab == 3, onClick = { sectionTab = 3; selectedPaths = emptySet() }, label = { Text("Tất cả tệp") })
                 }
             }
         }
+
+        additionalWorldTools()
 
         if (sectionTab == 0) {
             // ── TAB 0: THẾ GIỚI BÊN TRONG SERVER ĐANG CHỌN & CÁC SERVER KHÁC ──
@@ -699,7 +675,7 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
                 item {
                     HostCard("Chưa có thế giới trong Server đang chọn") {
                         Text(
-                            "Chọn danh mục Sao lưu hoặc Tệp tải về ở trên để nhập map có sẵn, hoặc bật máy chủ để tự sinh thế giới mới.",
+                            "Chọn Nhập map để thêm map có sẵn, hoặc Tạo mới để chọn seed và chế độ chơi. Máy chủ cũng có thể tự sinh thế giới khi khởi động.",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 14.sp
                         )
@@ -707,12 +683,17 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
                 }
             }
 
-            items(worlds.sortedByDescending { it.isActive }, key = { "active_srv_" + it.name }) { world ->
+            items(worlds.filter { selectedWorldName == null || it.name == selectedWorldName }.sortedByDescending { it.isActive },
+                key = { "world_${config.activeCoreName}_${it.name}" }) { world ->
                 val isJava = world.kind == Worlds.Kind.Java
                 val isBedrockServer = vm.isPowerNukkitXActive()
                 val compatible = (isJava && !isBedrockServer) || (!isJava && isBedrockServer)
 
-                HostCard(world.name) {
+                if (selectedWorldName == null) {
+                    HostAction(world.name,
+                        "${if (world.isActive) "Đang dùng" else "Đang cất giữ"} · ${if (isJava) "Java" else "Bedrock"} · ${world.sizeText}${if (world.sizeTruncated) "+" else ""}",
+                        Icons.Outlined.Public) { selectedWorldName = world.name }
+                } else HostCard(world.name) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -786,7 +767,7 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
                         if (!world.isActive) {
                             Button(
                                 onClick = { activate = world },
-                                enabled = !running && !importing,
+                                enabled = canManageWorlds && compatible,
                                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                                 shape = McShape.ControlCompact
                             ) {
@@ -840,7 +821,7 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
                 }
             }
 
-            if (otherServerWorlds.isNotEmpty()) {
+            if (selectedWorldName == null && otherServerWorlds.isNotEmpty()) {
                 item {
                     WorldToolsSection("Map ở máy chủ khác", "${otherServerWorlds.size} map trên điện thoại") {
                         Text(
@@ -885,7 +866,7 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
                     }
                 }
             }
-        } else {
+        } else if (sectionTab in 1..3 && selectedWorldName == null) {
             // ── TAB 1, 2, 3: BẢN SAO LƯU MAP, FILE MAP TRONG ĐT, HOẶC TẤT CẢ ──
             item {
                 val sectionTitle = when (sectionTab) {
@@ -1017,7 +998,7 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
                                                     importWorldCustomName = ""
                                                     pendingImportArchive = item
                                                 },
-                                                enabled = ready && !running && !importing,
+                                                enabled = ready && config.activeCoreName != null && !loading && !running && !importing,
                                                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                                                 shape = McShape.ControlCompact,
                                                 modifier = Modifier.heightIn(min = 48.dp)
@@ -1053,10 +1034,8 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {})
             }
         }
 
-        additionalWorldTools()
-
         // CÀI ĐẶT TỰ ĐỘNG SAO LƯU & ĐỒNG BỘ GOOGLE DRIVE
-        item {
+        if ((sectionTab == 1 || sectionTab == 3) && selectedWorldName == null) item {
             WorldToolsSection("Sao lưu & đồng bộ", "Cài đặt sao lưu tự động, bộ mod và Google Drive") {
                 Text(
                     "Sao lưu map '${active.ifBlank { "world" }}' và bộ mod của máy chủ '${config.activeCoreName ?: "Chưa chọn"}'. Tối đa 2 bản sao lưu tự động mới nhất được giữ lại cho mỗi máy chủ.",
@@ -1609,9 +1588,10 @@ private fun WorldToolsSection(
     title: String,
     description: String,
     expandForTask: Boolean = false,
+    initiallyExpanded: Boolean = false,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    var expanded by rememberSaveable { mutableStateOf(false) }
+    var expanded by rememberSaveable { mutableStateOf(initiallyExpanded) }
     val showContent = expanded || expandForTask
     OutlinedCard(
         modifier = Modifier.fillMaxWidth(),
