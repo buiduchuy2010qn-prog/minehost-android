@@ -169,7 +169,7 @@ fun McApp() {
                         selected = tab == t,
                         onClick = { tab = t; showLogs = false; subPage = null },
                         icon = { Icon(t.icon, contentDescription = label) },
-                        label = { Text(label, fontSize = 10.sp) },
+                        label = { Text(label, fontSize = 12.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold) },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = Indigo,
                             selectedTextColor = Indigo,

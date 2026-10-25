@@ -2291,11 +2291,13 @@ object ProHostFeatures {
                 }
 
                 val byteCount = pcm.size * 2
+                // Phát qua luồng MEDIA (USAGE_MEDIA + CONTENT_TYPE_MUSIC — giống TikTok / YouTube)
+                // để khi điện thoại gạt Im lặng / Rung chuông thông báo nhưng bật âm lượng Media thì vẫn nghe rõ!
                 val audioTrack = android.media.AudioTrack.Builder()
                     .setAudioAttributes(
                         android.media.AudioAttributes.Builder()
-                            .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION_EVENT)
-                            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                            .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
                             .build()
                     )
                     .setAudioFormat(
@@ -2318,7 +2320,7 @@ object ProHostFeatures {
                 }
             } catch (_: Throwable) {
                 runCatching {
-                    val tg = android.media.ToneGenerator(android.media.AudioManager.STREAM_NOTIFICATION, 85)
+                    val tg = android.media.ToneGenerator(android.media.AudioManager.STREAM_MUSIC, 95)
                     tg.startTone(android.media.ToneGenerator.TONE_PROP_ACK, 300)
                     Thread.sleep(350L)
                     tg.release()
@@ -2328,7 +2330,7 @@ object ProHostFeatures {
     }
 
     /**
-     * Phát âm báo "XP Orb Ding" nhẹ nhàng khi tải xong Mod / Map / Gói tài nguyên.
+     * Phát âm báo "XP Orb Ding" nhẹ nhàng qua kênh Media (TikTok/YouTube) khi tải xong Mod / Map / Gói tài nguyên.
      */
     fun playTaskCompleteChime() {
         Thread {
@@ -2354,8 +2356,8 @@ object ProHostFeatures {
                 val track = android.media.AudioTrack.Builder()
                     .setAudioAttributes(
                         android.media.AudioAttributes.Builder()
-                            .setUsage(android.media.AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
-                            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                            .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
                             .build()
                     )
                     .setAudioFormat(
@@ -2910,6 +2912,167 @@ object ProHostFeatures {
             }
             onProgress(1.0f, "🎉 Đã tạo xong chế độ '${preset.titleVi}' (${preset.folderName})!")
             preset
+        }
+    }
+
+    // ── ĐỒNG BỘ & ĐỔI SKIN SERVER CRACKED 1 CHẠM (SKINSRESTORER / FABRICTAILOR) ──
+
+    data class SkinRestorerStatus(
+        val isInstalled: Boolean = false,
+        val fileName: String = ""
+    )
+
+    fun inspectSkinRestorerStatus(serverDir: File): SkinRestorerStatus {
+        val modsDir = File(serverDir, "mods")
+        val pluginsDir = File(serverDir, "plugins")
+        val foundJar = (modsDir.listFiles().orEmpty().toList() + pluginsDir.listFiles().orEmpty().toList())
+            .firstOrNull { f ->
+                f.isFile && f.name.endsWith(".jar", ignoreCase = true) &&
+                    (f.name.contains("skinsrestorer", ignoreCase = true) ||
+                        f.name.contains("fabrictailor", ignoreCase = true) ||
+                        f.name.contains("skinrestorer", ignoreCase = true))
+            }
+        return SkinRestorerStatus(
+            isInstalled = foundJar != null,
+            fileName = foundJar?.name.orEmpty()
+        )
+    }
+
+    suspend fun installSkinRestorerOneTap(
+        serverDir: File,
+        mcVersion: String,
+        loaderName: String,
+        onProgress: (Float, String) -> Unit
+    ): Result<SkinRestorerStatus> = withContext(Dispatchers.IO) {
+        runCatching {
+            onProgress(0.10f, "👕 Đang tìm bản SkinsRestorer / FabricTailor chuẩn cho $loaderName $mcVersion...")
+            val isPluginLoader = loaderName.equals("Paper", ignoreCase = true) ||
+                loaderName.equals("Purpur", ignoreCase = true) ||
+                loaderName.equals("Spigot", ignoreCase = true) ||
+                loaderName.equals("Leaves", ignoreCase = true) ||
+                loaderName.equals("Leaf", ignoreCase = true)
+
+            var downloadUrl = ""
+            var targetFileName = ""
+
+            if (isPluginLoader) {
+                // SkinsRestorer universal plugin jar trên Modrinth (project: tsP0424A / skinsrestorer)
+                val apiUrl = "https://api.modrinth.com/v2/project/skinsrestorer/version"
+                val conn = (URL(apiUrl).openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 10_000
+                    readTimeout = 10_000
+                    setRequestProperty("User-Agent", "MineHost-Mobile/2.9.1")
+                }
+                if (conn.responseCode in 200..299) {
+                    val arr = JSONArray(conn.inputStream.bufferedReader().use { it.readText() })
+                    for (i in 0 until arr.length()) {
+                        val verObj = arr.getJSONObject(i)
+                        val files = verObj.optJSONArray("files") ?: continue
+                        if (files.length() > 0) {
+                            val fObj = files.getJSONObject(0)
+                            val fn = fObj.optString("filename", "")
+                            if (fn.endsWith(".jar", ignoreCase = true)) {
+                                downloadUrl = fObj.optString("url", "")
+                                targetFileName = fn.ifBlank { "SkinsRestorer.jar" }
+                                break
+                            }
+                        }
+                    }
+                }
+            } else {
+                val modrinthLoader = when {
+                    loaderName.equals("NeoForge", ignoreCase = true) -> "neoforge"
+                    loaderName.equals("Forge", ignoreCase = true) -> "forge"
+                    loaderName.equals("Quilt", ignoreCase = true) -> "quilt"
+                    else -> "fabric"
+                }
+                val candidateProjects = if (modrinthLoader == "fabric" || modrinthLoader == "quilt") {
+                    listOf("fabrictailor", "skinsrestorer")
+                } else {
+                    listOf("skinsrestorer", "fabrictailor")
+                }
+                for (proj in candidateProjects) {
+                    val loadersJson = java.net.URLEncoder.encode("""["$modrinthLoader"]""", "UTF-8")
+                    val apiUrl = "https://api.modrinth.com/v2/project/$proj/version?loaders=$loadersJson"
+                    val conn = (URL(apiUrl).openConnection() as HttpURLConnection).apply {
+                        connectTimeout = 10_000
+                        readTimeout = 10_000
+                        setRequestProperty("User-Agent", "MineHost-Mobile/2.9.1")
+                    }
+                    if (conn.responseCode in 200..299) {
+                        val arr = JSONArray(conn.inputStream.bufferedReader().use { it.readText() })
+                        // Ưu tiên khớp mcVersion trước, nếu không thì lấy bản mới nhất của nhánh
+                        var fallbackUrl = ""
+                        var fallbackName = ""
+                        for (i in 0 until arr.length()) {
+                            val verObj = arr.getJSONObject(i)
+                            val gameVers = verObj.optJSONArray("game_versions")
+                            val files = verObj.optJSONArray("files") ?: continue
+                            if (files.length() == 0) continue
+                            val fObj = files.getJSONObject(0)
+                            val urlCandidate = fObj.optString("url", "")
+                            val nameCandidate = fObj.optString("filename", "$proj.jar")
+                            if (fallbackUrl.isBlank() && urlCandidate.isNotBlank()) {
+                                fallbackUrl = urlCandidate
+                                fallbackName = nameCandidate
+                            }
+                            var matchesVer = false
+                            if (gameVers != null) {
+                                for (g in 0 until gameVers.length()) {
+                                    val gv = gameVers.optString(g, "")
+                                    if (gv.equals(mcVersion.trim(), ignoreCase = true) ||
+                                        gv.startsWith(mcVersion.trim().split(".").take(2).joinToString("."))
+                                    ) {
+                                        matchesVer = true
+                                        break
+                                    }
+                                }
+                            }
+                            if (matchesVer && urlCandidate.isNotBlank()) {
+                                downloadUrl = urlCandidate
+                                targetFileName = nameCandidate
+                                break
+                            }
+                        }
+                        if (downloadUrl.isBlank() && fallbackUrl.isNotBlank()) {
+                            downloadUrl = fallbackUrl
+                            targetFileName = fallbackName
+                        }
+                    }
+                    if (downloadUrl.isNotBlank()) break
+                }
+            }
+
+            if (downloadUrl.isBlank()) {
+                throw IllegalStateException("Không tìm thấy gói SkinsRestorer/FabricTailor phù hợp trên Modrinth.")
+            }
+
+            val destFolder = File(serverDir, if (isPluginLoader) "plugins" else "mods").apply { mkdirs() }
+            val destFile = File(destFolder, targetFileName.ifBlank { "SkinsRestorer.jar" })
+            onProgress(0.35f, "⬇️ Đang tải $targetFileName về ${destFolder.name}/...")
+
+            val dlConn = (URL(downloadUrl).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 15_000
+                readTimeout = 30_000
+                setRequestProperty("User-Agent", "MineHost-Mobile/2.9.1")
+            }
+            val totalLen = dlConn.contentLengthLong.coerceAtLeast(1L)
+            dlConn.inputStream.use { input ->
+                destFile.outputStream().use { out ->
+                    val buf = ByteArray(16 * 1024)
+                    var copied = 0L
+                    while (true) {
+                        val r = input.read(buf)
+                        if (r <= 0) break
+                        out.write(buf, 0, r)
+                        copied += r
+                        val p = (0.35f + 0.58f * (copied.toFloat() / totalLen.toFloat()).coerceIn(0f, 1f))
+                        onProgress(p, "⬇️ Đang tải $targetFileName (${copied / 1024} KB)...")
+                    }
+                }
+            }
+            onProgress(1.0f, "✅ Đã cài xong $targetFileName! Vào game gõ /skin set <tên_skin> để hiện đúng Skin!")
+            inspectSkinRestorerStatus(serverDir)
         }
     }
 }

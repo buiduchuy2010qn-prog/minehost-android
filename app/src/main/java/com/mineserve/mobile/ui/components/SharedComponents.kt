@@ -1693,7 +1693,7 @@ fun SwipeableInstantSnackbarHost(
     val currentData = hostState.currentSnackbarData
     LaunchedEffect(currentData) {
         if (currentData != null) {
-            delay(2200L)
+            delay(1650L)
             runCatching { currentData.dismiss() }
         }
     }
@@ -1710,66 +1710,67 @@ fun SwipeableInstantSnackbarHost(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 8.dp)
-                .offset { IntOffset(dragOffsetX.roundToInt(), 0) }
-                .pointerInput(data) {
-                    detectHorizontalDragGestures(
-                        onDragEnd = {
-                            if (abs(dragOffsetX) > 110f) {
-                                data.dismiss()
-                            } else {
-                                dragOffsetX = 0f
-                            }
-                        },
-                        onDragCancel = { dragOffsetX = 0f },
-                        onHorizontalDrag = { change, dragAmount ->
-                            change.consume()
-                            dragOffsetX += dragAmount
-                            if (abs(dragOffsetX) > 220f) {
-                                data.dismiss()
-                            }
-                        }
-                    )
-                }
-                .clip(RoundedCornerShape(12.dp))
-                .background(Color(0xFF141E19).copy(alpha = 0.97f))
-                .border(1.5.dp, accentColor, RoundedCornerShape(12.dp))
-                .clickable { data.dismiss() }
-                .padding(horizontal = 14.dp, vertical = 11.dp)
+                .padding(horizontal = 20.dp, vertical = 4.dp),
+            contentAlignment = Alignment.Center
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.fillMaxWidth()
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(0.92f)
+                    .offset { IntOffset(dragOffsetX.roundToInt(), 0) }
+                    .pointerInput(data) {
+                        detectHorizontalDragGestures(
+                            onDragEnd = {
+                                if (abs(dragOffsetX) > 90f) {
+                                    data.dismiss()
+                                } else {
+                                    dragOffsetX = 0f
+                                }
+                            },
+                            onDragCancel = { dragOffsetX = 0f },
+                            onHorizontalDrag = { change, dragAmount ->
+                                change.consume()
+                                dragOffsetX += dragAmount
+                                if (abs(dragOffsetX) > 180f) {
+                                    data.dismiss()
+                                }
+                            }
+                        )
+                    }
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(Color(0xFF141E19).copy(alpha = 0.94f))
+                    .border(1.dp, accentColor.copy(alpha = 0.85f), RoundedCornerShape(18.dp))
+                    .clickable { data.dismiss() }
+                    .padding(horizontal = 11.dp, vertical = 7.dp)
             ) {
-                MinecraftPixelArtIcon(
-                    kind = if (isError) MinecraftArtKind.REDSTONE else MinecraftArtKind.GRASS,
-                    size = 22.dp
-                )
-                Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    MinecraftPixelArtIcon(
+                        kind = if (isError) MinecraftArtKind.REDSTONE else MinecraftArtKind.GRASS,
+                        size = 16.dp
+                    )
                     Text(
                         text = data.visuals.message,
                         color = Color(0xFFF1F8F3),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        lineHeight = 16.sp
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        lineHeight = 14.5.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
                     Text(
-                        text = "↔ Vuốt ngang hoặc chạm để đóng ngay",
-                        color = Muted,
-                        fontSize = 9.sp
+                        text = "✕",
+                        color = accentColor,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .clickable { data.dismiss() }
+                            .padding(2.dp)
                     )
                 }
-                Text(
-                    text = "✕",
-                    color = accentColor,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    modifier = Modifier
-                        .clip(CircleShape)
-                        .clickable { data.dismiss() }
-                        .padding(4.dp)
-                )
             }
         }
     }

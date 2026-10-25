@@ -28,11 +28,11 @@ enum class EyeCareColorPreset(val id: String, val labelVi: String) {
 
 object AppUiSettings {
     private const val PREFS_NAME = "minehost_ui_appearance"
-    private const val KEY_FONT_SCALE = "font_scale_multiplier_v22"
+    private const val KEY_FONT_SCALE = "font_scale_multiplier_v291"
     private const val KEY_COLOR_PRESET = "eye_care_color_preset"
 
-    // Mặc định chuẩn hóa 1.00x độc lập với cài đặt phóng chữ của hệ thống để không bị vỡ/phình giao diện trên mọi dòng máy
-    private val _fontScale = MutableStateFlow(1.00f)
+    // Mặc định v2.9.1 tăng lên 1.15x để toàn bộ chữ, thẻ, nút bấm trong App to rõ và dễ nhìn hơn hẳn
+    private val _fontScale = MutableStateFlow(1.15f)
     val fontScale: StateFlow<Float> = _fontScale.asStateFlow()
 
     private val _colorPreset = MutableStateFlow(EyeCareColorPreset.SoftSlate)
@@ -46,7 +46,7 @@ object AppUiSettings {
         synchronized(this) {
             if (initialized) return
             val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            _fontScale.value = prefs.getFloat(KEY_FONT_SCALE, 1.00f).coerceIn(0.85f, 1.25f)
+            _fontScale.value = prefs.getFloat(KEY_FONT_SCALE, 1.15f).coerceIn(0.90f, 1.40f)
             val savedPresetId = prefs.getString(KEY_COLOR_PRESET, EyeCareColorPreset.SoftSlate.id)
             _colorPreset.value = EyeCareColorPreset.entries.firstOrNull { it.id == savedPresetId }
                 ?: EyeCareColorPreset.SoftSlate
@@ -55,7 +55,7 @@ object AppUiSettings {
     }
 
     fun setFontScale(context: Context, scale: Float) {
-        val clamped = scale.coerceIn(0.85f, 1.25f)
+        val clamped = scale.coerceIn(0.90f, 1.40f)
         _fontScale.value = clamped
         context.applicationContext
             .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -200,16 +200,9 @@ fun MineServeMobileTheme(
     val fontScaleMultiplier by AppUiSettings.fontScale.collectAsState()
     val colorPreset by AppUiSettings.colorPreset.collectAsState()
     val baseDensity = LocalDensity.current
-    val config = androidx.compose.ui.platform.LocalConfiguration.current
-    val widthPx = context.resources.displayMetrics.widthPixels.toFloat()
-    val normalizedDensity = if (config.screenWidthDp in 1..404 && widthPx > 0f) {
-        (widthPx / 408f).coerceAtMost(baseDensity.density)
-    } else {
-        baseDensity.density
-    }
     val scaledDensity = Density(
-        density = normalizedDensity,
-        fontScale = fontScaleMultiplier.coerceIn(0.85f, 1.25f)
+        density = baseDensity.density * 1.05f,
+        fontScale = fontScaleMultiplier.coerceIn(0.90f, 1.40f)
     )
 
     val activeColorScheme = when (colorPreset) {

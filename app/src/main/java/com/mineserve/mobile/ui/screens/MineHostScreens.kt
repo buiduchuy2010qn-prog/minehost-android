@@ -252,7 +252,7 @@ private fun QuickPixelTile(
                 )
                 Text(
                     subtitle,
-                    fontSize = 10.sp,
+                    fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -409,7 +409,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                 )
                                 Text(
                                     "Hỗ trợ cài đè trực tiếp 100% lên bản hiện tại (giữ nguyên toàn bộ Server, Thế giới & Mod).",
-                                    fontSize = 11.5.sp
+                                    fontSize = 13.2.sp
                                 )
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                                     OutlinedButton(
@@ -444,7 +444,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                 )
                                 Text(
                                     "Sẽ tự động mở bảng Cài đè ngay khi tải xong 100%!",
-                                    fontSize = 11.sp
+                                    fontSize = 13.sp
                                 )
                             }
                             is McViewModel.UpdateUiState.Downloaded -> {
@@ -660,7 +660,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                 Text(
                                     if (soundOnReady) "🔊 Sẽ phát chuông báo 'Minecraft Level Up' ngay khi Server mở xong 100%!"
                                     else "⏳ Đang nạp nhanh bằng bộ đệm Turbo Boot...",
-                                    fontSize = 10.5.sp,
+                                    fontSize = 12.5.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
@@ -700,7 +700,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                 ) {
                                     Text(
                                         taskTitle,
-                                        fontSize = 11.5.sp,
+                                        fontSize = 13.2.sp,
                                         fontWeight = FontWeight.ExtraBold,
                                         color = Color(0xFF38BDF8),
                                         modifier = Modifier.weight(1f)
@@ -708,7 +708,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     if (rawProgress >= 0f) {
                                         Text(
                                             "${(rawProgress * 100).toInt()}%",
-                                            fontSize = 11.5.sp,
+                                            fontSize = 13.2.sp,
                                             fontWeight = FontWeight.ExtraBold,
                                             color = Color(0xFF4ADE80)
                                         )
@@ -729,7 +729,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                 if (liveTask.detail.isNotBlank()) {
                                     Text(
                                         liveTask.detail,
-                                        fontSize = 10.5.sp,
+                                        fontSize = 12.5.sp,
                                         color = Color(0xFF94A3B8)
                                     )
                                 }
@@ -753,14 +753,14 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             ) {
                                 Text(
                                     "⚠️ Máy chủ vừa dừng hoặc khởi động thất bại — Bấm tự động sửa hoặc xem phân tích:",
-                                    fontSize = 11.5.sp,
+                                    fontSize = 13.2.sp,
                                     fontWeight = FontWeight.ExtraBold,
                                     color = MaterialTheme.colorScheme.onErrorContainer
                                 )
                                 if (modDoctorBusy && !modDoctorProgress.isNullOrBlank()) {
                                     Text(
                                         modDoctorProgress.orEmpty(),
-                                        fontSize = 11.sp,
+                                        fontSize = 13.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onErrorContainer
                                     )
@@ -780,7 +780,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                         Text(
                                             if (modDoctorBusy) "⏳ Đang tự động sửa lỗi Mod..."
                                             else "🛠️ Tự Động Sửa Lỗi Mod & Bật Lại Server Ngay (1 Chạm)",
-                                            fontSize = 11.5.sp,
+                                            fontSize = 13.2.sp,
                                             fontWeight = FontWeight.ExtraBold
                                         )
                                     }
@@ -799,7 +799,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                                         modifier = Modifier.weight(1.25f)
                                     ) {
-                                        Text("🔍 Xem Phân Tích Lỗi Sập", fontSize = 11.5.sp, fontWeight = FontWeight.ExtraBold)
+                                        Text("🔍 Xem Phân Tích Lỗi Sập", fontSize = 13.2.sp, fontWeight = FontWeight.ExtraBold)
                                     }
                                     OutlinedButton(
                                         onClick = onConsole,
@@ -807,7 +807,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                                         modifier = Modifier.weight(0.95f)
                                     ) {
-                                        Text("📜 Mở Nhật Ký", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                                        Text("📜 Mở Nhật Ký", fontSize = 13.2.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }
@@ -912,7 +912,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                         Text(
                                             if (isCurrent) "✅ ${srv.name} (${srv.version}$sizeTag)"
                                             else "🔄 ${srv.name} (${srv.version}$sizeTag)",
-                                            fontSize = 11.sp,
+                                            fontSize = 13.sp,
                                             fontWeight = if (isCurrent) FontWeight.ExtraBold else FontWeight.SemiBold
                                         )
                                     }
@@ -927,14 +927,14 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text("➕ Tạo Server Mới", fontSize = 11.5.sp, fontWeight = FontWeight.ExtraBold)
+                            Text("➕ Tạo Server Mới", fontSize = 13.2.sp, fontWeight = FontWeight.ExtraBold)
                         }
                         OutlinedButton(
                             onClick = { navigate(SubPage.ServerList) },
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text("🗂️ Quản Lý Các SV (${config.installedCores.size})", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                            Text("🗂️ Quản Lý Các SV (${config.installedCores.size})", fontSize = 13.2.sp, fontWeight = FontWeight.Bold)
                         }
                     }
 
@@ -951,7 +951,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                         ) {
                             Text(
                                 if (soundOnReady) "🔊 Phát nhạc 'Level Up' khi mở SV xong" else "🔇 Đang tắt chuông báo mở SV",
-                                fontSize = 11.sp,
+                                fontSize = 13.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.weight(1f)
@@ -960,7 +960,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                 onClick = { vm.testServerReadySoundNow() },
                                 contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
                             ) {
-                                Text("🎵 Nghe thử", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                                Text("🎵 Nghe thử", fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
                             }
                             Switch(
                                 checked = soundOnReady,
@@ -994,7 +994,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             modifier = Modifier.weight(1f)
                         )
                         TextButton(onClick = { vm.clearLastGuardShutdownEvent() }) {
-                            Text("Đã hiểu", fontWeight = FontWeight.ExtraBold, fontSize = 11.5.sp)
+                            Text("Đã hiểu", fontWeight = FontWeight.ExtraBold, fontSize = 13.2.sp)
                         }
                     }
                 }
@@ -1041,7 +1041,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     if (installingMissingDeps) "⏳ Đang tự động tải & cài đặt..."
                                     else "⬇️ Tải & Cài Bù Ngay + Bật Lại SV",
                                     fontWeight = FontWeight.ExtraBold,
-                                    fontSize = 11.5.sp
+                                    fontSize = 13.2.sp
                                 )
                             }
                             OutlinedButton(
@@ -1050,7 +1050,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                 shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier.weight(1f)
                             ) {
-                                Text("📥 Chỉ tải thư viện", fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
+                                Text("📥 Chỉ tải thư viện", fontWeight = FontWeight.Bold, fontSize = 13.2.sp)
                             }
                         }
                     }
@@ -1079,7 +1079,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                         )
                         Text(
                             "Mod vừa cài gần nhất: ${recentInstalledModNames.joinToString()}.\nBấm nút bên dưới để tạm tắt (.disabled) các Mod vừa thêm và bật lại Server an toàn:",
-                            fontSize = 11.5.sp
+                            fontSize = 13.2.sp
                         )
                         Button(
                             onClick = { vm.rollbackRecentModsNow() },
@@ -1110,7 +1110,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                     Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(
                             "⚡ Phân mục nhanh (Bấm để chuyển khu vực gọn gàng, không cần cuộn dài):",
-                            fontSize = 11.sp,
+                            fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1131,7 +1131,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     label = {
                                         Text(
                                             label,
-                                            fontSize = 11.5.sp,
+                                            fontSize = 13.2.sp,
                                             fontWeight = if (overviewTab == idx) FontWeight.ExtraBold else FontWeight.SemiBold
                                         )
                                     }
@@ -1221,13 +1221,13 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                 Text(
                                     "📊 Chẩn đoán: ${if (s1McRunning) "🟢 MC" else "⚪ MC"} • ${if (s2AgentOnline) "🟢 Playit" else "⚪ Playit"} • ${if (s3HasPublicAddr) "🟢 Có IP" else "⚪ Chưa IP"}",
                                     style = MaterialTheme.typography.bodySmall,
-                                    fontSize = 11.5.sp,
+                                    fontSize = 13.2.sp,
                                     fontWeight = FontWeight.ExtraBold,
                                     modifier = Modifier.weight(1f)
                                 )
                                 Text(
                                     if (showSixDiagnostics) "Ẩn chi tiết ▲" else "Chi tiết 6 bước ▼",
-                                    fontSize = 11.sp,
+                                    fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.primary
                                 )
@@ -1241,7 +1241,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                         "5. Đã nhận phản hồi Minecraft: ${if (s5McResponded) "🟢 Đã xác nhận gói Status/RakNet" else "⚪ Chưa kiểm tra / Chưa phản hồi"}\n" +
                                         "6. Đã kiểm chứng từ mạng ngoài: ${if (s6ExternalVerified) "🟢 Đã kiểm chứng qua Playit" else "⚪ Chưa kiểm chứng (Bấm nút Kiểm tra bên dưới)"}",
                                     style = MaterialTheme.typography.bodySmall,
-                                    fontSize = 11.sp,
+                                    fontSize = 13.sp,
                                     lineHeight = 15.sp
                                 )
                             }
@@ -1346,7 +1346,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                             shape = RoundedCornerShape(10.dp),
                                             modifier = Modifier.weight(1f)
                                         ) {
-                                            Text("🔑 Dán Secret Key", fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
+                                            Text("🔑 Dán Secret Key", fontWeight = FontWeight.Bold, fontSize = 13.2.sp)
                                         }
                                     } else {
                                         if (playitState.claimUrl.isNotBlank() && !playitState.isClaimed) {
@@ -1354,24 +1354,24 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                                 onClick = { uriHandler.openUri(playitState.claimUrl) },
                                                 shape = RoundedCornerShape(10.dp),
                                                 modifier = Modifier.weight(1.2f)
-                                            ) { Text("🔑 Mở trang Claim", fontWeight = FontWeight.ExtraBold, fontSize = 11.5.sp) }
+                                            ) { Text("🔑 Mở trang Claim", fontWeight = FontWeight.ExtraBold, fontSize = 13.2.sp) }
                                         } else {
                                             Button(
                                                 onClick = { vm.refreshPlayitTunnel() },
                                                 shape = RoundedCornerShape(10.dp),
                                                 modifier = Modifier.weight(1f)
-                                            ) { Text("🔄 Làm mới", fontWeight = FontWeight.Bold, fontSize = 11.5.sp) }
+                                            ) { Text("🔄 Làm mới", fontWeight = FontWeight.Bold, fontSize = 13.2.sp) }
                                         }
                                         OutlinedButton(
                                             onClick = { showPastePlayitKeyDialog = true },
                                             shape = RoundedCornerShape(10.dp),
                                             modifier = Modifier.weight(1f)
-                                        ) { Text("🔑 Dán Key", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                                        ) { Text("🔑 Dán Key", fontSize = 13.sp, fontWeight = FontWeight.Bold) }
                                         OutlinedButton(
                                             onClick = { vm.stopPlayitTunnel() },
                                             shape = RoundedCornerShape(10.dp),
                                             modifier = Modifier.weight(0.85f)
-                                        ) { Text("⏹️ Tắt", fontSize = 11.5.sp) }
+                                        ) { Text("⏹️ Tắt", fontSize = 13.2.sp) }
                                     }
                                 }
                             }
@@ -1402,7 +1402,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                 Text(
                                     "• Cùng máy điện thoại này: $localhostAddress  •  Giao diện mạng: $lanInterfaceLabel",
                                     style = MaterialTheme.typography.bodySmall,
-                                    fontSize = 11.sp
+                                    fontSize = 13.sp
                                 )
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                                     Button(
@@ -1429,7 +1429,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                         shape = RoundedCornerShape(10.dp),
                                         modifier = Modifier.weight(1f)
                                     ) {
-                                        Text("📋 Chép 127.0.0.1:$port", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                                        Text("📋 Chép 127.0.0.1:$port", fontSize = 13.2.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
                             } else {
@@ -1450,7 +1450,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                                 "\nℹ️ Lưu ý quan trọng: Hãy dán đúng tên miền $playitAddress vào Minecraft Java (không nhập IP số trần $playitPureIpv4Address vì Playit chặn kết nối Java bằng IP thô)."
                                             } else "",
                                         style = MaterialTheme.typography.bodySmall,
-                                        fontSize = 11.5.sp,
+                                        fontSize = 13.2.sp,
                                         fontWeight = FontWeight.SemiBold
                                     )
                                 }
@@ -1473,7 +1473,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                         Text(
                                             if (lastCopiedTag == "pc_domain") "✅ Đã chép Địa chỉ PC!" else "📋 Chép Địa Chỉ PC (Chuẩn Playit)",
                                             fontWeight = FontWeight.ExtraBold,
-                                            fontSize = 11.5.sp
+                                            fontSize = 13.2.sp
                                         )
                                     }
                                     if (playitState.secondaryAddress.isNotBlank() && playitState.secondaryAddress != playitAddress) {
@@ -1490,7 +1490,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                             Text(
                                                 if (lastCopiedTag == "pc_secondary") "✅ Đã chép!" else "🌐 Chép Tên Miền Phụ",
                                                 fontWeight = FontWeight.Bold,
-                                                fontSize = 11.5.sp
+                                                fontSize = 13.2.sp
                                             )
                                         }
                                     }
@@ -1523,7 +1523,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     onClick = { navigate(SubPage.Crossplay) },
                                     contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
                                 ) {
-                                    Text("Tùy chỉnh PE/PC →", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2DD4BF))
+                                    Text("Tùy chỉnh PE/PC →", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2DD4BF))
                                 }
                             }
 
@@ -1552,7 +1552,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                         Text(
                                             diagReason,
                                             style = MaterialTheme.typography.bodySmall,
-                                            fontSize = 11.5.sp,
+                                            fontSize = 13.2.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = MaterialTheme.colorScheme.onErrorContainer
                                         )
@@ -1562,7 +1562,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                                 homeCrossCheck.supported -> "${homeCrossCheck.pcLine}\n${homeCrossCheck.peLine}"
                                                 else -> "${homeCrossCheck.headline}\n👉 ${homeCrossCheck.suggestion.orEmpty()}"
                                             },
-                                            fontSize = 11.sp,
+                                            fontSize = 13.sp,
                                             lineHeight = 15.sp,
                                             fontWeight = FontWeight.SemiBold,
                                             color = MaterialTheme.colorScheme.onErrorContainer
@@ -1577,7 +1577,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                             Text(
                                                 if (installing || stopping) "⏳ Đang tự động cài Geyser + Floodgate + ViaVersion..."
                                                 else "📲 Bật Chơi Chung PC + PE Ngay (Cài staging an toàn)",
-                                                fontSize = 11.5.sp,
+                                                fontSize = 13.2.sp,
                                                 fontWeight = FontWeight.ExtraBold
                                             )
                                         }
@@ -1599,7 +1599,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                         Text(
                                             "🧩 Thành phần đã cài: $installedComponents (Transport: ${crossplayStatus.transportType.uppercase()} • Cổng UDP: $bedrockPort)",
                                             style = MaterialTheme.typography.bodySmall,
-                                            fontSize = 11.sp,
+                                            fontSize = 13.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = Color(0xFF2DD4BF)
                                         )
@@ -1609,7 +1609,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                                 "• Đã load: ${if (crossplayStatus.isRuntimeLoaded) "🟢 Đã nạp" else "⚪ Chưa nạp"}  |  " +
                                                 "Đang nghe cổng $bedrockPort: ${if (crossplayStatus.isListeningOnPort) "🟢 Đang mở" else "⚪ Chưa mở"}  |  " +
                                                 "Đã kiểm tra: ${if (crossplayStatus.isVerifiedReachable) "✅ Phản hồi RakNet" else "⚪ Chưa kiểm tra"}",
-                                            fontSize = 10.5.sp,
+                                            fontSize = 12.5.sp,
                                             lineHeight = 14.sp,
                                             fontWeight = FontWeight.SemiBold,
                                             color = MaterialTheme.colorScheme.onSurface
@@ -1617,7 +1617,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                         if (crossplayStatus.loadErrorDetail != null) {
                                             Text(
                                                 "⚠️ Lỗi runtime Geyser: ${crossplayStatus.loadErrorDetail}",
-                                                fontSize = 10.5.sp,
+                                                fontSize = 12.5.sp,
                                                 color = MaterialTheme.colorScheme.error,
                                                 fontWeight = FontWeight.Bold
                                             )
@@ -1631,7 +1631,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                                 }
                                                 append("\nNếu PE báo \"Outdated Bedrock client\": PE của bạn cũ hơn → chọn đúng bản PE bên dưới rồi bấm Cài lại. Nếu báo \"Outdated server\": bấm Cài lại với \"Mới nhất\".")
                                             },
-                                            fontSize = 10.5.sp,
+                                            fontSize = 12.5.sp,
                                             lineHeight = 14.sp,
                                             color = MaterialTheme.colorScheme.onSurface
                                         )
@@ -1641,7 +1641,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                         ) {
                                             Text(
                                                 if (showHomePePicker) "▲ Ẩn chọn bản PE" else "📱 Chọn bản PE của điện thoại / Cài lại Geyser ▼",
-                                                fontSize = 11.sp,
+                                                fontSize = 13.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 color = Color(0xFF2DD4BF)
                                             )
@@ -1662,7 +1662,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                                 Text(
                                                     if (installing || stopping) "⏳ Đang cài lại Geyser..."
                                                     else "🔄 Cài lại Geyser cho PE ${com.mineserve.mobile.server.CrossplayCompat.normalizeTargetPe(homePe) ?: "mới nhất"}",
-                                                    fontSize = 11.5.sp,
+                                                    fontSize = 13.2.sp,
                                                     fontWeight = FontWeight.ExtraBold
                                                 )
                                             }
@@ -1675,7 +1675,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                 "• Chơi PE ngay trên điện thoại mở Server này: IP 127.0.0.1  •  Port: $bedrockPort" +
                                     (if (lanIp.isNotBlank() && lanIp != "0.0.0.0" && lanIp != "--") "\n• Chơi PE cùng mạng Wi-Fi: IP $lanIp  •  Port: $bedrockPort" else ""),
                                 style = MaterialTheme.typography.bodySmall,
-                                fontSize = 11.5.sp,
+                                fontSize = 13.2.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
 
@@ -1714,7 +1714,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D9488), contentColor = Color.White),
                                         modifier = Modifier.weight(1f)
                                     ) {
-                                        Text("📋 Chép Địa Chỉ PE (${peIpv4Host ?: peDomainHost})", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                                        Text("📋 Chép Địa Chỉ PE (${peIpv4Host ?: peDomainHost})", fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
                                     }
                                     OutlinedButton(
                                         onClick = {
@@ -1724,7 +1724,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                         shape = RoundedCornerShape(8.dp),
                                         modifier = Modifier.weight(1f)
                                     ) {
-                                        Text("📋 Chép Port PE ($pePort)", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                                        Text("📋 Chép Port PE ($pePort)", fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
                                     }
                                 }
                             } else {
@@ -1732,7 +1732,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     Text(
                                         "ℹ️ ${playitState.bedrockStatusNote}",
                                         style = MaterialTheme.typography.bodySmall,
-                                        fontSize = 11.sp,
+                                        fontSize = 13.sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
@@ -1745,7 +1745,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                         shape = RoundedCornerShape(8.dp),
                                         modifier = Modifier.weight(1f)
                                     ) {
-                                        Text("📋 Chép 127.0.0.1 (Cổng $bedrockPort)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        Text("📋 Chép 127.0.0.1 (Cổng $bedrockPort)", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                                     }
                                     Button(
                                         onClick = {
@@ -1757,7 +1757,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     ) {
                                         Text(
                                             if (!playitState.isRunning) "🚀 Bật Hầm Playit" else "⚡ Lấy Cổng UDP PE ($bedrockPort)",
-                                            fontSize = 11.sp,
+                                            fontSize = 13.sp,
                                             fontWeight = FontWeight.ExtraBold
                                         )
                                     }
@@ -1784,7 +1784,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             Text(
                                 if (connectionCheckRunning) "⏳ Đang kiểm tra..."
                                 else "🩺 Kiểm tra cổng thực tế (Local / LAN / Playit)",
-                                fontSize = 11.sp,
+                                fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold
                             )
                         }
@@ -1792,7 +1792,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             onClick = { vm.copyRedactedDiagnostics(context) },
                             shape = RoundedCornerShape(10.dp)
                         ) {
-                            Text("📋 Xuất chẩn đoán", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text("📋 Xuất chẩn đoán", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                     connectionCheckStatus?.let { checkReport ->
@@ -1869,7 +1869,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D9488), contentColor = Color.White),
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text("📋 Sao Chép Chữ", fontSize = 11.5.sp, fontWeight = FontWeight.ExtraBold)
+                                    Text("📋 Sao Chép Chữ", fontSize = 13.2.sp, fontWeight = FontWeight.ExtraBold)
                                 }
                                 OutlinedButton(
                                     onClick = {
@@ -1888,7 +1888,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     shape = RoundedCornerShape(10.dp),
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text("📤 Gửi Tin Nhắn", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                                    Text("📤 Gửi Tin Nhắn", fontSize = 13.2.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
                             Button(
@@ -1924,7 +1924,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             ) {
                                 Text(
                                     "🖼️ Tạo Ảnh Thẻ Mời Server Đẹp (Gửi Zalo / Messenger / Discord)",
-                                    fontSize = 11.5.sp,
+                                    fontSize = 13.2.sp,
                                     fontWeight = FontWeight.ExtraBold
                                 )
                             }
@@ -1983,7 +1983,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                                 "⚡ Bật 1 chạm tự chọn đúng bản MC ${active.version} • Chỉ cài cho Server, người chơi không cần cài mod!"
                                             },
                                             style = MaterialTheme.typography.bodySmall,
-                                            fontSize = 11.5.sp
+                                            fontSize = 13.2.sp
                                         )
                                     }
                                     Switch(
@@ -1998,7 +1998,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     Text(
                                         optPackProgress ?: "",
                                         style = MaterialTheme.typography.bodySmall,
-                                        fontSize = 11.sp,
+                                        fontSize = 13.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.primary
                                     )
@@ -2015,7 +2015,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                 device?.let { "RAM máy: %.1f GB • Đang cấp cho Server: ${config.maxHeapMb} MB (Gợi ý: ${it.recommendedHeapMb} MB)".format(it.totalMb / 1024.0) }
                                     ?: "Đang cấp cho Server: ${config.maxHeapMb} MB",
                                 style = MaterialTheme.typography.bodySmall,
-                                fontSize = 11.sp,
+                                fontSize = 13.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
@@ -2061,7 +2061,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text("✨ Tối Ưu Thông Minh", fontWeight = FontWeight.ExtraBold, fontSize = 11.5.sp)
+                            Text("✨ Tối Ưu Thông Minh", fontWeight = FontWeight.ExtraBold, fontSize = 13.2.sp)
                         }
                         OutlinedButton(
                             onClick = { navigate(SubPage.Plugins) },
@@ -2075,7 +2075,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     "🧩 Mở Kho Modrinth"
                                 },
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 11.5.sp
+                                fontSize = 13.2.sp
                             )
                         }
                     }
@@ -2103,14 +2103,14 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     shape = RoundedCornerShape(10.dp),
                                     modifier = Modifier.weight(1.25f)
                                 ) {
-                                    Text("🧹 Dọn Đồ Rơi (Báo trước 10s)", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                                    Text("🧹 Dọn Đồ Rơi (Báo trước 10s)", fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
                                 }
                                 OutlinedButton(
                                     onClick = { vm.runCountdownClearGroundItems(countdownSec = 0) },
                                     shape = RoundedCornerShape(10.dp),
                                     modifier = Modifier.weight(0.75f)
                                 ) {
-                                    Text("⚡ Dọn Ngay", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    Text("⚡ Dọn Ngay", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
@@ -2119,7 +2119,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     shape = RoundedCornerShape(10.dp),
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text("🧟 Dọn Quái Lag & Lưu Map", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    Text("🧟 Dọn Quái Lag & Lưu Map", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                                 }
                                 Button(
                                     onClick = { vm.applyDeepMobileLagOptimization() },
@@ -2127,14 +2127,14 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D9488), contentColor = Color.White),
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text("🚀 Tối Ưu Cấu Hình Sâu", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                                    Text("🚀 Tối Ưu Cấu Hình Sâu", fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
                                 }
                             }
                             val autoClearLag15m by vm.autoClearLag15m.collectAsStateWithLifecycle()
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                                 Column(Modifier.weight(1f)) {
                                     Text("🔄 Tự động dọn vật phẩm rơi mỗi 15 phút (Auto-ClearLag Pro)", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                    Text("Tự báo đếm ngược 10s trong game trước khi dọn • Bảo vệ 100% Dân làng, Thú cưng đã đặt tên & Boss", fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text("Tự báo đếm ngược 10s trong game trước khi dọn • Bảo vệ 100% Dân làng, Thú cưng đã đặt tên & Boss", fontSize = 12.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 Switch(
                                     checked = autoClearLag15m,
@@ -2144,7 +2144,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             HorizontalDivider()
                             Text(
                                 "🪶 Dành riêng cho Điện Thoại RAM Ít (1GB – 2GB RAM — Chống tràn RAM OutOfMemory):",
-                                fontSize = 11.5.sp,
+                                fontSize = 13.2.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = Color(0xFF10B981)
                             )
@@ -2156,7 +2156,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             ) {
                                 Text(
                                     "🪶 Bật Cấu Hình Siêu Nhẹ Cho Máy RAM Ít (View=4, Sim=3, Chỉ ăn ~600–900MB RAM)",
-                                    fontSize = 11.sp,
+                                    fontSize = 13.sp,
                                     fontWeight = FontWeight.ExtraBold
                                 )
                             }
@@ -2169,7 +2169,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                 ) {
                                     Text(
                                         "🪶 Cài Gói 5 Mod Sinh Tồn Siêu Nhẹ (FerriteCore giảm 45% RAM + Chặt cây + Đào quặng + Bia mộ)",
-                                        fontSize = 11.sp,
+                                        fontSize = 13.sp,
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
@@ -2181,7 +2181,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                 ) {
                                     Text(
                                         "🧩 Quét Lỗi Thiếu Thư Viện Mod Phụ Trợ & Tải Bù 1 Chạm (Fabric API / GeckoLib / Cloth Config...)",
-                                        fontSize = 11.sp,
+                                        fontSize = 13.sp,
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
@@ -2195,7 +2195,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     Text(
                                         if (mrpackInstallBusy) "⏳ ${mrpackInstallProgress ?: "Đang cài gói Modpack .mrpack..."}"
                                         else "📦 Cài Gói Modpack .mrpack (Modrinth) 1 Chạm (Tự lọc bỏ Mod đồ họa Client tránh văng SV)",
-                                        fontSize = 11.sp,
+                                        fontSize = 13.sp,
                                         fontWeight = FontWeight.ExtraBold
                                     )
                                 }
@@ -2209,7 +2209,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     ) {
                                         Text(
                                             "⏪ Hoàn Tác / Tạm Tắt Mod Vừa Cài Gây Lỗi (${recentInstalledModNames.take(2).joinToString()}${if (recentInstalledModNames.size > 2) "..." else ""})",
-                                            fontSize = 11.sp,
+                                            fontSize = 13.sp,
                                             fontWeight = FontWeight.ExtraBold,
                                             color = Color(0xFFF59E0B)
                                         )
@@ -2221,14 +2221,14 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             val liveThermal by vm.thermalInfo.collectAsStateWithLifecycle()
                             Text(
                                 "🛡️ Bảo Vệ Map, Chống Văng & Menu Nổi Admin Trong Game (${liveThermal.statusLabelVi}):",
-                                fontSize = 11.5.sp,
+                                fontSize = 13.2.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = Color(0xFF10B981)
                             )
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                                 Column(Modifier.weight(1f)) {
                                     Text("🎯 Bong Bóng Menu Admin Nổi Khi Đang Chơi Game", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                    Text("Hiện nút nổi ☀️ Trời Sáng • 🧹 Dọn Lag • ❤️ Hồi Máu @a • 📋 Copy IP • 🛑 Lưu & Tắt ngay trên màn hình Minecraft", fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text("Hiện nút nổi ☀️ Trời Sáng • 🧹 Dọn Lag • ❤️ Hồi Máu @a • 📋 Copy IP • 🛑 Lưu & Tắt ngay trên màn hình Minecraft", fontSize = 12.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 Switch(
                                     checked = config.keepStatusOverlay,
@@ -2238,7 +2238,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                                 Column(Modifier.weight(1f)) {
                                     Text("🔄 Tự động bật lại Server khi bị văng đột ngột (Auto-Restart)", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                    Text("Tự động khởi động lại Server nếu bị crash giữa chừng (tối đa 3 lần liên tiếp để tránh lặp lỗi)", fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text("Tự động khởi động lại Server nếu bị crash giữa chừng (tối đa 3 lần liên tiếp để tránh lặp lỗi)", fontSize = 12.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 Switch(
                                     checked = config.autoRestartOnCrash,
@@ -2253,7 +2253,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 12.sp
                                     )
-                                    Text("Tự động ban-ip khi phát hiện 1 IP lạ spam ≥ 6 kết nối hoặc ≥ 3 tài khoản ảo trong 15 giây", fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text("Tự động ban-ip khi phát hiện 1 IP lạ spam ≥ 6 kết nối hoặc ≥ 3 tài khoản ảo trong 15 giây", fontSize = 12.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 Switch(
                                     checked = antiBotFloodGuard,
@@ -2263,7 +2263,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                                 Column(Modifier.weight(1f)) {
                                     Text("🔋 Tự động Lưu Map & Tắt Server khi Pin ≤ 10% (chưa cắm sạc)", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                    Text("Báo trước trong game 10s, chạy save-all 2 lần rồi tắt an toàn chống hỏng Map khi sập nguồn", fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text("Báo trước trong game 10s, chạy save-all 2 lần rồi tắt an toàn chống hỏng Map khi sập nguồn", fontSize = 12.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 Switch(
                                     checked = autoBatteryShutdown,
@@ -2273,7 +2273,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                                 Column(Modifier.weight(1f)) {
                                     Text("🌡️ Tự động Lưu Map & Tắt Server khi máy quá nóng ≥ 45.0°C", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                    Text("Bảo vệ tuổi thọ pin & phần cứng điện thoại khi treo Server lâu", fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text("Bảo vệ tuổi thọ pin & phần cứng điện thoại khi treo Server lâu", fontSize = 12.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 Switch(
                                     checked = autoOverheatShutdown,
@@ -2311,7 +2311,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             if (liveChatMessages.isEmpty()) {
                                 Text(
                                     "💬 Chưa có tin nhắn nào trong phiên này.\n• Khi người chơi nhắn tin hoặc vào/ra Server, hội thoại sẽ hiện trực tiếp tại đây (đã lọc sạch chữ kỹ thuật).\n• Bạn có thể gõ tin nhắn bên dưới để gửi vào game với danh hiệu [👑 Chủ Server]!",
-                                    fontSize = 11.sp,
+                                    fontSize = 13.sp,
                                     color = Color(0xFF94A3B8),
                                     lineHeight = 15.sp
                                 )
@@ -2324,14 +2324,14 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     ) {
                                         Text(
                                             "[${msg.timeStr}]",
-                                            fontSize = 10.sp,
+                                            fontSize = 12.sp,
                                             color = Color(0xFF64748B),
                                             fontWeight = FontWeight.SemiBold
                                         )
                                         if (msg.kind == "join" || msg.kind == "leave") {
                                             Text(
                                                 msg.message,
-                                                fontSize = 11.sp,
+                                                fontSize = 13.sp,
                                                 color = Color(0xFF38BDF8),
                                                 fontWeight = FontWeight.SemiBold
                                             )
@@ -2339,13 +2339,13 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                             val isOwnerMsg = msg.kind == "host" || msg.sender.contains("Chủ Server")
                                             Text(
                                                 "${msg.sender}:",
-                                                fontSize = 11.sp,
+                                                fontSize = 13.sp,
                                                 fontWeight = FontWeight.ExtraBold,
                                                 color = if (isOwnerMsg) Color(0xFFFBBF24) else Color(0xFF4ADE80)
                                             )
                                             Text(
                                                 msg.message,
-                                                fontSize = 11.sp,
+                                                fontSize = 13.sp,
                                                 color = Color(0xFFF8FAFC),
                                                 modifier = Modifier.weight(1f)
                                             )
@@ -2365,7 +2365,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                         OutlinedTextField(
                             value = hostChatInput,
                             onValueChange = { hostChatInput = it },
-                            label = { Text("Nhắn tin vào game với tên [👑 Chủ Server]...", fontSize = 11.sp) },
+                            label = { Text("Nhắn tin vào game với tên [👑 Chủ Server]...", fontSize = 13.sp) },
                             singleLine = true,
                             modifier = Modifier.weight(1f)
                         )
@@ -2434,7 +2434,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text("🏝️ OneBlock 1 Ô", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                                    Text("🏝️ OneBlock 1 Ô", fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
                                 }
                                 Button(
                                     onClick = { vm.createPlayableModeWorldOneTap("skyblock") },
@@ -2444,7 +2444,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text("☁️ SkyBlock Đảo", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                                    Text("☁️ SkyBlock Đảo", fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
                                 }
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
@@ -2455,7 +2455,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text("🏃 Đua Parkour", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    Text("🏃 Đua Parkour", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                                 }
                                 OutlinedButton(
                                     onClick = { vm.createPlayableModeWorldOneTap("lucky_island") },
@@ -2464,13 +2464,13 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text("🍀 Đảo Kho Báu", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    Text("🍀 Đảo Kho Báu", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
                             if (state.isRunning) {
                                 Text(
                                     "ℹ️ Đang mở Server: Hãy dừng Server trước khi chuyển sang chế độ OneBlock/SkyBlock để bảo toàn Map hiện tại.",
-                                    fontSize = 10.5.sp,
+                                    fontSize = 12.5.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
@@ -2512,7 +2512,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                 shape = RoundedCornerShape(9.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text("🛡️ Bật Toàn Bộ Lá Chắn Bảo Vệ Map Ngay (1 Chạm)", fontSize = 11.5.sp, fontWeight = FontWeight.ExtraBold)
+                                Text("🛡️ Bật Toàn Bộ Lá Chắn Bảo Vệ Map Ngay (1 Chạm)", fontSize = 13.2.sp, fontWeight = FontWeight.ExtraBold)
                             }
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                                 Text("🎒 Giữ đồ khi chết (keepInventory)", modifier = Modifier.weight(1f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
@@ -2556,32 +2556,32 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             }
 
                             HorizontalDivider()
-                            Text("☀️ Chỉnh nhanh Thời gian & Thời tiết 1 chạm:", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                            Text("☀️ Chỉnh nhanh Thời gian & Thời tiết 1 chạm:", fontSize = 13.2.sp, fontWeight = FontWeight.Bold)
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
                                 OutlinedButton(
                                     onClick = { vm.applyQuickWorldEnvironment("time set day", "Trời Sáng") },
                                     shape = RoundedCornerShape(8.dp),
                                     contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
                                     modifier = Modifier.weight(1f)
-                                ) { Text("☀️ Sáng", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                                ) { Text("☀️ Sáng", fontSize = 13.sp, fontWeight = FontWeight.Bold) }
                                 OutlinedButton(
                                     onClick = { vm.applyQuickWorldEnvironment("time set noon", "Buổi Trưa") },
                                     shape = RoundedCornerShape(8.dp),
                                     contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
                                     modifier = Modifier.weight(1f)
-                                ) { Text("🕛 Trưa", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                                ) { Text("🕛 Trưa", fontSize = 13.sp, fontWeight = FontWeight.Bold) }
                                 OutlinedButton(
                                     onClick = { vm.applyQuickWorldEnvironment("time set sunset", "Hoàng Hôn") },
                                     shape = RoundedCornerShape(8.dp),
                                     contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
                                     modifier = Modifier.weight(1f)
-                                ) { Text("🌇 Chiều", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                                ) { Text("🌇 Chiều", fontSize = 13.sp, fontWeight = FontWeight.Bold) }
                                 OutlinedButton(
                                     onClick = { vm.applyQuickWorldEnvironment("time set midnight", "Ban Đêm") },
                                     shape = RoundedCornerShape(8.dp),
                                     contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
                                     modifier = Modifier.weight(1f)
-                                ) { Text("🌙 Đêm", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                                ) { Text("🌙 Đêm", fontSize = 13.sp, fontWeight = FontWeight.Bold) }
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
                                 Button(
@@ -2589,19 +2589,19 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     shape = RoundedCornerShape(8.dp),
                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                                     modifier = Modifier.weight(1f)
-                                ) { Text("🌤️ Tạnh Mưa", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold) }
+                                ) { Text("🌤️ Tạnh Mưa", fontSize = 13.sp, fontWeight = FontWeight.ExtraBold) }
                                 OutlinedButton(
                                     onClick = { vm.applyQuickWorldEnvironment("weather rain", "Trời Mưa") },
                                     shape = RoundedCornerShape(8.dp),
                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                                     modifier = Modifier.weight(1f)
-                                ) { Text("🌧️ Gọi Mưa", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                                ) { Text("🌧️ Gọi Mưa", fontSize = 13.sp, fontWeight = FontWeight.Bold) }
                                 OutlinedButton(
                                     onClick = { vm.applyQuickWorldEnvironment("weather thunder", "Sấm Sét") },
                                     shape = RoundedCornerShape(8.dp),
                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                                     modifier = Modifier.weight(1f)
-                                ) { Text("⛈️ Sấm Sét", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                                ) { Text("⛈️ Sấm Sét", fontSize = 13.sp, fontWeight = FontWeight.Bold) }
                             }
                         }
                     }
@@ -2628,14 +2628,14 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     shape = RoundedCornerShape(10.dp),
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text("💾 Tự Sao Lưu 60p (Giữ 3 bản)", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                                    Text("💾 Tự Sao Lưu 60p (Giữ 3 bản)", fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
                                 }
                                 OutlinedButton(
                                     onClick = { vm.runCountdownServerRestart(countdownSec = 30) },
                                     shape = RoundedCornerShape(10.dp),
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text("🔄 Restart Đếm Ngược 30s", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    Text("🔄 Restart Đếm Ngược 30s", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
@@ -2645,14 +2645,14 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D9488), contentColor = Color.White),
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text("📦 Cài Addon .mcpack/.mcaddon", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                                    Text("📦 Cài Addon .mcpack/.mcaddon", fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
                                 }
                                 OutlinedButton(
                                     onClick = { navigate(SubPage.WorldManage) },
                                     shape = RoundedCornerShape(10.dp),
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text("🌍 Kho Seed Đẹp & Kiểu Map", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    Text("🌍 Kho Seed Đẹp & Kiểu Map", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
@@ -2662,14 +2662,14 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4F46E5), contentColor = Color.White),
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text("🎙️ Cài Voice Chat (24454)", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                                    Text("🎙️ Cài Voice Chat (24454)", fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
                                 }
                                 OutlinedButton(
                                     onClick = { navigate(SubPage.Plugins) },
                                     shape = RoundedCornerShape(10.dp),
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text("🎨 Gắn Gói Việt Hóa / Quặng", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    Text("🎨 Gắn Gói Việt Hóa / Quặng", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
@@ -2722,7 +2722,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             )
                             Text(
                                 "Giới hạn phạm vi khám phá bằng lệnh gốc giúp điện thoại RAM ít không phải nạp hàng nghìn vùng đất mới:",
-                                fontSize = 11.sp,
+                                fontSize = 13.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
@@ -2731,25 +2731,25 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     shape = RoundedCornerShape(8.dp),
                                     contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
                                     modifier = Modifier.weight(1f)
-                                ) { Text("🧱 500 ô (Máy yếu)", fontSize = 10.5.sp, fontWeight = FontWeight.ExtraBold) }
+                                ) { Text("🧱 500 ô (Máy yếu)", fontSize = 12.5.sp, fontWeight = FontWeight.ExtraBold) }
                                 OutlinedButton(
                                     onClick = { vm.applyQuickWorldBorder(1000, "Chuẩn Nhẹ (1.000 ô)") },
                                     shape = RoundedCornerShape(8.dp),
                                     contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
                                     modifier = Modifier.weight(1f)
-                                ) { Text("🧱 1.000 ô", fontSize = 10.5.sp, fontWeight = FontWeight.Bold) }
+                                ) { Text("🧱 1.000 ô", fontSize = 12.5.sp, fontWeight = FontWeight.Bold) }
                                 OutlinedButton(
                                     onClick = { vm.applyQuickWorldBorder(2500, "Rộng Vừa (2.500 ô)") },
                                     shape = RoundedCornerShape(8.dp),
                                     contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
                                     modifier = Modifier.weight(1f)
-                                ) { Text("🧱 2.500 ô", fontSize = 10.5.sp, fontWeight = FontWeight.Bold) }
+                                ) { Text("🧱 2.500 ô", fontSize = 12.5.sp, fontWeight = FontWeight.Bold) }
                                 OutlinedButton(
                                     onClick = { vm.applyQuickWorldBorder(29999984, "Mở Khóa Biên Giới") },
                                     shape = RoundedCornerShape(8.dp),
                                     contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
                                     modifier = Modifier.weight(0.85f)
-                                ) { Text("🔓 Mở", fontSize = 10.5.sp, fontWeight = FontWeight.Bold) }
+                                ) { Text("🔓 Mở", fontSize = 12.5.sp, fontWeight = FontWeight.Bold) }
                             }
                         }
                     }
@@ -2772,7 +2772,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             )
                             Text(
                                 "Chạm chọn tên người chơi trong Server bên dưới hoặc tự gõ tên vào ô (Đã gỡ nút @a sẵn để tránh bấm nhầm cấp OP cho tất cả):",
-                                fontSize = 11.sp,
+                                fontSize = 13.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             FlowRow(
@@ -2790,7 +2790,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                         label = {
                                             Text(
                                                 "$statusDot ${kp.name}$opCrown$wlShield",
-                                                fontSize = 11.sp,
+                                                fontSize = 13.sp,
                                                 fontWeight = if (kp.isOnline) FontWeight.ExtraBold else FontWeight.SemiBold
                                             )
                                         }
@@ -2801,14 +2801,14 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                         vm.refreshOnlinePlayers()
                                         vm.refreshPlayers()
                                     },
-                                    label = { Text("🔄 Làm mới", fontSize = 10.5.sp) }
+                                    label = { Text("🔄 Làm mới", fontSize = 12.5.sp) }
                                 )
                             }
                             OutlinedTextField(
                                 value = selectedTargetPlayer,
                                 onValueChange = { selectedTargetPlayer = it },
-                                label = { Text("Tên người chơi cần thao tác (chạm chọn ở trên hoặc tự nhập)", fontSize = 11.sp) },
-                                placeholder = { Text("Nhập tên người chơi (hoặc tự gõ @a nếu muốn)", fontSize = 11.sp) },
+                                label = { Text("Tên người chơi cần thao tác (chạm chọn ở trên hoặc tự nhập)", fontSize = 13.sp) },
+                                placeholder = { Text("Nhập tên người chơi (hoặc tự gõ @a nếu muốn)", fontSize = 13.sp) },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
@@ -2820,25 +2820,25 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD97706), contentColor = Color.White),
                                     contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
                                     modifier = Modifier.weight(1f)
-                                ) { Text("👑 Cấp OP", fontSize = 10.5.sp, fontWeight = FontWeight.ExtraBold) }
+                                ) { Text("👑 Cấp OP", fontSize = 12.5.sp, fontWeight = FontWeight.ExtraBold) }
                                 OutlinedButton(
                                     onClick = { vm.quickPlayerAction(selectedTargetPlayer, "deop") },
                                     shape = RoundedCornerShape(8.dp),
                                     contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
                                     modifier = Modifier.weight(1f)
-                                ) { Text("🚫 Gỡ OP", fontSize = 10.5.sp, fontWeight = FontWeight.Bold) }
+                                ) { Text("🚫 Gỡ OP", fontSize = 12.5.sp, fontWeight = FontWeight.Bold) }
                                 OutlinedButton(
                                     onClick = { vm.quickPlayerAction(selectedTargetPlayer, "whitelist_add") },
                                     shape = RoundedCornerShape(8.dp),
                                     contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
                                     modifier = Modifier.weight(1.15f)
-                                ) { Text("🛡️ +Whitelist", fontSize = 10.5.sp, fontWeight = FontWeight.Bold) }
+                                ) { Text("🛡️ +Whitelist", fontSize = 12.5.sp, fontWeight = FontWeight.Bold) }
                                 OutlinedButton(
                                     onClick = { vm.quickPlayerAction(selectedTargetPlayer, "kick") },
                                     shape = RoundedCornerShape(8.dp),
                                     contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
                                     modifier = Modifier.weight(0.85f)
-                                ) { Text("👢 Kick", fontSize = 10.5.sp, fontWeight = FontWeight.Bold) }
+                                ) { Text("👢 Kick", fontSize = 12.5.sp, fontWeight = FontWeight.Bold) }
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
                                 Button(
@@ -2846,13 +2846,13 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     shape = RoundedCornerShape(8.dp),
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE11D48), contentColor = Color.White),
                                     modifier = Modifier.weight(1f)
-                                ) { Text("❤️ Hồi Đầy Máu & Ăn", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold) }
+                                ) { Text("❤️ Hồi Đầy Máu & Ăn", fontSize = 13.sp, fontWeight = FontWeight.ExtraBold) }
                                 Button(
                                     onClick = { vm.quickPlayerAction(selectedTargetPlayer, "starter_kit") },
                                     shape = RoundedCornerShape(8.dp),
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D9488), contentColor = Color.White),
                                     modifier = Modifier.weight(1f)
-                                ) { Text("🎁 Tặng Starter Kit", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold) }
+                                ) { Text("🎁 Tặng Starter Kit", fontSize = 13.sp, fontWeight = FontWeight.ExtraBold) }
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
                                 OutlinedButton(
@@ -2860,25 +2860,25 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     shape = RoundedCornerShape(8.dp),
                                     contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
                                     modifier = Modifier.weight(1f)
-                                ) { Text("🗡️ Sinh Tồn", fontSize = 10.5.sp, fontWeight = FontWeight.Bold) }
+                                ) { Text("🗡️ Sinh Tồn", fontSize = 12.5.sp, fontWeight = FontWeight.Bold) }
                                 OutlinedButton(
                                     onClick = { vm.quickPlayerAction(selectedTargetPlayer, "gm_creative") },
                                     shape = RoundedCornerShape(8.dp),
                                     contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
                                     modifier = Modifier.weight(1f)
-                                ) { Text("🧱 Sáng Tạo", fontSize = 10.5.sp, fontWeight = FontWeight.Bold) }
+                                ) { Text("🧱 Sáng Tạo", fontSize = 12.5.sp, fontWeight = FontWeight.Bold) }
                                 OutlinedButton(
                                     onClick = { vm.quickPlayerAction(selectedTargetPlayer, "gm_spectator") },
                                     shape = RoundedCornerShape(8.dp),
                                     contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
                                     modifier = Modifier.weight(1f)
-                                ) { Text("👻 Khán Giả", fontSize = 10.5.sp, fontWeight = FontWeight.Bold) }
+                                ) { Text("👻 Khán Giả", fontSize = 12.5.sp, fontWeight = FontWeight.Bold) }
                                 OutlinedButton(
                                     onClick = { vm.quickPlayerAction(selectedTargetPlayer, "tp_spawn") },
                                     shape = RoundedCornerShape(8.dp),
                                     contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
                                     modifier = Modifier.weight(1f)
-                                ) { Text("📍 Về Spawn", fontSize = 10.5.sp, fontWeight = FontWeight.Bold) }
+                                ) { Text("📍 Về Spawn", fontSize = 12.5.sp, fontWeight = FontWeight.Bold) }
                             }
                         }
                     }
@@ -2919,7 +2919,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                             customMotdText = rawMotd
                                             vm.applyVisualMotdPreset(rawMotd, label)
                                         },
-                                        label = { Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                                        label = { Text(label, fontSize = 13.sp, fontWeight = FontWeight.Bold) }
                                     )
                                 }
                             }
@@ -2939,7 +2939,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     onClick = { vm.applyVisualMotdPreset(customMotdText, customMotdText) },
                                     shape = RoundedCornerShape(10.dp)
                                 ) {
-                                    Text("💾 Lưu", fontSize = 11.5.sp, fontWeight = FontWeight.ExtraBold)
+                                    Text("💾 Lưu", fontSize = 13.2.sp, fontWeight = FontWeight.ExtraBold)
                                 }
                             }
                         }
@@ -2954,7 +2954,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                     ) {
                         Text(
                             "🌙 Bật Màn Hình Đen Treo Server (Giảm 80% Pin & Chống Android Tắt Ngầm)",
-                            fontSize = 11.5.sp,
+                            fontSize = 13.2.sp,
                             fontWeight = FontWeight.ExtraBold
                         )
                     }
@@ -2994,7 +2994,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     Text(
                                         "Chạm bất kỳ đâu vào màn hình để mở sáng trở lại",
                                         color = Color(0xFF1E293B),
-                                        fontSize = 11.sp
+                                        fontSize = 13.sp
                                     )
                                 }
                             }
@@ -3008,7 +3008,9 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                         vm.ensureProMonitorsStarted()
                         vm.refreshPlayers()
                         vm.refreshOnlinePlayers()
+                        vm.refreshSkinRestorerStatus()
                     }
+                    val skinRestorerStatus by vm.skinRestorerStatus.collectAsStateWithLifecycle()
                     val thermalInfo by vm.thermalInfo.collectAsStateWithLifecycle()
                     val autoThermalGuard by vm.autoThermalGuard.collectAsStateWithLifecycle()
                     val discordWebhookUrl by vm.discordWebhookUrl.collectAsStateWithLifecycle()
@@ -3029,14 +3031,109 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                         }
                     }
 
+                    // ── THẺ MỚI v2.9.1: ĐỒNG BỘ & ĐỔI SKIN CHO SERVER CRACKED 1 CHẠM (SKINSRESTORER / FABRICTAILOR) ──
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f),
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.2.dp, Color(0xFF10B981).copy(alpha = 0.65f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    "👕 Đồng Bộ & Đổi Skin Server Cracked 1 Chạm",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = Color(0xFF10B981),
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Surface(
+                                    color = if (skinRestorerStatus.isInstalled) Color(0xFF065F46) else Color(0xFF334155),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text(
+                                        if (skinRestorerStatus.isInstalled) "✅ ĐÃ CÀI" else "⚡ 1 CHẠM",
+                                        color = Color.White,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                    )
+                                }
+                            }
+                            Text(
+                                "Khi bật Chơi Cracked (online-mode=false), Server không lấy được Skin từ Launcher nên nhân vật bị về Skin mặc định (Noor/Zuri). Bấm nút dưới để cài SkinsRestorer / FabricTailor giúp hiện đúng Skin cho mọi người!",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Button(
+                                onClick = { vm.installSkinRestorerOneTap() },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFF059669),
+                                    contentColor = Color.White
+                                ),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    if (skinRestorerStatus.isInstalled) "🔄 Cập Nhật Lại Đồng Bộ Skin (${skinRestorerStatus.fileName})"
+                                    else "👕 Cài Đồng Bộ Skin 1 Chạm (SkinsRestorer / FabricTailor)",
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 13.sp
+                                )
+                            }
+                            var skinTargetPlayer by remember(active.dirName) {
+                                mutableStateOf(knownPlayers.firstOrNull()?.name.orEmpty())
+                            }
+                            var customSkinNameOrUrl by remember { mutableStateOf("") }
+                            LaunchedEffect(knownPlayers) {
+                                if (skinTargetPlayer.isBlank() && knownPlayers.isNotEmpty()) {
+                                    skinTargetPlayer = knownPlayers.first().name
+                                }
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                OutlinedTextField(
+                                    value = skinTargetPlayer,
+                                    onValueChange = { skinTargetPlayer = it },
+                                    label = { Text("Tên người chơi") },
+                                    singleLine = true,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                OutlinedTextField(
+                                    value = customSkinNameOrUrl,
+                                    onValueChange = { customSkinNameOrUrl = it },
+                                    label = { Text("Tên Skin / Link PNG") },
+                                    placeholder = { Text("VD: Notch, Dream...") },
+                                    singleLine = true,
+                                    modifier = Modifier.weight(1.2f)
+                                )
+                            }
+                            Button(
+                                onClick = { vm.applyPlayerSkinInGame(skinTargetPlayer, customSkinNameOrUrl) },
+                                enabled = state.isRunning,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFF0284C7),
+                                    contentColor = Color.White
+                                ),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("✨ Áp Dụng Đổi Skin Trong Game Ngay (/skin set)", fontWeight = FontWeight.ExtraBold, fontSize = 13.sp)
+                            }
+                        }
+                    }
+
                     // ── THẺ PRO 1: XƯỞNG DANH HIỆU VIP, SỰ KIỆN VUI NHỘN & CỨU NGUY KHẨN CẤP ──
                     Surface(
                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-                        shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, Color(0xFFF59E0B).copy(alpha = 0.55f)),
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.2.dp, Color(0xFFF59E0B).copy(alpha = 0.55f)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                             Text(
                                 "👑 Xưởng Danh Hiệu VIP, Sự Kiện Vui Nhộn & Chống Phá Map (0 MB RAM)",
                                 style = MaterialTheme.typography.titleSmall,
@@ -3045,8 +3142,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             )
                             Text(
                                 "Gắn danh hiệu màu sắc trên đầu nhân vật (không cần cài LuckPerms/TAB), mở sự kiện sinh tồn & đóng băng kẻ phá map trong 0.5 giây:",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontSize = 11.sp
+                                style = MaterialTheme.typography.bodySmall
                             )
 
                             var vipTargetPlayer by remember(active.dirName) {
@@ -3060,13 +3156,13 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             var vipGlowing by remember { mutableStateOf(true) }
                             Text(
                                 "⚡ Chọn người nhận Danh hiệu VIP trong Server (Chạm chọn tên hoặc tự nhập):",
-                                fontSize = 11.sp,
+                                style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary
                             )
                             FlowRow(
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 knownPlayers.forEach { kp ->
@@ -3075,102 +3171,108 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     FilterChip(
                                         selected = vipTargetPlayer.equals(kp.name, ignoreCase = true),
                                         onClick = { vipTargetPlayer = kp.name },
-                                        label = { Text("$dot ${kp.name}$crown", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                                        label = { Text("$dot ${kp.name}$crown", fontSize = 12.5.sp, fontWeight = FontWeight.Bold) }
                                     )
                                 }
                                 FilterChip(
                                     selected = vipGlowing,
                                     onClick = { vipGlowing = !vipGlowing },
-                                    label = { Text("✨ Phát sáng", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                                    label = { Text("✨ Phát sáng", fontSize = 12.5.sp, fontWeight = FontWeight.Bold) }
                                 )
                             }
                             OutlinedTextField(
                                 value = vipTargetPlayer,
                                 onValueChange = { vipTargetPlayer = it },
-                                label = { Text("Tên người nhận Danh hiệu VIP (hoặc tự nhập)", fontSize = 11.sp) },
+                                label = { Text("Tên người nhận Danh hiệu VIP (hoặc tự nhập)") },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
 
-                            FlowRow(
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                listOf(
-                                    "owner" to "👑 [Chủ Server]",
-                                    "god" to "⚔️ [Chiến Thần]",
-                                    "rich" to "💎 [Đại Gia]",
-                                    "angel" to "🌸 [Thiên Thần]",
-                                    "guard" to "🛡️ [Hộ Vệ]"
-                                ).forEach { (rk, rLabel) ->
-                                    AssistChip(
-                                        onClick = { vm.applyPlayerVipRank(vipTargetPlayer, rk, vipGlowing) },
-                                        enabled = state.isRunning,
-                                        label = { Text(rLabel, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold) }
-                                    )
+                            val vipRanks = listOf(
+                                "owner" to "👑 [Chủ Server]",
+                                "god" to "⚔️ [Chiến Thần]",
+                                "rich" to "💎 [Đại Gia]",
+                                "angel" to "🌸 [Thiên Thần]",
+                                "guard" to "🛡️ [Hộ Vệ]"
+                            )
+                            vipRanks.chunked(2).forEach { pair ->
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                    pair.forEach { (rk, rLabel) ->
+                                        OutlinedButton(
+                                            onClick = { vm.applyPlayerVipRank(vipTargetPlayer, rk, vipGlowing) },
+                                            enabled = state.isRunning,
+                                            shape = RoundedCornerShape(10.dp),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Text(rLabel, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
+                                        }
+                                    }
+                                    if (pair.size == 1) {
+                                        Spacer(modifier = Modifier.weight(1f))
+                                    }
                                 }
                             }
 
                             HorizontalDivider()
-                            Text("🎉 Bảng Sự Kiện Vui Nhộn 1 Chạm (Khuấy động Server):", fontWeight = FontWeight.ExtraBold, fontSize = 11.5.sp)
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                            Text("🎉 Bảng Sự Kiện Vui Nhộn 1 Chạm (Khuấy động Server):", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                                 Button(
                                     onClick = { vm.triggerFunMiniEvent("supply_drop") },
                                     enabled = state.isRunning,
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD97706), contentColor = Color.White),
-                                    shape = RoundedCornerShape(8.dp),
+                                    shape = RoundedCornerShape(10.dp),
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text("🎁 Thả Rương Tiếp Tế", fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
+                                    Text("🎁 Rương Tiếp Tế", fontWeight = FontWeight.ExtraBold, fontSize = 12.5.sp)
                                 }
                                 Button(
                                     onClick = { vm.triggerFunMiniEvent("mining_frenzy") },
                                     enabled = state.isRunning,
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7), contentColor = Color.White),
-                                    shape = RoundedCornerShape(8.dp),
+                                    shape = RoundedCornerShape(10.dp),
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text("⚡ Buff Đào Nhanh (5p)", fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
+                                    Text("⚡ Đào Nhanh (5p)", fontWeight = FontWeight.ExtraBold, fontSize = 12.5.sp)
                                 }
                             }
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                                 OutlinedButton(
                                     onClick = { vm.triggerFunMiniEvent("exp_rain") },
                                     enabled = state.isRunning,
-                                    shape = RoundedCornerShape(8.dp),
+                                    shape = RoundedCornerShape(10.dp),
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text("✨ Mưa +30 Cấp EXP", fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
+                                    Text("✨ Mưa +30 Cấp EXP", fontWeight = FontWeight.ExtraBold, fontSize = 12.5.sp)
                                 }
                                 OutlinedButton(
                                     onClick = { vm.triggerFunMiniEvent("blood_moon") },
                                     enabled = state.isRunning,
-                                    shape = RoundedCornerShape(8.dp),
+                                    shape = RoundedCornerShape(10.dp),
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text("🌕 Đêm Thử Thách", fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
+                                    Text("🌕 Đêm Thử Thách", fontWeight = FontWeight.ExtraBold, fontSize = 12.5.sp)
                                 }
                             }
 
                             HorizontalDivider()
-                            Text("🚨 Cứu Nguy Khẩn Cấp Khi Bị Đốt Nhà / Đặt TNT Phá Map:", fontWeight = FontWeight.ExtraBold, fontSize = 11.5.sp, color = Color(0xFFEF4444))
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                            Text("🚨 Cứu Nguy Khẩn Cấp Khi Bị Đốt Nhà / Đặt TNT Phá Map:", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge, color = Color(0xFFEF4444))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                                 Button(
                                     onClick = { vm.triggerAntiGriefPanic() },
                                     enabled = state.isRunning,
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626), contentColor = Color.White),
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier.weight(1.3f)
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.weight(1.25f)
                                 ) {
-                                    Text("🚨 XÓA TNT & ĐÓNG BĂNG KHẨN CẤP", fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
+                                    Text("🚨 XÓA TNT & ĐÓNG BĂNG", fontWeight = FontWeight.ExtraBold, fontSize = 12.5.sp)
                                 }
                                 OutlinedButton(
                                     onClick = { vm.restoreSurvivalAfterPanic() },
                                     enabled = state.isRunning,
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier.weight(0.7f)
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.weight(0.75f)
                                 ) {
-                                    Text("🟢 Mở Lại Sinh Tồn", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                    Text("🟢 Mở Sinh Tồn", fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
                                 }
                             }
                         }
@@ -3179,11 +3281,11 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                     // ── THẺ PRO 2: RADAR TÌM CÔNG TRÌNH (/LOCATE), SỔ TAY DỊCH CHUYỂN (WARP BOOK) & DATAPACK ──
                     Surface(
                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-                        shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, Color(0xFF06B6D4).copy(alpha = 0.55f)),
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.2.dp, Color(0xFF06B6D4).copy(alpha = 0.55f)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             Text(
                                 "🧭 Radar Tìm Công Trình, Sổ Tay Dịch Chuyển (Warp Book) & Datapack",
                                 style = MaterialTheme.typography.titleSmall,
@@ -3192,27 +3294,29 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             )
                             Text(
                                 "Quét tọa độ Làng / Pháo đài / Cổng End gần nhất hoặc lưu các mốc tọa độ để dịch chuyển trong 1 chạm (Thay thế mod Waystones tốn 0 MB RAM):",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontSize = 11.sp
+                                style = MaterialTheme.typography.bodySmall
                             )
 
-                            FlowRow(
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                listOf(
-                                    "minecraft:village_plains" to "🏘️ Tìm Làng",
-                                    "minecraft:fortress" to "🏯 Pháo Đài Nether",
-                                    "minecraft:stronghold" to "👁️ Cổng End",
-                                    "minecraft:ancient_city" to "🏛️ Ancient City",
-                                    "minecraft:end_city" to "🚢 End City",
-                                    "minecraft:mansion" to "🏚️ Biệt Thự Rừng"
-                                ).forEach { (sId, sLabel) ->
-                                    AssistChip(
-                                        onClick = { vm.locateStructureQuick(sId, sLabel) },
-                                        enabled = state.isRunning,
-                                        label = { Text(sLabel, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
-                                    )
+                            val radarStructures = listOf(
+                                "minecraft:village_plains" to "🏘️ Tìm Làng",
+                                "minecraft:fortress" to "🏯 Pháo Đài Nether",
+                                "minecraft:stronghold" to "👁️ Cổng End",
+                                "minecraft:ancient_city" to "🏛️ Ancient City",
+                                "minecraft:end_city" to "🚢 End City",
+                                "minecraft:mansion" to "🏚️ Biệt Thự Rừng"
+                            )
+                            radarStructures.chunked(2).forEach { pair ->
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                    pair.forEach { (sId, sLabel) ->
+                                        OutlinedButton(
+                                            onClick = { vm.locateStructureQuick(sId, sLabel) },
+                                            enabled = state.isRunning,
+                                            shape = RoundedCornerShape(10.dp),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Text(sLabel, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
+                                        }
+                                    }
                                 }
                             }
 
@@ -3221,13 +3325,13 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     onClick = { vm.teleportAllToLastLocated() },
                                     enabled = state.isRunning,
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0891B2), contentColor = Color.White),
-                                    shape = RoundedCornerShape(8.dp),
+                                    shape = RoundedCornerShape(10.dp),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Text(
                                         "🚀 Dịch Chuyển Cả Nhóm Tới $locName (${coords.first}, ${coords.second}, ${coords.third})",
                                         fontWeight = FontWeight.ExtraBold,
-                                        fontSize = 11.5.sp
+                                        fontSize = 13.sp
                                     )
                                 }
                             }
@@ -3241,11 +3345,15 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     warpTargetPlayer = knownPlayers.first().name
                                 }
                             }
-                            Text("📍 Sổ Tay Điểm Dịch Chuyển Nhanh (Chọn người chơi hoặc tự nhập rồi bấm mốc tọa độ):", fontWeight = FontWeight.ExtraBold, fontSize = 11.5.sp)
+                            Text(
+                                "📍 Sổ Tay Điểm Dịch Chuyển Nhanh (Chọn người chơi hoặc tự nhập rồi bấm mốc tọa độ):",
+                                fontWeight = FontWeight.ExtraBold,
+                                style = MaterialTheme.typography.labelLarge
+                            )
                             if (knownPlayers.isNotEmpty()) {
                                 FlowRow(
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     knownPlayers.forEach { kp ->
@@ -3253,7 +3361,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                         FilterChip(
                                             selected = warpTargetPlayer.equals(kp.name, ignoreCase = true),
                                             onClick = { warpTargetPlayer = kp.name },
-                                            label = { Text("$dot ${kp.name}", fontSize = 10.5.sp, fontWeight = FontWeight.Bold) }
+                                            label = { Text("$dot ${kp.name}", fontSize = 12.5.sp, fontWeight = FontWeight.Bold) }
                                         )
                                     }
                                 }
@@ -3261,20 +3369,33 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             OutlinedTextField(
                                 value = warpTargetPlayer,
                                 onValueChange = { warpTargetPlayer = it },
-                                label = { Text("Tên người chơi cần dịch chuyển (hoặc tự nhập)", fontSize = 11.sp) },
+                                label = { Text("Tên người chơi cần dịch chuyển (hoặc tự nhập)") },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
-                            FlowRow(
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                warpPoints.forEach { wp ->
-                                    AssistChip(
-                                        onClick = { vm.teleportToWarpPoint(wp, warpTargetPlayer) },
-                                        enabled = state.isRunning,
-                                        label = { Text("${wp.name} (${wp.x},${wp.y},${wp.z})", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
-                                    )
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                warpPoints.chunked(2).forEach { pair ->
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                        pair.forEach { wp ->
+                                            OutlinedButton(
+                                                onClick = { vm.teleportToWarpPoint(wp, warpTargetPlayer) },
+                                                enabled = state.isRunning,
+                                                shape = RoundedCornerShape(10.dp),
+                                                modifier = Modifier.weight(1f)
+                                            ) {
+                                                Text(
+                                                    "${wp.name} (${wp.x},${wp.y},${wp.z})",
+                                                    fontSize = 12.5.sp,
+                                                    fontWeight = FontWeight.ExtraBold,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                        }
+                                        if (pair.size == 1) {
+                                            Spacer(modifier = Modifier.weight(1f))
+                                        }
+                                    }
                                 }
                             }
 
@@ -3282,37 +3403,37 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             var newWarpX by remember { mutableStateOf("0") }
                             var newWarpY by remember { mutableStateOf("80") }
                             var newWarpZ by remember { mutableStateOf("0") }
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                                 OutlinedTextField(
                                     value = newWarpName,
                                     onValueChange = { newWarpName = it },
-                                    label = { Text("Tên mốc", fontSize = 10.sp) },
+                                    label = { Text("Tên mốc") },
                                     singleLine = true,
                                     modifier = Modifier.weight(1.3f)
                                 )
                                 OutlinedTextField(
                                     value = newWarpX,
                                     onValueChange = { newWarpX = it },
-                                    label = { Text("X", fontSize = 10.sp) },
+                                    label = { Text("X") },
                                     singleLine = true,
                                     modifier = Modifier.weight(0.6f)
                                 )
                                 OutlinedTextField(
                                     value = newWarpY,
                                     onValueChange = { newWarpY = it },
-                                    label = { Text("Y", fontSize = 10.sp) },
+                                    label = { Text("Y") },
                                     singleLine = true,
                                     modifier = Modifier.weight(0.6f)
                                 )
                                 OutlinedTextField(
                                     value = newWarpZ,
                                     onValueChange = { newWarpZ = it },
-                                    label = { Text("Z", fontSize = 10.sp) },
+                                    label = { Text("Z") },
                                     singleLine = true,
                                     modifier = Modifier.weight(0.6f)
                                 )
                             }
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                                 OutlinedButton(
                                     onClick = {
                                         vm.addWarpPoint(
@@ -3323,18 +3444,18 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                         )
                                         newWarpName = ""
                                     },
-                                    shape = RoundedCornerShape(8.dp),
+                                    shape = RoundedCornerShape(10.dp),
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text("➕ Lưu Mốc Tọa Độ Mới", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                    Text("➕ Lưu Mốc Tọa Độ", fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
                                 }
                                 Button(
                                     onClick = { datapackPickerLauncher.launch("*/*") },
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D9488), contentColor = Color.White),
-                                    shape = RoundedCornerShape(8.dp),
+                                    shape = RoundedCornerShape(10.dp),
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text("📦 Cài Datapack (.zip)", fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
+                                    Text("📦 Cài Datapack (.zip)", fontWeight = FontWeight.ExtraBold, fontSize = 12.5.sp)
                                 }
                             }
                         }
@@ -3362,7 +3483,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                 )
                                 Text(
                                     thermalInfo.statusLabelVi,
-                                    fontSize = 11.sp,
+                                    fontSize = 13.sp,
                                     fontWeight = FontWeight.ExtraBold,
                                     color = if (thermalInfo.isOverheating) Color(0xFFEF4444) else Color(0xFF10B981)
                                 )
@@ -3371,7 +3492,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                                 Column(Modifier.weight(1f)) {
                                     Text("🌡️ Tự động dọn lag giảm tải khi máy nóng trên 43°C", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                    Text("Bảo vệ pin điện thoại khi vừa cắm sạc vừa treo Server lâu", fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text("Bảo vệ pin điện thoại khi vừa cắm sạc vừa treo Server lâu", fontSize = 12.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 Switch(
                                     checked = autoThermalGuard,
@@ -3383,7 +3504,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             Text(
                                 "💤 Chế Độ Tự Ngủ Đông Khi Vắng Khách (Tự lưu map & tắt Server khi 0 người chơi):",
                                 fontWeight = FontWeight.ExtraBold,
-                                fontSize = 11.5.sp
+                                fontSize = 13.2.sp
                             )
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 listOf(
@@ -3395,7 +3516,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     FilterChip(
                                         selected = autoSleepIdleMinutes == mins,
                                         onClick = { vm.setAutoSleepIdleMinutes(mins) },
-                                        label = { Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                                        label = { Text(label, fontSize = 13.sp, fontWeight = FontWeight.Bold) }
                                     )
                                 }
                             }
@@ -3404,13 +3525,13 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             Text(
                                 "🛡️ Khóa Bảo Vệ Tài Khoản Admin (OP Guard — Chống kẻ lạ đặt trùng tên Admin trong Server Cracked):",
                                 fontWeight = FontWeight.ExtraBold,
-                                fontSize = 11.5.sp
+                                fontSize = 13.2.sp
                             )
                             var adminNameInput by remember(opGuardAdminName) { mutableStateOf(opGuardAdminName) }
                             if (knownPlayers.isNotEmpty()) {
                                 Text(
                                     "⚡ Chọn nhanh tài khoản Admin của bạn trong Server (1 chạm — Không cần nhập tay):",
-                                    fontSize = 10.5.sp,
+                                    fontSize = 12.5.sp,
                                     color = MaterialTheme.colorScheme.primary,
                                     fontWeight = FontWeight.SemiBold
                                 )
@@ -3428,7 +3549,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                                 adminNameInput = kp.name
                                                 vm.saveOpGuardConfig(kp.name, opGuardEnabled)
                                             },
-                                            label = { Text("$dot ${kp.name}$crown", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                                            label = { Text("$dot ${kp.name}$crown", fontSize = 13.sp, fontWeight = FontWeight.Bold) }
                                         )
                                     }
                                 }
@@ -3441,7 +3562,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                 OutlinedTextField(
                                     value = adminNameInput,
                                     onValueChange = { adminNameInput = it },
-                                    label = { Text("Tên nhân vật Admin (Chạm tên ở trên hoặc nhập)", fontSize = 11.sp) },
+                                    label = { Text("Tên nhân vật Admin (Chạm tên ở trên hoặc nhập)", fontSize = 13.sp) },
                                     singleLine = true,
                                     modifier = Modifier.weight(1f)
                                 )
@@ -3468,14 +3589,14 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                         if (opGuardUnlocked) "✅ Đã Xác Nhận Chính Chủ (Đang Mở Khóa OP Cho '${adminNameInput}')"
                                         else "🔓 Xác Nhận Tôi Đã Vào Game (Mở Khóa Quyền OP Ngay)",
                                         fontWeight = FontWeight.ExtraBold,
-                                        fontSize = 11.5.sp
+                                        fontSize = 13.2.sp
                                     )
                                 }
                             }
                             Text(
                                 "📱 Mẹo hay: Khi đang chơi trong Minecraft PE, bạn chỉ cần vuốt thanh thông báo Android từ trên xuống để bấm nhanh 🧹 Dọn Lag / ☀️ Trời Sáng / 🛑 Lưu & Dừng mà không cần thoát game!",
                                 style = MaterialTheme.typography.bodySmall,
-                                fontSize = 10.5.sp,
+                                fontSize = 12.5.sp,
                                 color = MaterialTheme.colorScheme.primary
                             )
                         }
@@ -3498,7 +3619,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             Text(
                                 "Tự động vẽ và đính kèm Ảnh Bảng Trạng Thái HD (1080×640 gồm IP PC, IP/Cổng PE, thanh TPS, Người chơi, Nhiệt độ & Pin) bắn thẳng lên nhóm Discord / Telegram & hỗ trợ gõ lệnh điều khiển Server ngay trên Telegram (0 MB RAM):",
                                 style = MaterialTheme.typography.bodySmall,
-                                fontSize = 11.sp
+                                fontSize = 13.sp
                             )
 
                             var webhookInput by remember(discordWebhookUrl) { mutableStateOf(discordWebhookUrl) }
@@ -3519,13 +3640,13 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                 Column(Modifier.weight(1f)) {
                                     Text(
                                         "📸 Đính kèm Ảnh Bảng Trạng Thái Trực Quan HD (1080×640)",
-                                        fontSize = 11.5.sp,
+                                        fontSize = 13.2.sp,
                                         fontWeight = FontWeight.ExtraBold,
                                         color = Color(0xFF10B981)
                                     )
                                     Text(
                                         "Tự vẽ ảnh chứa IP PC + PE, TPS, số người chơi & nhiệt độ máy khi gửi lên Discord / Telegram",
-                                        fontSize = 10.5.sp,
+                                        fontSize = 12.5.sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
@@ -3542,7 +3663,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             ) {
                                 Text(
                                     "👋 Tự động báo lên Discord / Telegram khi có người vào/rời Server",
-                                    fontSize = 11.5.sp,
+                                    fontSize = 13.2.sp,
                                     fontWeight = FontWeight.Bold,
                                     modifier = Modifier.weight(1f)
                                 )
@@ -3555,7 +3676,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             OutlinedTextField(
                                 value = webhookInput,
                                 onValueChange = { webhookInput = it },
-                                label = { Text("Dán link Discord Webhook URL (https://discord.com/api/webhooks/...)", fontSize = 11.sp) },
+                                label = { Text("Dán link Discord Webhook URL (https://discord.com/api/webhooks/...)", fontSize = 13.sp) },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
@@ -3565,7 +3686,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     shape = RoundedCornerShape(8.dp),
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text("💾 Lưu Webhook", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                    Text("💾 Lưu Webhook", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                                 }
                                 Button(
                                     onClick = {
@@ -3576,7 +3697,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     shape = RoundedCornerShape(8.dp),
                                     modifier = Modifier.weight(1.35f)
                                 ) {
-                                    Text("📸 Bắn Thử Kèm Ảnh Lên Discord", fontWeight = FontWeight.ExtraBold, fontSize = 10.5.sp)
+                                    Text("📸 Bắn Thử Kèm Ảnh Lên Discord", fontWeight = FontWeight.ExtraBold, fontSize = 12.5.sp)
                                 }
                             }
 
@@ -3584,18 +3705,18 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             Text(
                                 "✈️ Trợ Lý Bot Telegram 2 Chiều (Gửi Ảnh HD + Nhận Lệnh Điều Khiển — 0 MB RAM):",
                                 fontWeight = FontWeight.ExtraBold,
-                                fontSize = 11.5.sp,
+                                fontSize = 13.2.sp,
                                 color = Color(0xFF0284C7)
                             )
                             Text(
                                 "Tạo Bot tại @BotFather trên Telegram để lấy Bot Token, sau đó nhắn 1 tin bất kỳ vào Bot/Nhóm rồi bấm '🔍 Tự lấy Chat ID':",
-                                fontSize = 10.5.sp,
+                                fontSize = 12.5.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             OutlinedTextField(
                                 value = tgTokenInput,
                                 onValueChange = { tgTokenInput = it },
-                                label = { Text("Telegram Bot Token (VD: 123456789:AAH...)", fontSize = 11.sp) },
+                                label = { Text("Telegram Bot Token (VD: 123456789:AAH...)", fontSize = 13.sp) },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
@@ -3607,7 +3728,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                 OutlinedTextField(
                                     value = tgChatIdInput,
                                     onValueChange = { tgChatIdInput = it },
-                                    label = { Text("Chat ID (VD: -100... hoặc ID cá nhân)", fontSize = 11.sp) },
+                                    label = { Text("Chat ID (VD: -100... hoặc ID cá nhân)", fontSize = 13.sp) },
                                     singleLine = true,
                                     modifier = Modifier.weight(1f)
                                 )
@@ -3619,7 +3740,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     },
                                     shape = RoundedCornerShape(8.dp)
                                 ) {
-                                    Text("🔍 Tự lấy Chat ID", fontWeight = FontWeight.ExtraBold, fontSize = 10.5.sp)
+                                    Text("🔍 Tự lấy Chat ID", fontWeight = FontWeight.ExtraBold, fontSize = 12.5.sp)
                                 }
                             }
                             Row(
@@ -3630,13 +3751,13 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                 Column(Modifier.weight(1f)) {
                                     Text(
                                         "🕹️ Điều khiển & Tra cứu 2 chiều ngay trong nhóm Telegram",
-                                        fontSize = 11.5.sp,
+                                        fontSize = 13.2.sp,
                                         fontWeight = FontWeight.ExtraBold,
                                         color = Color(0xFF0284C7)
                                     )
                                     Text(
                                         "Gõ /ip hoặc /status (nhận Ảnh Trạng Thái HD), /list (xem ai đang chơi), /clearlag, /day, /save, /say <nội dung>",
-                                        fontSize = 10.5.sp,
+                                        fontSize = 12.5.sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
@@ -3648,7 +3769,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             if (lastTgCmdLog.isNotBlank()) {
                                 Text(
                                     lastTgCmdLog,
-                                    fontSize = 10.5.sp,
+                                    fontSize = 12.5.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     color = Color(0xFF10B981)
                                 )
@@ -3659,7 +3780,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     shape = RoundedCornerShape(8.dp),
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text("💾 Lưu Telegram", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                    Text("💾 Lưu Telegram", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                                 }
                                 Button(
                                     onClick = { vm.sendTelegramTestMessage(tgTokenInput, tgChatIdInput) },
@@ -3667,7 +3788,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     shape = RoundedCornerShape(8.dp),
                                     modifier = Modifier.weight(1.35f)
                                 ) {
-                                    Text("✈️ Bắn Thử Kèm Ảnh Lên Tele", fontWeight = FontWeight.ExtraBold, fontSize = 10.5.sp)
+                                    Text("✈️ Bắn Thử Kèm Ảnh Lên Tele", fontWeight = FontWeight.ExtraBold, fontSize = 12.5.sp)
                                 }
                             }
 
@@ -3679,7 +3800,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                     Text(
                                         if (lanWebRunning) "🟢 Đang mở tại: http://${lanIp.ifBlank { "127.0.0.1" }}:8585 (Mã PIN: $lanWebPin)"
                                         else "Mở trình duyệt trên PC / điện thoại khác cùng Wi-Fi để điều khiển từ xa",
-                                        fontSize = 10.5.sp,
+                                        fontSize = 12.5.sp,
                                         color = if (lanWebRunning) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
@@ -3698,7 +3819,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                         shape = RoundedCornerShape(8.dp),
                                         modifier = Modifier.weight(1f)
                                     ) {
-                                        Text("📋 Chép Link Điều Khiển Web ($webUrl)", fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
+                                        Text("📋 Chép Link Điều Khiển Web ($webUrl)", fontWeight = FontWeight.ExtraBold, fontSize = 13.sp)
                                     }
                                 }
                             }
@@ -3772,30 +3893,30 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                         Text(
                             "📊 Phần cứng: Tổng RAM ${preflight.totalRamMb} MB • Trống ~${preflight.availRamMb} MB • Bộ nhớ còn ${preflight.freeStorageGb}",
                             fontWeight = FontWeight.ExtraBold,
-                            fontSize = 11.5.sp
+                            fontSize = 13.2.sp
                         )
                         Text(
                             "💡 Gợi ý tự động: ${preflight.recommendationVi}",
                             style = MaterialTheme.typography.bodySmall,
-                            fontSize = 11.sp,
+                            fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onSecondaryContainer
                         )
                     }
                 }
 
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
-                    Text("🚀 Quy trình 3 bước mở Server chuẩn:", fontWeight = FontWeight.ExtraBold, fontSize = 11.5.sp)
+                    Text("🚀 Quy trình 3 bước mở Server chuẩn:", fontWeight = FontWeight.ExtraBold, fontSize = 13.2.sp)
                     Text(
                         "${if (ready) "🟢" else "⚪"} Bước 1: Cài môi trường chạy (${if (ready) "Đã hoàn tất" else "Bấm nút Cài đặt môi trường ở trên cùng"})",
-                        fontSize = 11.sp
+                        fontSize = 13.sp
                     )
                     Text(
                         "${if (config.installedCores.isNotEmpty()) "🟢" else "⚪"} Bước 2: Tải Server Core Paper/Fabric (${if (config.installedCores.isNotEmpty()) "Đã có ${config.installedCores.size} server" else "Bấm Tạo Server Mới"})",
-                        fontSize = 11.sp
+                        fontSize = 13.sp
                     )
                     Text(
                         "${if (state.isRunning) "🟢" else "⚪"} Bước 3: Bật Server & Mở đường hầm Playit.gg để bạn bè vào chơi (${if (state.isRunning) "Server đang mở!" else "Sẵn sàng bật"})",
-                        fontSize = 11.sp
+                        fontSize = 13.sp
                     )
                 }
 
@@ -3807,7 +3928,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             shape = RoundedCornerShape(8.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text("🔋 Cấp Quyền Chạy Nền (Chống Tắt Ngầm)", fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
+                            Text("🔋 Cấp Quyền Chạy Nền (Chống Tắt Ngầm)", fontWeight = FontWeight.ExtraBold, fontSize = 13.sp)
                         }
                     }
                     if (preflight.isLowRamDevice && active != null) {
@@ -3816,7 +3937,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             shape = RoundedCornerShape(8.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text("⚡ Bật Chế Độ Máy RAM Ít", fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
+                            Text("⚡ Bật Chế Độ Máy RAM Ít", fontWeight = FontWeight.ExtraBold, fontSize = 13.sp)
                         }
                     }
                 }
@@ -3852,7 +3973,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                             },
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text("📋 Dán từ bộ nhớ tạm", fontSize = 11.5.sp)
+                            Text("📋 Dán từ bộ nhớ tạm", fontSize = 13.2.sp)
                         }
                         if (playitState.hasSavedSecret) {
                             OutlinedButton(
@@ -3863,7 +3984,7 @@ fun MineHostOverview(vm: McViewModel, navigate: (SubPage) -> Unit, onConsole: ()
                                 },
                                 modifier = Modifier.weight(1f)
                             ) {
-                                Text("♻️ Tạo mã Claim mới", fontSize = 11.5.sp)
+                                Text("♻️ Tạo mã Claim mới", fontSize = 13.2.sp)
                             }
                         }
                     }
@@ -3991,7 +4112,7 @@ fun MineHostManage(vm: McViewModel, navigate: (SubPage) -> Unit) {
                             label = {
                                 Text(
                                     label,
-                                    fontSize = 11.5.sp,
+                                    fontSize = 13.2.sp,
                                     fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.SemiBold
                                 )
                             }
@@ -4017,7 +4138,7 @@ fun MineHostManage(vm: McViewModel, navigate: (SubPage) -> Unit) {
                             label = {
                                 Text(
                                     label,
-                                    fontSize = 11.5.sp,
+                                    fontSize = 13.2.sp,
                                     fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.SemiBold
                                 )
                             }
@@ -4068,14 +4189,14 @@ fun MineHostManage(vm: McViewModel, navigate: (SubPage) -> Unit) {
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("🌍 Quản lý Map & Xóa Sao Lưu", fontWeight = FontWeight.ExtraBold, fontSize = 11.5.sp)
+                        Text("🌍 Quản lý Map & Xóa Sao Lưu", fontWeight = FontWeight.ExtraBold, fontSize = 13.2.sp)
                     }
                     OutlinedButton(
                         onClick = { navigate(SubPage.Backup) },
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("📂 Cài đặt Sao Lưu", fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
+                        Text("📂 Cài đặt Sao Lưu", fontWeight = FontWeight.Bold, fontSize = 13.2.sp)
                     }
                 }
                 OutlinedButton(
@@ -4084,7 +4205,7 @@ fun MineHostManage(vm: McViewModel, navigate: (SubPage) -> Unit) {
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("☁️ Sao lưu nhanh Map + Mod hiện tại lên Google Drive", fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
+                    Text("☁️ Sao lưu nhanh Map + Mod hiện tại lên Google Drive", fontWeight = FontWeight.Bold, fontSize = 13.2.sp)
                 }
             }
         }
@@ -4164,7 +4285,7 @@ fun MineHostManage(vm: McViewModel, navigate: (SubPage) -> Unit) {
                         Text(
                             "Khi mở App hoặc đang dùng mà có bản mới trên GitHub, App sẽ tự tải ngầm và bật hộp thoại Cài đè (giữ nguyên 100% Server & Map).",
                             style = MaterialTheme.typography.bodySmall,
-                            fontSize = 11.sp,
+                            fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -4177,7 +4298,7 @@ fun MineHostManage(vm: McViewModel, navigate: (SubPage) -> Unit) {
                     Text(
                         lastUpdateResult.orEmpty(),
                         fontWeight = FontWeight.Bold,
-                        fontSize = 11.5.sp,
+                        fontSize = 13.2.sp,
                         color = MaterialTheme.colorScheme.primary
                     )
                 }
@@ -4188,14 +4309,14 @@ fun MineHostManage(vm: McViewModel, navigate: (SubPage) -> Unit) {
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("🔄 Kiểm Tra Cập Nhật (OTA)", fontWeight = FontWeight.ExtraBold, fontSize = 11.5.sp)
+                        Text("🔄 Kiểm Tra Cập Nhật (OTA)", fontWeight = FontWeight.ExtraBold, fontSize = 13.2.sp)
                     }
                     OutlinedButton(
                         onClick = { uri.openUri("https://github.com/buiduchuy2010qn-prog/minehost-android/releases") },
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("📦 Kho Bản Build GitHub", fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
+                        Text("📦 Kho Bản Build GitHub", fontWeight = FontWeight.Bold, fontSize = 13.2.sp)
                     }
                 }
 
@@ -4208,14 +4329,14 @@ fun MineHostManage(vm: McViewModel, navigate: (SubPage) -> Unit) {
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("🛠️ Nhật Ký Lỗi (Crash Log)", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                        Text("🛠️ Nhật Ký Lỗi (Crash Log)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     }
                     OutlinedButton(
                         onClick = { showPrivacyModal = true },
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("⚖️ Quyền Riêng Tư & Pháp Lý", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                        Text("⚖️ Quyền Riêng Tư & Pháp Lý", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     }
                 }
 
@@ -4228,11 +4349,11 @@ fun MineHostManage(vm: McViewModel, navigate: (SubPage) -> Unit) {
                         Text(
                             "⚖️ TUYÊN BỐ BẢN QUYỀN (TRADEMARK DISCLAIMER):",
                             fontWeight = FontWeight.ExtraBold,
-                            fontSize = 10.5.sp
+                            fontSize = 12.5.sp
                         )
                         Text(
                             "NOT AN OFFICIAL MINECRAFT PRODUCT. NOT APPROVED BY OR ASSOCIATED WITH MOJANG OR MICROSOFT.\n(Không phải sản phẩm Minecraft chính thức. Không được phê duyệt bởi hoặc liên kết với Mojang hay Microsoft.)",
-                            fontSize = 10.sp,
+                            fontSize = 12.sp,
                             lineHeight = 14.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -4248,7 +4369,7 @@ fun MineHostManage(vm: McViewModel, navigate: (SubPage) -> Unit) {
                                 modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp).verticalScroll(rememberScrollState()),
                                 verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                Text(crashLogText, fontSize = 11.sp, lineHeight = 15.sp)
+                                Text(crashLogText, fontSize = 13.sp, lineHeight = 15.sp)
                             }
                         },
                         confirmButton = {
@@ -4286,7 +4407,7 @@ fun MineHostManage(vm: McViewModel, navigate: (SubPage) -> Unit) {
                                     "1. Cam Kết Quyền Riêng Tư (Zero Telemetry):\n" +
                                         "• MineHost KHÔNG thu thập, KHÔNG lưu trữ và KHÔNG gửi bất kỳ dữ liệu cá nhân, danh bạ, vị trí hay mã định danh thiết bị (Android ID) nào về máy chủ bên thứ ba.\n" +
                                         "• Toàn bộ dữ liệu thế giới (World), cấu hình máy chủ và bản sao lưu nằm hoàn toàn trên bộ nhớ thiết bị của bạn.",
-                                    fontSize = 11.5.sp,
+                                    fontSize = 13.2.sp,
                                     lineHeight = 16.sp
                                 )
                                 Text(
@@ -4294,14 +4415,14 @@ fun MineHostManage(vm: McViewModel, navigate: (SubPage) -> Unit) {
                                         "• Mạng (Internet): Chỉ dùng để tải nhân máy chủ Minecraft chính thức (Paper/Fabric), GeyserMC, Mod từ Modrinth và kết nối đường hầm Playit.gg.\n" +
                                         "• Lưu trữ (Storage): Chỉ dùng để xuất/nhập file sao lưu thế giới (.zip) và cài đặt gói Addon/Mod do chính bạn chọn.\n" +
                                         "• Chạy nền (Foreground Service & Wakelock): Giữ tiến trình máy chủ Minecraft không bị hệ điều hành Android đóng khi tắt màn hình.",
-                                    fontSize = 11.5.sp,
+                                    fontSize = 13.2.sp,
                                     lineHeight = 16.sp
                                 )
                                 Text(
                                     "3. Giấy Phép Mã Nguồn Mở & Miễn Trừ Mojang:\n" +
                                         "• Phát hành theo giấy phép mã nguồn mở GNU GPL-3.0-or-later tại github.com/buiduchuy2010qn-prog/minehost-android.\n" +
                                         "• NOT AN OFFICIAL MINECRAFT PRODUCT. NOT APPROVED BY OR ASSOCIATED WITH MOJANG OR MICROSOFT.",
-                                    fontSize = 11.5.sp,
+                                    fontSize = 13.2.sp,
                                     lineHeight = 16.sp
                                 )
                             }
@@ -4444,13 +4565,13 @@ fun MineHostCrossplay(vm: McViewModel, onBack: () -> Unit) {
                                     "3. Đã load: ${if (crossplayStatus.isRuntimeLoaded) "🟢 Đã nạp" else "⚪ Chưa nạp"}  •  " +
                                     "4. Nghe cổng UDP $bedrockPort: ${if (crossplayStatus.isListeningOnPort) "🟢 Đang mở" else "⚪ Chưa mở"}  •  " +
                                     "5. Đã kiểm tra: ${if (crossplayStatus.isVerifiedReachable) "✅ Phản hồi RakNet" else "⚪ Chưa kiểm tra"}",
-                                fontSize = 11.sp,
+                                fontSize = 13.sp,
                                 lineHeight = 15.sp
                             )
                             if (crossplayStatus.missingDependencies.isNotEmpty()) {
                                 Text(
                                     "⚠️ Thiếu thành phần: ${crossplayStatus.missingDependencies.joinToString(", ")}",
-                                    fontSize = 11.sp,
+                                    fontSize = 13.sp,
                                     color = MaterialTheme.colorScheme.error,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -4458,7 +4579,7 @@ fun MineHostCrossplay(vm: McViewModel, onBack: () -> Unit) {
                             if (crossplayStatus.loadErrorDetail != null) {
                                 Text(
                                     "⚠️ Lỗi runtime: ${crossplayStatus.loadErrorDetail}",
-                                    fontSize = 11.sp,
+                                    fontSize = 13.sp,
                                     color = MaterialTheme.colorScheme.error,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -4481,7 +4602,7 @@ fun MineHostCrossplay(vm: McViewModel, onBack: () -> Unit) {
                                 )
                                 Text(
                                     "Chuyển xác thực sang Offline (online-mode=false) cho tài khoản chưa mua bản quyền (Mặc định giữ nguyên cấu hình xác thực hiện có của Server)",
-                                    fontSize = 11.sp,
+                                    fontSize = 13.sp,
                                     lineHeight = 14.sp
                                 )
                             }
@@ -4498,7 +4619,7 @@ fun MineHostCrossplay(vm: McViewModel, onBack: () -> Unit) {
                                     )
                                     Text(
                                         "⚠️ Xác nhận hiểu tác động: Đổi sang online-mode=false sẽ tắt kiểm tra tài khoản Mojang/Microsoft và đổi UUID người chơi nếu chưa dùng plugin bảo vệ mật khẩu.",
-                                        fontSize = 10.5.sp,
+                                        fontSize = 12.5.sp,
                                         lineHeight = 14.sp,
                                         color = MaterialTheme.colorScheme.error,
                                         fontWeight = FontWeight.SemiBold
@@ -4563,7 +4684,7 @@ fun MineHostCrossplay(vm: McViewModel, onBack: () -> Unit) {
                                 com.mineserve.mobile.ui.CoreBrandLogo(core = coreItem, size = 36.dp)
                                 Column(Modifier.weight(1f)) {
                                     Text(titleTxt, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp)
-                                    Text(subTxt, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(subTxt, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 RadioButton(selected = isSel, onClick = { selectedCrossCore = coreItem })
                             }
@@ -4597,7 +4718,7 @@ fun MineHostCrossplay(vm: McViewModel, onBack: () -> Unit) {
                             label = {
                                 Text(
                                     "$ver ($tag)",
-                                    fontSize = 11.sp,
+                                    fontSize = 13.sp,
                                     fontWeight = if (isSel) FontWeight.ExtraBold else FontWeight.SemiBold
                                 )
                             }
@@ -4699,7 +4820,7 @@ fun MineHostCrossplay(vm: McViewModel, onBack: () -> Unit) {
                         Text("🏠 A. KHI CHƠI CÙNG WI-FI / HOTSPOT:", fontWeight = FontWeight.ExtraBold, fontSize = 12.5.sp)
                         Text("• Máy tính PC (Java): ${lanIp.ifBlank { "192.168.1.x" }}:$port", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         Text("• Điện thoại PE (Bedrock): IP ${lanIp.ifBlank { "192.168.1.x" }} • Port: $bedrockPort", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                        Text("• Trên chính điện thoại này: IP 127.0.0.1 • Port: $bedrockPort (PE) hoặc $port (Java)", fontSize = 11.5.sp)
+                        Text("• Trên chính điện thoại này: IP 127.0.0.1 • Port: $bedrockPort (PE) hoặc $port (Java)", fontSize = 13.2.sp)
                     }
                 }
 
@@ -4737,7 +4858,7 @@ fun MineHostCrossplay(vm: McViewModel, onBack: () -> Unit) {
                                 Text(
                                     if (!playitState.isRunning) "🚀 Bật Playit.gg ngay"
                                     else "📱 Mở cổng Bedrock UDP ($bedrockPort)",
-                                    fontSize = 11.5.sp,
+                                    fontSize = 13.2.sp,
                                     fontWeight = FontWeight.ExtraBold
                                 )
                             }
@@ -4750,7 +4871,7 @@ fun MineHostCrossplay(vm: McViewModel, onBack: () -> Unit) {
                                     },
                                     shape = RoundedCornerShape(10.dp)
                                 ) {
-                                    Text("📋 Chép Địa Chỉ PE", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                                    Text("📋 Chép Địa Chỉ PE", fontSize = 13.2.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }

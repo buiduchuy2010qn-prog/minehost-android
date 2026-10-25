@@ -11935,36 +11935,36 @@ class McViewModel(
         }
         when (eventKey) {
             "supply_drop" -> {
-                sendCommand("""title @a title {"text":"🎁 RƯƠNG TIẾP TẾ!","color":"gold","bold":true}""")
+                sendCommand("""title @a actionbar {"text":"🎁 Rương Tiếp Tế: Táo Vàng + Kim Cương + Pháo Hoa!","color":"gold","bold":true}""")
                 sendCommand("give @a minecraft:golden_apple 4")
                 sendCommand("give @a minecraft:diamond 3")
                 sendCommand("give @a minecraft:firework_rocket 16")
                 sendCommand("give @a minecraft:cooked_beef 16")
                 sendCommand("effect give @a minecraft:regeneration 30 1 true")
-                sendCommand("say [Su Kien] Chu Server vua tha Qua Tiep Te (Tao Vang + Kim Cuong + Phao Hoa) cho toan bo nguoi choi!")
-                notifyActionDone("🎁 Đã thả Quà Tiếp Tế (Táo Vàng, Kim Cương, Pháo Hoa) cho toàn Server!")
+                sendCommand("say [Su Kien] Da tha Qua Tiep Te cho toan Server!")
+                notifyActionDone("🎁 Đã thả Quà Tiếp Tế cho toàn Server!")
             }
             "mining_frenzy" -> {
-                sendCommand("""title @a title {"text":"⚡ SIÊU TỐC ĐỘ ĐÀO!","color":"aqua","bold":true}""")
+                sendCommand("""title @a actionbar {"text":"⚡ Buff Siêu Tốc Độ Đào + Chạy Nhanh (5 phút)!","color":"aqua","bold":true}""")
                 sendCommand("effect give @a minecraft:haste 300 1 true")
                 sendCommand("effect give @a minecraft:speed 300 1 true")
                 sendCommand("effect give @a minecraft:night_vision 300 0 true")
-                sendCommand("say [Su Kien] Da bat Buff Sieu Toc Do Dao + Chay Nhanh + Nhin Trong Dem (5 phut) cho ca Server!")
-                notifyActionDone("⚡ Đã bật Buff Đào Nhanh Haste II + Chạy Nhanh + Nhìn Đêm (5 phút)!")
+                sendCommand("say [Su Kien] Da bat Buff Dao Nhanh + Chay Nhanh (5 phut)!")
+                notifyActionDone("⚡ Đã bật Buff Đào Nhanh + Chạy Nhanh (5 phút)!")
             }
             "exp_rain" -> {
-                sendCommand("""title @a title {"text":"✨ MƯA KINH NGHIỆM!","color":"green","bold":true}""")
+                sendCommand("""title @a actionbar {"text":"✨ Mưa Kinh Nghiệm: +30 Cấp EXP!","color":"green","bold":true}""")
                 sendCommand("xp add @a 30 levels")
-                sendCommand("say [Su Kien] Chu Server vua tang +30 Cap Kinh Nghiem (EXP) cho tat ca nguoi choi!")
-                notifyActionDone("✨ Đã tặng +30 Cấp Kinh Nghiệm (EXP) cho toàn bộ người chơi đang online!")
+                sendCommand("say [Su Kien] Da tang +30 Cap EXP cho toan Server!")
+                notifyActionDone("✨ Đã tặng +30 Cấp EXP cho toàn Server!")
             }
             "blood_moon" -> {
-                sendCommand("""title @a title {"text":"🌕 ĐÊM THỬ THÁCH!","color":"dark_red","bold":true}""")
+                sendCommand("""title @a actionbar {"text":"🌕 Đêm Thử Thách: Tăng Sức Mạnh & Kháng Cự!","color":"dark_red","bold":true}""")
                 sendCommand("time set midnight")
                 sendCommand("effect give @a minecraft:strength 180 0 true")
                 sendCommand("effect give @a minecraft:resistance 180 0 true")
-                sendCommand("say [Su Kien] Dem Thu Thach Chien Binh da bat dau! Tat ca nguoi choi duoc tang Suc Manh & Khang Cu!")
-                notifyActionDone("🌕 Đã kích hoạt Đêm Thử Thách Chiến Binh (Tăng Sức Mạnh & Kháng Cự)!")
+                sendCommand("say [Su Kien] Da bat Dem Thu Thach Chiến Binh!")
+                notifyActionDone("🌕 Đã bật Đêm Thử Thách Chiến Binh!")
             }
         }
     }
@@ -12801,6 +12801,81 @@ class McViewModel(
                 _liveTaskProgress.value = LiveTaskProgressState()
             }
         }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // [v2.9.1] ĐỒNG BỘ & ĐỔI SKIN SERVER CRACKED 1 CHẠM (SKINSRESTORER / FABRICTAILOR)
+    // ══════════════════════════════════════════════════════════════════════
+
+    private val _skinRestorerStatus = MutableStateFlow(com.mineserve.mobile.server.ProHostFeatures.SkinRestorerStatus())
+    val skinRestorerStatus: StateFlow<com.mineserve.mobile.server.ProHostFeatures.SkinRestorerStatus> = _skinRestorerStatus.asStateFlow()
+
+    fun refreshSkinRestorerStatus() {
+        val dirName = activeDirName() ?: return
+        val serverDir = repo.termuxRuntime.serverDirFor(dirName)
+        _skinRestorerStatus.value = com.mineserve.mobile.server.ProHostFeatures.inspectSkinRestorerStatus(serverDir)
+    }
+
+    fun installSkinRestorerOneTap() {
+        if (_liveTaskProgress.value.active) return
+        val activeCore = config.value.installedCores.find { it.name == config.value.activeCoreName }
+        val dirName = activeDirName()
+        if (activeCore == null || dirName == null) {
+            _errorFlow.tryEmit("Hãy chọn hoặc tạo một Server trước khi cài Đồng Bộ Skin!")
+            return
+        }
+        val serverDir = repo.termuxRuntime.serverDirFor(dirName)
+        viewModelScope.launch {
+            _liveTaskProgress.value = LiveTaskProgressState(
+                active = true,
+                progress = 0.08f,
+                title = "👕 Đang cài đặt Đồng Bộ Skin (SkinsRestorer / FabricTailor)...",
+                detail = "Giúp Server Cracked (online-mode=false) hiện đúng Skin đẹp cho mọi người"
+            )
+            try {
+                val res = com.mineserve.mobile.server.ProHostFeatures.installSkinRestorerOneTap(
+                    serverDir = serverDir,
+                    mcVersion = activeCore.version,
+                    loaderName = activeCore.core.displayName,
+                    onProgress = { ratio, msg ->
+                        _liveTaskProgress.value = LiveTaskProgressState(
+                            active = true,
+                            progress = ratio.coerceIn(0f, 1f),
+                            title = msg,
+                            detail = "Tự động lưu vào thư mục mods/ hoặc plugins/"
+                        )
+                    }
+                )
+                res.onSuccess { status ->
+                    _skinRestorerStatus.value = status
+                    refreshMods()
+                    refreshInstalledPlugins()
+                    com.mineserve.mobile.server.ProHostFeatures.playTaskCompleteChime()
+                    notifyActionDone("👕 Đã cài xong ${status.fileName}! Hãy Khởi động lại Server rồi gõ /skin set <tên_skin>!")
+                }.onFailure { err ->
+                    _errorFlow.tryEmit("❌ Lỗi cài Đồng Bộ Skin: ${err.message}")
+                }
+            } finally {
+                _liveTaskProgress.value = LiveTaskProgressState()
+            }
+        }
+    }
+
+    fun applyPlayerSkinInGame(targetPlayer: String, skinNameOrUrl: String) {
+        if (!serverState.value.isRunning) {
+            _errorFlow.tryEmit("⚠️ Hãy bật Server trước khi đổi Skin trong game!")
+            return
+        }
+        val p = targetPlayer.trim()
+        val skin = skinNameOrUrl.trim().ifBlank { p }
+        if (p.isBlank()) {
+            _errorFlow.tryEmit("⚠️ Hãy nhập tên người chơi cần đổi Skin!")
+            return
+        }
+        // Gửi đồng thời lệnh chuẩn của SkinsRestorer (Paper/Forge/Fabric) và FabricTailor (Fabric)
+        sendCommand("sr set $p $skin")
+        sendCommand("skin set $skin $p")
+        notifyActionDone("👕 Đã gửi lệnh đổi Skin '$skin' cho '$p'!")
     }
 }
 
