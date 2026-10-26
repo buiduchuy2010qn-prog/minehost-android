@@ -471,7 +471,7 @@ fun MineHostOverview(
 
             ServerOverviewCard(
                 name = active?.name ?: "Chưa có máy chủ",
-                description = active?.let { "${it.core.displayName} · MC ${it.version} · Cổng $port" }
+                description = active?.let { "${it.core.displayName} · ${it.version} · Cổng $port" }
                     ?: "Tạo server để bắt đầu chơi Minecraft.",
                 storage = activeStorage?.let {
                     "Tổng ${vm.formatStorageBytes(it.totalBytes)} · Map ${vm.formatStorageBytes(it.worldBytes)} · Mod/Plugin ${vm.formatStorageBytes(it.modsBytes + it.pluginsBytes)}"

@@ -209,7 +209,7 @@ class MineHostNavigationLayoutTest {
                 MineHostNavigation("Máy chủ", "Fabric-1.21.11", McTab.Dashboard, null, {}, {}) {
                     HostPage("Máy chủ", "Điều khiển server, lấy IP và mời bạn bè.") {
                         item {
-                            ServerOverviewCard("Fabric-1.21.11", "Fabric · MC 1.21.11 · Cổng 25565",
+                            ServerOverviewCard("Fabric-1.21.11", "Fabric · 1.21.11 · Cổng 25565",
                                 "Tổng 157.2 MB · Map 2.1 MB · Mod/Plugin 17.2 MB",
                                 if (running) "Đang hoạt động" else "Đã dừng · Sẵn sàng khởi động",
                                 MaterialTheme.colorScheme.primary,

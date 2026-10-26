@@ -41,15 +41,15 @@ internal fun ServerOverviewCard(
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 logo()
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(name, fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold)
+                    Text(description, fontSize = 12.sp, lineHeight = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Surface(color = statusColor, shape = RoundedCornerShape(4.dp), modifier = Modifier.size(7.dp)) {}
                 Text(status, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface)
             }
-            if (!storage.isNullOrBlank()) Text(storage, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (!storage.isNullOrBlank()) Text(storage, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             content()
         }
     }
@@ -66,9 +66,9 @@ internal fun ServerMetricsRow(
     onMemory: () -> Unit
 ) {
     Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        ServerMetric("TPS", tps, "Ticks/giây", MinecraftArtKind.REDSTONE, Modifier.weight(1f).fillMaxHeight(), onConsole)
-        ServerMetric("Người chơi", players, "Đang online", MinecraftArtKind.DIAMOND_SWORD, Modifier.weight(1f).fillMaxHeight(), onPlayers)
-        ServerMetric("RAM", memory, "/ "+maxMemoryMb+" MB", MinecraftArtKind.COMMAND_BLOCK, Modifier.weight(1f).fillMaxHeight(), onMemory)
+        ServerMetric("TPS", tps, "TPS", MinecraftArtKind.REDSTONE, Modifier.weight(1f).fillMaxHeight(), onConsole)
+        ServerMetric("Người chơi", players, "Người chơi", MinecraftArtKind.DIAMOND_SWORD, Modifier.weight(1f).fillMaxHeight(), onPlayers)
+        ServerMetric("RAM", memory, "RAM /"+maxMemoryMb+"MB", MinecraftArtKind.COMMAND_BLOCK, Modifier.weight(1f).fillMaxHeight(), onMemory)
     }
 }
 
@@ -86,7 +86,6 @@ private fun ServerMetric(label: String, value: String, detail: String, art: Mine
                 Text(value, modifier = Modifier.weight(1f), fontSize = if (value.length > 4) 14.sp else 18.sp, fontWeight = FontWeight.SemiBold)
                 if (!largeFont && value.length <= 4) MinecraftPixelArtIcon(art, size = 16.dp)
             }
-            Text(label, fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.Medium)
             Text(detail, fontSize = 11.sp, lineHeight = 15.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
