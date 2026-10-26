@@ -15,6 +15,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mineserve.mobile.ui.MinecraftArtKind
@@ -65,10 +67,34 @@ internal fun ServerMetricsRow(
     onPlayers: () -> Unit,
     onMemory: () -> Unit
 ) {
-    Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        ServerMetric("TPS", tps, "TPS", MinecraftArtKind.REDSTONE, Modifier.weight(1f).fillMaxHeight(), onConsole)
-        ServerMetric("Người chơi", players, "Người chơi", MinecraftArtKind.DIAMOND_SWORD, Modifier.weight(1f).fillMaxHeight(), onPlayers)
-        ServerMetric("RAM", memory, "RAM /"+maxMemoryMb+"MB", MinecraftArtKind.COMMAND_BLOCK, Modifier.weight(1f).fillMaxHeight(), onMemory)
+    val density = LocalDensity.current
+    val textMeasurer = rememberTextMeasurer()
+    val valueStyle = MaterialTheme.typography.bodyLarge.copy(lineHeight = 24.sp, fontWeight = FontWeight.SemiBold)
+    val labelStyle = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, lineHeight = 15.sp)
+    val labels = listOf("TPS", "Người chơi", "RAM /" + maxMemoryMb + "MB")
+    val values = listOf(tps, players, memory)
+    // Measure labels at the narrowest cell width before laying out the row. This
+    // avoids cyclic intrinsic/fillMaxHeight passes when live values change.
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val cellWidthPx = with(density) { ((maxWidth - 12.dp).toPx() / 3f).toInt() }
+        val paddingPx = with(density) { 16.dp.roundToPx() }
+        val contentHeightPx = values.indices.maxOf { index ->
+            val value = values[index]
+            val showArt = density.fontScale <= 1.3f && value.length <= 4
+            val artWidthPx = with(density) { if (showArt) 20.dp.roundToPx() else 0 }
+            val valueHeight = textMeasurer.measure(value,
+                style = valueStyle.copy(fontSize = if (value.length > 4) 14.sp else 18.sp),
+                constraints = Constraints(maxWidth = (cellWidthPx - paddingPx - artWidthPx).coerceAtLeast(1))).size.height
+            val labelHeight = textMeasurer.measure(labels[index], style = labelStyle,
+                constraints = Constraints(maxWidth = (cellWidthPx - paddingPx).coerceAtLeast(1))).size.height
+            maxOf(valueHeight, with(density) { if (showArt) 16.dp.roundToPx() else 0 }) + labelHeight
+        }
+        val cellHeight = with(density) { contentHeightPx.toDp() } + 20.dp
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            ServerMetric("TPS", tps, labels[0], MinecraftArtKind.REDSTONE, Modifier.weight(1f).height(cellHeight), onConsole)
+            ServerMetric("Người chơi", players, labels[1], MinecraftArtKind.DIAMOND_SWORD, Modifier.weight(1f).height(cellHeight), onPlayers)
+            ServerMetric("RAM", memory, labels[2], MinecraftArtKind.COMMAND_BLOCK, Modifier.weight(1f).height(cellHeight), onMemory)
+        }
     }
 }
 
@@ -83,10 +109,12 @@ private fun ServerMetric(label: String, value: String, detail: String, art: Mine
     ) {
         Column(Modifier.fillMaxWidth().padding(8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(value, modifier = Modifier.weight(1f), fontSize = if (value.length > 4) 14.sp else 18.sp, fontWeight = FontWeight.SemiBold)
+                Text(value, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge,
+                    fontSize = if (value.length > 4) 14.sp else 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold)
                 if (!largeFont && value.length <= 4) MinecraftPixelArtIcon(art, size = 16.dp)
             }
-            Text(detail, fontSize = 11.sp, lineHeight = 15.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(detail, style = MaterialTheme.typography.bodySmall, fontSize = 11.sp, lineHeight = 15.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

@@ -322,4 +322,19 @@ class MineHostNavigationLayoutTest {
         }
         screenshot("minecraft-original-textures")
     }
+
+    @Test fun liveMetricsCanUpdateWithoutRelayoutLoop() {
+        var running by mutableStateOf(false)
+        show {
+            Column(Modifier.padding(12.dp)) {
+                ServerMetricsRow(if (running) "19.8" else "—", if (running) "12" else "—",
+                    if (running) "1024" else "—", 2048, {}, {}, {})
+            }
+        }
+        compose.runOnIdle { running = true }
+        compose.onNodeWithText("1024").assertIsDisplayed()
+        assertTextFits()
+        compose.runOnIdle { running = false }
+        compose.onAllNodesWithText("—").assertCountEquals(3)
+    }
 }
