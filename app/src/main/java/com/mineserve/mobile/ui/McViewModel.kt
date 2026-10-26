@@ -3142,6 +3142,8 @@ class McViewModel(
         }
     }
 
+    private val _isCreatingWorld = MutableStateFlow(false)
+
     private val _isRestoringBackup = MutableStateFlow(false)
     val isRestoringBackup: StateFlow<Boolean> = _isRestoringBackup.asStateFlow()
 
@@ -3159,6 +3161,7 @@ class McViewModel(
             _worldImportBusy.value ||
             _worldModBusy.value ||
             _isRestoringBackup.value ||
+            _isCreatingWorld.value ||
             _applyingDeviceTuning.value
 
     fun startServer() {
@@ -10703,7 +10706,9 @@ class McViewModel(
         levelType: String,
         presetLabelVi: String
     ) {
-        if (serverState.value.isRunning) {
+        if (!isBootstrapped.value || isServerMutationInFlight() || _liveTaskProgress.value.active) return
+        if (isPowerNukkitXActive()) return
+        if (serverState.value.isRunning || startRequestPending || _stopInFlight.value) {
             notifyActionDone("⚠️ Hãy dừng Server trước khi tạo/chuyển sang Thế Giới mới để bảo toàn Map hiện tại!")
             return
         }
@@ -10712,27 +10717,24 @@ class McViewModel(
             _errorFlow.tryEmit("Chưa chọn máy chủ.")
             return
         }
+        _isCreatingWorld.value = true
         viewModelScope.launch {
             try {
-                val createdName = withContext(Dispatchers.IO) {
-                    val root = worldManager.worldsRoot(dirName)
-                    root.mkdirs()
-                    val uniqueWorldName = com.mineserve.mobile.server.Worlds.uniqueName(
-                        root,
-                        baseWorldName.ifBlank { "world_new" }
-                    )
-                    // Tạo sẵn thư mục đánh dấu để hiển thị ngay trong danh sách Thế Giới và server tự sinh map khi bật
-                    val newWorldDir = java.io.File(root, uniqueWorldName)
-                    newWorldDir.mkdirs()
-                    java.io.File(newWorldDir, "region").mkdirs()
-
-                    worldManager.setLevelName(dirName, uniqueWorldName)
-                    if (!worldManager.isBedrock(dirName)) {
-                        propertiesManager.setProperty(dirName, "level-seed", seed.trim())
-                        propertiesManager.setProperty(dirName, "level-type", levelType.trim().ifBlank { "minecraft:normal" })
+                val createdName = com.mineserve.mobile.server.NewWorldCreation.create(
+                    serverDir = repo.termuxRuntime.serverDirFor(dirName),
+                    baseName = baseWorldName.ifBlank { "world_new" },
+                    properties = mapOf(
+                        "level-seed" to seed.trim(),
+                        "level-type" to levelType.trim().ifBlank { "minecraft:normal" }
+                    ),
+                    checkCanCreate = {
+                        check(!repo.termuxRuntime.isMcRunning() && !serverState.value.isRunning && !startRequestPending && !_stopInFlight.value) {
+                            "Hãy dừng server trước khi tạo map mới."
+                        }
+                        check(activeDirName() == dirName) { "Server đã thay đổi; đã hủy tạo map." }
+                        check(!worldManager.isBedrock(dirName)) { "Chế độ này chỉ hỗ trợ server Java." }
                     }
-                    uniqueWorldName
-                }
+                ).name
                 loadWorlds()
                 refreshAllServerWorlds()
                 notifyActionDone(
@@ -10740,8 +10742,12 @@ class McViewModel(
                         (if (seed.isNotBlank()) " • Seed: $seed" else "") +
                         ") — Thế giới cũ vẫn được giữ nguyên!"
                 )
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _errorFlow.tryEmit("Không thể tạo thế giới mới: ${e.message}")
+            } finally {
+                _isCreatingWorld.value = false
             }
         }
     }
@@ -12851,8 +12857,12 @@ class McViewModel(
 
     /** #1 (v2.8.7): Tạo & kích hoạt Chế Độ Chơi Dựng Sẵn 1 Chạm (OneBlock / SkyBlock / Parkour / Lucky Island) */
     fun createPlayableModeWorldOneTap(modeId: String) {
-        if (_liveTaskProgress.value.active) return
-        if (serverState.value.isRunning) {
+        if (!isBootstrapped.value || _liveTaskProgress.value.active || isServerMutationInFlight()) return
+        if (isPowerNukkitXActive()) {
+            _errorFlow.tryEmit("Chế độ này chỉ hỗ trợ server Java.")
+            return
+        }
+        if (serverState.value.isRunning || startRequestPending || _stopInFlight.value) {
             _errorFlow.tryEmit("⚠️ Hãy dừng Server trước khi chuyển sang Chế độ chơi mới để bảo toàn Map hiện tại!")
             return
         }
@@ -12862,18 +12872,26 @@ class McViewModel(
             return
         }
         val serverDir = repo.termuxRuntime.serverDirFor(dirName)
+        _isCreatingWorld.value = true
         viewModelScope.launch {
             _liveTaskProgress.value = LiveTaskProgressState(
                 active = true,
                 progress = 0.08f,
                 title = "🗺️ Đang dựng chế độ chơi mới...",
-                detail = "Đang tạo thư mục map cho chế độ đã chọn. Nên sao lưu map trước khi thay đổi."
+                detail = "Tự đặt tên không trùng; map đang chơi và các map cũ được giữ nguyên."
             )
             try {
                 val res = com.mineserve.mobile.server.ProHostFeatures.createPlayableModeWorldOneTap(
                     serverDir = serverDir,
                     modeId = modeId,
                     activateImmediately = true,
+                    checkCanCreate = {
+                        check(!repo.termuxRuntime.isMcRunning() && !serverState.value.isRunning && !startRequestPending && !_stopInFlight.value) {
+                            "Hãy dừng server trước khi tạo map mới."
+                        }
+                        check(activeDirName() == dirName) { "Server đã thay đổi; đã hủy tạo map." }
+                        check(!worldManager.isBedrock(dirName)) { "Chế độ này chỉ hỗ trợ server Java." }
+                    },
                     onProgress = { ratio, msg ->
                         _liveTaskProgress.value = LiveTaskProgressState(
                             active = true,
@@ -12894,6 +12912,7 @@ class McViewModel(
                     _errorFlow.tryEmit("❌ Không thể tạo chế độ chơi: ${err.message}")
                 }
             } finally {
+                _isCreatingWorld.value = false
                 _liveTaskProgress.value = LiveTaskProgressState()
             }
         }

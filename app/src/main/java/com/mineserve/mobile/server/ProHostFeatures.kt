@@ -2781,138 +2781,148 @@ object ProHostFeatures {
         serverDir: File,
         modeId: String,
         activateImmediately: Boolean = true,
+        checkCanCreate: () -> Unit = {},
         onProgress: (Float, String) -> Unit
     ): Result<PlayableWorldModePreset> = withContext(Dispatchers.IO) {
         runCatching {
             val preset = PLAYABLE_WORLD_MODES.firstOrNull { it.id == modeId }
-                ?: PLAYABLE_WORLD_MODES.first()
+                ?: error("Chế độ chơi không hợp lệ.")
 
             onProgress(0.15f, "🌍 Đang khởi tạo thư mục chế độ '${preset.titleVi}' (${preset.folderName})...")
-            val worldDir = File(serverDir, preset.folderName).apply { mkdirs() }
-            val datapackRoot = File(worldDir, "datapacks/minehost_${preset.id}").apply { mkdirs() }
+            val worldDir = NewWorldCreation.create(
+                serverDir = serverDir,
+                baseName = preset.folderName,
+                properties = mapOf(
+                    "level-type" to preset.levelType,
+                    "level-seed" to preset.seed,
+                    "allow-flight" to "true",
+                    "spawn-protection" to "0"
+                ),
+                activate = activateImmediately,
+                checkCanCreate = checkCanCreate
+            ) { worldDir ->
+                val datapackRoot = File(worldDir, "datapacks/minehost_${preset.id}").apply { mkdirs() }
 
-            onProgress(0.42f, "⚙️ Đang đóng gói kịch bản Datapack tự động cho ${preset.titleVi}...")
-            File(datapackRoot, "pack.mcmeta").writeText(
-                """
-                {
-                  "pack": {
-                    "pack_format": 48,
-                    "supported_formats": { "min_inclusive": 15, "max_inclusive": 64 },
-                    "description": "MineHost Pro - ${preset.titleVi}"
-                  }
-                }
-                """.trimIndent()
-            )
-
-            val initCommands = when (preset.id) {
-                "oneblock" -> listOf(
-                    "gamerule keepInventory true",
-                    "gamerule doMobSpawning false",
-                    "gamerule doDaylightCycle true",
-                    "gamerule fallDamage false",
-                    "setworldspawn 0 65 0",
-                    "setblock 0 63 0 minecraft:bedrock",
-                    "setblock 0 64 0 minecraft:grass_block",
-                    "fill 2 64 -1 4 64 1 minecraft:oak_planks",
-                    "setblock 3 65 0 minecraft:chest{Items:[{Slot:0b,id:\"minecraft:water_bucket\",Count:1b,count:1},{Slot:1b,id:\"minecraft:lava_bucket\",Count:1b,count:1},{Slot:2b,id:\"minecraft:bread\",Count:16b,count:16},{Slot:3b,id:\"minecraft:oak_sapling\",Count:4b,count:4},{Slot:4b,id:\"minecraft:torch\",Count:16b,count:16}]}",
-                    "tp @a 0 66 0",
-                    """tellraw @a [{"text":"[🏝️ MineHost OneBlock] ","color":"gold","bold":true},{"text":"Chào mừng tới Đảo 1 Ô! Hãy đào ô đất tại (0, 64, 0) để nhận tài nguyên vô hạn!","color":"green"}]"""
-                )
-                "skyblock" -> listOf(
-                    "gamerule keepInventory true",
-                    "setworldspawn 0 66 0",
-                    "setblock 0 62 0 minecraft:bedrock",
-                    "fill -3 62 -3 3 63 3 minecraft:dirt",
-                    "fill -3 64 -3 3 64 3 minecraft:grass_block",
-                    "setblock 0 62 0 minecraft:bedrock",
-                    "fill 2 65 2 2 68 2 minecraft:oak_log",
-                    "fill 0 68 0 4 69 4 minecraft:oak_leaves[persistent=true]",
-                    "setblock -2 65 0 minecraft:chest{Items:[{Slot:0b,id:\"minecraft:ice\",Count:2b,count:2},{Slot:1b,id:\"minecraft:lava_bucket\",Count:1b,count:1},{Slot:2b,id:\"minecraft:bone_meal\",Count:16b,count:16},{Slot:3b,id:\"minecraft:melon_slice\",Count:8b,count:8},{Slot:4b,id:\"minecraft:oak_sapling\",Count:4b,count:4},{Slot:5b,id:\"minecraft:cooked_beef\",Count:16b,count:16}]}",
-                    "tp @a 0 66 0",
-                    """tellraw @a [{"text":"[☁️ MineHost SkyBlock] ","color":"aqua","bold":true},{"text":"Đảo SkyBlock đã sẵn sàng! Mở rương lấy Đá Băng & Dung Nham để chế tạo máy tạo Đá Cuội nhé!","color":"yellow"}]"""
-                )
-                "parkour" -> buildList {
-                    add("gamerule keepInventory true")
-                    add("gamerule fallDamage false")
-                    add("gamerule doMobSpawning false")
-                    add("time set noon")
-                    add("gamerule doDaylightCycle false")
-                    add("setworldspawn 0 71 0")
-                    add("fill -3 70 -3 3 70 3 minecraft:quartz_block")
-                    add("fill -3 70 -3 3 70 -3 minecraft:gold_block")
-                    val blocks = listOf(
-                        "minecraft:lime_concrete",
-                        "minecraft:yellow_concrete",
-                        "minecraft:orange_concrete",
-                        "minecraft:cyan_concrete",
-                        "minecraft:magenta_concrete"
-                    )
-                    for (step in 1..25) {
-                        val z = step * 4
-                        val y = 70 + (step % 5)
-                        val x = ((step * 3) % 5) - 2
-                        val b = blocks[step % blocks.size]
-                        add("setblock $x $y $z $b")
-                        if (step % 5 == 0) {
-                            add("fill ${x - 1} $y $z ${x + 1} $y $z minecraft:emerald_block")
-                        }
+                onProgress(0.42f, "⚙️ Đang đóng gói kịch bản Datapack tự động cho ${preset.titleVi}...")
+                File(datapackRoot, "pack.mcmeta").writeText(
+                    """
+                    {
+                      "pack": {
+                        "pack_format": 48,
+                        "supported_formats": { "min_inclusive": 15, "max_inclusive": 64 },
+                        "description": "MineHost Pro - ${preset.titleVi}"
+                      }
                     }
-                    add("fill -2 75 104 2 75 108 minecraft:diamond_block")
-                    add("tp @a 0 72 0")
-                    add("""tellraw @a [{"text":"[🏃 MineHost Parkour] ","color":"light_purple","bold":true},{"text":"Đấu trường Parkour 25 chặng đã sẵn sàng! Nhảy tới khối Kim Cương ở cuối đường đua để chiến thắng!","color":"green"}]""")
-                }
-                else -> listOf(
-                    "gamerule keepInventory true",
-                    "give @a minecraft:golden_apple 6",
-                    "give @a minecraft:diamond_pickaxe 1",
-                    "give @a minecraft:diamond_sword 1",
-                    "give @a minecraft:cooked_beef 32",
-                    "effect give @a minecraft:luck 1200 1 true",
-                    "effect give @a minecraft:regeneration 60 1 true",
-                    """tellraw @a [{"text":"[🍀 MineHost Đảo Kho Báu] ","color":"green","bold":true},{"text":"Đã nhận Bộ Trang Bị Kho Báu May Mắn! Chúc cả nhóm sinh tồn vui vẻ!","color":"yellow"}]"""
+                    """.trimIndent()
                 )
-            }
 
-            val tickCommands = when (preset.id) {
-                "oneblock" -> listOf(
-                    "execute if block 0 64 0 minecraft:air run setblock 0 64 0 minecraft:oak_log",
-                    "execute as @a at @s if entity @s[y=-20,dy=60] run tp @s 0 66 0"
-                )
-                "skyblock", "parkour" -> listOf(
-                    "execute as @a at @s if entity @s[y=-20,dy=55] run tp @s 0 72 0"
-                )
-                else -> emptyList()
-            }
-
-            // Hỗ trợ đồng thời chuẩn 1.21+ (function / tag function) và 1.20.x trở xuống (functions / tag functions)
-            listOf("function", "functions").forEach { fnFolder ->
-                val mhFnDir = File(datapackRoot, "data/minehost/$fnFolder").apply { mkdirs() }
-                File(mhFnDir, "init.mcfunction").writeText(initCommands.joinToString("\n") + "\n")
-                File(mhFnDir, "loop.mcfunction").writeText(tickCommands.joinToString("\n") + "\n")
-
-                val mcTagDir = File(datapackRoot, "data/minecraft/tags/$fnFolder").apply { mkdirs() }
-                File(mcTagDir, "load.json").writeText("""{"values":["minehost:init"]}""")
-                if (tickCommands.isNotEmpty()) {
-                    File(mcTagDir, "tick.json").writeText("""{"values":["minehost:loop"]}""")
-                }
-            }
-
-            onProgress(0.80f, "📝 Đang cập nhật cấu hình thế giới vào server.properties...")
-            if (activateImmediately) {
-                updateServerPropertiesMap(
-                    serverDir,
-                    mapOf(
-                        "level-name" to preset.folderName,
-                        "level-type" to preset.levelType,
-                        "level-seed" to preset.seed,
-                        "allow-flight" to "true",
-                        "spawn-protection" to "0"
+                val initCommands = when (preset.id) {
+                    "oneblock" -> listOf(
+                        "gamerule keepInventory true",
+                        "gamerule doMobSpawning false",
+                        "gamerule doDaylightCycle true",
+                        "gamerule fallDamage false",
+                        "setworldspawn 0 65 0",
+                        "setblock 0 63 0 minecraft:bedrock",
+                        "setblock 0 64 0 minecraft:grass_block",
+                        "fill 2 64 -1 4 64 1 minecraft:oak_planks",
+                        "setblock 3 65 0 minecraft:chest{Items:[{Slot:0b,id:\"minecraft:water_bucket\",Count:1b,count:1},{Slot:1b,id:\"minecraft:lava_bucket\",Count:1b,count:1},{Slot:2b,id:\"minecraft:bread\",Count:16b,count:16},{Slot:3b,id:\"minecraft:oak_sapling\",Count:4b,count:4},{Slot:4b,id:\"minecraft:torch\",Count:16b,count:16}]}",
+                        "tp @a 0 66 0",
+                        """tellraw @a [{"text":"[🏝️ MineHost OneBlock] ","color":"gold","bold":true},{"text":"Chào mừng tới Đảo 1 Ô! Hãy đào ô đất tại (0, 64, 0) để nhận tài nguyên vô hạn!","color":"green"}]"""
                     )
-                )
+                    "skyblock" -> listOf(
+                        "gamerule keepInventory true",
+                        "setworldspawn 0 66 0",
+                        "setblock 0 62 0 minecraft:bedrock",
+                        "fill -3 62 -3 3 63 3 minecraft:dirt",
+                        "fill -3 64 -3 3 64 3 minecraft:grass_block",
+                        "setblock 0 62 0 minecraft:bedrock",
+                        "fill 2 65 2 2 68 2 minecraft:oak_log",
+                        "fill 0 68 0 4 69 4 minecraft:oak_leaves[persistent=true]",
+                        "setblock -2 65 0 minecraft:chest{Items:[{Slot:0b,id:\"minecraft:ice\",Count:2b,count:2},{Slot:1b,id:\"minecraft:lava_bucket\",Count:1b,count:1},{Slot:2b,id:\"minecraft:bone_meal\",Count:16b,count:16},{Slot:3b,id:\"minecraft:melon_slice\",Count:8b,count:8},{Slot:4b,id:\"minecraft:oak_sapling\",Count:4b,count:4},{Slot:5b,id:\"minecraft:cooked_beef\",Count:16b,count:16}]}",
+                        "tp @a 0 66 0",
+                        """tellraw @a [{"text":"[☁️ MineHost SkyBlock] ","color":"aqua","bold":true},{"text":"Đảo SkyBlock đã sẵn sàng! Mở rương lấy Đá Băng & Dung Nham để chế tạo máy tạo Đá Cuội nhé!","color":"yellow"}]"""
+                    )
+                    "parkour" -> buildList {
+                        add("gamerule keepInventory true")
+                        add("gamerule fallDamage false")
+                        add("gamerule doMobSpawning false")
+                        add("time set noon")
+                        add("gamerule doDaylightCycle false")
+                        add("setworldspawn 0 71 0")
+                        add("fill -3 70 -3 3 70 3 minecraft:quartz_block")
+                        add("fill -3 70 -3 3 70 -3 minecraft:gold_block")
+                        val blocks = listOf(
+                            "minecraft:lime_concrete",
+                            "minecraft:yellow_concrete",
+                            "minecraft:orange_concrete",
+                            "minecraft:cyan_concrete",
+                            "minecraft:magenta_concrete"
+                        )
+                        for (step in 1..25) {
+                            val z = step * 4
+                            val y = 70 + (step % 5)
+                            val x = ((step * 3) % 5) - 2
+                            val b = blocks[step % blocks.size]
+                            add("setblock $x $y $z $b")
+                            if (step % 5 == 0) {
+                                add("fill ${x - 1} $y $z ${x + 1} $y $z minecraft:emerald_block")
+                            }
+                        }
+                        add("fill -2 75 104 2 75 108 minecraft:diamond_block")
+                        add("tp @a 0 72 0")
+                        add("""tellraw @a [{"text":"[🏃 MineHost Parkour] ","color":"light_purple","bold":true},{"text":"Đấu trường Parkour 25 chặng đã sẵn sàng! Nhảy tới khối Kim Cương ở cuối đường đua để chiến thắng!","color":"green"}]""")
+                    }
+                    else -> listOf(
+                        "gamerule keepInventory true",
+                        "give @a minecraft:golden_apple 6",
+                        "give @a minecraft:diamond_pickaxe 1",
+                        "give @a minecraft:diamond_sword 1",
+                        "give @a minecraft:cooked_beef 32",
+                        "effect give @a minecraft:luck 1200 1 true",
+                        "effect give @a minecraft:regeneration 60 1 true",
+                        """tellraw @a [{"text":"[🍀 MineHost Đảo Kho Báu] ","color":"green","bold":true},{"text":"Đã nhận Bộ Trang Bị Kho Báu May Mắn! Chúc cả nhóm sinh tồn vui vẻ!","color":"yellow"}]"""
+                    )
+                }
+
+                val tickCommands = when (preset.id) {
+                    "oneblock" -> listOf(
+                        "execute if block 0 64 0 minecraft:air run setblock 0 64 0 minecraft:oak_log",
+                        "execute as @a at @s if entity @s[y=-20,dy=60] run tp @s 0 66 0"
+                    )
+                    "skyblock", "parkour" -> listOf(
+                        "execute as @a at @s if entity @s[y=-20,dy=55] run tp @s 0 72 0"
+                    )
+                    else -> emptyList()
+                }
+
+                // Hỗ trợ đồng thời chuẩn 1.21+ (function / tag function) và 1.20.x trở xuống (functions / tag functions)
+                listOf("function", "functions").forEach { fnFolder ->
+                    val mhFnDir = File(datapackRoot, "data/minehost/$fnFolder").apply { mkdirs() }
+                    // The load tag runs on every restart/reload; only initialize a new world once.
+                    File(mhFnDir, "load.mcfunction").writeText(
+                        "execute unless data storage minehost:setup initialized run function minehost:init\n"
+                    )
+                    File(mhFnDir, "init.mcfunction").writeText(
+                        (initCommands + "data modify storage minehost:setup initialized set value 1b")
+                            .joinToString("\n", postfix = "\n")
+                    )
+                    File(mhFnDir, "loop.mcfunction").writeText(tickCommands.joinToString("\n") + "\n")
+
+                    val mcTagDir = File(datapackRoot, "data/minecraft/tags/$fnFolder").apply { mkdirs() }
+                    File(mcTagDir, "load.json").writeText("""{"values":["minehost:load"]}""")
+                    if (tickCommands.isNotEmpty()) {
+                        File(mcTagDir, "tick.json").writeText("""{"values":["minehost:loop"]}""")
+                    }
+                }
+
+                onProgress(0.80f, "📝 Đang hoàn tất map mới và lưu lựa chọn...")
             }
-            onProgress(1.0f, "🎉 Đã tạo xong chế độ '${preset.titleVi}' (${preset.folderName})!")
-            preset
-        }
+            val created = preset.copy(folderName = worldDir.name)
+            // Progress reporting must not turn a committed creation into a reported failure.
+            runCatching { onProgress(1.0f, "🎉 Đã tạo map mới: " + created.folderName) }
+            created
+        }.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
     }
 
     // ── ĐỒNG BỘ & ĐỔI SKIN SERVER CRACKED 1 CHẠM (SKINSRESTORER / FABRICTAILOR) ──

@@ -381,4 +381,35 @@ class MineHostNavigationLayoutTest {
         assertTextFits()
     }
 
+
+    @Test fun newWorldDialogExplainsPreservationAndRequiresConfirmation() {
+        var confirmed = 0
+        var dismissed = 0
+        show {
+            CreatePlayableWorldDialog("OneBlock", "world_oneblock", true, { dismissed++ }, { confirmed++ })
+        }
+        assertEquals(0, confirmed)
+        compose.onNodeWithText("Tạo map OneBlock mới?").assertIsDisplayed()
+        compose.onNodeWithText("world_oneblock_2", substring = true).assertExists()
+        compose.onNodeWithText("Không ghi đè", substring = true).assertExists()
+        compose.onNodeWithText("Tạo map mới").assertIsDisplayed().performClick()
+        assertEquals(1, confirmed)
+        compose.onNodeWithText("Hủy").performClick()
+        assertEquals(1, dismissed)
+        assertTextFits()
+        screenshot("create-new-world-confirmation-320")
+    }
+
+    @Test fun newWorldDialogAtLargeFontKeepsActionsVisibleAndDisabledWhenBusy() {
+        var confirmed = false
+        show(fontScale = 1.8f, dark = true) {
+            CreatePlayableWorldDialog("Đảo kho báu", "world_lucky_island", false, {}, { confirmed = true })
+        }
+        compose.onNodeWithText("Tạo map mới").assertIsDisplayed().assertIsNotEnabled()
+        compose.onNodeWithText("Hủy").assertIsDisplayed()
+        assertFalse(confirmed)
+        assertTextFits()
+        screenshot("create-new-world-confirmation-large-font-320")
+    }
+
 }

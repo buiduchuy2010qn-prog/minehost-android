@@ -9,6 +9,8 @@ import androidx.compose.material.icons.outlined.Public
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
@@ -170,13 +172,8 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {},
 
     fun selectPlayableMode(modeId: String, title: String) {
         if (vm.isPowerNukkitXActive()) return
-        val folder = ProHostFeatures.PLAYABLE_WORLD_MODES.firstOrNull { it.id == modeId }?.folderName
-        val existingWorld = worlds.firstOrNull { it.name == folder }
-        if (existingWorld != null) {
-            activate = existingWorld
-        } else {
-            pendingPlayableMode = modeId to title
-        }
+        // Creating is never an alias for activating/updating an existing world.
+        pendingPlayableMode = modeId to title
     }
 
     BackHandler(enabled = selectedWorldName != null) { selectedWorldName = null }
@@ -404,7 +401,7 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {},
                     expandForTask = liveTask.active
                 ) {
                     Text(
-                        if (supportsJavaWorldCreation) "Tạo map mới kèm datapack, điểm hồi sinh và rương khởi đầu. Bạn sẽ xác nhận trước khi tạo và chuyển map."
+                        if (supportsJavaWorldCreation) "Mỗi lần tạo là một map riêng, tự đặt tên không trùng. Map cũ vẫn giữ nguyên; mở lại từ Danh sách."
                         else "Các chế độ này chỉ hỗ trợ máy chủ Java. Với PowerNukkitX, hãy nhập map Bedrock hoặc chuyển map đã có trong danh sách.",
                         fontSize = 14.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1158,28 +1155,14 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {},
 
     pendingPlayableMode?.takeIf { supportsJavaWorldCreation }?.let { (modeId, title) ->
         val folder = ProHostFeatures.PLAYABLE_WORLD_MODES.firstOrNull { it.id == modeId }?.folderName.orEmpty()
-        AlertDialog(
-            onDismissRequest = { pendingPlayableMode = null },
-            title = { Text("Tạo và chuyển sang $title?") },
-            text = {
-                Text(
-                    "Ứng dụng sẽ cài datapack vào '$folder' và chọn map này cho lần khởi động tiếp theo. " +
-                        "Nếu thư mục này đã tồn tại, datapack sẽ được cập nhật và có thể dựng lại khu vực khởi đầu. " +
-                        "Muốn tiếp tục map cũ, hãy chọn map trong danh sách. Máy chủ phải dừng; thao tác này không tự tạo bản sao lưu."
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        pendingPlayableMode = null
-                        if (vm.isPowerNukkitXActive()) return@TextButton
-                        vm.createPlayableModeWorldOneTap(modeId)
-                    },
-                    enabled = supportsJavaWorldCreation && ready && !running && !importing && !liveTask.active
-                ) { Text("Tạo và chuyển map") }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingPlayableMode = null }) { Text("Hủy") }
+        CreatePlayableWorldDialog(
+            title = title,
+            folder = folder,
+            canCreate = supportsJavaWorldCreation && ready && !running && !importing && !liveTask.active,
+            onDismiss = { pendingPlayableMode = null },
+            onConfirm = {
+                pendingPlayableMode = null
+                if (!vm.isPowerNukkitXActive()) vm.createPlayableModeWorldOneTap(modeId)
             }
         )
     }
@@ -1633,4 +1616,34 @@ private fun WorldToolsSection(
             )
         }
     }
+}
+
+/** The same confirmation is used for every create action; resuming belongs to the world list. */
+@Composable
+internal fun CreatePlayableWorldDialog(
+    title: String,
+    folder: String,
+    canCreate: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Tạo map " + title + " mới?") },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text("Tự đặt tên: " + folder + ", " + folder + "_2, " + folder + "_3… (chọn tên chưa dùng).")
+                Text("Map mới có thư mục riêng. Không ghi đè map đang chơi hoặc các map cũ, kể cả map cùng chế độ.")
+                Text("Chỉ chọn map mới sau khi tạo thành công. Chơi lại map cũ: Danh sách → chọn map → Chuyển map.")
+                Text("Máy chủ phải dừng. Thao tác này không tạo thêm bản sao lưu.")
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm, enabled = canCreate) { Text("Tạo map mới") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Hủy") } }
+    )
 }
