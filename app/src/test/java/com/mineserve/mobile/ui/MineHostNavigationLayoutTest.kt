@@ -347,7 +347,9 @@ class MineHostNavigationLayoutTest {
     }
 
     @org.junit.Before fun failFastForLayoutDiagnostics() {
-        androidx.test.espresso.IdlingPolicies.setMasterPolicyTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+        Class.forName("androidx.test.espresso.IdlingPolicies")
+            .getMethod("setMasterPolicyTimeout", java.lang.Long.TYPE, java.util.concurrent.TimeUnit::class.java)
+            .invoke(null, 10L, java.util.concurrent.TimeUnit.SECONDS)
     }
 
     @Test fun isolatedRunningControlsSettle() {

@@ -63,12 +63,11 @@ jobs:
               env.write("MINEHOST_STORE_PASSWORD=" + password + "\n")
           PY
 
-      - name: Run regression checks and build release
+      - name: Run regression checks
         shell: bash
         run: |
           chmod +x gradlew
           ./gradlew :app:testReleaseUnitTest --tests "com.mineserve.mobile.server.MineoraAuditRegressionTest" --tests "com.mineserve.mobile.server.MineHostSafetyTest" --tests "com.mineserve.mobile.ui.MineHostNavigationLayoutTest" --build-cache --parallel --max-workers=4 -Dorg.gradle.jvmargs="-Xmx4g -Dfile.encoding=UTF-8"
-          ./gradlew :app:assembleRelease --build-cache --parallel --max-workers=4 -Dorg.gradle.jvmargs="-Xmx4g -Dfile.encoding=UTF-8"
 
       - name: Upload UI layout checks
         if: always()
@@ -81,6 +80,11 @@ jobs:
             app/build/test-results/testReleaseUnitTest/
           if-no-files-found: warn
           retention-days: 7
+
+      - name: Build release APK
+        shell: bash
+        run: |
+          ./gradlew :app:assembleRelease --build-cache --parallel --max-workers=4 -Dorg.gradle.jvmargs="-Xmx4g -Dfile.encoding=UTF-8"
 
       - name: Verify APK can update the previous release
         shell: bash
