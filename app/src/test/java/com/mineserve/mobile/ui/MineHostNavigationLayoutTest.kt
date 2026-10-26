@@ -64,22 +64,19 @@ class MineHostNavigationLayoutTest {
                 }
             }
         }
-        try {
-            compose.waitForIdle()
-        } catch (failure: Throwable) {
-            val testName = Throwable().stackTrace.firstOrNull {
-                it.className == javaClass.name && it.methodName != "show" && !it.methodName.contains("$")
-            }?.methodName ?: "unknown"
-            val environment = readPrivateField(compose, "environment")
-            val idleResource = readPrivateField(environment, "composeIdlingResource")
-            val diagnostic = idleResource.javaClass.getDeclaredMethod("getDiagnosticMessageIfBusy").apply { isAccessible = true }.invoke(idleResource)
-            println("IDLE_DIAGNOSTIC " + testName + ": " + diagnostic)
-            screenshot("failed-" + testName)
-            // Robolectric does not automatically draw. Check whether one real
-            // draw completes pending layout rather than changing production UI.
-            compose.waitForIdle()
-            println("IDLE_AFTER_DRAW " + testName + ": settled")
+        // Robolectric's native renderer does not automatically perform draw
+        // passes. Render once after initial composition to flush draw-time
+        // snapshot changes, then retain the normal idle/layout assertions.
+        org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+        compose.mainClock.advanceTimeByFrame()
+        compose.runOnUiThread {
+            val view = controller!!.get().window.decorView
+            check(view.width > 0 && view.height > 0)
+            val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
+            view.draw(Canvas(bitmap))
+            bitmap.recycle()
         }
+        compose.waitForIdle()
     }
 
     @After fun closeActivity() { controller?.pause()?.stop()?.destroy() }
@@ -353,11 +350,6 @@ class MineHostNavigationLayoutTest {
         compose.onAllNodesWithText("—").assertCountEquals(3)
     }
 
-    @org.junit.Before fun failFastForLayoutDiagnostics() {
-        Class.forName("androidx.test.espresso.IdlingPolicies")
-            .getMethod("setMasterPolicyTimeout", java.lang.Long.TYPE, java.util.concurrent.TimeUnit::class.java)
-            .invoke(null, 10L, java.util.concurrent.TimeUnit.SECONDS)
-    }
 
     @Test fun isolatedRunningControlsSettle() {
         show { Column(Modifier.padding(12.dp)) {
@@ -389,16 +381,4 @@ class MineHostNavigationLayoutTest {
         assertTextFits()
     }
 
-    private fun readPrivateField(instance: Any, name: String): Any {
-        var type: Class<*>? = instance.javaClass
-        while (type != null) {
-            val field = type.declaredFields.firstOrNull { it.name == name }
-            if (field != null) {
-                field.isAccessible = true
-                return requireNotNull(field.get(instance))
-            }
-            type = type.superclass
-        }
-        error("Missing diagnostic field: " + name)
-    }
 }

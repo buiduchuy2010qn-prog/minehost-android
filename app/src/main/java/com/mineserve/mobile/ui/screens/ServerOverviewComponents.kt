@@ -71,7 +71,7 @@ internal fun ServerMetricsRow(
     val textMeasurer = rememberTextMeasurer()
     val valueStyle = MaterialTheme.typography.bodyLarge.copy(lineHeight = 24.sp, fontWeight = FontWeight.SemiBold)
     val labelStyle = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, lineHeight = 15.sp)
-    val labels = listOf("TPS", "Người chơi", "RAM /" + maxMemoryMb + "MB")
+    val labels = listOf("TPS", "Người chơi", "RAM\n/ " + maxMemoryMb + " MB")
     val values = listOf(tps, players, memory)
     // Measure labels at the narrowest cell width before laying out the row. This
     // avoids cyclic intrinsic/fillMaxHeight passes when live values change.
@@ -192,7 +192,12 @@ internal fun ServerAddressRow(label: String, address: String?, onCopy: () -> Uni
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(address ?: "Chưa có địa chỉ", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+            // A break opportunity before the port keeps :25565 together on small screens.
+            val displayAddress = address?.let {
+                val separator = it.lastIndexOf(':')
+                if (separator > 0) it.substring(0, separator) + "\u200B" + it.substring(separator) else it
+            }
+            Text(displayAddress ?: "Chưa có địa chỉ", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
         }
         IconButton(onClick = onCopy, enabled = address != null) { Icon(Icons.Outlined.ContentCopy, "Sao chép " + label) }
     }
