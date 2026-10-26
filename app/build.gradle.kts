@@ -27,8 +27,8 @@ android {
         applicationId = "vn.minehost.pro"
         minSdk = 26
         targetSdk = 28
-        versionCode = 63
-        versionName = "2.9.6"
+        versionCode = 64
+        versionName = "2.9.7"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }

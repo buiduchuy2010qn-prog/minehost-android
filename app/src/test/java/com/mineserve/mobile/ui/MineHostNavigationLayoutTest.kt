@@ -23,6 +23,12 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import com.mineserve.mobile.ui.screens.AdaptiveActionRow
 import com.mineserve.mobile.ui.screens.HostAction
+import com.mineserve.mobile.ui.screens.*
+import com.mineserve.mobile.R
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import com.mineserve.mobile.data.ServerCore
+import org.robolectric.RuntimeEnvironment
 import com.mineserve.mobile.ui.screens.HostDisclosure
 import com.mineserve.mobile.ui.theme.McTypography
 import com.mineserve.mobile.ui.theme.EyeCareColorPreset
@@ -194,5 +200,126 @@ class MineHostNavigationLayoutTest {
                 assertTrue("$preset has insufficient text contrast: $ratio", ratio >= 4.5f)
             }
         }
+    }
+
+    @Composable
+    private fun OverviewFixture(running: Boolean = false) {
+        Column {
+            Box(Modifier.weight(1f)) {
+                MineHostNavigation("Máy chủ", "Fabric-1.21.11", McTab.Dashboard, null, {}, {}) {
+                    HostPage("Máy chủ", "Điều khiển server, lấy IP và mời bạn bè.") {
+                        item {
+                            ServerOverviewCard("Fabric-1.21.11", "Fabric · MC 1.21.11 · Cổng 25565",
+                                "Tổng 157.2 MB · Map 2.1 MB · Mod/Plugin 17.2 MB",
+                                if (running) "Đang hoạt động" else "Đã dừng · Sẵn sàng khởi động",
+                                MaterialTheme.colorScheme.primary,
+                                logo = { IconButton(onClick = {}) { CoreBrandLogo(ServerCore.Fabric, size = 36.dp) } }) {
+                                ServerMetricsRow(if (running) "20.0" else "—", if (running) "12" else "—",
+                                    if (running) "768" else "—", 1024, {}, {}, {})
+                                ServerControlActions(if (running) "Lưu & dừng" else "Bật server",
+                                    if (running) "Khởi động lại" else "Dọn RAM", running, true, true, {}, {})
+                                HorizontalDivider()
+                                ServerShortcuts(1, {}, {})
+                            }
+                        }
+                        item {
+                            HostCard("IP kết nối của server", MinecraftArtKind.ENDER_EYE) {
+                                ServerAddressRow("Java / máy tính", if (running) "minehost-example.tun.ply.gg:25565" else null) {}
+                                ServerAddressRow("Bedrock / điện thoại", if (running) "example.ply.gg:19132" else null) {}
+                                Text("Playit.gg", style = MaterialTheme.typography.titleSmall)
+                                Text("Dữ liệu minh họa kiểm thử", style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                }
+            }
+            MineHostBottomBar(McTab.Dashboard) {}
+        }
+    }
+
+    @Test fun stoppedOverviewShowsIpBelowCompactCardAt320() {
+        show(dark = true) { OverviewFixture() }
+        compose.onNodeWithText("Ng??i ch?i").assertDoesNotExist()
+        compose.onNodeWithText("?").assertDoesNotExist()
+        compose.onAllNodesWithText("—").assertCountEquals(3)
+        val metrics = listOf("TPS", "Người chơi", "RAM").map { compose.onNodeWithTag("metric-" + it).fetchSemanticsNode().boundsInRoot }
+        assertEquals(metrics[0].top, metrics[1].top, 1f)
+        assertEquals(metrics[1].top, metrics[2].top, 1f)
+        assertEquals(metrics[0].width, metrics[2].width, 1f)
+        assertTrue(metrics[0].right < metrics[1].left && metrics[1].right < metrics[2].left)
+        val card = compose.onNodeWithTag("server-overview").fetchSemanticsNode().boundsInRoot
+        assertTrue("Hero too tall: " + card.height, card.height < 400f)
+        compose.onNodeWithText("Java / máy tính").assertIsDisplayed()
+        compose.onNodeWithText("+ Tạo server").assertIsDisplayed()
+        compose.onNodeWithText("Tạo mới").assertDoesNotExist()
+        assertTextFits()
+        screenshot("overview-stopped-dark-320")
+    }
+
+    @Test
+    @Config(qualifiers = "w360dp-h800dp-mdpi")
+    fun runningOverviewAt360KeepsBothActionsTogether() {
+        show(dark = true) { OverviewFixture(running = true) }
+        val primary = compose.onNodeWithText("Lưu & dừng").fetchSemanticsNode().boundsInRoot
+        val secondary = compose.onNodeWithText("Khởi động lại").fetchSemanticsNode().boundsInRoot
+        assertEquals(primary.center.y, secondary.center.y, 1f)
+        assertTextFits()
+        screenshot("overview-running-dark-360")
+    }
+
+    @Test fun overviewAlsoRendersInLightTheme() {
+        show { OverviewFixture(running = true) }
+        assertTextFits()
+        screenshot("overview-running-light-320")
+    }
+
+    @Test fun threeMetricsAndControlsKeepCallbacksAtLargeFont() {
+        val calls = IntArray(7)
+        show(fontScale = 1.8f, dark = true) {
+            Column(Modifier.verticalScroll(rememberScrollState()).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                ServerMetricsRow("20.0", "123", "16384", 32768, { calls[0]++ }, { calls[1]++ }, { calls[2]++ })
+                ServerControlActions("Lưu & dừng", "Khởi động lại", true, true, true, { calls[3]++ }, { calls[4]++ })
+                ServerShortcuts(12, { calls[5]++ }, { calls[6]++ })
+                ServerReadySoundSetting(true, {}, {})
+            }
+        }
+        assertTrue(calls.all { it == 0 })
+        val metrics = listOf("TPS", "Người chơi", "RAM").map { compose.onNodeWithTag("metric-" + it).fetchSemanticsNode().boundsInRoot }
+        assertEquals(metrics[0].top, metrics[2].top, 1f)
+        assertEquals(metrics[0].height, metrics[2].height, 1f)
+        assertTextFits()
+        screenshot("overview-controls-320-large-font")
+        listOf("TPS", "Người chơi", "RAM").forEach { compose.onNodeWithTag("metric-" + it).performClick() }
+        listOf("Lưu & dừng", "Khởi động lại", "+ Tạo server", "Quản lý (12)").forEach { compose.onNodeWithText(it).performScrollTo().performClick() }
+        assertArrayEquals(intArrayOf(1, 1, 1, 1, 1, 1, 1), calls)
+    }
+
+    @Test fun minecraftIconsUseOriginalFramePixelsInsteadOfSquashedAtlases() {
+        val resources = RuntimeEnvironment.getApplication().resources
+        val raw = android.graphics.BitmapFactory.decodeResource(resources, R.drawable.minehost_minecraft_command_block,
+            android.graphics.BitmapFactory.Options().apply { inScaled = false })
+        val frame = minecraftTextureBitmap(resources, MinecraftArtKind.COMMAND_BLOCK)
+        assertEquals(16, frame.width)
+        assertEquals(16, frame.height)
+        for (y in 0 until 16) for (x in 0 until 16) assertEquals(raw.getPixel(x, y), frame.getPixel(x, y))
+        val creeper = android.graphics.BitmapFactory.decodeResource(resources, R.drawable.minehost_minecraft_creeper)
+        val face = minecraftTextureBitmap(resources, MinecraftArtKind.CREEPER)
+        assertEquals(8, face.width)
+        for (y in 0 until 8) for (x in 0 until 8) assertEquals(creeper.getPixel(x + 8, y + 8), face.getPixel(x, y))
+        MinecraftArtKind.entries.forEach { kind ->
+            val bitmap = minecraftTextureBitmap(resources, kind)
+            assertEquals(kind.name, bitmap.width, bitmap.height)
+        }
+        show(dark = true) {
+            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                MinecraftArtKind.entries.forEach { kind ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        MinecraftPixelArtIcon(kind, size = 32.dp)
+                        Text(kind.titleVi)
+                    }
+                }
+            }
+        }
+        screenshot("minecraft-original-textures")
     }
 }

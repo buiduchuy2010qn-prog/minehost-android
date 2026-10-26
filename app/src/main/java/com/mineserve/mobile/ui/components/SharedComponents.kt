@@ -685,12 +685,8 @@ private fun cachedPixelArtBitmap(kind: MinecraftArtKind): androidx.compose.ui.gr
     }
 }
 
-@Composable
-fun MinecraftPixelArtIcon(
-    kind: MinecraftArtKind,
-    size: androidx.compose.ui.unit.Dp = 32.dp,
-    modifier: Modifier = Modifier
-) {
+/** Decode original game pixels, selecting one frame/face instead of squeezing an atlas. */
+internal fun minecraftTextureBitmap(resources: android.content.res.Resources, kind: MinecraftArtKind): android.graphics.Bitmap {
     val resourceId = when (kind) {
         MinecraftArtKind.GRASS -> R.drawable.minehost_minecraft_grass_block
         MinecraftArtKind.CREEPER -> R.drawable.minehost_minecraft_creeper
@@ -701,14 +697,29 @@ fun MinecraftPixelArtIcon(
         MinecraftArtKind.GOLDEN_APPLE -> R.drawable.minehost_minecraft_golden_apple
         MinecraftArtKind.REDSTONE -> R.drawable.minehost_minecraft_redstone
     }
+    val source = android.graphics.BitmapFactory.decodeResource(resources, resourceId,
+        android.graphics.BitmapFactory.Options().apply { inScaled = false })
+    return when (kind) {
+        MinecraftArtKind.COMMAND_BLOCK -> android.graphics.Bitmap.createBitmap(source, 0, 0, 16, 16)
+        MinecraftArtKind.CREEPER -> android.graphics.Bitmap.createBitmap(source, 8, 8, 8, 8)
+        else -> source
+    }
+}
+
+@Composable
+fun MinecraftPixelArtIcon(
+    kind: MinecraftArtKind,
+    size: androidx.compose.ui.unit.Dp = 32.dp,
+    modifier: Modifier = Modifier
+) {
+    val resources = LocalContext.current.resources
+    val bitmap = remember(resources, kind) { minecraftTextureBitmap(resources, kind).asImageBitmap() }
     androidx.compose.foundation.Image(
-        painter = painterResource(resourceId),
+        bitmap = bitmap,
         contentDescription = kind.titleVi,
-        contentScale = androidx.compose.ui.layout.ContentScale.FillBounds,
-        modifier = modifier
-            .size(size)
-            .clip(RoundedCornerShape(6.dp))
-            .border(1.dp, Color.White.copy(alpha = 0.22f), RoundedCornerShape(6.dp))
+        contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+        filterQuality = androidx.compose.ui.graphics.FilterQuality.None,
+        modifier = modifier.size(size)
     )
 }
 

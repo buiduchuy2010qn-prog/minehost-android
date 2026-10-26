@@ -290,11 +290,11 @@ fun MineHostOverview(
 
     val busy = downloading || installing || addonBusy.isNotEmpty() || javaOperation != null || importing || applying
     val status = when {
-        stopping -> "⏳ ĐANG LƯU & DỪNG…"
-        state.startupPhase == StartupPhase.Failed -> "❌ KHỞI ĐỘNG THẤT BẠI"
-        state.isRunning && state.startupPhase != StartupPhase.Ready -> "⚡ ĐANG KHỞI ĐỘNG…"
-        state.isRunning -> "🟢 ĐANG HOẠT ĐỘNG"
-        else -> "⚪ ĐANG DỪNG (SẴN SÀNG)"
+        stopping -> "Đang lưu & dừng…"
+        state.startupPhase == StartupPhase.Failed -> "Khởi động thất bại"
+        state.isRunning && state.startupPhase != StartupPhase.Ready -> "Đang khởi động…"
+        state.isRunning -> "Đang hoạt động"
+        else -> "Đã dừng · Sẵn sàng khởi động"
     }
 
     LaunchedEffect(Unit) { vm.refreshLanIp() }
@@ -329,27 +329,16 @@ fun MineHostOverview(
         }
     }
     val overviewTab = section
-    var showConnectionDetails by rememberSaveable(active?.dirName, "connection-details-v3") { mutableStateOf(true) }
 
     HostPage(
         title = when (section) { 0 -> "Máy chủ"; 2 -> "Luật chơi & tọa độ"; 4 -> "Tiện ích người chơi"; 5 -> "Gói mở rộng"; else -> "Tối ưu & chạy nền" },
         subtitle = if (section == 0) "Điều khiển server, lấy IP và mời bạn bè."
             else "Máy chủ: ${active?.name ?: "Chưa chọn"}. Mở một mục để xem các thao tác.",
-        trailingHeader = {
-            if (onBack != null) {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Quay lại")
-                }
-            } else {
-            Button(
-                onClick = { navigate(SubPage.Cores) },
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                shape = RoundedCornerShape(10.dp)
-            ) {
-                Text("Tạo mới", style = MaterialTheme.typography.labelLarge)
+        trailingHeader = if (onBack != null) ({
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Quay lại")
             }
-            }
-        }
+        }) else null
     ) {
         // ── BANNER TỰ ĐỘNG PHÁT HIỆN & CÀI ĐÈ BẢN CẬP NHẬT MỚI (OTA) ──
         if (section == 0 && (otaState is McViewModel.UpdateUiState.Available ||
@@ -480,119 +469,27 @@ fun MineHostOverview(
                 label = "startup_progress_anim"
             )
 
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-                border = BorderStroke(
-                    if (state.isRunning) 2.dp else 1.5.dp,
-                    if (state.isRunning && state.startupPhase == StartupPhase.Ready) {
-                        Color(0xFF10B981).copy(alpha = pulseAlpha)
-                    } else if (state.isRunning) {
-                        Color(0xFFF59E0B).copy(alpha = pulseAlpha)
-                    } else {
-                        MaterialTheme.colorScheme.primary
+            ServerOverviewCard(
+                name = active?.name ?: "Chưa có máy chủ",
+                description = active?.let { "${it.core.displayName} · MC ${it.version} · Cổng $port" }
+                    ?: "Tạo server để bắt đầu chơi Minecraft.",
+                storage = activeStorage?.let {
+                    "Tổng ${vm.formatStorageBytes(it.totalBytes)} · Map ${vm.formatStorageBytes(it.worldBytes)} · Mod/Plugin ${vm.formatStorageBytes(it.modsBytes + it.pluginsBytes)}"
+                },
+                status = status,
+                statusColor = when {
+                    stopping -> MaterialTheme.colorScheme.tertiary
+                    state.startupPhase == StartupPhase.Failed -> MaterialTheme.colorScheme.error
+                    state.isRunning -> MaterialTheme.colorScheme.primary.copy(alpha = pulseAlpha)
+                    else -> MaterialTheme.colorScheme.outline
+                },
+                logo = {
+                    IconButton(onClick = { navigate(SubPage.ServerIcon) }) {
+                        if (active != null) com.mineserve.mobile.ui.CoreBrandLogo(core = active.core, size = 36.dp)
+                        else MinecraftPixelArtIcon(kind = MinecraftArtKind.GRASS, size = 32.dp)
                     }
-                )
+                }
             ) {
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.22f),
-                                    Color.Transparent
-                                )
-                            )
-                        )
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(56.dp)
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f))
-                                .border(
-                                    1.5.dp,
-                                    if (state.isRunning) Color(0xFF10B981).copy(alpha = pulseAlpha) else MaterialTheme.colorScheme.primary,
-                                    RoundedCornerShape(14.dp)
-                                )
-                                .clickable { navigate(SubPage.ServerIcon) },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (active != null) {
-                                com.mineserve.mobile.ui.CoreBrandLogo(
-                                    core = active.core,
-                                    size = 42.dp
-                                )
-                            } else {
-                                MinecraftPixelArtIcon(
-                                    kind = MinecraftArtKind.GRASS,
-                                    size = 38.dp
-                                )
-                            }
-                        }
-                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                            Surface(
-                                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.78f),
-                                shape = RoundedCornerShape(6.dp)
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                                ) {
-                                    if (state.isRunning || stopping || liveTask.active) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(8.dp)
-                                                .clip( androidx.compose.foundation.shape.CircleShape)
-                                                .background(
-                                                    when {
-                                                        stopping -> Color(0xFFF59E0B).copy(alpha = pulseAlpha)
-                                                        state.startupPhase == StartupPhase.Ready -> Color(0xFF10B981).copy(alpha = pulseAlpha)
-                                                        else -> Color(0xFF38BDF8).copy(alpha = pulseAlpha)
-                                                    }
-                                                )
-                                        )
-                                    }
-                                    Text(
-                                        status,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                }
-                            }
-                            Text(
-                                active?.name ?: "Chưa có máy chủ",
-                                style = MaterialTheme.typography.headlineSmall,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text(
-                                active?.let { "🧩 ${it.core.displayName} · MC ${it.version} · Cổng $port" }
-                                    ?: "Bấm '➕ Tạo Server Mới' để chọn phiên bản Minecraft!",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            if (activeStorage != null) {
-                                Text(
-                                    "💾 Tổng: ${vm.formatStorageBytes(activeStorage.totalBytes)} • 🌍 Map: ${vm.formatStorageBytes(activeStorage.worldBytes)} • 🧩 Mod/Plugin: ${vm.formatStorageBytes(activeStorage.modsBytes + activeStorage.pluginsBytes)}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.Medium
-                                )
-                            }
-                        }
-                    }
-
                     if (state.isRunning && state.startupPhase != StartupPhase.Ready) {
                         Surface(
                             color = MaterialTheme.colorScheme.surface.copy(alpha = 0.86f),
@@ -783,86 +680,34 @@ fun MineHostOverview(
                         }
                     }
 
-                    // 3 Ô thông số nằm gọn ngay trong thẻ Server chính
-                     Row(
-                         modifier = Modifier.fillMaxWidth(),
-                         horizontalArrangement = Arrangement.spacedBy(6.dp)
-                     ) {
-                         Metric(
-                             label = "TPS",
-                             value = if (state.isRunning && state.tps > 0) "%.1f".format(state.tps) else "?",
-                             artKind = MinecraftArtKind.REDSTONE,
-                             modifier = Modifier.weight(1f),
-                             onClick = onConsole
-                         )
-                         Metric(
-                             label = "Ng??i ch?i",
-                             value = if (state.isRunning && state.startupPhase == StartupPhase.Ready) "${state.onlinePlayers}" else "?",
-                             artKind = MinecraftArtKind.DIAMOND_SWORD,
-                             modifier = Modifier.weight(1f),
-                             onClick = { navigate(SubPage.PlayerList) }
-                         )
-                         Metric(
-                             label = "RAM / ${config.maxHeapMb}MB",
-                             value = if (state.isRunning && state.usedMemoryMb > 0) "${state.usedMemoryMb}" else "?",
-                             artKind = MinecraftArtKind.COMMAND_BLOCK,
-                             modifier = Modifier.weight(1f),
-                             onClick = { showRamSlider = !showRamSlider }
-                         )
-                     }
+                    ServerMetricsRow(
+                        tps = if (state.isRunning && state.tps > 0) "%.1f".format(state.tps) else "—",
+                        players = if (state.isRunning && state.startupPhase == StartupPhase.Ready) "${state.onlinePlayers}" else "—",
+                        memory = if (state.isRunning && state.usedMemoryMb > 0) "${state.usedMemoryMb}" else "—",
+                        maxMemoryMb = config.maxHeapMb,
+                        onConsole = onConsole,
+                        onPlayers = { navigate(SubPage.PlayerList) },
+                        onMemory = { showRamSlider = !showRamSlider }
+                    )
 
-
-                    // Nút Bật / Dừng Server + Khởi động lại / Dọn RAM
-                    AdaptiveActionRow {
-                        Button(
-                            onClick = {
-                                if (active == null) navigate(SubPage.Cores)
-                                else if (state.isRunning) confirm = "stop"
-                                else vm.startServer()
-                            },
-                            enabled = ready && !stopping && (state.isRunning || !busy),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.weight(1f).heightIn(min = 50.dp)
-                        ) {
-                            Icon(if (state.isRunning) Icons.Outlined.Stop else Icons.Outlined.PlayArrow, null)
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                if (active == null) "➕ Tạo Server Đầu Tiên"
-                                else if (state.isRunning) "Dừng Server An Toàn"
-                                else "BẬT SERVER NGAY",
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 14.sp
-                            )
-                        }
-                        if (state.isRunning) {
-                            OutlinedButton(
-                                onClick = { confirm = "restart" },
-                                enabled = !stopping && !busy,
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.heightIn(min = 50.dp)
-                            ) {
-                                Text("🔄 Khởi động lại", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                            }
-                        } else {
-                            OutlinedButton(
-                                onClick = { vm.cleanRamNow() },
-                                enabled = ready && !isCleaningRam,
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.heightIn(min = 50.dp)
-                            ) {
-                                Text(
-                                    if (isCleaningRam) "⏳ Đang dọn..." else "🧹 Dọn RAM",
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 14.sp
-                                )
-                            }
-                        }
-                    }
+                    ServerControlActions(
+                        primaryLabel = if (active == null) "Tạo server đầu tiên" else if (state.isRunning) "Lưu & dừng" else "Bật server",
+                        secondaryLabel = if (state.isRunning) "Khởi động lại" else if (isCleaningRam) "Đang dọn…" else "Dọn RAM",
+                        running = state.isRunning,
+                        primaryEnabled = ready && !stopping && (state.isRunning || !busy),
+                        secondaryEnabled = if (state.isRunning) !stopping && !busy else ready && !isCleaningRam,
+                        onPrimary = {
+                            if (active == null) navigate(SubPage.Cores)
+                            else if (state.isRunning) confirm = "stop"
+                            else vm.startServer()
+                        },
+                        onSecondary = { if (state.isRunning) confirm = "restart" else vm.cleanRamNow() }
+                    )
 
                     HorizontalDivider(color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.16f))
 
                     // Danh sách chuyển đổi nhanh giữa các Server đã tạo + 2 nút Tạo mới / Quản lý
-                    if (config.installedCores.isNotEmpty()) {
+                    if (config.installedCores.size > 1) {
                         FlowRow(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -870,8 +715,6 @@ fun MineHostOverview(
                         ) {
                             config.installedCores.forEach { srv ->
                                 val isCurrent = srv.name == config.activeCoreName
-                                val srvStorage = serverStorageMap[srv.name]
-                                val sizeTag = srvStorage?.let { " • ${vm.formatStorageBytes(it.totalBytes)}" } ?: ""
                                 FilterChip(
                                     selected = isCurrent,
                                     onClick = {
@@ -883,8 +726,7 @@ fun MineHostOverview(
                                     },
                                     label = {
                                         Text(
-                                            if (isCurrent) "✅ ${srv.name} (${srv.version}$sizeTag)"
-                                            else "🔄 ${srv.name} (${srv.version}$sizeTag)",
+                                            srv.name,
                                             fontSize = 14.sp,
                                             fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.SemiBold
                                         )
@@ -894,57 +736,13 @@ fun MineHostOverview(
                         }
                     }
 
-                    AdaptiveActionRow {
-                        Button(
-                            onClick = { navigate(SubPage.Cores) },
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("➕ Tạo Server Mới", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                        }
-                        OutlinedButton(
-                            onClick = { navigate(SubPage.ServerList) },
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("🗂️ Quản Lý Các SV (${config.installedCores.size})", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                        }
-                    }
-
-                    // [v2.8.7] Thanh bật/tắt Chuông báo "Minecraft Level Up" khi mở Server thành công + Nút Nghe thử
-                    Surface(
-                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                        ) {
-                            Text(
-                                if (soundOnReady) "🔊 Phát nhạc 'Level Up' khi mở SV xong" else "🔇 Đang tắt chuông báo mở SV",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.weight(1f)
-                            )
-                            TextButton(
-                                onClick = { vm.testServerReadySoundNow() },
-                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
-                            ) {
-                                Text("🎵 Nghe thử", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                            }
-                            Switch(
-                                checked = soundOnReady,
-                                onCheckedChange = { vm.setSoundOnServerReady(it) }
-                            )
-                        }
-                    }
-                }
+                    ServerShortcuts(
+                        serverCount = config.installedCores.size,
+                        onCreate = { navigate(SubPage.Cores) },
+                        onServers = { navigate(SubPage.ServerList) }
+                    )
             }
         }
-
         }
 
         // ── CẢNH BÁO BẢO VỆ MAP TỰ ĐỘNG KHI PIN YẾU / QUÁ NHIỆT ──
@@ -1135,40 +933,16 @@ fun MineHostOverview(
                         playitState.bedrockAddress.takeIf { it.isNotBlank() }
                     }
                     if (!active.core.isBedrock) {
-                        Text("Java / máy tính", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(javaAddress ?: "Chưa có địa chỉ kết nối", style = MaterialTheme.typography.titleMedium)
-                        OutlinedButton(
-                            onClick = { javaAddress?.let { clipboard.setText(AnnotatedString(it)) } },
-                            enabled = javaAddress != null,
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                        ) { Text("Sao chép địa chỉ Java") }
+                        ServerAddressRow("Java / máy tính", javaAddress) {
+                            javaAddress?.let { clipboard.setText(AnnotatedString(it)) }
+                        }
                     }
                     if (hasGeyserInstalled) {
-                        Text("Bedrock / điện thoại", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(peAddress ?: "Chưa có địa chỉ Bedrock", style = MaterialTheme.typography.titleMedium)
-                        OutlinedButton(
-                            onClick = { peAddress?.let { clipboard.setText(AnnotatedString(it)) } },
-                            enabled = peAddress != null,
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                        ) { Text("Sao chép địa chỉ Bedrock") }
+                        ServerAddressRow("Bedrock / điện thoại", peAddress) {
+                            peAddress?.let { clipboard.setText(AnnotatedString(it)) }
+                        }
                     }
-                    Button(
-                        onClick = {
-                            vm.shareServerInviteCardImage(
-                                context = context,
-                                javaIpOverride = javaAddress,
-                                peHostOverride = peAddress?.substringBeforeLast(":"),
-                                pePortOverride = peAddress?.substringAfterLast(":")
-                            )
-                        },
-                        enabled = if (active.core.isBedrock) peAddress != null else javaAddress != null,
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                    ) { Text("Tạo thẻ mời") }
-                    OutlinedButton(
-                        onClick = { showConnectionDetails = !showConnectionDetails },
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                    ) { Text(if (showConnectionDetails) "Thu gọn kết nối" else "Thiết lập & kiểm tra kết nối") }
-                    if (showConnectionDetails) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     HorizontalDivider()
                     // Tách rõ 6 trạng thái kết nối độc lập (Thu gọn mặc định thành 1 dòng để nút Copy IP hiện ngay lập tức, bấm để bung chi tiết)
                     val s1McRunning = state.isRunning && state.startupPhase == StartupPhase.Ready
@@ -1897,7 +1671,7 @@ fun MineHostOverview(
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Text(
-                                    "🖼️ Tạo Ảnh Thẻ Mời Server Đẹp (Gửi Zalo / Messenger / Discord)",
+                                    "Tạo thẻ mời bạn bè",
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.SemiBold
                                 )
@@ -1908,6 +1682,19 @@ fun MineHostOverview(
             }
         }
 
+        }
+
+        if (section == 0) {
+            item(key = "server_ready_sound") {
+                val soundOnReady by vm.soundOnServerReady.collectAsStateWithLifecycle()
+                HostCard("Âm thanh") {
+                    ServerReadySoundSetting(
+                        soundEnabled = soundOnReady,
+                        onSoundChange = { vm.setSoundOnServerReady(it) },
+                        onPreview = { vm.testServerReadySoundNow() }
+                    )
+                }
+            }
         }
 
         // ══════════════════════════════════════════════════════════════════════
@@ -3656,35 +3443,6 @@ fun MineHostOverview(
             },
             dismissButton = { TextButton(onClick = { confirm = null }) { Text("Hủy") } }
         )
-    }
-}
-
-@Composable
-private fun Metric(
-    label: String,
-    value: String,
-    artKind: MinecraftArtKind,
-    modifier: Modifier,
-    onClick: () -> Unit = {}
-) {
-    Card(
-        onClick = onClick,
-        modifier = modifier,
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.28f))
-    ) {
-        Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(value, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                MinecraftPixelArtIcon(kind = artKind, size = 18.dp)
-            }
-            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
     }
 }
 
