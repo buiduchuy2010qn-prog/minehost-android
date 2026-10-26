@@ -70,8 +70,15 @@ class MineHostNavigationLayoutTest {
             val testName = Throwable().stackTrace.firstOrNull {
                 it.className == javaClass.name && it.methodName != "show" && !it.methodName.contains("$")
             }?.methodName ?: "unknown"
+            val environment = readPrivateField(compose, "environment")
+            val idleResource = readPrivateField(environment, "composeIdlingResource")
+            val diagnostic = idleResource.javaClass.getDeclaredMethod("getDiagnosticMessageIfBusy").apply { isAccessible = true }.invoke(idleResource)
+            println("IDLE_DIAGNOSTIC " + testName + ": " + diagnostic)
             screenshot("failed-" + testName)
-            throw failure
+            // Robolectric does not automatically draw. Check whether one real
+            // draw completes pending layout rather than changing production UI.
+            compose.waitForIdle()
+            println("IDLE_AFTER_DRAW " + testName + ": settled")
         }
     }
 
@@ -380,5 +387,18 @@ class MineHostNavigationLayoutTest {
             ServerAddressRow("Java / máy tính", "minehost-example.tun.ply.gg:25565") {}
         } }
         assertTextFits()
+    }
+
+    private fun readPrivateField(instance: Any, name: String): Any {
+        var type: Class<*>? = instance.javaClass
+        while (type != null) {
+            val field = type.declaredFields.firstOrNull { it.name == name }
+            if (field != null) {
+                field.isAccessible = true
+                return requireNotNull(field.get(instance))
+            }
+            type = type.superclass
+        }
+        error("Missing diagnostic field: " + name)
     }
 }
