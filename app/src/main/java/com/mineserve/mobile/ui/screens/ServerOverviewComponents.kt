@@ -91,7 +91,6 @@ private fun ServerMetric(label: String, value: String, detail: String, art: Mine
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun ServerControlActions(
     primaryLabel: String,
@@ -103,20 +102,32 @@ internal fun ServerControlActions(
     onSecondary: () -> Unit
 ) {
     val largeFont = LocalDensity.current.fontScale > 1.3f
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
-    FlowRow(maxItemsInEachRow = if (maxWidth >= 260.dp && !largeFont) 2 else 1,
-        horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Button(onClick = onPrimary, enabled = primaryEnabled, modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+    val primary: @Composable (Modifier) -> Unit = { modifier ->
+        Button(onClick = onPrimary, enabled = primaryEnabled, modifier = modifier.heightIn(min = 48.dp),
             shape = RoundedCornerShape(10.dp), contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)) {
             Icon(if (running) Icons.Outlined.Stop else Icons.Outlined.PlayArrow, null, Modifier.size(20.dp))
             Spacer(Modifier.width(6.dp))
             Text(primaryLabel, fontWeight = FontWeight.SemiBold)
         }
-        OutlinedButton(onClick = onSecondary, enabled = secondaryEnabled, modifier = Modifier.heightIn(min = 48.dp),
+    }
+    val secondary: @Composable (Modifier) -> Unit = { modifier ->
+        OutlinedButton(onClick = onSecondary, enabled = secondaryEnabled, modifier = modifier.heightIn(min = 48.dp),
             shape = RoundedCornerShape(10.dp), contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)) {
             Text(secondaryLabel)
         }
     }
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        if (maxWidth < 260.dp || largeFont) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                primary(Modifier.fillMaxWidth())
+                secondary(Modifier.fillMaxWidth())
+            }
+        } else {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                primary(Modifier.weight(1.2f))
+                secondary(Modifier.weight(1f))
+            }
+        }
     }
 }
 
