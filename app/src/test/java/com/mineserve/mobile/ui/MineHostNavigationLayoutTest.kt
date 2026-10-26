@@ -64,7 +64,15 @@ class MineHostNavigationLayoutTest {
                 }
             }
         }
-        compose.waitForIdle()
+        try {
+            compose.waitForIdle()
+        } catch (failure: Throwable) {
+            val testName = Throwable().stackTrace.firstOrNull {
+                it.className == javaClass.name && it.methodName != "show" && !it.methodName.contains("$")
+            }?.methodName ?: "unknown"
+            screenshot("failed-" + testName)
+            throw failure
+        }
     }
 
     @After fun closeActivity() { controller?.pause()?.stop()?.destroy() }
@@ -336,5 +344,39 @@ class MineHostNavigationLayoutTest {
         assertTextFits()
         compose.runOnIdle { running = false }
         compose.onAllNodesWithText("—").assertCountEquals(3)
+    }
+
+    @org.junit.Before fun failFastForLayoutDiagnostics() {
+        androidx.test.espresso.IdlingPolicies.setMasterPolicyTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+    }
+
+    @Test fun isolatedRunningControlsSettle() {
+        show { Column(Modifier.padding(12.dp)) {
+            ServerControlActions("Lưu & dừng", "Khởi động lại", true, true, true, {}, {})
+        } }
+        assertTextFits()
+        screenshot("isolated-running-controls")
+    }
+
+    @Test fun isolatedLargeMetricsSettle() {
+        show(fontScale = 1.8f) { Column(Modifier.padding(12.dp)) {
+            ServerMetricsRow("20.0", "123", "16384", 32768, {}, {}, {})
+        } }
+        assertTextFits()
+        screenshot("isolated-large-metrics")
+    }
+
+    @Test fun isolatedSoundSettingSettles() {
+        show(fontScale = 1.8f) { Column(Modifier.padding(12.dp)) {
+            ServerReadySoundSetting(true, {}, {})
+        } }
+        assertTextFits()
+    }
+
+    @Test fun isolatedEnabledAddressSettles() {
+        show { Column(Modifier.padding(12.dp)) {
+            ServerAddressRow("Java / máy tính", "minehost-example.tun.ply.gg:25565") {}
+        } }
+        assertTextFits()
     }
 }
