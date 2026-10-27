@@ -67,7 +67,11 @@ async function startServer(dir, jar, label) {
   proc.on('exit', () => { exited = true })
   try {
     await waitFor(() => { if (exited) throw Error('Server exited: ' + log.slice(-4000)); return /Done \(/.test(log) }, 'server startup', 180000)
-    const rcon = await connectRcon()
+    let rcon
+    await waitFor(async () => {
+      try { rcon = await connectRcon(); return true }
+      catch (error) { if (error.code === 'ECONNREFUSED') return false; throw error }
+    }, 'RCON listener ready', 15000)
     await waitFor(async () => (await rcon.send('data get storage minehost:setup initialized')).includes('1b'), 'datapack initialization')
     assert(!/Failed to load function|Failed to parse|Couldn't load tag|Couldn't load function|Unknown function/.test(log), 'Datapack parse/load error: ' + log)
     return { proc, rcon, getLog: () => log, label }
