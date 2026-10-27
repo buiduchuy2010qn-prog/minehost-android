@@ -62,12 +62,18 @@ object LegacyWorldSafety {
         AddonSafety.lifecycleGate.withLock {
             checkCanRepair()
             check(world.isDirectory && contained(world, world.parentFile!!))
+            val expected = File(world.parentFile!!.canonicalFile, world.name)
+            check(world.canonicalFile == expected) { "Map là liên kết; không tự sửa." }
+            val parts = Worlds.includeDimensions(world, world.parentFile!!.list()?.toSet().orEmpty())
+            for (part in parts) Files.walk(part.toPath()).use { paths ->
+                check(paths.noneMatch { Files.isSymbolicLink(it) }) { "Map có liên kết tệp; hãy sao lưu và kiểm tra thủ công." }
+            }
             val report = inspect(world)
             check(report.canRepair) { "Không có lệnh dựng lại trực tiếp cần sửa." }
             val originals = report.unsafeTags.associateWith { relative -> File(world, relative).readBytes() }
             check(backups.isDirectory || backups.mkdirs()) { "Không tạo được thư mục sao lưu." }
             check(!contained(backups, world) && backups.canonicalFile != world.canonicalFile) { "Bản sao lưu phải nằm ngoài map." }
-            val (size, truncated) = Worlds.sizeOf(Worlds.includeDimensions(world, world.parentFile!!.list()?.toSet().orEmpty()))
+            val (size, _) = Worlds.sizeOf(Worlds.includeDimensions(world, world.parentFile!!.list()?.toSet().orEmpty()))
             check(backups.usableSpace > size + 64L * 1024 * 1024) { "Thiếu dung lượng để sao lưu map trước khi sửa." }
             val archive = File(backups, "World_" + world.name + "_before-safety_" + UUID.randomUUID() + ".zip")
             check(backup(archive)) { "Sao lưu thất bại. Chưa sửa map." }
@@ -96,6 +102,7 @@ object LegacyWorldSafety {
                     try { atomicWrite(File(world, relative), originals.getValue(relative)) }
                     catch (rollback: Exception) { failure.addSuppressed(rollback) }
                 }
+                if (failure is kotlinx.coroutines.CancellationException) throw failure
                 throw IllegalStateException("Chưa hoàn tất sửa datapack. Bản sao lưu đầy đủ: " + archive.absolutePath, failure)
             }
             archive

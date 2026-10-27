@@ -700,7 +700,7 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {},
                     WorldListCard(
                         folder = world.name, size = world.sizeText + (if (world.sizeTruncated) "+" else ""),
                         kind = if (isJava) "Java" else "Bedrock", active = world.isActive,
-                        canManage = canManageWorlds && compatible,
+                        canManage = canManageWorlds, compatible = compatible,
                         onDetails = { selectedWorldName = world.name }, onPlay = { activate = world },
                         onRename = { renameTarget = world; renameInput = world.name },
                         onExport = {

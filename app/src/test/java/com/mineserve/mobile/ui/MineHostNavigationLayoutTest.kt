@@ -452,4 +452,16 @@ class MineHostNavigationLayoutTest {
         screenshot("legacy-world-safety-confirmation-320")
     }
 
+
+    @Test fun incompatibleWorldCanStillBeBackedUpButNotActivated() {
+        var activated = 0; var backedUp = 0
+        show {
+            WorldListCard("bedrock_old", "128 MB", "Bedrock", false, true,
+                {}, { activated++ }, {}, {}, { backedUp++ }, {}, {}, compatible = false)
+        }
+        compose.onNodeWithText("Chơi map này").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Thao tác map bedrock_old").performClick()
+        compose.onNodeWithText("Sao lưu map này").performClick()
+        assertEquals(0, activated); assertEquals(1, backedUp)
+    }
 }

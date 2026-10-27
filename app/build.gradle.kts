@@ -157,3 +157,8 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
 }
 
+
+// The integration matrix must receive fixtures even when the JVM tests are restored from cache.
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    if (name == "testReleaseUnitTest") outputs.dir(layout.buildDirectory.dir("generated/playable"))
+}

@@ -94,4 +94,22 @@ class LegacyWorldSafetyTest {
         PlayableWorldPack.write(world, "oneblock", "1.21.1")
         assertFalse(LegacyWorldSafety.inspect(world).canRepair)
     }
+
+    @Test fun linkedWorldDataIsRejectedBeforeBackup() = runBlocking {
+        val world = world(); val target = temp.newFile("outside.dat").apply { writeText("untouched") }
+        java.nio.file.Files.createSymbolicLink(File(world, "linked.dat").toPath(), target.toPath())
+        var called = false
+        val result = runCatching { LegacyWorldSafety.repair(world, temp.newFolder("backups"), {}, backup = { called = true; true }) }
+        assertTrue(result.isFailure); assertFalse(called)
+        assertEquals("untouched", target.readText())
+        assertTrue(LegacyWorldSafety.inspect(world).canRepair)
+    }
+    @Test fun cancellationAfterBackupDoesNotChangeOldMap() = runBlocking {
+        val world = world(); val before = snapshot(world); var checks = 0
+        val result = runCatching { LegacyWorldSafety.repair(world, temp.newFolder("backups"), {
+            if (++checks == 3) throw kotlinx.coroutines.CancellationException("cancel repair")
+        }) }
+        assertTrue(result.exceptionOrNull() is kotlinx.coroutines.CancellationException)
+        assertEquals(before, snapshot(world))
+    }
 }

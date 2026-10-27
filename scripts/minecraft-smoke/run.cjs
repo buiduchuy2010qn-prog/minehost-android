@@ -40,9 +40,11 @@ class Rcon {
     })
   }
   async expect(command, label) {
-    const marker = 'MHTEST_' + label
-    const response = await this.send(command + ' run say ' + marker)
-    assert(response.includes(marker), label + ': ' + response)
+    await this.send('scoreboard objectives add mh_test dummy')
+    await this.send('scoreboard players set #assert mh_test 0')
+    const response = await this.send(command + ' run scoreboard players set #assert mh_test 1')
+    const result = await this.send('scoreboard players get #assert mh_test')
+    assert(/has 1 \(mh_test\)/.test(result), label + ': ' + response + ' / ' + result)
   }
   close() { this.socket.destroy() }
 }

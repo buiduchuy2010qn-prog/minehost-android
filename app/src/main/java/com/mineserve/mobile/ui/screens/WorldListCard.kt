@@ -24,7 +24,8 @@ import com.mineserve.mobile.ui.theme.McShape
 internal fun WorldListCard(
     folder: String, size: String, kind: String, active: Boolean, canManage: Boolean,
     onDetails: () -> Unit, onPlay: () -> Unit, onRename: () -> Unit,
-    onExport: () -> Unit, onBackup: () -> Unit, onReset: () -> Unit, onDelete: () -> Unit
+    onExport: () -> Unit, onBackup: () -> Unit, onReset: () -> Unit, onDelete: () -> Unit,
+    compatible: Boolean = true
 ) {
     var menu by remember(folder) { mutableStateOf(false) }
     Card(modifier = Modifier.fillMaxWidth().testTag("world-card-" + folder), shape = McShape.ControlCompact,
@@ -58,7 +59,7 @@ internal fun WorldListCard(
                 style = MaterialTheme.typography.bodyMedium,
                 color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
             if (active) TextButton(onClick = onDetails, modifier = Modifier.fillMaxWidth()) { Text("Chi tiết map") }
-            else OutlinedButton(onClick = onPlay, enabled = canManage, modifier = Modifier.fillMaxWidth(), shape = McShape.ControlCompact) { Text("Chơi map này") }
+            else OutlinedButton(onClick = onPlay, enabled = canManage && compatible, modifier = Modifier.fillMaxWidth(), shape = McShape.ControlCompact) { Text("Chơi map này") }
         }
     }
 }
