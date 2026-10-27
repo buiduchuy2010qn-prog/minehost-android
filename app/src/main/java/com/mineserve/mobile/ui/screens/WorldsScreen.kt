@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mineserve.mobile.server.ExternalBackupStore
 import com.mineserve.mobile.server.ProHostFeatures
+import com.mineserve.mobile.server.PlayableWorldPack
 import com.mineserve.mobile.server.Worlds
 import com.mineserve.mobile.ui.McViewModel
 import com.mineserve.mobile.ui.theme.McShape
@@ -43,10 +44,14 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {},
     val active by vm.activeWorldName.collectAsState()
     val ready by vm.isBootstrapped.collectAsState()
     val importing by vm.worldImportBusy.collectAsState()
+    val maintenanceBusy by vm.worldMaintenanceBusy.collectAsState()
+    val legacyReport by vm.legacyWorldReport.collectAsState()
     val importStatus by vm.worldImportStatus.collectAsState()
     val healthReport by vm.worldHealthReport.collectAsState()
     val config by vm.config.collectAsState()
     val supportsJavaWorldCreation = !vm.isPowerNukkitXActive()
+    val supportsPlayableWorldCreation = supportsJavaWorldCreation && PlayableWorldPack.formatFor(
+        config.installedCores.firstOrNull { it.name == config.activeCoreName }?.version.orEmpty()) != null
     val serverStorageMap by vm.serverStorageMap.collectAsState()
     val activeStorage = config.activeCoreName?.let { serverStorageMap[it] }
     val autoBackupOnStop by vm.autoBackupOnStop.collectAsState()
@@ -56,7 +61,7 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {},
     val runningFlow = remember(vm) { vm.serverState.map { it.isRunning }.distinctUntilChanged() }
     val running by runningFlow.collectAsState(initial = true)
     val activeWorldExists = active.isNotBlank() && worlds.any { it.name == active }
-    val canManageWorlds = ready && config.activeCoreName != null && !loading && !running && !importing
+    val canManageWorlds = ready && config.activeCoreName != null && !loading && !running && !importing && !maintenanceBusy
     var hasStoragePerm by remember { mutableStateOf(ExternalBackupStore.hasPermission(context)) }
 
     var selectedWorldName by rememberSaveable(config.activeCoreName) { mutableStateOf<String?>(null) }
@@ -117,6 +122,7 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {},
     }
 
     LaunchedEffect(ready, config.activeCoreName, hasStoragePerm) {
+        vm.clearLegacyWorldReport()
         refreshAllData()
     }
 
@@ -207,7 +213,7 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {},
         if (sectionTab == 0 && selectedWorldName == null) item(key = "current_world_summary") {
             HostCard("Map đang chọn") {
                 Text(
-                    active.ifBlank { "Chưa có map được chọn" },
+                    active.takeIf { it.isNotBlank() }?.let(PlayableWorldPack::displayName) ?: "Chưa có map được chọn",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -396,13 +402,13 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {},
             if (sectionTab == 4 && selectedWorldName == null) item(key = "playable_mode_worlds_pro_card") {
                 WorldToolsSection(
                     "Tạo map chế độ chơi",
-                    if (supportsJavaWorldCreation) "Java · OneBlock, SkyBlock, Parkour và Đảo kho báu"
-                    else "PowerNukkitX không hỗ trợ datapack Java",
+                    if (supportsPlayableWorldCreation) "Java · OneBlock, SkyBlock, Parkour và Đảo kho báu"
+                    else "Chế độ dựng sẵn hỗ trợ " + PlayableWorldPack.SUPPORTED_VERSIONS,
                     expandForTask = liveTask.active
                 ) {
                     Text(
-                        if (supportsJavaWorldCreation) "Mỗi lần tạo là một map riêng, tự đặt tên không trùng. Map cũ vẫn giữ nguyên; mở lại từ Danh sách."
-                        else "Các chế độ này chỉ hỗ trợ máy chủ Java. Với PowerNukkitX, hãy nhập map Bedrock hoặc chuyển map đã có trong danh sách.",
+                        if (supportsPlayableWorldCreation) "Mỗi lần tạo là một map riêng, tự đặt tên không trùng. Map cũ vẫn giữ nguyên; mở lại từ Danh sách."
+                        else "Chế độ dựng sẵn hỗ trợ " + PlayableWorldPack.SUPPORTED_VERSIONS + ". Vẫn có thể nhập hoặc chơi map đã có; không cần đổi phiên bản của map cũ.",
                         fontSize = 14.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -436,14 +442,14 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {},
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                         Button(
                             onClick = { selectPlayableMode("oneblock", "OneBlock") },
-                            enabled = supportsJavaWorldCreation && ready && !running && !importing && !liveTask.active,
+                            enabled = supportsPlayableWorldCreation && ready && !running && !importing && !liveTask.active,
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                             shape = McShape.ControlCompact,
                             modifier = Modifier.heightIn(min = 48.dp)
                         ) { Text("OneBlock", fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
                         Button(
                             onClick = { selectPlayableMode("skyblock", "SkyBlock") },
-                            enabled = supportsJavaWorldCreation && ready && !running && !importing && !liveTask.active,
+                            enabled = supportsPlayableWorldCreation && ready && !running && !importing && !liveTask.active,
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                             shape = McShape.ControlCompact,
                             modifier = Modifier.heightIn(min = 48.dp)
@@ -453,14 +459,14 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {},
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                         Button(
                             onClick = { selectPlayableMode("parkour", "Parkour") },
-                            enabled = supportsJavaWorldCreation && ready && !running && !importing && !liveTask.active,
+                            enabled = supportsPlayableWorldCreation && ready && !running && !importing && !liveTask.active,
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                             shape = McShape.ControlCompact,
                             modifier = Modifier.heightIn(min = 48.dp)
                         ) { Text("Parkour", fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
                         Button(
                             onClick = { selectPlayableMode("lucky_island", "Đảo kho báu") },
-                            enabled = supportsJavaWorldCreation && ready && !running && !importing && !liveTask.active,
+                            enabled = supportsPlayableWorldCreation && ready && !running && !importing && !liveTask.active,
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                             shape = McShape.ControlCompact,
                             modifier = Modifier.heightIn(min = 48.dp)
@@ -691,10 +697,24 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {},
                 val compatible = (isJava && !isBedrockServer) || (!isJava && isBedrockServer)
 
                 if (selectedWorldName == null) {
-                    HostAction(world.name,
-                        "${if (world.isActive) "Đang dùng" else "Đang cất giữ"} · ${if (isJava) "Java" else "Bedrock"} · ${world.sizeText}${if (world.sizeTruncated) "+" else ""}",
-                        Icons.Outlined.Public) { selectedWorldName = world.name }
-                } else HostCard(world.name) {
+                    WorldListCard(
+                        folder = world.name, size = world.sizeText + (if (world.sizeTruncated) "+" else ""),
+                        kind = if (isJava) "Java" else "Bedrock", active = world.isActive,
+                        canManage = canManageWorlds && compatible,
+                        onDetails = { selectedWorldName = world.name }, onPlay = { activate = world },
+                        onRename = { renameTarget = world; renameInput = world.name },
+                        onExport = {
+                            pendingExport = world.name; exportServer = config.activeCoreName
+                            exporter.launch("World_" + world.name + ".zip")
+                        },
+                        onBackup = { vm.backupSelectedWorld(world.name) },
+                        onReset = { reset = world }, onDelete = { deleteDirectTarget = world }
+                    )
+                } else HostCard(PlayableWorldPack.displayName(world.name)) {
+                    Text("Thư mục: " + world.name, style = MaterialTheme.typography.bodySmall)
+                    if (isJava) OutlinedButton(onClick = { vm.inspectLegacyWorld(world.name) }, enabled = canManageWorlds) {
+                        Text("Kiểm tra datapack map cũ")
+                    }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -1153,12 +1173,18 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {},
         }
     }
 
-    pendingPlayableMode?.takeIf { supportsJavaWorldCreation }?.let { (modeId, title) ->
+    legacyReport?.let { report ->
+        LegacyWorldSafetyDialog(report, maintenanceBusy, canManageWorlds,
+            onDismiss = vm::clearLegacyWorldReport,
+            onRepair = { vm.protectLegacyWorld(report.world) })
+    }
+
+    pendingPlayableMode?.takeIf { supportsPlayableWorldCreation }?.let { (modeId, title) ->
         val folder = ProHostFeatures.PLAYABLE_WORLD_MODES.firstOrNull { it.id == modeId }?.folderName.orEmpty()
         CreatePlayableWorldDialog(
             title = title,
             folder = folder,
-            canCreate = supportsJavaWorldCreation && ready && !running && !importing && !liveTask.active,
+            canCreate = supportsPlayableWorldCreation && ready && !running && !importing && !liveTask.active,
             onDismiss = { pendingPlayableMode = null },
             onConfirm = {
                 pendingPlayableMode = null

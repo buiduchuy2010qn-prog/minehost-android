@@ -3162,6 +3162,7 @@ class McViewModel(
             _worldModBusy.value ||
             _isRestoringBackup.value ||
             _isCreatingWorld.value ||
+            _worldMaintenanceBusy.value ||
             _applyingDeviceTuning.value
 
     fun startServer() {
@@ -7401,6 +7402,10 @@ class McViewModel(
      * @return true 表示可以继续执行
      */
     private fun requireServerStopped(action: String): Boolean {
+        if (_worldMaintenanceBusy.value || _isCreatingWorld.value || startRequestPending || _stopInFlight.value) {
+            _errorFlow.tryEmit("Hãy đợi tác vụ hiện tại hoàn tất trước khi " + action)
+            return false
+        }
         if (!repo.serverState.value.isRunning && !repo.termuxRuntime.isMcRunning()) return true
         _errorFlow.tryEmit("Hãy dừng server trước khi thay đổi dữ liệu: $action")
         return false
@@ -8160,6 +8165,87 @@ class McViewModel(
             } catch (e: Exception) {
                 _errorFlow.tryEmit("Đặt lại thất bại: ${e.message}")
             }
+        }
+    }
+
+    private val _worldMaintenanceBusy = MutableStateFlow(false)
+    val worldMaintenanceBusy = _worldMaintenanceBusy.asStateFlow()
+    private val _legacyWorldReport = MutableStateFlow<com.mineserve.mobile.server.LegacyWorldSafety.Report?>(null)
+    val legacyWorldReport = _legacyWorldReport.asStateFlow()
+    private var legacyReportServer: String? = null
+    private var legacyAuditGeneration = 0
+
+    fun clearLegacyWorldReport() {
+        legacyAuditGeneration++
+        _legacyWorldReport.value = null
+        legacyReportServer = null
+    }
+
+    fun inspectLegacyWorld(worldName: String) {
+        if (!isBootstrapped.value || isServerMutationInFlight()) return
+        val dir = activeDirName() ?: return
+        clearLegacyWorldReport()
+        val generation = legacyAuditGeneration
+        viewModelScope.launch {
+            try {
+                val report = withContext(Dispatchers.IO) {
+                    com.mineserve.mobile.server.LegacyWorldSafety.inspect(File(worldManager.worldsRoot(dir), Worlds.sanitize(worldName)))
+                }
+                if (activeDirName() == dir && generation == legacyAuditGeneration) {
+                    legacyReportServer = dir
+                    _legacyWorldReport.value = report
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: Exception) { _errorFlow.tryEmit("Không kiểm tra được datapack: " + e.message) }
+        }
+    }
+
+    /** Called only by the explicit backup-and-protect confirmation dialog. */
+    fun protectLegacyWorld(worldName: String) {
+        val dir = activeDirName() ?: return
+        if (isServerMutationInFlight() || startRequestPending || _stopInFlight.value) return
+        if (legacyReportServer != dir || _legacyWorldReport.value?.world != worldName || _legacyWorldReport.value?.canRepair != true) return
+        if (!requireServerStopped("bảo vệ datapack map cũ")) return
+        _worldMaintenanceBusy.value = true
+        viewModelScope.launch {
+            try {
+                check(com.mineserve.mobile.server.ExternalBackupStore.ensure()) { "Hãy cấp quyền lưu trữ để sao lưu trước khi sửa." }
+                val archive = com.mineserve.mobile.server.LegacyWorldSafety.repair(
+                    File(worldManager.worldsRoot(dir), Worlds.sanitize(worldName)), worldManager.exportDir(),
+                    checkCanRepair = {
+                        check(activeDirName() == dir) { "Server đã thay đổi; đã hủy sửa." }
+                        check(!repo.termuxRuntime.isMcRunning() && !serverState.value.isRunning && !startRequestPending && !_stopInFlight.value) {
+                            "Server phải dừng trong suốt quá trình sao lưu và sửa."
+                        }
+                    }
+                )
+                clearLegacyWorldReport()
+                refreshLocalWorldArchives()
+                _messageFlow.tryEmit("Đã chặn tự dựng lại map cũ. Không đổi địa hình. Bản sao lưu: " + archive.absolutePath)
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: Exception) { _errorFlow.tryEmit("Không hoàn tất bảo vệ map: " + e.message) }
+            finally { _worldMaintenanceBusy.value = false }
+        }
+    }
+
+    fun backupSelectedWorld(worldName: String) {
+        if (!isBootstrapped.value || isServerMutationInFlight() || startRequestPending || _stopInFlight.value) return
+        if (!requireServerStopped("sao lưu map")) return
+        val dir = activeDirName() ?: return
+        _worldMaintenanceBusy.value = true
+        viewModelScope.launch {
+            try {
+                val path = withContext(Dispatchers.IO) {
+                    com.mineserve.mobile.server.AddonSafety.lifecycleGate.withLock {
+                        check(activeDirName() == dir && !repo.termuxRuntime.isMcRunning() && !serverState.value.isRunning) { "Server đã thay đổi hoặc đang chạy." }
+                        worldManager.exportWorld(dir, worldName) ?: error("Không sao lưu được map. Kiểm tra quyền và dung lượng lưu trữ.")
+                    }
+                }
+                refreshLocalWorldArchives()
+                _messageFlow.tryEmit("Đã sao lưu map '" + worldName + "': " + path)
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: Exception) { _errorFlow.tryEmit("Sao lưu map thất bại: " + e.message) }
+            finally { _worldMaintenanceBusy.value = false }
         }
     }
 
@@ -9435,6 +9521,10 @@ class McViewModel(
 
     /** 选择要启动的核心（按名称） */
     fun setActiveCore(name: String) {
+        if (_worldMaintenanceBusy.value || _isCreatingWorld.value) {
+            _errorFlow.tryEmit("Hãy đợi tác vụ map hoàn tất trước khi đổi server.")
+            return
+        }
         // 只切核心，不动运行模式 —— 运行模式由用户在「运行环境」弹窗里决定并完全生效。
         updateConfig { it.copy(activeCoreName = name) }
         invalidateConnectionCheck()
@@ -12885,6 +12975,7 @@ class McViewModel(
                     serverDir = serverDir,
                     modeId = modeId,
                     activateImmediately = true,
+                    minecraftVersion = config.value.installedCores.firstOrNull { it.dirName == dirName }?.version.orEmpty(),
                     checkCanCreate = {
                         check(!repo.termuxRuntime.isMcRunning() && !serverState.value.isRunning && !startRequestPending && !_stopInFlight.value) {
                             "Hãy dừng server trước khi tạo map mới."

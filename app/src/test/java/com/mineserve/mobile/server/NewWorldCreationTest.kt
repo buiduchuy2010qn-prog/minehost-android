@@ -155,8 +155,10 @@ class NewWorldCreationTest {
             val pack = File(root, created.folderName + "/datapacks/minehost_" + mode.id)
             for (folder in listOf("function", "functions")) {
                 assertEquals("""{"values":["minehost:load"]}""", File(pack, "data/minecraft/tags/" + folder + "/load.json").readText())
-                assertEquals("execute unless data storage minehost:setup initialized run function minehost:init\n",
-                    File(pack, "data/minehost/" + folder + "/load.mcfunction").readText())
+                assertTrue(File(pack, "data/minehost/" + folder + "/tick.mcfunction").readText()
+                    .contains("unless data storage minehost:setup initialized"))
+                assertTrue(File(pack, "data/minehost/" + folder + "/tick.mcfunction").readText().contains("run function minehost:init"))
+                assertFalse(File(pack, "data/minehost/" + folder + "/load.mcfunction").readText().contains("run function minehost:init"))
                 assertTrue(File(pack, "data/minehost/" + folder + "/init.mcfunction").readText()
                     .endsWith("data modify storage minehost:setup initialized set value 1b\n"))
             }

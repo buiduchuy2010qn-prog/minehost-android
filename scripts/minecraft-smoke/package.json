@@ -1,0 +1,7 @@
+{
+  "private": true,
+  "description": "Localhost-only gameplay smoke tests on the GitHub runner",
+  "dependencies": {
+    "mineflayer": "4.39.0"
+  }
+}

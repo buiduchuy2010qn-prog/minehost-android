@@ -67,7 +67,7 @@ jobs:
         shell: bash
         run: |
           chmod +x gradlew
-          ./gradlew :app:testReleaseUnitTest --tests "com.mineserve.mobile.server.MineoraAuditRegressionTest" --tests "com.mineserve.mobile.server.MineHostSafetyTest" --tests "com.mineserve.mobile.server.NewWorldCreationTest" --tests "com.mineserve.mobile.ui.MineHostNavigationLayoutTest" --build-cache --parallel --max-workers=4 -Dorg.gradle.jvmargs="-Xmx4g -Dfile.encoding=UTF-8"
+          ./gradlew :app:testReleaseUnitTest --tests "com.mineserve.mobile.server.MineoraAuditRegressionTest" --tests "com.mineserve.mobile.server.MineHostSafetyTest" --tests "com.mineserve.mobile.server.NewWorldCreationTest" --tests "com.mineserve.mobile.server.PlayableWorldPackTest" --tests "com.mineserve.mobile.server.LegacyWorldSafetyTest" --tests "com.mineserve.mobile.ui.MineHostNavigationLayoutTest" --build-cache --parallel --max-workers=4 -Dorg.gradle.jvmargs="-Xmx4g -Dfile.encoding=UTF-8"
 
       - name: Upload UI layout checks
         if: always()
@@ -79,6 +79,14 @@ jobs:
             app/build/reports/tests/testReleaseUnitTest/
             app/build/test-results/testReleaseUnitTest/
           if-no-files-found: warn
+          retention-days: 7
+
+      - name: Upload exact app-generated Minecraft fixtures
+        uses: actions/upload-artifact@v4
+        with:
+          name: MineHost-gameplay-fixtures
+          path: app/build/generated/playable/
+          if-no-files-found: error
           retention-days: 7
 
       - name: Build release APK
@@ -99,21 +107,21 @@ jobs:
           ACTUAL=$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' dist/SIGNATURE.txt)
           test "$EXPECTED" = "$ACTUAL"
           test "$ACTUAL" = '886ac552e731c821babfa1377138b5e722b7252bce0f732bef620ab2d0f0d295'
-          curl --fail --location --retry 3 --output "$RUNNER_TEMP/minehost-previous.apk" 'https://github.com/buiduchuy2010qn-prog/minehost-android/releases/download/v2.9.7/minehost-2.9.7-arm64.apk'
+          curl --fail --location --retry 3 --output "$RUNNER_TEMP/minehost-previous.apk" 'https://github.com/buiduchuy2010qn-prog/minehost-android/releases/download/v2.9.8/minehost-2.9.8-arm64.apk'
           "$TOOLS/apksigner" verify --print-certs "$RUNNER_TEMP/minehost-previous.apk" > "$RUNNER_TEMP/minehost-previous-signature.txt"
           PREVIOUS=$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/minehost-previous-signature.txt")
           test "$ACTUAL" = "$PREVIOUS"
           "$TOOLS/aapt" dump badging "$APK" > dist/APK-INFO.txt
-          grep -Eq "^package: name='vn.minehost.pro' versionCode='65' versionName='2.9.8'" dist/APK-INFO.txt
+          grep -Eq "^package: name='vn.minehost.pro' versionCode='66' versionName='2.9.9'" dist/APK-INFO.txt
           grep -Eq "^native-code: 'arm64-v8a'[[:space:]]*$" dist/APK-INFO.txt
           ! grep -q 'application-debuggable' dist/APK-INFO.txt
-          cp "$APK" dist/minehost-2.9.8-arm64.apk
+          cp "$APK" dist/minehost-2.9.9-arm64.apk
           git rev-parse HEAD > dist/SOURCE-COMMIT.txt
-          (cd dist && sha256sum minehost-2.9.8-arm64.apk > SHA256SUMS.txt)
+          (cd dist && sha256sum minehost-2.9.9-arm64.apk > SHA256SUMS.txt)
 
       - uses: actions/upload-artifact@v4
         with:
-          name: MineHost-2.9.8-ARM64-update
+          name: MineHost-2.9.9-ARM64-update
           path: dist/
           if-no-files-found: error
           retention-days: 14
@@ -122,3 +130,42 @@ jobs:
         if: always()
         shell: bash
         run: rm -f -- signing/minehost.p12 "$RUNNER_TEMP/minehost-previous.apk" "$RUNNER_TEMP/minehost-previous-signature.txt"
+
+  minecraft-gameplay:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        minecraft: ['1.20.4', '1.21.1', '1.21.4']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          name: MineHost-gameplay-fixtures
+          path: gameplay-fixtures
+      - name: Install pinned gameplay test client
+        working-directory: scripts/minecraft-smoke
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Test actual Minecraft gameplay and restart preservation
+        env:
+          # Human user explicitly accepted Minecraft EULA for temporary CI servers on 2026-10-27.
+          # This is NOT consent for any server created in the Android app.
+          MINEHOST_TEST_EULA_ACCEPTED: 'true'
+        run: node scripts/minecraft-smoke/run.cjs "${{ matrix.minecraft }}"
+      - name: Upload real Minecraft results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MineHost-gameplay-${{ matrix.minecraft }}
+          path: gameplay-reports/
+          if-no-files-found: warn
+          retention-days: 7

@@ -412,4 +412,44 @@ class MineHostNavigationLayoutTest {
         screenshot("create-new-world-confirmation-large-font-320")
     }
 
+
+    @Test fun compactWorldCardShowsFriendlyAndRealNamesAndExplicitActions() {
+        val calls = IntArray(7)
+        show {
+            Column(Modifier.padding(12.dp)) {
+                WorldListCard("world_oneblock_2", "128 MB", "Java", false, true,
+                    { calls[0]++ }, { calls[1]++ }, { calls[2]++ }, { calls[3]++ }, { calls[4]++ }, { calls[5]++ }, { calls[6]++ })
+            }
+        }
+        compose.onNodeWithText("OneBlock #2").assertIsDisplayed()
+        compose.onNodeWithText("Thư mục: world_oneblock_2").assertIsDisplayed()
+        compose.onNodeWithText("Chơi map này").performClick()
+        assertEquals(1, calls[1])
+        compose.onNodeWithText("Xóa map").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Thao tác map world_oneblock_2").performClick()
+        compose.onNodeWithText("Sao lưu map này").performClick()
+        assertEquals(1, calls[4]); assertEquals(0, calls[6])
+        assertTextFits()
+        screenshot("compact-world-card-320")
+    }
+    @Test fun worldCardLargeFontWrapsAndDisablesMutationWhileBusy() {
+        show(fontScale = 1.8f, dark = true) {
+            Column(Modifier.padding(12.dp).verticalScroll(rememberScrollState())) {
+                WorldListCard("world_lucky_island_123", "2048 MB", "Java", false, false, {}, {}, {}, {}, {}, {}, {})
+            }
+        }
+        compose.onNodeWithText("Chơi map này").assertIsNotEnabled()
+        assertTextFits()
+        screenshot("compact-world-card-large-font-320")
+    }
+    @Test fun legacyWorldDialogRequiresExplicitBackupConsent() {
+        var calls = 0
+        show { LegacyWorldSafetyDialog(com.mineserve.mobile.server.LegacyWorldSafety.Report("world_oneblock", listOf("load.json"), listOf("Phát hiện lệnh dựng lại map cũ.")), false, true, {}, { calls++ }) }
+        assertEquals(0, calls)
+        compose.onNodeWithText("Sao lưu & bảo vệ").assertIsDisplayed().performClick()
+        assertEquals(1, calls)
+        assertTextFits()
+        screenshot("legacy-world-safety-confirmation-320")
+    }
+
 }
