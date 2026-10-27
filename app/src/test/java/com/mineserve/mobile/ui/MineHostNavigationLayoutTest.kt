@@ -64,6 +64,10 @@ class MineHostNavigationLayoutTest {
                 }
             }
         }
+        renderAndWait()
+    }
+
+    private fun renderAndWait() {
         // Robolectric's native renderer does not automatically perform draw
         // passes. Render once after initial composition to flush draw-time
         // snapshot changes, then retain the normal idle/layout assertions.
@@ -344,9 +348,11 @@ class MineHostNavigationLayoutTest {
             }
         }
         compose.runOnIdle { running = true }
+        renderAndWait()
         compose.onNodeWithText("1024").assertIsDisplayed()
         assertTextFits()
         compose.runOnIdle { running = false }
+        renderAndWait()
         compose.onAllNodesWithText("—").assertCountEquals(3)
     }
 

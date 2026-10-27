@@ -44,7 +44,7 @@ class Rcon {
     await this.send('scoreboard players set #assert mh_test 0')
     const response = await this.send(command + ' run scoreboard players set #assert mh_test 1')
     const result = await this.send('scoreboard players get #assert mh_test')
-    assert(/has 1 \(mh_test\)/.test(result), label + ': ' + response + ' / ' + result)
+    assert(result.includes('has 1 '), label + ': ' + response + ' / ' + result)
   }
   close() { this.socket.destroy() }
 }

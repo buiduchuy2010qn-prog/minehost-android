@@ -77,4 +77,12 @@ class PlayableWorldPackTest {
             assertTrue(File(server, result.folderName + "/datapacks/minehost_" + mode + "/pack.mcmeta").isFile)
         }
     }
+
+    @Test fun startupChunksAreReleasedAfterInitializationAndNotPinnedAgainOnReload() {
+        PlayableWorldPack.modeNames.keys.forEach { mode ->
+            val functions = PlayableWorldPack.functions(mode)
+            assertTrue(functions.getValue("load").all { it.contains("unless data storage minehost:setup initialized") })
+            assertTrue(functions.getValue("init").last().startsWith("forceload remove"))
+        }
+    }
 }

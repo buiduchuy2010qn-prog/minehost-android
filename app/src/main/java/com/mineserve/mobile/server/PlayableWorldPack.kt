@@ -71,7 +71,7 @@ object PlayableWorldPack {
         val parkour = mode == "parkour"
         val spawn = if (parkour) "0 71 0" else "0 65 0"
         val endZ = if (parkour) 80 else 0
-        out["load"] = listOf("execute in minecraft:overworld run forceload add -16 -16 16 $endZ")
+        out["load"] = listOf("execute in minecraft:overworld unless data storage minehost:setup initialized run forceload add -16 -16 16 $endZ")
         val loadedChunks = buildList {
             for (x in -16..16 step 16) for (z in -16..endZ step 16) add("if loaded $x 64 $z")
         }.joinToString(" ")
@@ -115,6 +115,8 @@ object PlayableWorldPack {
         }
         // Do not teleport/give @a during load: players may not have joined yet.
         init += "data modify storage minehost:setup initialized set value 1b"
+        // Startup reservation is temporary; normal player chunk loading takes over afterward.
+        init += "forceload remove -16 -16 16 $endZ"
         out["init"] = init
         out["join"] = buildList {
             add("tp @s $spawn")
