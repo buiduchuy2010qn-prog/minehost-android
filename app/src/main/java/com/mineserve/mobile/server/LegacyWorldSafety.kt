@@ -41,6 +41,10 @@ object LegacyWorldSafety {
                 if (values.any { entryId(it) == "minehost:init" }) unsafe += tag.relativeTo(world).invariantSeparatorsPath
             }
         }
+        if (unsafe.isNotEmpty() && !File(world, "level.dat").let { it.isFile && it.length() > 0L }) {
+            notes += "Map chưa có level.dat. Không tự bỏ bước dựng map lần đầu; hãy kiểm tra thủ công."
+            return Report(world.name, emptyList(), notes)
+        }
         if (unsafe.isNotEmpty()) notes += "Datapack cũ gọi dựng map mỗi lần bật/reload, có thể ghi lại khu vực khởi đầu."
         else notes += "Không thấy lệnh tự dựng lại trực tiếp của datapack MineHost cũ. Đây không phải kiểm tra toàn bộ plugin/datapack."
         return Report(world.name, unsafe, notes)

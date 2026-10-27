@@ -159,8 +159,9 @@ class NewWorldCreationTest {
                     .contains("unless data storage minehost:setup initialized"))
                 assertTrue(File(pack, "data/minehost/" + folder + "/tick.mcfunction").readText().contains("run function minehost:init"))
                 assertFalse(File(pack, "data/minehost/" + folder + "/load.mcfunction").readText().contains("run function minehost:init"))
-                assertTrue(File(pack, "data/minehost/" + folder + "/init.mcfunction").readText()
-                    .endsWith("data modify storage minehost:setup initialized set value 1b\n"))
+                val finalCommands = File(pack, "data/minehost/" + folder + "/init.mcfunction").readLines().filter { it.isNotBlank() }.takeLast(2)
+                assertEquals(listOf("data modify storage minehost:setup initialized set value 1b",
+                    "forceload remove -16 -16 16 " + (if (mode.id == "parkour") 80 else 0)), finalCommands)
             }
         }
     }

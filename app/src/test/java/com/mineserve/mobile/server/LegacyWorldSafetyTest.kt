@@ -12,6 +12,7 @@ class LegacyWorldSafetyTest {
     @get:Rule val temp = TemporaryFolder()
     private fun world(): File {
         val world = temp.newFolder("world_oneblock")
+        File(world, "level.dat").writeText("existing world metadata")
         File(world, "region").mkdir()
         File(world, "region/r.0.0.mca").writeText("player house")
         File(world, "playerdata").mkdir()
@@ -111,5 +112,14 @@ class LegacyWorldSafetyTest {
         }) }
         assertTrue(result.exceptionOrNull() is kotlinx.coroutines.CancellationException)
         assertEquals(before, snapshot(world))
+    }
+
+    @Test fun unstartedWorldKeepsItsRequiredFirstInitialization() = runBlocking {
+        val world = world(); File(world, "level.dat").delete()
+        val before = snapshot(world)
+        assertFalse(LegacyWorldSafety.inspect(world).canRepair)
+        var called = false
+        assertTrue(runCatching { LegacyWorldSafety.repair(world, temp.newFolder("backups"), {}, backup = { called = true; true }) }.isFailure)
+        assertFalse(called); assertEquals(before, snapshot(world))
     }
 }
