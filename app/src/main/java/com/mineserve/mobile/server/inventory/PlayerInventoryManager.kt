@@ -112,6 +112,7 @@ class PlayerInventoryManager(
     private val unsupportedAdapter = UnsupportedInventoryAdapter()
 
     fun adapterFor(core: ServerCore): PlayerInventoryAdapter = when (core) {
+        ServerCore.Pumpkin,
         ServerCore.Vanilla,
         ServerCore.Paper,
         ServerCore.Purpur,

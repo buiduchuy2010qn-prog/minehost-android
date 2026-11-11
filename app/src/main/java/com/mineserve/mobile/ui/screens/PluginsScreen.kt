@@ -8,6 +8,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Spacer
@@ -35,6 +37,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.Delete
@@ -488,19 +491,186 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                         }
                     }
                     Spacer(Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    if (coreType == ServerCore.Pumpkin || rustStatus.isNativeRustEnabled) {
                         Text(
-                            if (coreType.supportsPlugins) stringResource(R.string.s467) else stringResource(R.string.s468),
-                            color = if (coreType.supportsPlugins) Mint else Coral,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold
+                            "🦀 Nhân Rust Thuần hỗ trợ Plugin WebAssembly (.wasm) tốc độ máy — 0% Java (Không dùng file .jar)",
+                            color = Mint,
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.ExtraBold
                         )
+                    } else {
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text(
+                                if (coreType.supportsPlugins) stringResource(R.string.s467) else stringResource(R.string.s468),
+                                color = if (coreType.supportsPlugins) Mint else Coral,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                if (coreType.supportsMods) stringResource(R.string.s469) else stringResource(R.string.s470),
+                                color = if (coreType.supportsMods) Mint else Coral,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
+            }
+
+            // ── KHO PLUGIN WEBASSEMBLY (.WASM) CHO SERVER RUST THUẦN (0% JAVA) ──
+            if (activeCore != null && (coreType == ServerCore.Pumpkin || rustStatus.isNativeRustEnabled)) {
+                val installedWasm by vm.installedWasmPlugins.collectAsStateWithLifecycle()
+                val marketWasm by vm.pumpkinMarketPlugins.collectAsStateWithLifecycle()
+                val loadingMarket by vm.loadingPumpkinMarket.collectAsStateWithLifecycle()
+                val liveTask by vm.liveTaskProgress.collectAsStateWithLifecycle()
+                var showMarketList by rememberSaveable { mutableStateOf(false) }
+
+                LaunchedEffect(activeCore.dirName) {
+                    vm.refreshRustWasmPlugins()
+                }
+
+                McCard(title = "🦀 Plugin WebAssembly (.wasm) Cho Server Rust Thuần") {
+                    Text(
+                        "✅ Mọi plugin tại đây đều là tệp nhị phân WebAssembly (.wasm) chạy trực tiếp trong nhân Rust — Tuyệt đối KHÔNG tải hay chạy Java!",
+                        color = Mint,
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.height(8.dp))
+
+                    val hasMultiversion = installedWasm.any { it.enabled && it.fileName.contains("multiversion", ignoreCase = true) }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (hasMultiversion) MintSoft else IndigoSoft)
+                            .padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                if (hasMultiversion) "🌐 Đa Phiên Bản WASM (1.7.2 → 26.3): ĐANG BẬT"
+                                else "🌐 Đa Phiên Bản WASM (Cho mọi bản 1.7.2 → 26.3 vào chung)",
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = if (hasMultiversion) Mint else Indigo
+                            )
+                            Text(
+                                "Tương đương ViaVersion + ViaBackwards viết 100% bằng Rust/WASM (~3.0 MB)",
+                                fontSize = 10.5.sp,
+                                color = Muted
+                            )
+                        }
+                        if (!hasMultiversion) {
+                            Button(
+                                onClick = { vm.installMultiversionWasmOneTap() },
+                                enabled = !liveTask.active && !isServerRunning,
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEA580C)),
+                                shape = McShape.ControlCompact
+                            ) {
+                                Text("⬇️ Cài ngay", color = Color.White, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+
+                    if (installedWasm.isNotEmpty()) {
+                        Spacer(Modifier.height(10.dp))
+                        Text("📦 Plugin WASM đã cài (${installedWasm.size}):", fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
+                        Spacer(Modifier.height(6.dp))
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            installedWasm.forEach { wp ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(McShape.Row)
+                                        .background(com.mineserve.mobile.ui.theme.FieldGray)
+                                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            (if (wp.enabled) "🟢 " else "⏸️ ") + wp.displayName + ".wasm",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text("${wp.sizeKb} KB • WebAssembly", fontSize = 10.sp, color = Muted)
+                                    }
+                                    Switch(
+                                        checked = wp.enabled,
+                                        onCheckedChange = { vm.toggleRustWasmPlugin(wp.fileName, it) },
+                                        enabled = !isServerRunning
+                                    )
+                                    OutlinedButton(
+                                        onClick = { vm.deleteRustWasmPlugin(wp.fileName) },
+                                        enabled = !isServerRunning,
+                                        shape = McShape.ControlCompact,
+                                        border = BorderStroke(1.dp, Coral),
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                                    ) {
+                                        Text("Xóa", color = Coral, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedButton(
+                        onClick = {
+                            showMarketList = !showMarketList
+                            if (showMarketList && marketWasm.isEmpty()) {
+                                vm.loadPumpkinMarketplacePlugins()
+                            }
+                        },
+                        shape = McShape.ControlCompact,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
                         Text(
-                            if (coreType.supportsMods) stringResource(R.string.s469) else stringResource(R.string.s470),
-                            color = if (coreType.supportsMods) Mint else Coral,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold
+                            if (showMarketList) "▲ Ẩn Kho Plugin Pumpkin WASM Chính Thức"
+                            else "🛒 Mở Kho Plugin Pumpkin WASM Chính Thức (Tải 1 chạm)",
+                            color = Indigo,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
                         )
+                    }
+
+                    if (showMarketList) {
+                        Spacer(Modifier.height(8.dp))
+                        if (loadingMarket) {
+                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        } else if (marketWasm.isEmpty()) {
+                            Text("Không tải được danh sách từ market.pumpkinmc.org (Kiểm tra mạng rồi thử lại).", fontSize = 11.sp, color = Coral)
+                        } else {
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                marketWasm.take(15).forEach { item ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(McShape.Row)
+                                            .background(com.mineserve.mobile.ui.theme.FieldGray)
+                                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text("${item.name} v${item.version}", fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
+                                            Text("👤 ${item.author} • 📂 ${item.category} • ⬇️ ${item.downloads}", fontSize = 10.sp, color = Muted)
+                                        }
+                                        Button(
+                                            onClick = { vm.installPumpkinMarketWasmPlugin(item) },
+                                            enabled = !liveTask.active && !isServerRunning,
+                                            colors = ButtonDefaults.buttonColors(containerColor = Mint),
+                                            shape = McShape.ControlCompact,
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 5.dp)
+                                        ) {
+                                            Text("⬇️ Cài", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

@@ -412,6 +412,61 @@ class McServerController(
     }
 
     suspend fun downloadCore(config: McConfig, customName: String, onProgress: (Long, Long, Long) -> Unit) = withContext(Dispatchers.IO) {
+        if (config.selectedCore == ServerCore.Pumpkin) {
+            val profile = ProHostFeatures.resolveRustProfile(config.mcVersion)
+            val finalName = customName.trim().ifBlank { "🦀 Rust ${profile.mcVersionLabel}" }
+            val dirName = uniqueDirNameIn(sanitizeDirName(finalName))
+            val serverDir = termux.serverDirFor(dirName).apply { mkdirs() }
+            File(serverDir, "eula.txt").writeText("eula=true\n", Charsets.UTF_8)
+            runCatching { EulaConsent.accept(serverDir) }
+            val propsFile = File(serverDir, "server.properties")
+            if (!propsFile.exists()) {
+                propsFile.writeText(
+                    buildString {
+                        appendLine("server-port=${config.localPort}")
+                        appendLine("motd=$finalName")
+                        appendLine("max-players=20")
+                        appendLine("online-mode=false")
+                        appendLine("gamemode=survival")
+                        appendLine("difficulty=normal")
+                        appendLine("view-distance=8")
+                        appendLine("simulation-distance=6")
+                    },
+                    Charsets.UTF_8
+                )
+            }
+            ProHostFeatures.installAndEnableNativeRustEngine(
+                rootDir = termux.installer.rootDir,
+                serverDir = serverDir,
+                javaPort = config.localPort,
+                serverName = finalName,
+                onProgress = { prog, msg ->
+                    val doneBytes = if (prog >= 0f) (prog * 100_000_000L).toLong() else 0L
+                    onProgress(doneBytes, 100_000_000L, 0L)
+                    termux.emitLog("[rust] $msg")
+                },
+                profileId = profile.id
+            ).getOrThrow()
+            val newCore = InstalledCore(
+                name = finalName,
+                core = ServerCore.Pumpkin,
+                version = profile.mcVersionLabel,
+                dirName = dirName,
+                serverFile = "pumpkin",
+                coreVersion = "Pumpkin ${profile.pumpkinVersion}",
+                compatibleMcVersion = profile.mcVersionLabel,
+                channel = if (profile.id == "nightly") "snapshot" else "stable"
+            )
+            val shouldSwitchActive = !repo.serverState.value.isRunning
+            repo.updateAndSaveConfig { current ->
+                current.copy(
+                    installedCores = current.installedCores.filter { it.dirName != dirName } + newCore,
+                    activeCoreName = if (shouldSwitchActive) finalName else (current.activeCoreName ?: finalName)
+                )
+            }
+            return@withContext dirName
+        }
+
         termux.selectedProotVendor = config.selectedJavaVendor
         termux.selectedProotDistro = config.prootDistro
         val normalizedConfig = config.copy(
@@ -590,6 +645,10 @@ class McServerController(
 
     private fun resolveDownloadUrl(core: ServerCore, version: String): String {
         return when (core) {
+            ServerCore.Pumpkin -> {
+                val profile = ProHostFeatures.resolveRustProfile(version)
+                "https://github.com/Pumpkin-MC/Pumpkin/releases/download/${profile.releaseTag}/pumpkin-aarch64-android"
+            }
             ServerCore.Paper -> resolvePaperUrl(version)
             ServerCore.Purpur -> resolvePurpurUrl(version)
             ServerCore.Leaves -> resolveLeavesUrl(version)
@@ -981,6 +1040,12 @@ class McServerController(
 
     suspend fun fetchVersionOptions(core: ServerCore): List<CoreVersionOption> = withContext(Dispatchers.IO) {
         when (core) {
+            ServerCore.Pumpkin -> ProHostFeatures.RUST_VERSION_PROFILES.map { p ->
+                CoreVersionOption(
+                    version = p.id,
+                    supportedGameVersion = p.mcVersionLabel
+                )
+            }
             ServerCore.Paper -> fetchPaperVersions().map(::CoreVersionOption)
             ServerCore.Purpur -> fetchPurpurVersions().map(::CoreVersionOption)
             ServerCore.Leaves -> fetchLeavesVersions().map(::CoreVersionOption)
@@ -1757,14 +1822,17 @@ class McServerController(
         val startGeneration = if (userInitiated) termux.beginStartRequest() else 0L
         termux.selectedProotVendor = config.selectedJavaVendor
         termux.selectedProotDistro = config.prootDistro
-        if (!termux.isReady()) {
-            throw RuntimeException("Môi trường hệ thống chưa khởi tạo xong, vui lòng đợi vài giây rồi thử lại")
-        }
-        termux.fixRootfsPermissions()
         val activeCore = config.installedCores.find { it.name == config.activeCoreName }
             ?: throw RuntimeException("Chưa chọn máy chủ để khởi động, vui lòng tải hoặc chọn máy chủ trong mục Tải Core")
         val rawServerDir = File(termux.serversDir, activeCore.dirName)
-        val isNativeRust = ProHostFeatures.isNativeRustServerModeEnabled(rawServerDir)
+        val isNativeRust = activeCore.core == ServerCore.Pumpkin ||
+            ProHostFeatures.isNativeRustServerModeEnabled(rawServerDir)
+        if (!isNativeRust) {
+            if (!termux.isReady()) {
+                throw RuntimeException("Môi trường hệ thống chưa khởi tạo xong, vui lòng đợi vài giây rồi thử lại")
+            }
+            termux.fixRootfsPermissions()
+        }
 
         val resolvedJavaConfig = if (!isNativeRust && activeCore.core != ServerCore.PocketMine) {
             val targetMcVersion = activeCore.version.ifBlank { config.mcVersion }
@@ -1861,7 +1929,7 @@ class McServerController(
 
     private fun recommendedJavaForMinecraft(core: ServerCore, mcVersion: String): JavaVersion? {
         if (core == ServerCore.PowerNukkitX || core == ServerCore.Allay) return JavaVersion.Java21
-        if (core == ServerCore.Unknown || core == ServerCore.PocketMine) return null
+        if (core == ServerCore.Unknown || core == ServerCore.PocketMine || core == ServerCore.Pumpkin) return null
         val clean = mcVersion.trim().removePrefix("v").removePrefix("V")
         val parts = clean.split('.')
         val major = parts.getOrNull(0)?.substringBefore('-')?.toIntOrNull() ?: return null
@@ -1913,22 +1981,20 @@ class McServerController(
         val activeCore = config.installedCores.find { it.name == config.activeCoreName }
         val coreType = activeCore?.core ?: config.selectedCore
         check(!termux.isMcRunning()) { "Đã có server đang chạy." }
-        if (ProHostFeatures.isNativeRustServerModeEnabled(serverDir)) {
+        if (coreType == ServerCore.Pumpkin || ProHostFeatures.isNativeRustServerModeEnabled(serverDir)) {
             if (abortIfStartCancelled(startGeneration)) return
             val rustBin = ProHostFeatures.resolveInstalledRustBinary(termux.installer.rootDir, serverDir)
             if (!rustBin.isFile || rustBin.length() < 1_000_000L) {
-                throw RuntimeException("Chưa tải xong tệp Nhân Rust ARM64 (Pumpkin MC). Vui lòng bấm nút '🦀 Tải & Bật Nhân Rust Thuần' trước khi khởi động.")
+                throw RuntimeException("Chưa tải xong tệp Nhân Rust ARM64 (Pumpkin MC). Vui lòng bấm nút '🦀 Tải / Đổi Phiên Bản Rust' trước khi khởi động.")
             }
             rustBin.setExecutable(true, false)
             ProHostFeatures.syncPumpkinRustTomlConfig(serverDir, config.localPort, activeCore?.name ?: dirName)
-            termux.emitLog("[startMc] 🦀 Đang khởi chạy Nhân Rust Thuần ARM64 (Pumpkin MC • Cổng TCP ${config.localPort} & UDP 19132 • RAM ~50MB)")
+            termux.emitLog("[startMc] 🦀 Đang khởi chạy Nhân Rust Thuần ARM64 (${rustBin.name} • 0% Java • Cổng TCP ${config.localPort} & UDP 19132 • RAM ~50MB)")
             startupDeadlineMs = System.currentTimeMillis() + 20_000L
             processStartedAtMs = System.currentTimeMillis()
-            termux.startMcCustom(
-                command = "export RUST_BACKTRACE=1; chmod 755 '${rustBin.absolutePath}' 2>/dev/null || true; exec '${rustBin.absolutePath}'",
+            termux.startNativeRustServer(
+                rustBinary = rustBin,
                 dirName = dirName,
-                jvmFlavor = config.jvmFlavor,
-                javaVendor = config.selectedJavaVendor,
                 onExit = createExitHandler(config, dirName, jarPath)
             )
             repo.updateServerState { markRunningIfAlive(it) }

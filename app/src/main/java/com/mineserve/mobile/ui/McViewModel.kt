@@ -3192,7 +3192,7 @@ class McViewModel(
             try {
                 val active = config.value.installedCores.firstOrNull { it.name == config.value.activeCoreName }
                     ?: throw IllegalStateException("Chưa chọn server. Vào Kho cài đặt để tải core.")
-                val accepted = active.core.isBedrock || withContext(Dispatchers.IO) {
+                val accepted = active.core.isBedrock || active.core == ServerCore.Pumpkin || withContext(Dispatchers.IO) {
                     com.mineserve.mobile.server.EulaConsent.isAccepted(repo.termuxRuntime.serverDirFor(active.dirName))
                 }
                 if (!accepted) {
@@ -3548,7 +3548,9 @@ class McViewModel(
         config.value.installedCores.find { it.name == config.value.activeCoreName }
 
     private fun isNativeRustActive(): Boolean =
-        _rustEngineStatus.value.isNativeRustEnabled || activeCoreObj()?.serverFile == "pumpkin"
+        activeCoreObj()?.core == ServerCore.Pumpkin ||
+            _rustEngineStatus.value.isNativeRustEnabled ||
+            activeCoreObj()?.serverFile == "pumpkin"
 
     private fun isBedrockServerActive(): Boolean =
         activeCoreObj()?.core?.isBedrock == true
@@ -13502,15 +13504,166 @@ class McViewModel(
     private val _rustEngineStatus = MutableStateFlow(com.mineserve.mobile.server.ProHostFeatures.RustEngineStatus())
     val rustEngineStatus: StateFlow<com.mineserve.mobile.server.ProHostFeatures.RustEngineStatus> = _rustEngineStatus.asStateFlow()
 
+    private val _installedWasmPlugins = MutableStateFlow<List<com.mineserve.mobile.server.ProHostFeatures.InstalledWasmPlugin>>(emptyList())
+    val installedWasmPlugins: StateFlow<List<com.mineserve.mobile.server.ProHostFeatures.InstalledWasmPlugin>> = _installedWasmPlugins.asStateFlow()
+
+    private val _pumpkinMarketPlugins = MutableStateFlow<List<com.mineserve.mobile.server.ProHostFeatures.PumpkinMarketPluginItem>>(emptyList())
+    val pumpkinMarketPlugins: StateFlow<List<com.mineserve.mobile.server.ProHostFeatures.PumpkinMarketPluginItem>> = _pumpkinMarketPlugins.asStateFlow()
+
+    private val _loadingPumpkinMarket = MutableStateFlow(false)
+    val loadingPumpkinMarket: StateFlow<Boolean> = _loadingPumpkinMarket.asStateFlow()
+
     fun refreshRustEngineStatus() {
         val dirName = activeDirName()
         if (dirName == null) {
             _rustEngineStatus.value = com.mineserve.mobile.server.ProHostFeatures.RustEngineStatus()
+            _installedWasmPlugins.value = emptyList()
             return
         }
         val rootDir = repo.termuxRuntime.installer.rootDir
         val serverDir = repo.termuxRuntime.serverDirFor(dirName)
         _rustEngineStatus.value = com.mineserve.mobile.server.ProHostFeatures.inspectRustEngineStatus(rootDir, serverDir)
+        _installedWasmPlugins.value = com.mineserve.mobile.server.ProHostFeatures.listInstalledRustWasmPlugins(serverDir)
+    }
+
+    fun refreshRustWasmPlugins() {
+        val dirName = activeDirName() ?: run {
+            _installedWasmPlugins.value = emptyList()
+            return
+        }
+        val serverDir = repo.termuxRuntime.serverDirFor(dirName)
+        _installedWasmPlugins.value = com.mineserve.mobile.server.ProHostFeatures.listInstalledRustWasmPlugins(serverDir)
+    }
+
+    fun loadPumpkinMarketplacePlugins() {
+        if (_loadingPumpkinMarket.value) return
+        _loadingPumpkinMarket.value = true
+        viewModelScope.launch {
+            try {
+                val items = com.mineserve.mobile.server.ProHostFeatures.fetchPumpkinMarketplacePlugins(limit = 30)
+                _pumpkinMarketPlugins.value = items
+            } finally {
+                _loadingPumpkinMarket.value = false
+            }
+        }
+    }
+
+    fun installMultiversionWasmOneTap() {
+        if (_liveTaskProgress.value.active) return
+        val dirName = activeDirName() ?: return
+        val rootDir = repo.termuxRuntime.installer.rootDir
+        val serverDir = repo.termuxRuntime.serverDirFor(dirName)
+        viewModelScope.launch {
+            _liveTaskProgress.value = LiveTaskProgressState(
+                active = true,
+                progress = 0.2f,
+                title = "🌐 Đang cài Plugin WASM Đa Phiên Bản (1.7.2 → 26.3)...",
+                detail = "100% WebAssembly chạy trong nhân Rust • Tuyệt đối không dùng Java"
+            )
+            try {
+                val res = com.mineserve.mobile.server.ProHostFeatures.installRustMultiversionWasmPlugin(
+                    rootDir = rootDir,
+                    serverDir = serverDir,
+                    onProgress = { p, m ->
+                        _liveTaskProgress.value = LiveTaskProgressState(
+                            active = true,
+                            progress = p.coerceIn(0f, 1f),
+                            title = m,
+                            detail = "Cho phép mọi bản Minecraft Java 1.7.2 → 26.3 vào chung"
+                        )
+                    }
+                )
+                res.onSuccess {
+                    com.mineserve.mobile.server.ProHostFeatures.syncPumpkinRustTomlConfig(
+                        serverDir = serverDir,
+                        javaPort = serverPort.value,
+                        serverName = config.value.activeCoreName.orEmpty().ifBlank { "MineHost Rust" }
+                    )
+                    refreshRustEngineStatus()
+                    com.mineserve.mobile.server.ProHostFeatures.playTaskCompleteChime()
+                    notifyActionDone("🌐 Đã bật Plugin WASM Đa Phiên Bản (1.7.2 → 26.3)! Khởi động lại Server Rust để áp dụng.")
+                }.onFailure { err ->
+                    _errorFlow.tryEmit("❌ Không thể cài Multiversion.wasm: ${err.message}")
+                }
+            } finally {
+                _liveTaskProgress.value = LiveTaskProgressState()
+            }
+        }
+    }
+
+    fun installPumpkinMarketWasmPlugin(item: com.mineserve.mobile.server.ProHostFeatures.PumpkinMarketPluginItem) {
+        if (_liveTaskProgress.value.active) return
+        val dirName = activeDirName() ?: return
+        val rootDir = repo.termuxRuntime.installer.rootDir
+        val serverDir = repo.termuxRuntime.serverDirFor(dirName)
+        val safeFile = item.name.replace(Regex("""[^A-Za-z0-9_.-]"""), "_").ifBlank { item.publicId } + ".wasm"
+        val dlUrl = "https://market.pumpkinmc.org/api/v1/rest/plugins/${item.publicId}/download"
+        viewModelScope.launch {
+            _liveTaskProgress.value = LiveTaskProgressState(
+                active = true,
+                progress = 0.18f,
+                title = "⬇️ Đang cài '${item.name}' (.wasm)...",
+                detail = "Kho Plugin Pumpkin WASM Chính Thức (0% Java)"
+            )
+            try {
+                val res = com.mineserve.mobile.server.ProHostFeatures.installRustWasmPluginFromUrl(
+                    rootDir = rootDir,
+                    serverDir = serverDir,
+                    downloadUrl = dlUrl,
+                    targetFileName = safeFile,
+                    cacheInSharedDir = false,
+                    onProgress = { p, m ->
+                        _liveTaskProgress.value = LiveTaskProgressState(
+                            active = true,
+                            progress = p.coerceIn(0f, 1f),
+                            title = m,
+                            detail = "Tác giả: ${item.author} • Phiên bản ${item.version}"
+                        )
+                    }
+                )
+                res.onSuccess {
+                    com.mineserve.mobile.server.ProHostFeatures.syncPumpkinRustTomlConfig(
+                        serverDir = serverDir,
+                        javaPort = serverPort.value,
+                        serverName = config.value.activeCoreName.orEmpty().ifBlank { "MineHost Rust" }
+                    )
+                    refreshRustEngineStatus()
+                    com.mineserve.mobile.server.ProHostFeatures.playTaskCompleteChime()
+                    notifyActionDone("✅ Đã cài Plugin WASM '${item.name}'! Khởi động lại Server Rust để nạp plugin.")
+                }.onFailure { err ->
+                    _errorFlow.tryEmit("❌ Không thể tải '${item.name}': ${err.message}")
+                }
+            } finally {
+                _liveTaskProgress.value = LiveTaskProgressState()
+            }
+        }
+    }
+
+    fun toggleRustWasmPlugin(fileName: String, enable: Boolean) {
+        val dirName = activeDirName() ?: return
+        val serverDir = repo.termuxRuntime.serverDirFor(dirName)
+        viewModelScope.launch(Dispatchers.IO) {
+            com.mineserve.mobile.server.ProHostFeatures.setRustWasmPluginEnabled(serverDir, fileName, enable)
+            refreshRustEngineStatus()
+            withContext(Dispatchers.Main) {
+                notifyActionDone(
+                    if (enable) "✅ Đã bật Plugin WASM '${fileName.removeSuffix(".disabled")}'!"
+                    else "⏸️ Đã tạm tắt Plugin WASM '$fileName'."
+                )
+            }
+        }
+    }
+
+    fun deleteRustWasmPlugin(fileName: String) {
+        val dirName = activeDirName() ?: return
+        val serverDir = repo.termuxRuntime.serverDirFor(dirName)
+        viewModelScope.launch(Dispatchers.IO) {
+            com.mineserve.mobile.server.ProHostFeatures.deleteRustWasmPlugin(serverDir, fileName)
+            refreshRustEngineStatus()
+            withContext(Dispatchers.Main) {
+                notifyActionDone("🗑️ Đã xóa Plugin WASM '${fileName.removeSuffix(".disabled")}'.")
+            }
+        }
     }
 
     /** Chế độ 0 (Mặc định): Chuyển về Chế Độ Java Nguyên Bản 100% để chơi Full Mod (Fabric/Forge/NeoForge) & Plugin */
@@ -13632,15 +13785,20 @@ class McViewModel(
         }
     }
 
-    /** [v3.1.1] Tạo mới hoàn chỉnh 1 Server Rust Thuần độc lập 1 chạm (Hoạt động ngay cả khi có 0 Server & KHÔNG cần cài Java!) */
+    /** [v3.1.2] Tạo mới hoàn chỉnh 1 Server Rust Thuần độc lập (ServerCore.Pumpkin • 0% Java • Chọn Phiên Bản & WASM Đa Bản) */
     fun createStandaloneRustServerOneTap(
-        customName: String = "Server Rust Siêu Nhẹ",
+        customName: String = "",
+        profileId: String = "multi_all",
+        gamemode: String = "survival",
+        installMultiversionOverride: Boolean? = null,
         onCreated: (() -> Unit)? = null
     ) {
         if (_liveTaskProgress.value.active || _isDownloadingCore.value) return
         viewModelScope.launch {
+            val profile = com.mineserve.mobile.server.ProHostFeatures.resolveRustProfile(profileId)
             val existingCores = repo.currentConfig().installedCores
-            val baseTitle = customName.trim().ifBlank { "Server Rust Siêu Nhẹ" }
+            val defaultName = "🦀 Rust ${profile.mcVersionLabel.substringBefore("•").trim()}"
+            val baseTitle = customName.trim().ifBlank { defaultName }
             var cleanTitle = baseTitle
             var titleIdx = 2
             while (existingCores.any { it.name.equals(cleanTitle, ignoreCase = true) }) {
@@ -13661,11 +13819,14 @@ class McViewModel(
 
             val rootDir = repo.termuxRuntime.installer.rootDir.apply { mkdirs() }
             val serverDir = repo.termuxRuntime.serverDirFor(dirName)
+            val cleanGm = gamemode.trim().lowercase().ifBlank { "survival" }
+            val isHardcore = cleanGm == "hardcore"
+            val propGamemode = if (isHardcore) "survival" else cleanGm
             _liveTaskProgress.value = LiveTaskProgressState(
                 active = true,
                 progress = 0.06f,
-                title = "🦀 Đang tạo '$cleanTitle' (Pumpkin ARM64)...",
-                detail = "Không cần cài Java • Khởi động 0.2s • Chỉ tốn ~50MB RAM"
+                title = "🦀 Đang tạo '$cleanTitle' (${profile.shortLabel})...",
+                detail = "100% Nhân Rust ARM64 • Tuyệt đối KHÔNG tải hay chạy Java • ~50MB RAM"
             )
             try {
                 withContext(Dispatchers.IO) {
@@ -13676,12 +13837,13 @@ class McViewModel(
                         appendLine("server-port=25565")
                         appendLine("level-name=world")
                         appendLine("online-mode=false")
-                        appendLine("motd=MineHost Rust Server")
-                        appendLine("gamemode=survival")
-                        appendLine("difficulty=normal")
+                        appendLine("motd=$cleanTitle")
+                        appendLine("gamemode=$propGamemode")
+                        appendLine("hardcore=$isHardcore")
+                        appendLine("difficulty=${if (isHardcore) "hard" else "normal"}")
                         appendLine("max-players=20")
-                        appendLine("view-distance=6")
-                        appendLine("simulation-distance=4")
+                        appendLine("view-distance=8")
+                        appendLine("simulation-distance=6")
                     }
                     java.io.File(serverDir, "server.properties").writeText(propText, Charsets.UTF_8)
                 }
@@ -13696,18 +13858,24 @@ class McViewModel(
                             active = true,
                             progress = ratio.coerceIn(0f, 1f),
                             title = msg,
-                            detail = "Đang cấu hình tự động cho '$cleanTitle' (Cổng Java 25565 + Bedrock PE 19132)"
+                            detail = "100% Nhân Rust ARM64 (${profile.mcVersionLabel}) • 0% Java"
                         )
-                    }
+                    },
+                    profileId = profile.id,
+                    gamemode = cleanGm,
+                    installMultiversionOverride = installMultiversionOverride
                 )
 
                 res.onSuccess { status ->
                     val newCore = com.mineserve.mobile.data.InstalledCore(
                         name = cleanTitle,
-                        core = ServerCore.Vanilla,
-                        version = "1.21.4",
+                        core = ServerCore.Pumpkin,
+                        version = profile.mcVersionLabel,
                         dirName = dirName,
-                        serverFile = "pumpkin"
+                        serverFile = "pumpkin",
+                        coreVersion = "Pumpkin ${profile.pumpkinVersion}",
+                        compatibleMcVersion = profile.mcVersionLabel,
+                        channel = if (profile.id == "nightly") "snapshot" else "stable"
                     )
                     val canSwitchActive = !serverState.value.isRunning && !_stopInFlight.value && !startRequestPending
                     repo.updateAndSaveConfig { current ->
@@ -13724,7 +13892,7 @@ class McViewModel(
                     loadWorlds()
                     refreshServerStorage()
                     com.mineserve.mobile.server.ProHostFeatures.playTaskCompleteChime()
-                    notifyActionDone("🦀 Đã tạo xong '$cleanTitle' (Nhân Rust ARM64 • Không cần cài Java)! Bấm BẬT SERVER để chạy ngay!")
+                    notifyActionDone("🦀 Đã tạo xong '$cleanTitle' (${profile.mcVersionLabel} • 0% Java)! Bấm BẬT SERVER NGAY để chạy!")
                     withContext(Dispatchers.Main) {
                         onCreated?.invoke()
                     }
@@ -13735,6 +13903,73 @@ class McViewModel(
             } catch (e: Exception) {
                 withContext(Dispatchers.IO) { runCatching { serverDir.deleteRecursively() } }
                 _errorFlow.tryEmit("❌ Lỗi tạo Server Rust Thuần: ${e.message}")
+            } finally {
+                _liveTaskProgress.value = LiveTaskProgressState()
+            }
+        }
+    }
+
+    /** Đổi phiên bản Nhân Rust / Bật-tắt WASM Đa Phiên Bản cho Server Rust hiện tại trong 1 chạm */
+    fun switchRustServerVersionProfileOneTap(
+        profileId: String,
+        installMultiversionOverride: Boolean? = null
+    ) {
+        if (_liveTaskProgress.value.active) return
+        if (serverState.value.isRunning) {
+            _errorFlow.tryEmit("⚠️ Hãy dừng Server Rust trước khi đổi phiên bản!")
+            return
+        }
+        val active = activeCoreObj() ?: return
+        val rootDir = repo.termuxRuntime.installer.rootDir
+        val serverDir = repo.termuxRuntime.serverDirFor(active.dirName)
+        val profile = com.mineserve.mobile.server.ProHostFeatures.resolveRustProfile(profileId)
+        viewModelScope.launch {
+            _liveTaskProgress.value = LiveTaskProgressState(
+                active = true,
+                progress = 0.1f,
+                title = "🔄 Đang chuyển sang ${profile.shortLabel}...",
+                detail = "100% Nhân Rust ARM64 • Giữ nguyên Map hiện tại"
+            )
+            try {
+                val res = com.mineserve.mobile.server.ProHostFeatures.installAndEnableNativeRustEngine(
+                    rootDir = rootDir,
+                    serverDir = serverDir,
+                    javaPort = serverPort.value,
+                    serverName = active.name,
+                    onProgress = { ratio, msg ->
+                        _liveTaskProgress.value = LiveTaskProgressState(
+                            active = true,
+                            progress = ratio.coerceIn(0f, 1f),
+                            title = msg,
+                            detail = "Giữ nguyên 100% Map & Cấu hình • 0% Java"
+                        )
+                    },
+                    profileId = profile.id,
+                    installMultiversionOverride = installMultiversionOverride
+                )
+                res.onSuccess { status ->
+                    repo.updateAndSaveConfig { current ->
+                        current.copy(
+                            installedCores = current.installedCores.map { c ->
+                                if (c.name == active.name && c.dirName == active.dirName) {
+                                    c.copy(
+                                        core = ServerCore.Pumpkin,
+                                        version = profile.mcVersionLabel,
+                                        coreVersion = "Pumpkin ${profile.pumpkinVersion}",
+                                        compatibleMcVersion = profile.mcVersionLabel,
+                                        serverFile = "pumpkin"
+                                    )
+                                } else c
+                            }
+                        )
+                    }
+                    _rustEngineStatus.value = status
+                    refreshRustEngineStatus()
+                    com.mineserve.mobile.server.ProHostFeatures.playTaskCompleteChime()
+                    notifyActionDone("🦀 Đã chuyển Server Rust sang '${profile.mcVersionLabel}' (0% Java)!")
+                }.onFailure { err ->
+                    _errorFlow.tryEmit("❌ Không thể đổi phiên bản Rust: ${err.message}")
+                }
             } finally {
                 _liveTaskProgress.value = LiveTaskProgressState()
             }
@@ -14061,6 +14296,33 @@ class McViewModel(
         }
         scanUnregisteredServers()
         refreshTrashedServers()
+        // Tự động nâng cấp Server Rust tạo từ v3.1.1 (Vanilla + serverFile=pumpkin) sang ServerCore.Pumpkin chính danh
+        viewModelScope.launch(Dispatchers.IO) {
+            val cur = repo.currentConfig()
+            val needsUpgrade = cur.installedCores.any { it.serverFile == "pumpkin" && it.core != ServerCore.Pumpkin }
+            if (needsUpgrade) {
+                repo.updateAndSaveConfig { cfg ->
+                    cfg.copy(
+                        installedCores = cfg.installedCores.map { c ->
+                            if (c.serverFile == "pumpkin" && c.core != ServerCore.Pumpkin) {
+                                val srvDir = repo.termuxRuntime.serverDirFor(c.dirName)
+                                val st = com.mineserve.mobile.server.ProHostFeatures.inspectRustEngineStatus(
+                                    repo.termuxRuntime.installer.rootDir,
+                                    srvDir
+                                )
+                                c.copy(
+                                    core = ServerCore.Pumpkin,
+                                    version = st.mcVersionLabel,
+                                    compatibleMcVersion = st.mcVersionLabel,
+                                    coreVersion = "Pumpkin Rust"
+                                )
+                            } else c
+                        }
+                    )
+                }
+                refreshRustEngineStatus()
+            }
+        }
         // Đồng bộ toàn diện trạng thái khi đổi Server hoặc khi xóa hết về 0 Server (không để lại dữ liệu bóng ma)
         viewModelScope.launch {
             config.map { it.activeCoreName }.distinctUntilChanged().collect {

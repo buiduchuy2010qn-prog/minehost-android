@@ -4257,6 +4257,83 @@ class TermuxRuntime(context: Context) {
     }
 
     /**
+     * Khởi chạy trực tiếp tệp thực thi máy ARM64 gốc (Pumpkin Rust) bằng Bionic linker của Android.
+     * Tuyệt đối KHÔNG dùng Java/JVM, KHÔNG nạp LD_PRELOAD của Java và KHÔNG phụ thuộc Termux rootfs.
+     */
+    fun startNativeRustServer(
+        rustBinary: File,
+        dirName: String,
+        onExit: (Int) -> Unit
+    ): Process = withLaunchLock {
+        mcProcess?.let { if (it.isAlive) return it }
+
+        val serverDir = serverDirFor(dirName).apply { mkdirs() }
+        val tmpDir = File(serverDir, ".tmp").apply { mkdirs() }
+        val logFile = prepareMcLogFile(serverDir)
+
+        killOrphanMcProcess(serverDir)
+        rustBinary.setExecutable(true, false)
+
+        val fullCmd = "export PATH='/system/bin:/system/xbin'; " +
+            "export HOME='${serverDir.absolutePath}'; " +
+            "export TMPDIR='${tmpDir.absolutePath}'; " +
+            "export RUST_BACKTRACE=1; " +
+            "chmod 755 '${rustBinary.absolutePath}' 2>/dev/null || true; " +
+            "cd '${serverDir.absolutePath}' && exec '${rustBinary.absolutePath}'"
+
+        Log.i(TAG, "startNativeRustServer: binary=${rustBinary.absolutePath} dirName=$dirName")
+        emitLog("[RUST NATIVE] 🦀 Khởi chạy trực tiếp tệp máy ARM64: ${rustBinary.name} (0% Java • Không dùng máy ảo JVM)")
+
+        val pb = ProcessBuilder("/system/bin/sh", "-c", fullCmd).apply {
+            redirectErrorStream(true)
+            directory(serverDir)
+            environment().apply {
+                clear()
+                put("PATH", "/system/bin:/system/xbin")
+                put("HOME", serverDir.absolutePath)
+                put("TMPDIR", tmpDir.absolutePath)
+                put("RUST_BACKTRACE", "1")
+                put("TERM", "xterm-256color")
+            }
+        }
+        val process = pb.start()
+        trackMcProcess(process, serverDir)
+
+        Thread({
+            var writer: java.io.BufferedWriter? = null
+            try {
+                writer = java.io.BufferedWriter(
+                    java.io.OutputStreamWriter(java.io.FileOutputStream(logFile, true), Charsets.UTF_8),
+                    8192
+                )
+                val reader = process.inputStream.bufferedReader()
+                var line = reader.readLine()
+                var lineCount = 0
+                while (line != null) {
+                    observeConsoleLineForShutdown(line)
+                    executor.emit(line)
+                    writer.appendLine(line)
+                    if (++lineCount % 50 == 0) writer.flush()
+                    line = reader.readLine()
+                }
+                writer.flush()
+            } catch (e: Exception) {
+                Log.w(TAG, "rust stdout reader error: ${e.message}")
+            } finally {
+                runCatching { writer?.close() }
+            }
+        }, "rust-stdout-reader").start()
+
+        Thread({
+            val code = process.waitFor()
+            Log.w(TAG, "Native Rust process exited code=$code")
+            if (clearMcProcessIfCurrent(process)) onExit(code)
+        }, "rust-watch").start()
+
+        return process
+    }
+
+    /**
      * 最近一次「用户主动停止」请求的时间戳（0 = 从未请求过）。
      *
      * ## 为什么放在这里而不是 McServerController
@@ -4281,7 +4358,8 @@ class TermuxRuntime(context: Context) {
             line.contains("AllChunkStorage: All dimensions are saved", ignoreCase = true) ||
             line.contains("Closing Server", ignoreCase = true) ||
             line.contains("Thread RCON Listener stopped", ignoreCase = true) ||
-            line.contains("Allay server stopped", ignoreCase = true)
+            line.contains("Allay server stopped", ignoreCase = true) ||
+            line.contains("Stopped server", ignoreCase = true)
         ) {
             lastWorldSaveCompletedAtMs = System.currentTimeMillis()
         }

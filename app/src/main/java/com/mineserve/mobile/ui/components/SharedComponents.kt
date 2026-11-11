@@ -719,6 +719,7 @@ fun CoreBrandLogo(
     val officialBitmap = remember(core) { OfficialCoreLogos.bitmapFor(core) }
     val borderColor = remember(core) {
         when (core) {
+            com.mineserve.mobile.data.ServerCore.Pumpkin -> Color(0xFFFB923C)
             com.mineserve.mobile.data.ServerCore.Paper -> Color(0xFF38BDF8)
             com.mineserve.mobile.data.ServerCore.Purpur -> Color(0xFFC084FC)
             com.mineserve.mobile.data.ServerCore.Fabric -> Color(0xFFD6D3C4)
@@ -738,7 +739,25 @@ fun CoreBrandLogo(
             com.mineserve.mobile.data.ServerCore.Unknown -> Color(0xFF64748B)
         }
     }
-    if (officialBitmap != null) {
+    if (core == com.mineserve.mobile.data.ServerCore.Pumpkin) {
+        Box(
+            modifier = modifier
+                .size(size)
+                .clip(RoundedCornerShape(9.dp))
+                .background(
+                    androidx.compose.ui.graphics.Brush.linearGradient(
+                        listOf(Color(0xFFEA580C), Color(0xFF9A3412))
+                    )
+                )
+                .border(1.4.dp, Color(0xFFFB923C), RoundedCornerShape(9.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "🦀",
+                fontSize = (size.value * 0.52f).sp
+            )
+        }
+    } else if (officialBitmap != null) {
         androidx.compose.foundation.Image(
             bitmap = officialBitmap,
             contentDescription = core.displayName,

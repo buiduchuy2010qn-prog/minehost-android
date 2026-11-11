@@ -3849,23 +3849,170 @@ object ProHostFeatures {
     private const val RUST_NATIVE_MARKER = ".minehost_rust_native_enabled"
     private const val RUST_ENGINE_DIR_NAME = "rust-engine"
     private const val RUST_BINARY_NAME = "pumpkin-aarch64-android"
+    private const val RUST_MULTIVERSION_WASM_NAME = "Multiversion.wasm"
+    private const val RUST_MULTIVERSION_WASM_URL = "https://market.pumpkinmc.org/api/v1/rest/plugins/s7e5Nz2f/download"
+
+    data class RustVersionProfile(
+        val id: String,
+        val shortLabel: String,
+        val mcVersionLabel: String,
+        val pumpkinVersion: String,
+        val releaseTag: String,
+        val binaryCacheName: String,
+        val defaultMultiversionWasm: Boolean,
+        val descriptionVi: String
+    )
+
+    val RUST_VERSION_PROFILES: List<RustVersionProfile> = listOf(
+        RustVersionProfile(
+            id = "multi_all",
+            shortLabel = "🌟 Mọi bản 1.7.2 → 26.3 + PE",
+            mcVersionLabel = "1.7.2–26.3 • PE 1.26.60",
+            pumpkinVersion = "0.2.2",
+            releaseTag = "0.2.2%2B26.3-26.60",
+            binaryCacheName = "pumpkin-0.2.2-arm64",
+            defaultMultiversionWasm = true,
+            descriptionVi = "Khuyên dùng: Vào được từ mọi bản Minecraft PC (1.8 / 1.12.2 / 1.16.5 / 1.20.x / 1.21.x / 26.3) và Điện thoại PE 1.26.60"
+        ),
+        RustVersionProfile(
+            id = "mc_1_21_4",
+            shortLabel = "🎮 1.21.4 – 1.21.11",
+            mcVersionLabel = "1.21.4–1.21.11 (Rust)",
+            pumpkinVersion = "0.2.2",
+            releaseTag = "0.2.2%2B26.3-26.60",
+            binaryCacheName = "pumpkin-0.2.2-arm64",
+            defaultMultiversionWasm = true,
+            descriptionVi = "Tối ưu cho máy khách 1.21.x + PE 1.26.60 (Chạy 100% Nhân Rust + WASM Đa bản)"
+        ),
+        RustVersionProfile(
+            id = "mc_1_20_1",
+            shortLabel = "🎮 1.20.1 – 1.20.4",
+            mcVersionLabel = "1.20.1–1.20.4 (Rust)",
+            pumpkinVersion = "0.2.2",
+            releaseTag = "0.2.2%2B26.3-26.60",
+            binaryCacheName = "pumpkin-0.2.2-arm64",
+            defaultMultiversionWasm = true,
+            descriptionVi = "Tối ưu cho máy khách 1.20.1 / 1.20.4 + PE 1.26.60 (Chạy 100% Nhân Rust + WASM Đa bản)"
+        ),
+        RustVersionProfile(
+            id = "mc_1_16_5",
+            shortLabel = "🎮 1.16.5 / 1.12.2 / 1.8.9",
+            mcVersionLabel = "1.8.9–1.16.5 (Rust)",
+            pumpkinVersion = "0.2.2",
+            releaseTag = "0.2.2%2B26.3-26.60",
+            binaryCacheName = "pumpkin-0.2.2-arm64",
+            defaultMultiversionWasm = true,
+            descriptionVi = "Siêu nhẹ cho máy cấu hình yếu chơi 1.8.9, 1.12.2, 1.16.5 (0% Java)"
+        ),
+        RustVersionProfile(
+            id = "native_0_2_2",
+            shortLabel = "⚡ Gốc 26.3 + PE 1.26.60",
+            mcVersionLabel = "Java 26.3 • PE 1.26.60",
+            pumpkinVersion = "0.2.2",
+            releaseTag = "0.2.2%2B26.3-26.60",
+            binaryCacheName = "pumpkin-0.2.2-arm64",
+            defaultMultiversionWasm = false,
+            descriptionVi = "Nhân Pumpkin 0.2.2 nguyên bản thuần túy (nhẹ nhất, không kèm plugin chuyển đổi)"
+        ),
+        RustVersionProfile(
+            id = "native_0_2_1",
+            shortLabel = "📱 26.3 + PE 1.26.51",
+            mcVersionLabel = "Java 26.3 • PE 1.26.51",
+            pumpkinVersion = "0.2.1",
+            releaseTag = "0.2.1%2B26.3-26.51",
+            binaryCacheName = "pumpkin-0.2.1-arm64",
+            defaultMultiversionWasm = false,
+            descriptionVi = "Nhân Pumpkin 0.2.1 dành riêng cho Minecraft PE 1.26.51"
+        ),
+        RustVersionProfile(
+            id = "native_0_1_0",
+            shortLabel = "📱 26.2 + PE 1.26.45",
+            mcVersionLabel = "Java 26.2 • PE 1.26.45",
+            pumpkinVersion = "0.1.0",
+            releaseTag = "0.1.0-dev%2B26.2-26.45",
+            binaryCacheName = "pumpkin-0.1.0-arm64",
+            defaultMultiversionWasm = false,
+            descriptionVi = "Nhân Pumpkin 0.1.0 dành cho Minecraft Java 26.2 & PE 1.26.45"
+        ),
+        RustVersionProfile(
+            id = "nightly",
+            shortLabel = "🔥 Nightly (Mới nhất)",
+            mcVersionLabel = "Nightly (Mới nhất)",
+            pumpkinVersion = "Nightly",
+            releaseTag = "nightly",
+            binaryCacheName = "pumpkin-nightly-arm64",
+            defaultMultiversionWasm = true,
+            descriptionVi = "Bản biên dịch tự động mới nhất hằng ngày từ nhánh phát triển Pumpkin-MC"
+        )
+    )
+
+    fun resolveRustProfile(profileIdOrVersion: String?): RustVersionProfile {
+        val q = profileIdOrVersion?.trim().orEmpty()
+        if (q.isEmpty()) return RUST_VERSION_PROFILES.first()
+        RUST_VERSION_PROFILES.firstOrNull { it.id.equals(q, ignoreCase = true) }?.let { return it }
+        RUST_VERSION_PROFILES.firstOrNull { it.mcVersionLabel.equals(q, ignoreCase = true) }?.let { return it }
+        return when {
+            q.startsWith("1.21") -> RUST_VERSION_PROFILES.first { it.id == "mc_1_21_4" }
+            q.startsWith("1.20") -> RUST_VERSION_PROFILES.first { it.id == "mc_1_20_1" }
+            q.startsWith("1.16") || q.startsWith("1.12") || q.startsWith("1.8") ->
+                RUST_VERSION_PROFILES.first { it.id == "mc_1_16_5" }
+            q.contains("26.51") -> RUST_VERSION_PROFILES.first { it.id == "native_0_2_1" }
+            q.contains("26.45") || q.startsWith("26.2") -> RUST_VERSION_PROFILES.first { it.id == "native_0_1_0" }
+            q.contains("nightly", ignoreCase = true) -> RUST_VERSION_PROFILES.first { it.id == "nightly" }
+            else -> RUST_VERSION_PROFILES.first()
+        }
+    }
 
     data class RustEngineStatus(
         val isRustJvmTurboActive: Boolean = false,
         val isNativeRustActive: Boolean = false,
         val isNativeBinaryInstalled: Boolean = false,
         val binarySizeMb: String = "0 MB",
-        val summaryVi: String = "Chưa bật chế độ chạy Rust"
+        val summaryVi: String = "Chưa bật chế độ chạy Rust",
+        val activeProfileId: String = "multi_all",
+        val mcVersionLabel: String = "1.7.2–26.3 • PE 1.26.60",
+        val isMultiversionWasmEnabled: Boolean = false,
+        val installedWasmCount: Int = 0
     ) {
         val isRustJvmTurboEnabled: Boolean get() = isRustJvmTurboActive
         val isNativeRustEnabled: Boolean get() = isNativeRustActive
     }
+
+    data class InstalledWasmPlugin(
+        val fileName: String,
+        val displayName: String,
+        val sizeKb: Long,
+        val enabled: Boolean
+    )
+
+    data class PumpkinMarketPluginItem(
+        val publicId: String,
+        val name: String,
+        val version: String,
+        val author: String,
+        val category: String,
+        val downloads: Int
+    )
 
     fun isRustJvmTurboModeEnabled(serverDir: File): Boolean =
         File(serverDir, RUST_TURBO_MARKER).isFile
 
     fun isNativeRustServerModeEnabled(serverDir: File): Boolean =
         File(serverDir, RUST_NATIVE_MARKER).isFile
+
+    private fun readRustMarkerMap(serverDir: File): Map<String, String> {
+        val marker = File(serverDir, RUST_NATIVE_MARKER)
+        if (!marker.isFile) return emptyMap()
+        return runCatching {
+            marker.readLines(Charsets.UTF_8)
+                .mapNotNull { line ->
+                    val t = line.trim()
+                    if (t.isEmpty() || !t.contains("=")) null
+                    else t.substringBefore("=").trim() to t.substringAfter("=").trim()
+                }
+                .toMap()
+        }.getOrDefault(emptyMap())
+    }
 
     fun resolveInstalledRustBinary(rootDir: File, serverDir: File): File {
         val localBin = File(serverDir, RUST_BINARY_NAME)
@@ -3874,6 +4021,20 @@ object ProHostFeatures {
             return localBin
         }
         val sharedDir = File(rootDir, RUST_ENGINE_DIR_NAME).apply { mkdirs() }
+        val markerMap = readRustMarkerMap(serverDir)
+        val markerBinName = markerMap["binary"]?.takeIf { it.isNotBlank() && !it.contains("/") && !it.contains("\\") }
+        if (markerBinName != null) {
+            val specific = File(sharedDir, markerBinName)
+            if (specific.isFile && specific.length() > 1_000_000L) {
+                specific.setExecutable(true, false)
+                return specific
+            }
+        }
+        val default022 = File(sharedDir, "pumpkin-0.2.2-arm64")
+        if (default022.isFile && default022.length() > 1_000_000L) {
+            default022.setExecutable(true, false)
+            return default022
+        }
         val sharedBin = File(sharedDir, RUST_BINARY_NAME)
         if (sharedBin.isFile) {
             sharedBin.setExecutable(true, false)
@@ -3881,26 +4042,212 @@ object ProHostFeatures {
         return sharedBin
     }
 
+    fun listInstalledRustWasmPlugins(serverDir: File): List<InstalledWasmPlugin> {
+        val pluginsDir = File(serverDir, "plugins")
+        if (!pluginsDir.isDirectory) return emptyList()
+        return pluginsDir.listFiles()
+            .orEmpty()
+            .filter { f ->
+                f.isFile && (f.name.endsWith(".wasm", ignoreCase = true) || f.name.endsWith(".wasm.disabled", ignoreCase = true))
+            }
+            .sortedBy { it.name.lowercase() }
+            .map { f ->
+                val enabled = f.name.endsWith(".wasm", ignoreCase = true)
+                val cleanName = f.name
+                    .removeSuffix(".disabled")
+                    .removeSuffix(".wasm")
+                    .removeSuffix(".WASM")
+                InstalledWasmPlugin(
+                    fileName = f.name,
+                    displayName = cleanName,
+                    sizeKb = (f.length() / 1024L).coerceAtLeast(1L),
+                    enabled = enabled
+                )
+            }
+    }
+
+    fun setRustWasmPluginEnabled(serverDir: File, fileName: String, enable: Boolean): Boolean {
+        val pluginsDir = File(serverDir, "plugins")
+        val safeName = fileName.substringAfterLast('/').substringAfterLast('\\')
+        val src = File(pluginsDir, safeName)
+        if (!src.isFile) return false
+        val baseWasm = safeName.removeSuffix(".disabled")
+        val dst = File(pluginsDir, if (enable) baseWasm else "$baseWasm.disabled")
+        if (src.absolutePath == dst.absolutePath) return true
+        if (dst.exists()) dst.delete()
+        return src.renameTo(dst)
+    }
+
+    fun deleteRustWasmPlugin(serverDir: File, fileName: String): Boolean {
+        val pluginsDir = File(serverDir, "plugins")
+        val safeName = fileName.substringAfterLast('/').substringAfterLast('\\')
+        val target = File(pluginsDir, safeName)
+        return target.isFile && target.delete()
+    }
+
+    private fun isValidWasmFile(file: File): Boolean {
+        if (!file.isFile || file.length() < 1024L) return false
+        return runCatching {
+            file.inputStream().use { ins ->
+                val hdr = ByteArray(4)
+                ins.read(hdr) == 4 &&
+                    hdr[0] == 0x00.toByte() &&
+                    hdr[1] == 0x61.toByte() &&
+                    hdr[2] == 0x73.toByte() &&
+                    hdr[3] == 0x6D.toByte()
+            }
+        }.getOrDefault(false)
+    }
+
+    suspend fun installRustWasmPluginFromUrl(
+        rootDir: File,
+        serverDir: File,
+        downloadUrl: String,
+        targetFileName: String,
+        cacheInSharedDir: Boolean = false,
+        onProgress: (Float, String) -> Unit = { _, _ -> }
+    ): Result<File> = withContext(Dispatchers.IO) {
+        runCatching {
+            val cleanFileName = targetFileName
+                .substringAfterLast('/')
+                .substringAfterLast('\\')
+                .let { if (it.endsWith(".wasm", ignoreCase = true)) it else "$it.wasm" }
+            val sharedDir = File(rootDir, RUST_ENGINE_DIR_NAME).apply { mkdirs() }
+            val pluginsDir = File(serverDir, "plugins").apply { mkdirs() }
+            val dstFile = File(pluginsDir, cleanFileName)
+            val disabledTwin = File(pluginsDir, "$cleanFileName.disabled")
+            if (disabledTwin.exists()) disabledTwin.delete()
+
+            val sharedCache = File(sharedDir, cleanFileName)
+            if (cacheInSharedDir && isValidWasmFile(sharedCache)) {
+                sharedCache.copyTo(dstFile, overwrite = true)
+                return@runCatching dstFile
+            }
+
+            val tmpFile = File(sharedDir, "$cleanFileName.tmp")
+            var lastErr: Exception? = null
+            for (attempt in 1..2) {
+                try {
+                    onProgress(0.2f, "⬇️ Đang tải plugin WASM '$cleanFileName' (Lần $attempt)...")
+                    val conn = (URL(downloadUrl).openConnection() as HttpURLConnection).apply {
+                        connectTimeout = 15_000
+                        readTimeout = 30_000
+                        instanceFollowRedirects = true
+                        setRequestProperty("User-Agent", "ppm/0.1.0 (MineHost Android)")
+                    }
+                    try {
+                        if (conn.responseCode !in 200..299) {
+                            throw IllegalStateException("HTTP ${conn.responseCode}")
+                        }
+                        conn.inputStream.use { input ->
+                            tmpFile.outputStream().use { out ->
+                                input.copyTo(out, 32 * 1024)
+                            }
+                        }
+                    } finally {
+                        conn.disconnect()
+                    }
+                    if (!isValidWasmFile(tmpFile)) {
+                        throw IllegalStateException("Tệp tải về không đúng định dạng WebAssembly (.wasm)")
+                    }
+                    if (cacheInSharedDir) {
+                        tmpFile.copyTo(sharedCache, overwrite = true)
+                    }
+                    tmpFile.copyTo(dstFile, overwrite = true)
+                    tmpFile.delete()
+                    return@runCatching dstFile
+                } catch (e: Exception) {
+                    lastErr = e
+                    runCatching { tmpFile.delete() }
+                }
+            }
+            throw IllegalStateException("Không thể tải '$cleanFileName': ${lastErr?.message ?: "Lỗi mạng"}")
+        }
+    }
+
+    suspend fun installRustMultiversionWasmPlugin(
+        rootDir: File,
+        serverDir: File,
+        onProgress: (Float, String) -> Unit = { _, _ -> }
+    ): Result<File> = installRustWasmPluginFromUrl(
+        rootDir = rootDir,
+        serverDir = serverDir,
+        downloadUrl = RUST_MULTIVERSION_WASM_URL,
+        targetFileName = RUST_MULTIVERSION_WASM_NAME,
+        cacheInSharedDir = true,
+        onProgress = onProgress
+    )
+
+    suspend fun fetchPumpkinMarketplacePlugins(limit: Int = 25): List<PumpkinMarketPluginItem> = withContext(Dispatchers.IO) {
+        runCatching {
+            val conn = (URL("https://market.pumpkinmc.org/api/v1/rest/plugins?limit=${limit.coerceIn(5, 50)}").openConnection() as HttpURLConnection).apply {
+                connectTimeout = 12_000
+                readTimeout = 15_000
+                setRequestProperty("User-Agent", "ppm/0.1.0 (MineHost Android)")
+            }
+            try {
+                if (conn.responseCode !in 200..299) return@withContext emptyList()
+                val raw = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                val arr = org.json.JSONArray(raw)
+                buildList {
+                    for (i in 0 until arr.length()) {
+                        val o = arr.optJSONObject(i) ?: continue
+                        if (!o.optString("type", "free").equals("free", ignoreCase = true)) continue
+                        val pubId = o.optString("public_id").trim()
+                        val name = o.optString("name").trim()
+                        if (pubId.isEmpty() || name.isEmpty() || name.length <= 2) continue
+                        add(
+                            PumpkinMarketPluginItem(
+                                publicId = pubId,
+                                name = name,
+                                version = o.optString("version").ifBlank { "1.0" },
+                                author = o.optString("dev_name").ifBlank { "Pumpkin Dev" },
+                                category = o.optString("category").ifBlank { "Utilities" },
+                                downloads = o.optInt("downloads", 0)
+                            )
+                        )
+                    }
+                }.sortedByDescending { it.downloads }
+            } finally {
+                conn.disconnect()
+            }
+        }.getOrDefault(emptyList())
+    }
+
     fun inspectRustEngineStatus(rootDir: File, serverDir: File): RustEngineStatus {
         val turbo = isRustJvmTurboModeEnabled(serverDir)
         val native = isNativeRustServerModeEnabled(serverDir)
+        val markerMap = readRustMarkerMap(serverDir)
+        val profile = resolveRustProfile(markerMap["profile"])
+        val mcLabel = markerMap["mc"]?.takeIf { it.isNotBlank() } ?: profile.mcVersionLabel
         val bin = resolveInstalledRustBinary(rootDir, serverDir)
         val binReady = bin.isFile && bin.length() > 1_000_000L
+        val wasmPlugins = listInstalledRustWasmPlugins(serverDir)
+        val multiversionOn = wasmPlugins.any {
+            it.enabled && it.fileName.contains("multiversion", ignoreCase = true)
+        }
         val mbStr = if (binReady) {
             String.format(java.util.Locale.US, "%.1f MB", bin.length().toDouble() / (1024.0 * 1024.0))
         } else "0 MB"
         val summary = when {
-            native && binReady -> "🦀 Đang chạy Nhân Rust Thuần (Pumpkin ARM64 • Siêu nhẹ ~50MB RAM, bật 0.2s)"
+            native && binReady && multiversionOn ->
+                "🦀 Nhân Rust Thuần 100% ($mcLabel • Đã bật WASM Đa Phiên Bản 1.7.2→26.3 • 0% Java)"
+            native && binReady ->
+                "🦀 Nhân Rust Thuần 100% ($mcLabel • Siêu nhẹ ~50MB RAM • 0% Java)"
             turbo -> "⚡ Đang bật Chế Độ Rust-JVM Turbo (Giảm 35–40% RAM, giữ nguyên 100% Map, Mod & Plugin)"
             binReady -> "Đã tải sẵn nhân Rust ARM64 ($mbStr) • Sẵn sàng bật 1 chạm"
-            else -> "Tối ưu bộ nhớ vùng kiểu Rust hoặc chuyển sang nhân Rust ARM64 siêu nhẹ"
+            else -> "Tối ưu bộ nhớ vùng kiểu Rust hoặc chạy Nhân Rust ARM64 thuần túy (0% Java)"
         }
         return RustEngineStatus(
             isRustJvmTurboActive = turbo,
             isNativeRustActive = native && binReady,
             isNativeBinaryInstalled = binReady,
             binarySizeMb = mbStr,
-            summaryVi = summary
+            summaryVi = summary,
+            activeProfileId = profile.id,
+            mcVersionLabel = mcLabel,
+            isMultiversionWasmEnabled = multiversionOn,
+            installedWasmCount = wasmPlugins.count { it.enabled }
         )
     }
 
@@ -3995,7 +4342,8 @@ object ProHostFeatures {
     fun syncPumpkinRustTomlConfig(
         serverDir: File,
         javaPort: Int = 25565,
-        serverName: String = "MineHost Server"
+        serverName: String = "MineHost Server",
+        explicitGamemode: String? = null
     ) {
         serverDir.mkdirs()
         val propFile = File(serverDir, "server.properties")
@@ -4004,6 +4352,8 @@ object ProHostFeatures {
         var propViewDistance: Int? = null
         var propSimulationDistance: Int? = null
         var propWhiteList: Boolean? = null
+        var propGamemode: String? = null
+        var propHardcore: Boolean? = null
         if (propFile.isFile) {
             runCatching {
                 propFile.readLines().forEach { line ->
@@ -4017,9 +4367,20 @@ object ProHostFeatures {
                         "view-distance" -> propViewDistance = v.toIntOrNull()?.coerceIn(2, 32)
                         "simulation-distance" -> propSimulationDistance = v.toIntOrNull()?.coerceIn(2, 32)
                         "white-list" -> propWhiteList = v.equals("true", ignoreCase = true)
+                        "gamemode" -> if (v.isNotBlank()) propGamemode = v
+                        "hardcore" -> propHardcore = v.equals("true", ignoreCase = true)
                     }
                 }
             }
+        }
+        val rawGm = (explicitGamemode ?: propGamemode)?.trim()?.lowercase()
+        val isHardcore = rawGm == "hardcore" || propHardcore == true
+        val pascalGamemode = when (rawGm) {
+            "creative", "1" -> "Creative"
+            "adventure", "2" -> "Adventure"
+            "spectator", "3" -> "Spectator"
+            "survival", "hardcore", "0" -> "Survival"
+            else -> null
         }
         val maxPlayers = propMaxPlayers ?: 30
         val viewDistance = propViewDistance ?: 8
@@ -4027,7 +4388,7 @@ object ProHostFeatures {
         val whiteList = propWhiteList ?: false
         val safeWorldName = worldName.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ").trim().ifBlank { "world" }
         val safeServerName = serverName.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ").trim().ifBlank { "MineHost Server" }
-        val cleanMotd = "🦀 $safeServerName • Nhân Rust ARM64 Siêu Nhẹ & Mượt (20 TPS)"
+        val cleanMotd = "🦀 $safeServerName • Nhân Rust Thuần 100% (0% Java • 20 TPS)"
 
         val tomlFile = File(serverDir, "pumpkin.toml")
         val existingRaw = if (tomlFile.isFile) runCatching { tomlFile.readText(Charsets.UTF_8) }.getOrDefault("") else ""
@@ -4052,6 +4413,12 @@ object ProHostFeatures {
 
             val rootBlock = blocks.first()
             upsertKeyInTomlBlock(rootBlock.lines, "default_level_name", "\"$safeWorldName\"")
+            if (pascalGamemode != null) {
+                upsertKeyInTomlBlock(rootBlock.lines, "default_gamemode", "\"$pascalGamemode\"")
+            }
+            if (explicitGamemode != null || propHardcore != null) {
+                upsertKeyInTomlBlock(rootBlock.lines, "hardcore", isHardcore.toString())
+            }
             if (propWhiteList != null || rootBlock.lines.any { Regex("""^\s*white_list\s*=.*$""").matches(it) }) {
                 upsertKeyInTomlBlock(rootBlock.lines, "white_list", whiteList.toString())
             }
@@ -4062,6 +4429,12 @@ object ProHostFeatures {
 
             val logBlock = ensureTomlSectionBlock(blocks, "logging")
             upsertKeyInTomlBlock(logBlock.lines, "color", "false")
+
+            val pluginsBlock = ensureTomlSectionBlock(blocks, "plugins")
+            upsertKeyInTomlBlock(pluginsBlock.lines, "enabled", "true")
+            upsertKeyInTomlBlock(pluginsBlock.lines, "ask_permission_confirmation", "false")
+            upsertKeyInTomlBlock(pluginsBlock.lines, "allow_unsigned", "true")
+            upsertKeyInTomlBlock(pluginsBlock.lines, "verify_signatures", "false")
 
             val javaBlock = ensureTomlSectionBlock(blocks, "networking.java")
             upsertKeyInTomlBlock(javaBlock.lines, "address", "\"0.0.0.0:$javaPort\"")
@@ -4091,8 +4464,11 @@ object ProHostFeatures {
             return
         }
 
+        val finalGm = pascalGamemode ?: "Survival"
         val tomlContent = """
             default_level_name = "$safeWorldName"
+            default_gamemode = "$finalGm"
+            hardcore = $isHardcore
             allow_chat_reports = false
             spawn_protection = 0
             white_list = $whiteList
@@ -4104,6 +4480,12 @@ object ProHostFeatures {
 
             [logging]
             color = false
+
+            [plugins]
+            enabled = true
+            ask_permission_confirmation = false
+            allow_unsigned = true
+            verify_signatures = false
 
             [networking.java]
             enabled = true
@@ -4139,60 +4521,81 @@ object ProHostFeatures {
         serverDir: File,
         javaPort: Int,
         serverName: String,
-        onProgress: (Float, String) -> Unit
+        onProgress: (Float, String) -> Unit,
+        profileId: String = "multi_all",
+        gamemode: String? = null,
+        installMultiversionOverride: Boolean? = null
     ): Result<RustEngineStatus> = withContext(Dispatchers.IO) {
         runCatching {
             serverDir.mkdirs()
+            val profile = resolveRustProfile(profileId)
+            val wantMultiversion = installMultiversionOverride ?: profile.defaultMultiversionWasm
             val sharedDir = File(rootDir, RUST_ENGINE_DIR_NAME).apply { mkdirs() }
-            val targetBin = File(sharedDir, RUST_BINARY_NAME)
+            val targetBin = File(sharedDir, profile.binaryCacheName)
 
-            val candidateUrls = listOf(
-                "https://github.com/Pumpkin-MC/Pumpkin/releases/download/0.2.2%2B26.3-26.60/pumpkin-aarch64-android",
-                "https://github.com/Pumpkin-MC/Pumpkin/releases/download/nightly/pumpkin-aarch64-android",
-                "https://github.com/Pumpkin-MC/Pumpkin/releases/download/nightly/pumpkin-ARM64-Linux-musl"
-            )
+            // Tận dụng lại bản tải cũ nếu là Pumpkin 0.2.2 để không phải tải lại 120MB
+            if (!targetBin.isFile && profile.binaryCacheName == "pumpkin-0.2.2-arm64") {
+                val legacyBin = File(sharedDir, RUST_BINARY_NAME)
+                if (legacyBin.isFile && legacyBin.length() > 10_000_000L) {
+                    runCatching { legacyBin.copyTo(targetBin, overwrite = true) }
+                }
+            }
+
+            val officialUrl = "https://github.com/Pumpkin-MC/Pumpkin/releases/download/${profile.releaseTag}/pumpkin-aarch64-android"
+            val candidateUrls = buildList {
+                add(officialUrl)
+                add("https://ghfast.top/$officialUrl")
+                add("https://gh-proxy.com/$officialUrl")
+                if (profile.id == "nightly") {
+                    add("https://github.com/Pumpkin-MC/Pumpkin/releases/download/nightly/pumpkin-ARM64-Linux-musl")
+                }
+            }
 
             val isAlreadyValid = targetBin.isFile && targetBin.length() > 10_000_000L
             if (!isAlreadyValid) {
-                val tmpFile = File(sharedDir, "$RUST_BINARY_NAME.download")
+                val tmpFile = File(sharedDir, "${profile.binaryCacheName}.download")
                 var downloadedOk = false
                 var lastErr: Exception? = null
                 for ((idx, dlUrl) in candidateUrls.withIndex()) {
                     try {
-                        onProgress(0.08f, "🦀 Đang kết nối máy chủ tải Nhân Rust ARM64 (Nguồn ${idx + 1}/${candidateUrls.size})...")
+                        onProgress(0.06f, "🦀 Đang tải Nhân Rust ARM64 (${profile.shortLabel} • Nguồn ${idx + 1}/${candidateUrls.size})...")
                         val conn = (URL(dlUrl).openConnection() as HttpURLConnection).apply {
                             connectTimeout = 15_000
                             readTimeout = 45_000
                             instanceFollowRedirects = true
-                            setRequestProperty("User-Agent", "MineHost-Mobile/2.9.6")
+                            setRequestProperty("User-Agent", "MineHost-Mobile/3.1.2")
                         }
-                        if (conn.responseCode !in 200..299) {
-                            throw IllegalStateException("HTTP ${conn.responseCode}")
-                        }
-                        val totalBytes = conn.contentLengthLong.coerceAtLeast(1L)
-                        var copied = 0L
-                        conn.inputStream.use { input ->
-                            tmpFile.outputStream().use { out ->
-                                val buf = ByteArray(32 * 1024)
-                                var lastReportAt = 0L
-                                while (true) {
-                                    val r = input.read(buf)
-                                    if (r <= 0) break
-                                    out.write(buf, 0, r)
-                                    copied += r
-                                    val now = System.currentTimeMillis()
-                                    if (now - lastReportAt >= 250L) {
-                                        lastReportAt = now
-                                        val ratio = (copied.toFloat() / totalBytes.toFloat()).coerceIn(0f, 1f)
-                                        val mbCopied = copied / (1024 * 1024)
-                                        val mbTotal = totalBytes / (1024 * 1024)
-                                        onProgress(
-                                            0.10f + ratio * 0.80f,
-                                            "⬇️ Đang tải Nhân Rust ARM64 ($mbCopied/$mbTotal MB • ${(ratio * 100).toInt()}%)..."
-                                        )
+                        try {
+                            if (conn.responseCode !in 200..299) {
+                                throw IllegalStateException("HTTP ${conn.responseCode}")
+                            }
+                            val totalBytes = conn.contentLengthLong.coerceAtLeast(1L)
+                            var copied = 0L
+                            conn.inputStream.use { input ->
+                                tmpFile.outputStream().use { out ->
+                                    val buf = ByteArray(32 * 1024)
+                                    var lastReportAt = 0L
+                                    while (true) {
+                                        val r = input.read(buf)
+                                        if (r <= 0) break
+                                        out.write(buf, 0, r)
+                                        copied += r
+                                        val now = System.currentTimeMillis()
+                                        if (now - lastReportAt >= 250L) {
+                                            lastReportAt = now
+                                            val ratio = (copied.toFloat() / totalBytes.toFloat()).coerceIn(0f, 1f)
+                                            val mbCopied = copied / (1024 * 1024)
+                                            val mbTotal = totalBytes / (1024 * 1024)
+                                            onProgress(
+                                                0.08f + ratio * 0.72f,
+                                                "⬇️ Đang tải Nhân Rust ${profile.pumpkinVersion} ($mbCopied/$mbTotal MB • ${(ratio * 100).toInt()}% • 0% Java)..."
+                                            )
+                                        }
                                     }
                                 }
                             }
+                        } finally {
+                            conn.disconnect()
                         }
                         if (tmpFile.length() > 5_000_000L) {
                             if (targetBin.exists()) targetBin.delete()
@@ -4206,17 +4609,38 @@ object ProHostFeatures {
                     }
                 }
                 if (!downloadedOk) {
-                    throw IllegalStateException("Không thể tải Nhân Rust ARM64: ${lastErr?.message ?: "Lỗi mạng"}")
+                    throw IllegalStateException("Không thể tải Nhân Rust ARM64 (${profile.shortLabel}): ${lastErr?.message ?: "Lỗi mạng"}")
                 }
+            } else {
+                onProgress(0.80f, "⚡ Đã có sẵn Nhân Rust ${profile.pumpkinVersion} trong bộ nhớ đệm — kích hoạt tức thì!")
             }
 
-            onProgress(0.92f, "⚙️ Đang cấp quyền thực thi ARM64 & đồng bộ cấu hình pumpkin.toml...")
+            if (wantMultiversion) {
+                onProgress(0.84f, "🌐 Đang cài bộ chuyển đổi WASM Đa Phiên Bản (Cho phép Java 1.7.2 → 26.3 vào chung)...")
+                installRustMultiversionWasmPlugin(rootDir, serverDir) { _, msg ->
+                    onProgress(0.88f, msg)
+                }.onFailure { err ->
+                    android.util.Log.w("ProHostFeatures", "Multiversion WASM download warning: ${err.message}")
+                }
+            } else {
+                val mvFile = File(File(serverDir, "plugins"), RUST_MULTIVERSION_WASM_NAME)
+                if (mvFile.isFile) mvFile.delete()
+            }
+
+            onProgress(0.94f, "⚙️ Đang cấp quyền thực thi ARM64 & cấu hình pumpkin.toml (0% Java)...")
             targetBin.setExecutable(true, false)
-            syncPumpkinRustTomlConfig(serverDir, javaPort, serverName)
-            File(serverDir, RUST_NATIVE_MARKER).writeText("rust-native=pumpkin-arm64\n", Charsets.UTF_8)
+            syncPumpkinRustTomlConfig(serverDir, javaPort, serverName, explicitGamemode = gamemode)
+            val markerContent = buildString {
+                appendLine("rust-native=pumpkin-arm64")
+                appendLine("binary=${profile.binaryCacheName}")
+                appendLine("profile=${profile.id}")
+                appendLine("mc=${profile.mcVersionLabel}")
+                appendLine("multiversion=$wantMultiversion")
+            }
+            File(serverDir, RUST_NATIVE_MARKER).writeText(markerContent, Charsets.UTF_8)
             File(serverDir, "eula.txt").writeText("eula=true\n", Charsets.UTF_8)
 
-            onProgress(1.0f, "✅ Đã bật Nhân Rust Thuần (Pumpkin ARM64)! Bấm Bật Server để khởi động trong 0.2 giây (~50MB RAM)!")
+            onProgress(1.0f, "✅ Đã tạo xong Server Rust (${profile.mcVersionLabel}) • 0% Java!")
             inspectRustEngineStatus(rootDir, serverDir)
         }
     }

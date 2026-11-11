@@ -145,6 +145,9 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
     var showSoftwareComparison by rememberSaveable { mutableStateOf(false) }
     var installedExpanded by rememberSaveable { mutableStateOf(true) }
     var showMoreCores by rememberSaveable { mutableStateOf(false) }
+    var showAdvancedManualCards by rememberSaveable { mutableStateOf(false) }
+    var selectedRustProfileId by rememberSaveable { mutableStateOf("multi_all") }
+    var rustMultiversionEnabled by rememberSaveable { mutableStateOf(true) }
     val installedCoreCounts = remember(config.installedCores) {
         config.installedCores.groupingBy { it.core }.eachCount()
     }
@@ -193,6 +196,17 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
         targetVerKey: String,
         peLabel: String? = null
     ) {
+        if (targetCore == ServerCore.Pumpkin) {
+            vm.createStandaloneRustServerOneTap(
+                customName = customCoreName,
+                profileId = targetVerKey.ifBlank { selectedRustProfileId },
+                gamemode = flexibleGamemode,
+                installMultiversionOverride = rustMultiversionEnabled
+            ) {
+                onBack?.invoke()
+            }
+            return
+        }
         val cleanVer = targetVerKey.substringBefore("@")
         val existingMatch = config.installedCores.firstOrNull {
             it.core == targetCore && (it.version == targetVerKey || it.version == cleanVer)
@@ -309,122 +323,255 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
             LazyColumn(
                 modifier = Modifier.weight(1f)
             ) {
-            item(key = "quick_rust_one_tap_card") {
-                McCard(title = "🦀 Tạo Server Rust Thuần 1 Chạm (Pumpkin ARM64)") {
+            item(key = "easy_3step_creator") {
+                val isRustSelected = config.selectedCore == ServerCore.Pumpkin
+                val isModGroupSelected = config.selectedCore in setOf(ServerCore.Fabric, ServerCore.Forge, ServerCore.NeoForge, ServerCore.Quilt)
+                val isPluginGroupSelected = config.selectedCore in setOf(ServerCore.Paper, ServerCore.Purpur, ServerCore.Leaves, ServerCore.Leaf, ServerCore.Spigot, ServerCore.CraftBukkit)
+                val isBedrockGroupSelected = config.selectedCore.isBedrock
+                val rustProfile = com.mineserve.mobile.server.ProHostFeatures.resolveRustProfile(selectedRustProfileId)
+
+                McCard(title = "🎯 Tạo Máy Chủ Mới Dễ Dàng — 3 Bước") {
                     Text(
-                        "Không cần tải bộ Java • Mở trong 0.2 giây • Chỉ tốn ~50MB RAM • Dành cho Sinh tồn Vanilla nhẹ mượt",
-                        color = Muted,
-                        fontSize = 11.5.sp,
-                        lineHeight = 16.sp
-                    )
-                    if (liveTask.active) {
-                        Spacer(Modifier.height(8.dp))
-                        val pct = (liveTask.progress.coerceIn(0f, 1f) * 100).toInt()
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(McShape.Row)
-                                .background(Indigo.copy(alpha = 0.12f))
-                                .padding(horizontal = 10.dp, vertical = 8.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(liveTask.title, fontSize = 11.5.sp, fontWeight = FontWeight.ExtraBold, color = Indigo)
-                                Text("${pct}%", fontSize = 11.5.sp, fontWeight = FontWeight.ExtraBold, color = Mint)
-                            }
-                            LinearProgressIndicator(
-                                progress = { liveTask.progress.coerceIn(0f, 1f) },
-                                modifier = Modifier.fillMaxWidth().height(6.dp),
-                                color = Mint,
-                                trackColor = Indigo.copy(alpha = 0.2f)
-                            )
-                            if (liveTask.detail.isNotBlank()) {
-                                Text(liveTask.detail, fontSize = 10.5.sp, color = Muted)
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(10.dp))
-                    Button(
-                        onClick = {
-                            vm.createStandaloneRustServerOneTap {
-                                onBack?.invoke()
-                            }
-                        },
-                        enabled = !liveTask.active && !isDownloadingCore && !serverState.isRunning,
-                        colors = ButtonDefaults.buttonColors(containerColor = Mint),
-                        shape = McShape.ControlCompact,
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 46.dp)
-                    ) {
-                        Text(
-                            "🦀 Tạo Ngay Server Rust",
-                            color = Color.White,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.ExtraBold
-                        )
-                    }
-                }
-            }
-            item(key = "flexible_configurator") {
-                McCard(title = "🛠️ Thiết Lập Server Linh Hoạt (Tự chọn Core • Phiên bản • Chế độ • PC+PE)") {
-                    Text(
-                        "Tự do kết hợp bất kỳ Phần mềm (Core), bất kỳ Phiên bản Minecraft (1.7.10 → 1.21.11 / 26.x), Chế độ chơi và Chơi chung PC + PE mà không bị gò bó theo mẫu cố định:",
-                        color = Muted,
-                        fontSize = 11.sp,
-                        lineHeight = 16.sp
+                        "Bước 1 — Chọn loại máy chủ bạn muốn mở:",
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.ExtraBold
                     )
                     Spacer(Modifier.height(8.dp))
 
-                    // Khung tóm tắt cấu hình đang ghép trực tiếp
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(McShape.Row)
-                            .background(Indigo.copy(alpha = 0.14f))
-                            .padding(horizontal = 10.dp, vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(3.dp)
-                    ) {
-                        Text(
-                            "🎯 Cấu hình đang ghép: ${config.selectedCore.displayName} • Bản $displaySelectedVersion • $gamemodeLabelVi",
-                            color = Indigo,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.ExtraBold
+                    val primaryTypes = listOf(
+                        Triple(
+                            "rust",
+                            "🦀 Rust Thuần",
+                            "0% Java • ~50MB RAM\nMở 0.2s • PC + PE sẵn"
+                        ),
+                        Triple(
+                            "plugin",
+                            "⚡ Paper / Plugin",
+                            "Chạy Plugin .jar\nGhép PC + PE mượt"
+                        ),
+                        Triple(
+                            "mod",
+                            "🧩 Chơi Mod",
+                            "Fabric / Forge / NeoForge\nChạy gói Mod .jar"
+                        ),
+                        Triple(
+                            "bedrock",
+                            "📱 Bedrock PE",
+                            "Thuần Điện thoại PE\nPowerNukkitX / Allay"
                         )
-                        Text(
-                            buildString {
-                                append(if (flexibleCrackedMode) "🔓 Cho phép Cracked/Offline" else "🔐 Chỉ tài khoản bản quyền")
-                                if (config.selectedCore.isBedrock) {
-                                    append(" • 📱 Thuần Bedrock PE (UDP)")
-                                } else if (flexibleCrossplayEnabled && config.selectedCore.supportsPlugins) {
-                                    append(
-                                        when {
-                                            crossplayCheck == null -> " • 📱💻 Chơi chung PC + PE: đang kiểm tra..."
-                                            crossplayCheck.supported -> " • 📱💻 Chơi chung: PC Java ${config.mcVersion} + PE ${crossplayCheck.bedrockRangeText}"
-                                            else -> " • ❌ Java ${config.mcVersion} này PE KHÔNG vào được — xem gợi ý bên dưới"
-                                        }
-                                    )
-                                } else if (config.selectedCore.supportsMods) {
-                                    append(" • 🧩 Hỗ trợ cài Mod .jar")
-                                } else if (config.selectedCore.supportsPlugins) {
-                                    append(" • ⚡ Hỗ trợ cài Plugin .jar")
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        primaryTypes.chunked(2).forEach { rowItems ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                rowItems.forEach { (kindKey, titleTxt, descTxt) ->
+                                    val isTypeSel = when (kindKey) {
+                                        "rust" -> isRustSelected
+                                        "plugin" -> isPluginGroupSelected
+                                        "mod" -> isModGroupSelected
+                                        else -> isBedrockGroupSelected
+                                    }
+                                    val accent = if (kindKey == "rust") Color(0xFFEA580C) else Indigo
+                                    Column(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(
+                                                if (isTypeSel) accent.copy(alpha = 0.18f)
+                                                else com.mineserve.mobile.ui.theme.FieldGray
+                                            )
+                                            .border(
+                                                width = if (isTypeSel) 1.6.dp else 1.dp,
+                                                color = if (isTypeSel) accent else Color.Transparent,
+                                                shape = RoundedCornerShape(12.dp)
+                                            )
+                                            .clickable {
+                                                customCoreName = ""
+                                                when (kindKey) {
+                                                    "rust" -> {
+                                                        flexibleCrossplayEnabled = false
+                                                        vm.selectCore(ServerCore.Pumpkin)
+                                                    }
+                                                    "plugin" -> {
+                                                        vm.selectCore(ServerCore.Paper)
+                                                    }
+                                                    "mod" -> {
+                                                        flexibleCrossplayEnabled = false
+                                                        if (!isModGroupSelected) vm.selectCore(ServerCore.Fabric)
+                                                    }
+                                                    "bedrock" -> {
+                                                        flexibleCrossplayEnabled = false
+                                                        if (!isBedrockGroupSelected) vm.selectCore(ServerCore.PowerNukkitX)
+                                                    }
+                                                }
+                                            }
+                                            .padding(horizontal = 10.dp, vertical = 10.dp),
+                                        verticalArrangement = Arrangement.spacedBy(3.dp)
+                                    ) {
+                                        Text(
+                                            (if (isTypeSel) "✅ " else "") + titleTxt,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = if (isTypeSel) accent else MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text(
+                                            descTxt,
+                                            fontSize = 10.5.sp,
+                                            lineHeight = 14.sp,
+                                            color = Muted
+                                        )
+                                    }
                                 }
-                            },
-                            color = Mint,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Spacer(Modifier.height(6.dp))
+                            }
+                        }
+                    }
+
+                    if (isModGroupSelected) {
+                        Spacer(Modifier.height(8.dp))
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf(
+                                ServerCore.Fabric to "🧩 Fabric (Nhẹ mượt)",
+                                ServerCore.Forge to "🛡️ Forge (Mod cổ điển)",
+                                ServerCore.NeoForge to "⚒️ NeoForge (Mod mới)"
+                            ).forEach { (c, lbl) ->
+                                SegPill(
+                                    text = lbl,
+                                    selected = config.selectedCore == c,
+                                    compact = true,
+                                    onClick = { vm.selectCore(c) }
+                                )
+                            }
+                        }
+                    } else if (isBedrockGroupSelected) {
+                        Spacer(Modifier.height(8.dp))
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf(
+                                ServerCore.PowerNukkitX to "📱 PowerNukkitX",
+                                ServerCore.Allay to "⚡ Allay (PE 1.21+)",
+                                ServerCore.PocketMine to "🪶 PocketMine-MP"
+                            ).forEach { (c, lbl) ->
+                                SegPill(
+                                    text = lbl,
+                                    selected = config.selectedCore == c,
+                                    compact = true,
+                                    onClick = { vm.selectCore(c) }
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(14.dp))
+                    Text(
+                        "Bước 2 — Chọn phiên bản & Chế độ chơi:",
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                    Spacer(Modifier.height(8.dp))
+
+                    if (isRustSelected) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Color(0xFF065F46).copy(alpha = 0.22f))
+                                .border(1.dp, Mint, RoundedCornerShape(10.dp))
+                                .padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            Text(
+                                "🦀 Cam kết chạy 100% Nhân Máy Rust ARM64 (pumpkin) — 0% Java!",
+                                color = Mint,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                            Text(
+                                "Tuyệt đối KHÔNG tải Java, KHÔNG chạy máy ảo JVM. Hỗ trợ sẵn cả PC (TCP 25565) lẫn Điện thoại PE (UDP 19132).",
+                                color = Muted,
+                                fontSize = 10.5.sp,
+                                lineHeight = 14.sp
+                            )
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            com.mineserve.mobile.server.ProHostFeatures.RUST_VERSION_PROFILES.forEach { prof ->
+                                val isSelProf = prof.id == selectedRustProfileId
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(
+                                            if (isSelProf) Color(0xFFEA580C).copy(alpha = 0.18f)
+                                            else com.mineserve.mobile.ui.theme.FieldGray
+                                        )
+                                        .border(
+                                            width = if (isSelProf) 1.4.dp else 1.dp,
+                                            color = if (isSelProf) Color(0xFFEA580C) else Color.Transparent,
+                                            shape = RoundedCornerShape(10.dp)
+                                        )
+                                        .clickable {
+                                            selectedRustProfileId = prof.id
+                                            rustMultiversionEnabled = prof.defaultMultiversionWasm
+                                        }
+                                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            (if (isSelProf) "✅ " else "") + prof.shortLabel,
+                                            fontSize = 12.5.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = if (isSelProf) Color(0xFFEA580C) else MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text(
+                                            prof.descriptionVi,
+                                            fontSize = 10.5.sp,
+                                            lineHeight = 14.sp,
+                                            color = Muted
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(McShape.Row)
-                                .background(MaterialTheme.colorScheme.surface)
-                                .border(1.dp, Indigo.copy(alpha = 0.35f), McShape.Row)
+                                .background(com.mineserve.mobile.ui.theme.FieldGray)
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                                Text(
+                                    "🌐 Hỗ trợ mọi bản PC 1.7.2 → 26.3 vào chung (WASM)",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    "Dùng Plugin WebAssembly chính thức của Pumpkin (0% Java)",
+                                    fontSize = 10.sp,
+                                    color = Muted
+                                )
+                            }
+                            Switch(
+                                checked = rustMultiversionEnabled,
+                                onCheckedChange = { rustMultiversionEnabled = it }
+                            )
+                        }
+                    } else {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Indigo.copy(alpha = 0.12f))
+                                .border(1.2.dp, Indigo.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
                                 .clickable { showVersionPickerModal = true }
-                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -432,148 +579,39 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                                 Text(
                                     "🎮 Phiên bản đang chọn: $displaySelectedVersion",
                                     color = Indigo,
-                                    fontSize = 12.sp,
+                                    fontSize = 13.sp,
                                     fontWeight = FontWeight.ExtraBold
                                 )
                                 Text(
-                                    "Bấm vào đây để lướt chọn hoặc nhập tay phiên bản rồi ấn cài luôn",
+                                    "Bấm vào đây để đổi sang phiên bản khác (1.8 → 1.21.11 / 26.x)",
                                     color = Muted,
-                                    fontSize = 10.sp
+                                    fontSize = 10.5.sp
                                 )
                             }
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    "📋 Lướt chọn ▾",
-                                    color = Indigo,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(Indigo.copy(alpha = 0.14f))
-                                        .padding(horizontal = 8.dp, vertical = 5.dp)
-                                )
-                                Text(
-                                    if (isDownloadingCore) "⏳..." else "⬇️ Cài luôn",
-                                    color = Color.White,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(if (isDownloadingCore) Muted else Mint)
-                                        .clickable(enabled = !isDownloadingCore) {
-                                            triggerQuickInstallForVersion(
-                                                targetCore = config.selectedCore,
-                                                targetVerKey = config.mcVersion,
-                                                peLabel = selectedPeHint
-                                            )
-                                        }
-                                        .padding(horizontal = 8.dp, vertical = 5.dp)
-                                )
-                            }
+                            Text(
+                                "📋 Đổi bản ▾",
+                                color = Color.White,
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Indigo)
+                                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                            )
                         }
                     }
 
-                    Spacer(Modifier.height(10.dp))
-                    Text(
-                        "1️⃣ Chọn nhanh định hướng Server (Giữ nguyên phiên bản ${config.mcVersion} hoặc đổi tùy ý ở mục Chọn Phiên Bản bên dưới):",
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(Modifier.height(6.dp))
+                    Spacer(Modifier.height(8.dp))
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        SegPill(
-                            text = "🧩 Chơi Mod (Fabric)",
-                            selected = config.selectedCore == ServerCore.Fabric,
-                            compact = true,
-                            onClick = {
-                                flexibleCrossplayEnabled = false
-                                vm.selectCore(ServerCore.Fabric)
-                            }
-                        )
-                        SegPill(
-                            text = "🌱 Sinh tồn & Plugin (Paper)",
-                            selected = config.selectedCore == ServerCore.Paper && !flexibleCrossplayEnabled,
-                            compact = true,
-                            onClick = {
-                                flexibleCrossplayEnabled = false
-                                vm.selectCore(ServerCore.Paper)
-                            }
-                        )
-                        SegPill(
-                            text = "📱💻 Chơi Chung PC + PE",
-                            selected = flexibleCrossplayEnabled && config.selectedCore.supportsPlugins,
-                            compact = true,
-                            onClick = {
-                                if (!config.selectedCore.supportsPlugins) {
-                                    vm.selectCore(ServerCore.Paper)
-                                }
-                                flexibleCrossplayEnabled = true
-                                flexibleCrackedMode = true
-                            }
-                        )
-                        SegPill(
-                            text = "⚒️ Modpack (NeoForge)",
-                            selected = config.selectedCore == ServerCore.NeoForge,
-                            compact = true,
-                            onClick = {
-                                flexibleCrossplayEnabled = false
-                                vm.selectCore(ServerCore.NeoForge)
-                            }
-                        )
-                        SegPill(
-                            text = "🛡️ Mod Cổ Điển (Forge)",
-                            selected = config.selectedCore == ServerCore.Forge,
-                            compact = true,
-                            onClick = {
-                                flexibleCrossplayEnabled = false
-                                vm.selectCore(ServerCore.Forge)
-                            }
-                        )
-                        SegPill(
-                            text = "🔮 Purpur (Mở rộng)",
-                            selected = config.selectedCore == ServerCore.Purpur,
-                            compact = true,
-                            onClick = {
-                                vm.selectCore(ServerCore.Purpur)
-                            }
-                        )
-                        SegPill(
-                            text = "📱 Thuần Bedrock PE",
-                            selected = config.selectedCore == ServerCore.PowerNukkitX,
-                            compact = true,
-                            onClick = {
-                                flexibleCrossplayEnabled = false
-                                vm.selectCore(ServerCore.PowerNukkitX)
-                            }
-                        )
-                    }
-
-                    Spacer(Modifier.height(10.dp))
-                    Text(
-                        "2️⃣ Chế độ chơi khởi tạo (Tự động thiết lập khi tạo Server):",
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        val gamemodes = listOf(
+                        listOf(
                             "survival" to "🌱 Sinh tồn",
                             "creative" to "🎨 Sáng tạo",
                             "adventure" to "🗺️ Phiêu lưu",
-                            "hardcore" to "💀 Siêu khó (Hardcore)"
-                        )
-                        gamemodes.forEach { (modeKey, modeLabel) ->
+                            "hardcore" to "💀 Siêu khó"
+                        ).forEach { (modeKey, modeLabel) ->
                             SegPill(
                                 text = modeLabel,
                                 selected = flexibleGamemode == modeKey,
@@ -583,133 +621,168 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                         }
                     }
 
-                    Spacer(Modifier.height(10.dp))
-                    Text(
-                        "3️⃣ Tùy chọn Tài khoản & Cầu nối Đa nền tảng (Linh hoạt theo nhu cầu):",
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(McShape.Row)
-                            .background(com.mineserve.mobile.ui.theme.FieldGray)
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                    if (!isRustSelected) {
+                        Spacer(Modifier.height(8.dp))
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(McShape.Row)
+                                .background(com.mineserve.mobile.ui.theme.FieldGray)
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-                                Text(
-                                    "🔓 Cho phép tài khoản Cracked / Offline",
-                                    fontSize = 11.5.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    "Tự bật online-mode=false để TLauncher, PojavLauncher, FCL và PE vào được ngay",
-                                    color = Muted,
-                                    fontSize = 10.sp,
-                                    lineHeight = 14.sp
-                                )
-                            }
-                            Switch(
-                                checked = flexibleCrackedMode,
-                                onCheckedChange = { flexibleCrackedMode = it }
-                            )
-                        }
-
-                        if (config.selectedCore.supportsPlugins) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-                                    Text(
-                                        "📱💻 Tích hợp Chơi Chung PC + Điện thoại PE",
-                                        fontSize = 11.5.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (flexibleCrossplayEnabled) Mint else MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Text(
-                                        "Tự động cài GeyserMC + Floodgate + ViaVersion + ViaBackwards cho ${config.selectedCore.displayName} ${config.mcVersion}",
-                                        color = Muted,
-                                        fontSize = 10.sp,
-                                        lineHeight = 14.sp
+                                    Text("🔓 Cho phép tài khoản Cracked / Offline", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                                    Text("PojavLauncher, FCL, TLauncher vào được ngay", color = Muted, fontSize = 10.sp)
+                                }
+                                Switch(checked = flexibleCrackedMode, onCheckedChange = { flexibleCrackedMode = it })
+                            }
+                            if (config.selectedCore.supportsPlugins) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                                        Text(
+                                            "📱💻 Chơi Chung PC + Điện thoại PE (GeyserMC)",
+                                            fontSize = 11.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (flexibleCrossplayEnabled) Mint else MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text("Tự động cài GeyserMC + Floodgate + ViaVersion", color = Muted, fontSize = 10.sp)
+                                    }
+                                    Switch(
+                                        checked = flexibleCrossplayEnabled,
+                                        onCheckedChange = { enabled ->
+                                            flexibleCrossplayEnabled = enabled
+                                            if (enabled) flexibleCrackedMode = true
+                                        }
                                     )
                                 }
-                                Switch(
-                                    checked = flexibleCrossplayEnabled,
-                                    onCheckedChange = { enabled ->
-                                        flexibleCrossplayEnabled = enabled
-                                        if (enabled) flexibleCrackedMode = true
-                                    }
-                                )
-                            }
-
-                            if (crossplayWanted) {
-                                Spacer(Modifier.height(4.dp))
-                                com.mineserve.mobile.ui.PeVersionPicker(
-                                    selected = flexibleBedrockBranch,
-                                    onSelect = { flexibleBedrockBranch = it }
-                                )
-                                Spacer(Modifier.height(4.dp))
-                                com.mineserve.mobile.ui.CrossplayCompatCard(
-                                    core = config.selectedCore,
-                                    mcVersion = config.mcVersion,
-                                    result = crossplayCheck,
-                                    onApplySuggestion = { sugCore, sugVer -> vm.selectCoreAndVersion(sugCore, sugVer) },
-                                    onRetry = { crossplayRefreshKey++ }
-                                )
+                                if (crossplayWanted) {
+                                    Spacer(Modifier.height(4.dp))
+                                    com.mineserve.mobile.ui.PeVersionPicker(
+                                        selected = flexibleBedrockBranch,
+                                        onSelect = { flexibleBedrockBranch = it }
+                                    )
+                                    Spacer(Modifier.height(4.dp))
+                                    com.mineserve.mobile.ui.CrossplayCompatCard(
+                                        core = config.selectedCore,
+                                        mcVersion = config.mcVersion,
+                                        result = crossplayCheck,
+                                        onApplySuggestion = { sugCore, sugVer -> vm.selectCoreAndVersion(sugCore, sugVer) },
+                                        onRetry = { crossplayRefreshKey++ }
+                                    )
+                                }
                             }
                         }
                     }
 
                     Spacer(Modifier.height(10.dp))
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(McShape.Row)
-                            .background(com.mineserve.mobile.ui.theme.FieldGray)
-                            .padding(horizontal = 10.dp, vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Text(
-                            "💾 Bộ nhớ trống hiện tại: ${freeStorageMb} MB • RAM cấp phát: ${config.maxHeapMb} MB",
-                            color = if (freeStorageMb > 1024) Indigo else Coral,
-                            fontSize = 11.5.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            if (showSoftwareComparison) "▲ Bấm để ẩn bảng so sánh Core" else "▼ Bấm xem so sánh Paper / Fabric / Forge / PE",
-                            color = Mint,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.clickable { showSoftwareComparison = !showSoftwareComparison }
+                    OutlinedTextField(
+                        value = customCoreName,
+                        onValueChange = { customCoreName = it },
+                        placeholder = {
+                            Text(
+                                if (isRustSelected) "✏️ Đặt tên Server (Bỏ trống tự đặt: 🦀 Rust ${rustProfile.mcVersionLabel.substringBefore("•").trim()})"
+                                else "✏️ Đặt tên Server (Bỏ trống tự đặt theo ${config.selectedCore.displayName} $displaySelectedVersion)",
+                                fontSize = 11.5.sp
+                            )
+                        },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    if (!isRustSelected) {
+                        InstallerJavaNotice(
+                            vm = vm,
+                            core = config.selectedCore,
+                            minecraftVersion = cleanSelectedCoreVer,
+                            installedJava = installedJava,
+                            selectedJavaRuntime = config.selectedJavaRuntime,
+                            javaOperation = javaOperation,
+                            isServerRunning = serverState.isRunning
                         )
                     }
 
-                    if (showSoftwareComparison) {
+                    if (liveTask.active || isDownloadingCore) {
+                        Spacer(Modifier.height(10.dp))
+                        val pct = if (liveTask.active) (liveTask.progress.coerceIn(0f, 1f) * 100).toInt() else downloadProgress.percent
+                        val titleStr = if (liveTask.active) liveTask.title else "⬇️ Đang tải ${config.selectedCore.displayName} (${downloadProgress.speedText})..."
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(top = 6.dp)
                                 .clip(McShape.Row)
-                                .background(IndigoSoft)
-                                .padding(10.dp),
-                            verticalArrangement = Arrangement.spacedBy(5.dp)
+                                .background(Indigo.copy(alpha = 0.14f))
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Text("📊 Bảng So Sánh Phần Mềm Server (Nên chọn loại nào?):", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Indigo)
-                            Text("• 🧩 Fabric (Khuyên dùng cho Mod): Siêu nhẹ, khởi động nhanh, hỗ trợ mọi phiên bản từ 1.14 → 1.21.11 / 26.x.", fontSize = 11.sp, color = Muted)
-                            Text("• ⚡ Paper / Purpur (Khuyên dùng cho Sinh tồn, Plugin & Chơi chung PC+PE): Tối ưu TPS cực tốt trên điện thoại, ghép được với mọi bản qua ViaVersion + GeyserMC.", fontSize = 11.sp, color = Muted)
-                            Text("• ⚒️ Forge / NeoForge: Chuyên trị các gói Modpack lớn (1.7.10 → 1.21.x); khuyên dùng RAM ≥ 4GB.", fontSize = 11.sp, color = Muted)
-                            Text("• 🧱 Vanilla: Bản gốc Mojang 100%, không cài được Mod hay Plugin.", fontSize = 11.sp, color = Muted)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(titleStr, fontSize = 11.5.sp, fontWeight = FontWeight.ExtraBold, color = Indigo, modifier = Modifier.weight(1f))
+                                Text("$pct%", fontSize = 11.5.sp, fontWeight = FontWeight.ExtraBold, color = Mint)
+                            }
+                            LinearProgressIndicator(
+                                progress = { (pct / 100f).coerceIn(0f, 1f) },
+                                modifier = Modifier.fillMaxWidth().height(6.dp),
+                                color = Mint
+                            )
                         }
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        "Bước 3 — Bấm nút bên dưới để tạo ngay:",
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Button(
+                        onClick = {
+                            if (isRustSelected) {
+                                vm.createStandaloneRustServerOneTap(
+                                    customName = customCoreName,
+                                    profileId = selectedRustProfileId,
+                                    gamemode = flexibleGamemode,
+                                    installMultiversionOverride = rustMultiversionEnabled
+                                ) {
+                                    onBack?.invoke()
+                                }
+                            } else {
+                                triggerQuickInstallForVersion(
+                                    targetCore = config.selectedCore,
+                                    targetVerKey = config.mcVersion,
+                                    peLabel = selectedPeHint
+                                )
+                            }
+                        },
+                        enabled = !liveTask.active && !isDownloadingCore && !serverState.isRunning && (!crossplayBlocked || isRustSelected),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isRustSelected) Color(0xFFEA580C) else Mint
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)
+                    ) {
+                        Text(
+                            if (isRustSelected) {
+                                "🦀 TẠO SERVER RUST NGAY (${rustProfile.mcVersionLabel.substringBefore("•").trim()} • 0% JAVA)"
+                            } else {
+                                "⬇️ TẢI & TẠO SERVER ${config.selectedCore.displayName.uppercase()} ($displaySelectedVersion)"
+                            },
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
                     }
                 }
             }
@@ -757,7 +830,11 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                                 installed.forEach { core ->
                                     val isSelectedCore = core.name == config.activeCoreName
                                     val srvSizeMb = (storageMap[core.dirName]?.totalBytes ?: 0L) / (1024L * 1024L)
-                                    val versionText = "🧩 ${core.core.displayName} ${core.version}" +
+                                    val versionText = (if (core.core == ServerCore.Pumpkin) {
+                                        "🦀 Nhân Rust Thuần (0% Java) • ${core.version}"
+                                    } else {
+                                        "🧩 ${core.core.displayName} ${core.version}"
+                                    }) +
                                         (if (core.core == ServerCore.PowerNukkitX) {
                                             " (" + stringResource(R.string.dl_supported_game, versionHints[core.version] ?: stringResource(R.string.dl_official_unknown)) + ")"
                                         } else "") + " • 💾 ${srvSizeMb} MB\n📂 " + stringResource(R.string.dl_folder, core.dirName)
@@ -880,6 +957,37 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                 }
             }
 
+            item(key = "advanced_manual_toggle") {
+                McCard(title = "⚙️ Tùy Chọn Nâng Cao & Nhập Server Có Sẵn", compact = true) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { showImportDialog = true },
+                            shape = McShape.ControlCompact,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("📥 Nhập ZIP / JAR / Modpack", color = Indigo, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                        }
+                        OutlinedButton(
+                            onClick = { showAdvancedManualCards = !showAdvancedManualCards },
+                            shape = McShape.ControlCompact,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(
+                                if (showAdvancedManualCards) "▲ Thu gọn bảng nâng cao"
+                                else "▼ Thêm Core khác (Purpur, Quilt...)",
+                                color = Indigo,
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (showAdvancedManualCards) {
             item(key = "select_core") {
                 McCard(
                     title = stringResource(R.string.s457),
@@ -1027,6 +1135,7 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                     Spacer(Modifier.height(8.dp))
                     Text(
                         when (config.selectedCore) {
+                            ServerCore.Pumpkin -> "🦀 Nhân máy Rust ARM64 siêu nhẹ (~50MB RAM • 0% Java • Hỗ trợ sẵn PC + PE)"
                             ServerCore.Paper -> stringResource(R.string.dl_desc_paper)
                             ServerCore.Purpur -> stringResource(R.string.dl_desc_purpur)
                             ServerCore.Leaves -> stringResource(R.string.dl_desc_leaves)
@@ -1950,6 +2059,7 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                     }
                 }
             }
+            }
 
             item(key = "bottom_spacer") {
                 Spacer(Modifier.height(16.dp))
@@ -2392,6 +2502,8 @@ private fun installerJavaRequirement(
     minecraftVersion: String
 ): InstallerJavaRequirement? {
     if (core == ServerCore.PocketMine) return null
+
+    if (core == ServerCore.Pumpkin) return null
 
     if (core == ServerCore.PowerNukkitX || core.isBedrock || core == ServerCore.Velocity || core == ServerCore.BungeeCord) {
         return InstallerJavaRequirement(

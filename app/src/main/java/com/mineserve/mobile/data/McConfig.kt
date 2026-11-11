@@ -9,6 +9,7 @@ enum class PropertiesMode { JavaProperties, PowerNukkitXYaml, Unsupported }
 
 @Serializable
 enum class ServerCore(val displayName: String) {
+    Pumpkin("Pumpkin Rust"),
     Paper("Paper"),
     Purpur("Purpur"),
     Leaves("Leaves"),
@@ -26,6 +27,9 @@ enum class ServerCore(val displayName: String) {
     PocketMine("PocketMine-MP"),
     Allay("Allay"),
     Unknown("Không rõ");
+
+    /** Có phải Nhân Rust Thuần (Pumpkin ARM64 • 0% Java) hay không */
+    val isNativeRust: Boolean get() = this == Pumpkin
 
     /** 是否为基岩版（UDP 网络、Bedrock 客户端连接） */
     val isBedrock: Boolean get() = this == PowerNukkitX || this == PocketMine || this == Allay

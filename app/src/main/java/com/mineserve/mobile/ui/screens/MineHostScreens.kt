@@ -38,6 +38,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.mineserve.mobile.data.ServerCore
 import com.mineserve.mobile.data.StartupPhase
 import com.mineserve.mobile.ui.McViewModel
 import com.mineserve.mobile.ui.MinecraftArtKind
@@ -287,6 +288,12 @@ fun MineHostOverview(
     val heapLimit = device?.maxManualHeapMb ?: 2048
     var heap by remember(config.maxHeapMb, heapLimit) { mutableFloatStateOf(config.maxHeapMb.toFloat().coerceIn(512f, heapLimit.toFloat())) }
     var showRamSlider by remember { mutableStateOf(false) }
+    var showRustQuickCreateDialog by rememberSaveable { mutableStateOf(false) }
+    var showRustVersionSwitchDialog by rememberSaveable { mutableStateOf(false) }
+    var quickRustProfileId by rememberSaveable { mutableStateOf("multi_all") }
+    var quickRustGamemode by rememberSaveable { mutableStateOf("survival") }
+    var quickRustServerName by rememberSaveable { mutableStateOf("") }
+    var quickRustMultiversion by rememberSaveable { mutableStateOf(true) }
 
     val busy = downloading || installing || addonBusy.isNotEmpty() || javaOperation != null || importing || applying
     val status = when {
@@ -299,12 +306,14 @@ fun MineHostOverview(
 
     LaunchedEffect(Unit) { vm.refreshLanIp() }
     LaunchedEffect(ready, config.activeCoreName, config.installedCores.size) {
+        if (config.activeCoreName != null) {
+            vm.refreshRustEngineStatus()
+            vm.refreshServerStorage()
+        }
         if (ready && config.activeCoreName != null) {
             vm.ensureProMonitorsStarted()
-            vm.refreshRustEngineStatus()
             vm.refreshMods()
             vm.refreshInstalledPlugins()
-            vm.refreshServerStorage()
             vm.refreshPlayers()
             vm.refreshOnlinePlayers()
         }
@@ -444,8 +453,8 @@ fun MineHostOverview(
             }
         }
 
-        // ── NẾU CHƯA CÀI MÔI TRƯỜNG LẦN ĐẦU ──
-        if (!ready) {
+        // ── NẾU CHƯA CÀI MÔI TRƯỜNG LẦN ĐẦU (Ẩn khi đang dùng Server Rust Thuần 0% Java) ──
+        if (!ready && active?.core != ServerCore.Pumpkin) {
             item(key = "bootstrap") {
                 HostCard("Chuẩn bị môi trường chạy lần đầu", artKind = MinecraftArtKind.REDSTONE) {
                     if (bootstrapRunning) {
@@ -583,10 +592,16 @@ fun MineHostOverview(
                                 fontWeight = FontWeight.SemiBold
                             )
                             Text(
-                                active?.let { "🧩 ${it.core.displayName} · MC ${it.version} · Cổng $port" }
-                                    ?: "Bấm '➕ Tạo Server Mới' để chọn phiên bản Minecraft!",
+                                active?.let { srv ->
+                                    if (srv.core == ServerCore.Pumpkin) {
+                                        "🦀 Nhân Rust Thuần (0% Java) · ${srv.version} · Cổng $port"
+                                    } else {
+                                        "🧩 ${srv.core.displayName} · MC ${srv.version} · Cổng $port"
+                                    }
+                                } ?: "Chọn tạo Server Rust siêu nhẹ (0% Java) hoặc Server Java Mod/Plugin bên dưới!",
                                 style = MaterialTheme.typography.bodySmall,
-                                fontWeight = FontWeight.SemiBold
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (active?.core == ServerCore.Pumpkin) Color(0xFFFB923C) else MaterialTheme.colorScheme.onSurface
                             )
                             if (activeStorage != null) {
                                 Text(
@@ -820,14 +835,32 @@ fun MineHostOverview(
                             onClick = onConsole
                         )
                         Metric(
-                            label = "RAM / ${config.maxHeapMb}MB",
-                            value = if (state.isRunning && state.usedMemoryMb > 0) "${state.usedMemoryMb}MB" else "—",
+                            label = when {
+                                active?.core == ServerCore.Pumpkin -> "RAM Thực (Rust)"
+                                active == null -> "RAM Máy Chủ"
+                                else -> "RAM / ${config.maxHeapMb}MB"
+                            },
+                            value = when {
+                                state.isRunning && state.usedMemoryMb > 0 -> "${state.usedMemoryMb}MB"
+                                active?.core == ServerCore.Pumpkin -> "~50MB"
+                                else -> "—"
+                            },
                             artKind = MinecraftArtKind.COMMAND_BLOCK,
                             modifier = Modifier.weight(1f),
                             sparklineSamples = ramHistory,
-                            sparklineMax = config.maxHeapMb.toFloat().coerceAtLeast(512f),
-                            sparklineColor = Color(0xFF0EA5E9),
-                            onClick = { showRamSlider = !showRamSlider }
+                            sparklineMax = if (active?.core == ServerCore.Pumpkin) 512f else config.maxHeapMb.toFloat().coerceAtLeast(512f),
+                            sparklineColor = if (active?.core == ServerCore.Pumpkin) Color(0xFFFB923C) else Color(0xFF0EA5E9),
+                            onClick = {
+                                if (active?.core == ServerCore.Pumpkin) {
+                                    android.widget.Toast.makeText(
+                                        context,
+                                        "🦀 Server Rust chạy mã máy ARM64 tự quản lý RAM (~50–90MB), không dùng máy ảo Java!",
+                                        android.widget.Toast.LENGTH_SHORT
+                                    ).show()
+                                } else {
+                                    showRamSlider = !showRamSlider
+                                }
+                            }
                         )
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
@@ -847,8 +880,57 @@ fun MineHostOverview(
                         )
                     }
 
-                    // Thanh Gạt 3 Ngăn Chọn Nhân Chạy Server Gọn Đẹp (Segmented Pill Bar)
-                    if (active != null && !active.core.isBedrock) {
+                    // Hiển thị bảng Nhân Rust Thuần (cho ServerCore.Pumpkin) HOẶC Thanh Gạt 3 Ngăn (cho Server Java)
+                    if (active != null && active.core == ServerCore.Pumpkin) {
+                        Surface(
+                            color = Color(0xFF431407).copy(alpha = 0.55f),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.2.dp, Color(0xFFFB923C)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(
+                                        "🦀 Nhân Máy Rust ARM64 Thuần 100% (0% Java)",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFFFDBA74)
+                                    )
+                                    Text(
+                                        if (rustEngineStatus.isMultiversionWasmEnabled) {
+                                            "🌐 Đa Phiên Bản WASM: BẬT (Mọi bản PC 1.7.2 → 26.3 + PE 19132)"
+                                        } else {
+                                            "🎮 Phiên bản: ${active.version} • Không dùng máy ảo JVM"
+                                        },
+                                        fontSize = 11.5.sp,
+                                        color = Color(0xFFFED7AA)
+                                    )
+                                }
+                                OutlinedButton(
+                                    onClick = {
+                                        quickRustProfileId = rustEngineStatus.activeProfileId
+                                        quickRustMultiversion = rustEngineStatus.isMultiversionWasmEnabled
+                                        showRustVersionSwitchDialog = true
+                                    },
+                                    enabled = !state.isRunning && !liveTask.active,
+                                    border = BorderStroke(1.dp, Color(0xFFFB923C)),
+                                    shape = RoundedCornerShape(9.dp),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                                ) {
+                                    Text(
+                                        "🔄 Đổi bản",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFFFDBA74)
+                                    )
+                                }
+                            }
+                        }
+                    } else if (active != null && !active.core.isBedrock) {
                         val isOriginalJava = !rustEngineStatus.isNativeRustEnabled && !rustEngineStatus.isRustJvmTurboEnabled
                         val isJavaRustTurbo = !rustEngineStatus.isNativeRustEnabled && rustEngineStatus.isRustJvmTurboEnabled
                         val isPureRust = rustEngineStatus.isNativeRustEnabled
@@ -911,7 +993,7 @@ fun MineHostOverview(
                                     when {
                                         isOriginalJava -> "☕ Chế độ Java gốc (${active.core.displayName}): Chơi 100% Mod, Plugin & Geyser PE"
                                         isJavaRustTurbo -> "⚡ Chơi 100% Mod & Plugin hiện tại + Bộ nhớ vùng Rust giảm ~35% RAM"
-                                        else -> "🦀 Nhân Rust ARM64 siêu nhẹ (~50MB RAM, mở 0.2s • Chỉ chơi Vanilla không Mod)"
+                                        else -> "🦀 Đang chạy tạm Nhân Rust ARM64 trên thư mục này (~50MB RAM • 0% Java)"
                                     },
                                     fontSize = 12.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -922,65 +1004,97 @@ fun MineHostOverview(
                     }
 
                     if (active == null) {
-                        Button(
-                            onClick = { vm.createStandaloneRustServerOneTap() },
-                            enabled = ready && !liveTask.active && !busy,
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)
-                        ) {
-                            Text(
-                                "🦀 Tạo Nhanh Server Rust Thuần (Không cần cài Java • ~50MB RAM)",
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.5.sp
-                            )
-                        }
-                    }
-
-                    // Nút Bật / Dừng Server + Khởi động lại / Dọn RAM
-                    AdaptiveActionRow {
-                        Button(
-                            onClick = {
-                                if (active == null) navigate(SubPage.Cores)
-                                else if (state.isRunning) confirm = "stop"
-                                else vm.startServer()
-                            },
-                            enabled = ready && !stopping && (state.isRunning || !busy),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.weight(1f).heightIn(min = 52.dp)
-                        ) {
-                            Icon(if (state.isRunning) Icons.Outlined.Stop else Icons.Outlined.PlayArrow, null)
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                if (active == null) "➕ Tạo Server Đầu Tiên"
-                                else if (state.isRunning) "Dừng Server An Toàn"
-                                else "BẬT SERVER NGAY",
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 15.sp
-                            )
-                        }
-                        if (state.isRunning) {
-                            OutlinedButton(
-                                onClick = { confirm = "restart" },
-                                enabled = !stopping && !busy,
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                            Button(
+                                onClick = { showRustQuickCreateDialog = true },
+                                enabled = !liveTask.active && !downloading,
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEA580C)),
                                 shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.heightIn(min = 52.dp)
-                            ) {
-                                Text("🔄 Khởi động lại", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                            }
-                        } else {
-                            OutlinedButton(
-                                onClick = { vm.cleanRamNow() },
-                                enabled = ready && !isCleaningRam,
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.heightIn(min = 52.dp)
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)
                             ) {
                                 Text(
-                                    if (isCleaningRam) "⏳ Đang dọn..." else "🧹 Dọn RAM",
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 14.sp
+                                    "🦀 Tạo Server Rust (Chọn Phiên Bản • 0% Java)",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.5.sp
                                 )
+                            }
+                            AdaptiveActionRow {
+                                Button(
+                                    onClick = { navigate(SubPage.Cores) },
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.weight(1f).heightIn(min = 50.dp)
+                                ) {
+                                    Text(
+                                        "☕ Tạo Server Java / PE (Mod • Plugin)",
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 14.sp
+                                    )
+                                }
+                                OutlinedButton(
+                                    onClick = { vm.cleanRamNow() },
+                                    enabled = !isCleaningRam,
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.heightIn(min = 50.dp)
+                                ) {
+                                    Text(
+                                        if (isCleaningRam) "⏳..." else "🧹 Dọn RAM",
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 13.5.sp
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        // Nút Bật / Dừng Server + Khởi động lại / Dọn RAM
+                        val canLaunchActive = ready || active.core == ServerCore.Pumpkin || rustEngineStatus.isNativeRustEnabled
+                        AdaptiveActionRow {
+                            Button(
+                                onClick = {
+                                    if (state.isRunning) confirm = "stop"
+                                    else vm.startServer()
+                                },
+                                enabled = canLaunchActive && !stopping && (state.isRunning || !busy),
+                                colors = if (!state.isRunning && active.core == ServerCore.Pumpkin) {
+                                    ButtonDefaults.buttonColors(containerColor = Color(0xFFEA580C), contentColor = Color.White)
+                                } else {
+                                    ButtonDefaults.buttonColors()
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f).heightIn(min = 52.dp)
+                            ) {
+                                Icon(if (state.isRunning) Icons.Outlined.Stop else Icons.Outlined.PlayArrow, null)
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    if (state.isRunning) "Dừng Server An Toàn"
+                                    else if (active.core == ServerCore.Pumpkin) "🦀 BẬT SERVER RUST NGAY"
+                                    else "BẬT SERVER NGAY",
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 15.sp
+                                )
+                            }
+                            if (state.isRunning) {
+                                OutlinedButton(
+                                    onClick = { confirm = "restart" },
+                                    enabled = !stopping && !busy,
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.heightIn(min = 52.dp)
+                                ) {
+                                    Text("🔄 Khởi động lại", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                }
+                            } else {
+                                OutlinedButton(
+                                    onClick = { vm.cleanRamNow() },
+                                    enabled = !isCleaningRam,
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.heightIn(min = 52.dp)
+                                ) {
+                                    Text(
+                                        if (isCleaningRam) "⏳ Đang dọn..." else "🧹 Dọn RAM",
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 14.sp
+                                    )
+                                }
                             }
                         }
                     }
@@ -4005,6 +4119,179 @@ fun MineHostOverview(
             },
             dismissButton = {
                 TextButton(onClick = { showPastePlayitKeyDialog = false }) { Text("Đóng") }
+            }
+        )
+    }
+
+    if (showRustQuickCreateDialog) {
+        val selectedProfile = com.mineserve.mobile.server.ProHostFeatures.resolveRustProfile(quickRustProfileId)
+        AlertDialog(
+            onDismissRequest = { showRustQuickCreateDialog = false },
+            title = {
+                Text("🦀 Tạo Server Rust Thuần (0% Java)", fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Surface(
+                        color = Color(0xFF065F46).copy(alpha = 0.28f),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, Color(0xFF10B981))
+                    ) {
+                        Text(
+                            "✅ Cam kết chạy trực tiếp 100% tệp máy ARM64 (Pumpkin Rust) — Tuyệt đối KHÔNG tải Java, KHÔNG chạy máy ảo JVM, chỉ tốn ~50MB RAM!",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF6EE7B7),
+                            modifier = Modifier.padding(10.dp)
+                        )
+                    }
+                    Text("1️⃣ Chọn phiên bản Minecraft muốn mở:", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        com.mineserve.mobile.server.ProHostFeatures.RUST_VERSION_PROFILES.forEach { prof ->
+                            val isSel = prof.id == quickRustProfileId
+                            Surface(
+                                onClick = {
+                                    quickRustProfileId = prof.id
+                                    quickRustMultiversion = prof.defaultMultiversionWasm
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (isSel) Color(0xFFEA580C).copy(alpha = 0.22f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                                border = BorderStroke(if (isSel) 1.5.dp else 1.dp, if (isSel) Color(0xFFFB923C) else Color.Transparent),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                                    Text(
+                                        (if (isSel) "✅ " else "") + prof.shortLabel,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        color = if (isSel) Color(0xFFFB923C) else MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        prof.descriptionVi,
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("🌐 Bật WASM Đa Phiên Bản (1.7.2 → 26.3)", fontWeight = FontWeight.SemiBold, fontSize = 12.5.sp)
+                            Text("Plugin WebAssembly chạy ngay trong Rust (0% Java)", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(checked = quickRustMultiversion, onCheckedChange = { quickRustMultiversion = it })
+                    }
+                    Text("2️⃣ Chế độ chơi:", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf("survival" to "🌱 Sinh tồn", "creative" to "🎨 Sáng tạo", "hardcore" to "💀 Siêu khó").forEach { (gmKey, gmLbl) ->
+                            FilterChip(
+                                selected = quickRustGamemode == gmKey,
+                                onClick = { quickRustGamemode = gmKey },
+                                label = { Text(gmLbl, fontSize = 12.sp) }
+                            )
+                        }
+                    }
+                    OutlinedTextField(
+                        value = quickRustServerName,
+                        onValueChange = { quickRustServerName = it },
+                        label = { Text("Tên Server (Bỏ trống tự đặt theo bản ${selectedProfile.mcVersionLabel})") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showRustQuickCreateDialog = false
+                        vm.createStandaloneRustServerOneTap(
+                            customName = quickRustServerName,
+                            profileId = quickRustProfileId,
+                            gamemode = quickRustGamemode,
+                            installMultiversionOverride = quickRustMultiversion
+                        )
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEA580C), contentColor = Color.White)
+                ) {
+                    Text("🦀 Tạo Server Rust Ngay", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRustQuickCreateDialog = false }) { Text("Đóng") }
+            }
+        )
+    }
+
+    if (showRustVersionSwitchDialog) {
+        AlertDialog(
+            onDismissRequest = { showRustVersionSwitchDialog = false },
+            title = { Text("🔄 Đổi Phiên Bản Server Rust (0% Java)", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        "Chọn phiên bản Nhân Rust ARM64 hoặc bật/tắt WASM Đa Phiên Bản (Giữ nguyên 100% Map hiện tại):",
+                        fontSize = 12.sp
+                    )
+                    com.mineserve.mobile.server.ProHostFeatures.RUST_VERSION_PROFILES.forEach { prof ->
+                        val isSel = prof.id == quickRustProfileId
+                        Surface(
+                            onClick = {
+                                quickRustProfileId = prof.id
+                                quickRustMultiversion = prof.defaultMultiversionWasm
+                            },
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (isSel) Color(0xFFEA580C).copy(alpha = 0.22f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                            border = BorderStroke(if (isSel) 1.5.dp else 1.dp, if (isSel) Color(0xFFFB923C) else Color.Transparent),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                                Text(
+                                    (if (isSel) "✅ " else "") + prof.shortLabel,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = if (isSel) Color(0xFFFB923C) else MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(prof.descriptionVi, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("🌐 Bật WASM Đa Phiên Bản (1.7.2 → 26.3)", fontWeight = FontWeight.SemiBold, fontSize = 12.5.sp, modifier = Modifier.weight(1f))
+                        Switch(checked = quickRustMultiversion, onCheckedChange = { quickRustMultiversion = it })
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showRustVersionSwitchDialog = false
+                        vm.switchRustServerVersionProfileOneTap(
+                            profileId = quickRustProfileId,
+                            installMultiversionOverride = quickRustMultiversion
+                        )
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEA580C), contentColor = Color.White)
+                ) {
+                    Text("✅ Áp Dụng Phiên Bản Này", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRustVersionSwitchDialog = false }) { Text("Hủy") }
             }
         )
     }

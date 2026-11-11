@@ -1,24 +1,24 @@
 <div align="center">
 
 # 🇻🇳 MINEHOST PRO — ANDROID MINECRAFT SERVER ENGINE
-### **v3.1.1 (Build 70 • Official Community Edition)**
+### **v3.1.2 (Build 71 • Official Community Edition)**
 
-[![Release](https://img.shields.io/badge/RELEASE-v3.1.1%20(Build%2070)-10B981?style=for-the-badge&logo=android&logoColor=white)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
+[![Release](https://img.shields.io/badge/RELEASE-v3.1.2%20(Build%2071)-10B981?style=for-the-badge&logo=android&logoColor=white)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
 [![Engine](https://img.shields.io/badge/3--ENGINE-JAVA%20•%20RUST%20TURBO%20•%20NATIVE%20RUST-EA580C?style=for-the-badge&logo=rust&logoColor=white)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
 [![Platform](https://img.shields.io/badge/ANDROID-8.0%2B%20(ARM64)-0EA5E9?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases)
 [![Crossplay](https://img.shields.io/badge/CROSSPLAY-JAVA%20PC%20%2B%20BEDROCK%20PE-F59E0B?style=for-the-badge&logo=reverbnation&logoColor=white)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
 [![OTA](https://img.shields.io/badge/OTA%20UPDATE-AUTO%20DETECT%20•%20AUTO%20CLEAN-6366F1?style=for-the-badge)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
 [![License](https://img.shields.io/badge/LICENSE-GPLv3-3B82F6?style=for-the-badge)](LICENSE)
 
-**Biến điện thoại Android thành máy chủ Minecraft chuyên nghiệp (Paper, Purpur, Fabric, Forge, NeoForge, Vanilla, Bedrock & Nhân Rust siêu nhẹ) — Hỗ trợ chơi chung PC & Điện thoại PE không cần thuê VPS hay mở Port Router.**
+**Biến điện thoại Android thành máy chủ Minecraft chuyên nghiệp (Pumpkin Rust thuần 0% Java hỗ trợ mọi phiên bản 1.7–26.3, Paper, Purpur, Fabric, Forge, NeoForge & Bedrock PE) — Hỗ trợ chơi chung PC & Điện thoại PE không cần thuê VPS hay mở Port Router.**
 
-### 👉 [**📥 TẢI NGAY APK v3.1.1 MỚI NHẤT (`minehost-3.1.1-arm64.apk`)**](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/download/v3.1.1/minehost-3.1.1-arm64.apk)
+### 👉 [**📥 TẢI NGAY APK v3.1.2 MỚI NHẤT (`minehost-3.1.2-arm64.apk`)**](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/download/v3.1.2/minehost-3.1.2-arm64.apk)
 
 </div>
 
 ---
 
-## ✨ Đột Phá Mới Nhất Trên Bản `v3.1.1` (Build 70)
+## ✨ Đột Phá Mới Nhất Trên Bản `v3.1.2` (Build 71)
 
 | Hạng mục nâng cấp | Công nghệ & Cơ chế hoạt động |
 | :--- | :--- |

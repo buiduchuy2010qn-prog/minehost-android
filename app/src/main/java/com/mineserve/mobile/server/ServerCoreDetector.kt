@@ -30,6 +30,19 @@ object ServerCoreDetector {
             f.isFile && f.name.endsWith(".jar", ignoreCase = true)
         }?.toList() ?: emptyList()
 
+        // ── 0. Nhân Rust Thuần (Pumpkin ARM64) ──────────────────────
+        val rustMarker = File(serverDir, ".minehost_rust_native")
+        if (rustMarker.isFile || (rootJars.isEmpty() && File(serverDir, "pumpkin.toml").isFile)) {
+            val mcLabel = runCatching {
+                rustMarker.takeIf { it.isFile }?.readLines(Charsets.UTF_8)
+                    ?.firstOrNull { it.startsWith("mc=") }
+                    ?.substringAfter("mc=")
+                    ?.trim()
+                    ?.takeIf { it.isNotEmpty() }
+            }.getOrNull()
+            return Detection(ServerCore.Pumpkin, mcLabel ?: "1.7.2–26.3", "pumpkin")
+        }
+
         // ── 1. PowerNukkitX（基岩版） ────────────────────────────────
         if (rootJars.any { it.name.equals("powernukkitx.jar", ignoreCase = true) } ||
             hasClassEntry(rootJars, "cn/nukkit/Server.class") ||

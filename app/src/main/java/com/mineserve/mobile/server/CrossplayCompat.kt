@@ -643,6 +643,24 @@ object CrossplayCompat {
             suggestedMcVersion = suggestedMc
         )
 
+        if (core == ServerCore.Pumpkin) {
+            return Result(
+                verdict = Verdict.SUPPORTED,
+                core = core,
+                mcVersion = mcVersion,
+                info = info,
+                needsViaVersion = false,
+                headline = "🦀 Nhân Rust Thuần hỗ trợ sẵn PC Java + Bedrock PE (0% Java)",
+                pcLine = "💻 PC (Java): Cổng TCP 25565 (Mọi bản 1.7.2 → 26.3 qua Multiversion WASM)",
+                peLine = "📱 PE (Bedrock): Cổng UDP 19132 tích hợp sẵn trong nhân Rust (không cần Geyser)",
+                details = listOf(
+                    "Pumpkin MC tích hợp trực tiếp cả giao thức Java lẫn Bedrock UDP 19132 bên trong tệp thực thi ARM64 (~50MB RAM).",
+                    "Không cần cài Java hay GeyserMC — mở Server là cả PC lẫn điện thoại vào được ngay."
+                ),
+                suggestion = null
+            )
+        }
+
         if (core.isBedrock) {
             return Result(
                 verdict = Verdict.NOT_SUPPORTED,
