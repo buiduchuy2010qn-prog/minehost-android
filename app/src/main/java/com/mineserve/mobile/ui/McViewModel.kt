@@ -874,9 +874,9 @@ class McViewModel(
                 return
             }
         }
-        // Tự động phát hiện bản cập nhật mới nhanh nhất khi mở lại App (mỗi 30 giây)
+        // Tự động phát hiện bản cập nhật mới khi mở lại App (cách nhau tối thiểu 30 phút để tránh chạm giới hạn 60 req/giờ của GitHub)
         val now = System.currentTimeMillis()
-        if (now - lastUpdateCheckAtMs >= 30_000L && _updateState.value !is UpdateUiState.Downloading) {
+        if (now - lastUpdateCheckAtMs >= 30 * 60 * 1000L && _updateState.value !is UpdateUiState.Downloading) {
             checkForUpdate(manual = false)
         }
     }
@@ -887,6 +887,7 @@ class McViewModel(
         if (manual) {
             updateCheckInFlight.set(true)
             skippedReleaseTag = null
+            proPrefs.edit().remove("skipped_ota_tag").apply()
             _updateState.value = UpdateUiState.Checking
             _updateDialogVisible.value = true
         }
@@ -946,7 +947,10 @@ class McViewModel(
             is UpdateUiState.Downloaded -> st.release
             else -> null
         }
-        if (release != null) skippedReleaseTag = release.tag
+        if (release != null) {
+            skippedReleaseTag = release.tag
+            proPrefs.edit().putString("skipped_ota_tag", release.tag).apply()
+        }
         _updateState.value = UpdateUiState.Idle
         dismissUpdateDialog()
     }
@@ -1003,6 +1007,10 @@ class McViewModel(
 
     /** 调系统安装器安装 APK */
     fun installApk(context: Context, file: File) {
+        if (serverState.value.isRunning || _stopInFlight.value) {
+            _errorFlow.tryEmit("⚠️ Máy chủ đang chạy! Hãy bấm 'Dừng Server An Toàn' để lưu Map trước khi cài đặt bản cập nhật.")
+            return
+        }
         try {
             if (!AppUpdateService.isApk(file)) {
                 throw IllegalStateException(str(R.string.err_apk_corrupt))
@@ -2044,7 +2052,8 @@ class McViewModel(
      */
     private var lastJavaCompatibilityWarning: String? = null
 
-    private fun parseConsoleLine(line: String) {
+    private fun parseConsoleLine(rawLine: String) {
+        val line = ConsoleLineParser.stripAnsi(rawLine)
         try {
             // 状态类信号统一由共享解析器提取（正则只跑一次，与前台服务共用同一份实现）。
             val signals = ConsoleLineParser.parse(line)
@@ -2100,7 +2109,7 @@ class McViewModel(
                     notifyPlayerEvent(name, joined)
                     viewModelScope.launch {
                         delay(450)
-                        if (serverState.value.isRunning) repo.termuxRuntime.sendCommand("save-all")
+                        sendWorldSaveIfSupported()
                     }
                     handled = true
                 }
@@ -2116,7 +2125,7 @@ class McViewModel(
                         notifyPlayerEvent(name, true)
                         viewModelScope.launch {
                             delay(450)
-                            if (serverState.value.isRunning) repo.termuxRuntime.sendCommand("save-all")
+                            sendWorldSaveIfSupported()
                         }
                     }
                     handled = true
@@ -2131,7 +2140,7 @@ class McViewModel(
                         notifyPlayerEvent(name, false)
                         viewModelScope.launch {
                             delay(350)
-                            if (serverState.value.isRunning) repo.termuxRuntime.sendCommand("save-all")
+                            sendWorldSaveIfSupported()
                         }
                     }
                     handled = true
@@ -2591,6 +2600,7 @@ class McViewModel(
             // 版本必须落在允许列表内，否则会出现「FCL 来源 + Java 8」这种
             // 不存在的组合（FCL 只发布 17/21/25）。
             val version = javaRuntime.version.takeIf { it in allowed }
+                ?: JavaVersion.Java21.takeIf { it in allowed }
                 ?: allowed.firstOrNull()
                 ?: JavaRuntime.Default.version
             cfg.copy(
@@ -2611,6 +2621,7 @@ class McViewModel(
     fun runtimeKindMismatchMessage(): String? {
         val cfg = config.value
         val core = cfg.installedCores.firstOrNull { it.name == cfg.activeCoreName } ?: return null
+        if (isNativeRustActive() || core.serverFile == "pumpkin") return null
         val required = if (core.core == ServerCore.PocketMine) RuntimeKind.Php else RuntimeKind.Java
         if (cfg.runtimeKind == required) return null
         val requiredLabel = when (required) {
@@ -3107,7 +3118,7 @@ class McViewModel(
 
     private val _eulaRequest = MutableStateFlow<String?>(null)
     val eulaRequest: StateFlow<String?> = _eulaRequest.asStateFlow()
-    private var startRequestPending = false
+    @Volatile private var startRequestPending = false
 
     fun dismissEula() { _eulaRequest.value = null }
 
@@ -3167,7 +3178,7 @@ class McViewModel(
             _errorFlow.tryEmit("Đang cài đặt Mod/Plugin hoặc khôi phục dữ liệu. Hãy đợi tác vụ hoàn tất trước khi bật Server.")
             return
         }
-        if (!isBootstrapped.value) {
+        if (!isBootstrapped.value && !isNativeRustActive() && activeCoreObj()?.serverFile != "pumpkin") {
             _errorFlow.tryEmit(str(R.string.s192))
             return
         }
@@ -3533,14 +3544,79 @@ class McViewModel(
         _messageFlow.tryEmit(str(R.string.s210, url))
     }
 
+    private fun activeCoreObj(): com.mineserve.mobile.data.InstalledCore? =
+        config.value.installedCores.find { it.name == config.value.activeCoreName }
+
+    private fun isNativeRustActive(): Boolean =
+        _rustEngineStatus.value.isNativeRustEnabled || activeCoreObj()?.serverFile == "pumpkin"
+
+    private fun isBedrockServerActive(): Boolean =
+        activeCoreObj()?.core?.isBedrock == true
+
+    private fun isGeyserInstalledOnActiveServer(): Boolean {
+        val dir = activeDirName() ?: return false
+        if (crossplayMarker(dir).isNotEmpty()) return true
+        if (_installedPlugins.value.any { it.isEnabled && it.fileName.contains("geyser", ignoreCase = true) }) return true
+        if (_mods.value.any { it.isEnabled && it.fileName.contains("geyser", ignoreCase = true) }) return true
+        val srvDir = repo.termuxRuntime.serverDirFor(dir)
+        val hasPluginJar = File(srvDir, "plugins").listFiles()?.any {
+            it.isFile && it.name.contains("geyser", ignoreCase = true) && !it.name.endsWith(".disabled", ignoreCase = true)
+        } == true
+        if (hasPluginJar) return true
+        return File(srvDir, "mods").listFiles()?.any {
+            it.isFile && it.name.contains("geyser", ignoreCase = true) && !it.name.endsWith(".disabled", ignoreCase = true)
+        } == true
+    }
+
+    private fun resolveActiveBedrockShareAddress(): String? {
+        if (!isBedrockServerActive() && !isNativeRustActive() && !isGeyserInstalledOnActiveServer()) return null
+        val pubPe = playitState.value.bedrockAddress.trim()
+        if (pubPe.isNotBlank()) return pubPe
+        val host = lanIp.value.takeIf { it.isNotBlank() && it != "--" } ?: "127.0.0.1"
+        val dir = activeDirName()
+        val pePort = when {
+            isNativeRustActive() -> 19132
+            isBedrockServerActive() -> resolveLiveLocalServerPort()
+            else -> resolveLiveBedrockServerPort(dir)
+        }
+        return "$host:$pePort"
+    }
+
+    private fun sendWorldSaveIfSupported() {
+        if (!serverState.value.isRunning || isNativeRustActive()) return
+        if (activeCoreObj()?.core == ServerCore.Allay) {
+            sendCommand("save")
+        } else {
+            sendCommand("save-all")
+        }
+    }
+
     private fun adaptCommandForActiveServer(rawCommand: String): String {
         val trimmed = rawCommand.trim().removePrefix("/")
         val cfg = config.value
-        val activeCore = cfg.installedCores.firstOrNull { it.name == cfg.activeCoreName }
+        val activeCore = activeCoreObj()
         val mcVersion = (activeCore?.version ?: cfg.mcVersion).trim()
         val supportsPlugins = (activeCore?.core ?: cfg.selectedCore).supportsPlugins
-        if (trimmed.equals("tps", ignoreCase = true) && !supportsPlugins) {
+        val supportsTickQuery = run {
+            if (mcVersion.startsWith("26.") || mcVersion.startsWith("25w")) return@run true
+            val parts = mcVersion.split(".", "-").mapNotNull { it.toIntOrNull() }
+            if (parts.size >= 2 && parts[0] == 1) {
+                val minor = parts[1]
+                val patch = parts.getOrElse(2) { 0 }
+                if (minor > 20 || (minor == 20 && patch >= 3)) return@run true
+            }
+            false
+        }
+        if (trimmed.equals("tps", ignoreCase = true) &&
+            !isNativeRustActive() &&
+            !isBedrockServerActive() &&
+            !supportsPlugins &&
+            supportsTickQuery
+        ) {
             return "tick query"
+        }
+        if (isNativeRustActive() || isBedrockServerActive()) {
+            return trimmed
         }
         val usesSnakeCase = run {
             if (mcVersion.startsWith("26.") || mcVersion.startsWith("25w")) return@run true
@@ -3655,12 +3731,9 @@ class McViewModel(
 
     /** 扫描当前核心的 plugins 目录 */
     fun refreshInstalledPlugins() {
-        if (!isBootstrapped.value) {
-            _errorFlow.tryEmit(str(R.string.s192))
-            return
-        }
         val requestedDir = activeDirName() ?: run {
-            _errorFlow.tryEmit(str(R.string.s212))
+            ++pluginsLoadGeneration
+            _installedPlugins.value = emptyList()
             return
         }
         val token = ++pluginsLoadGeneration
@@ -3702,7 +3775,18 @@ class McViewModel(
         pluginManager.serverOptimizationModBundle
 
     fun refreshServerOptPackStatus() {
-        val requestedDir = activeDirName() ?: return
+        val requestedDir = activeDirName() ?: run {
+            ++optPackStatusGeneration
+            _serverOptPackStatus.value = PluginManager.ServerOptimizationPackStatus(
+                totalModsInPack = 14,
+                installedCount = 0,
+                enabledCount = 0,
+                cachedCount = 0,
+                enabledModIds = emptySet(),
+                installedModIds = emptySet()
+            )
+            return
+        }
         val activeInstalled = config.value.installedCores.firstOrNull { it.name == config.value.activeCoreName }
         val mcVer = (activeInstalled?.version?.takeIf { it.isNotBlank() } ?: config.value.mcVersion).ifBlank { "1.21.11" }
         val loader = activeInstalled?.core?.let { c ->
@@ -3729,10 +3813,18 @@ class McViewModel(
      */
     fun toggleServerOptimizationPack(enable: Boolean, customMcVersion: String = "") {
         if (_isTogglingServerOptPack.value || _stopInFlight.value) return
+        if (serverState.value.isRunning) {
+            _errorFlow.tryEmit("⚠️ Hãy dừng Server trước khi cài hoặc gỡ Mod/Plugin để tránh lỗi sập tiến trình!")
+            return
+        }
         val originCoreName = config.value.activeCoreName
         val activeInstalled = config.value.installedCores.firstOrNull { it.name == originCoreName }
         val originDirName = activeInstalled?.dirName ?: activeDirName() ?: run {
             _errorFlow.tryEmit("Hãy chọn hoặc tạo một máy chủ trước khi bật Gói Mod Tối Ưu Server.")
+            return
+        }
+        if (isNativeRustActive()) {
+            _errorFlow.tryEmit("⚠️ Nhân Rust Thuần đã tối ưu mã máy ARM64 sẵn và không nạp Mod .jar — Hãy chuyển sang chế độ '☕ Java Mod' nếu muốn dùng Gói Mod Tối Ưu!")
             return
         }
         val currentCore = activeInstalled?.core ?: config.value.selectedCore
@@ -3888,8 +3980,12 @@ class McViewModel(
 
     /** 扫描当前核心的 mods 目录 */
     fun refreshMods() {
-        if (!isBootstrapped.value) return
-        val requestedDir = activeDirName() ?: return
+        val requestedDir = activeDirName() ?: run {
+            ++modsLoadGeneration
+            _mods.value = emptyList()
+            refreshServerOptPackStatus()
+            return
+        }
         val token = ++modsLoadGeneration
         viewModelScope.launch {
             try {
@@ -5943,9 +6039,13 @@ class McViewModel(
      * để tránh kết quả đọc muộn của Server A ghi đè lên Server B khi đổi server nhanh.
      */
     private suspend fun refreshServerPropertiesNow() {
-        if (!isBootstrapped.value) return
         val requestedCoreName = config.value.activeCoreName
-        val requestedDir = activeDirName() ?: return
+        val requestedDir = activeDirName() ?: run {
+            ++propertiesLoadGeneration
+            _serverProperties.value = emptyMap()
+            _serverPropertiesExist.value = false
+            return
+        }
         val pnx = config.value.installedCores
             .firstOrNull { it.name == requestedCoreName }?.core == ServerCore.PowerNukkitX
         val token = ++propertiesLoadGeneration
@@ -5979,7 +6079,7 @@ class McViewModel(
 
     /** 保存 server.properties */
     fun saveServerProperties(props: Map<String, String>) {
-        if (!isBootstrapped.value) {
+        if (!isBootstrapped.value && !isNativeRustActive()) {
             _errorFlow.tryEmit(str(R.string.s192))
             return
         }
@@ -7015,7 +7115,7 @@ class McViewModel(
             _inventoryErrorMessage.value = null
             if (serverState.value.isRunning) {
                 runCatching {
-                    repo.termuxRuntime.sendCommand("save-all")
+                    sendWorldSaveIfSupported()
                     repo.termuxRuntime.sendCommand("list")
                     delay(500)
                 }
@@ -7216,8 +7316,14 @@ class McViewModel(
 
     /** 刷新玩家数据（OP/白名单/封禁列表） */
     fun refreshPlayers() {
-        if (!isBootstrapped.value) return
-        val dirName = activeDirName() ?: return
+        val dirName = activeDirName() ?: run {
+            _ops.value = emptyList()
+            _whitelist.value = emptyList()
+            _bannedPlayers.value = emptyList()
+            _whitelistEnabled.value = false
+            _defaultOpLevel.value = null
+            return
+        }
         viewModelScope.launch {
             try {
                 withContext(Dispatchers.IO) {
@@ -7418,8 +7524,14 @@ class McViewModel(
     private var worldsLoadedDir: String? = null
 
     fun loadWorlds() {
-        if (!isBootstrapped.value) return
-        val dirName = activeDirName() ?: return
+        val dirName = activeDirName() ?: run {
+            ++worldsLoadGeneration
+            worldsLoadedDir = null
+            _worlds.value = emptyList()
+            _activeWorldName.value = "world"
+            _worldsLoading.value = false
+            return
+        }
         val generation = ++worldsLoadGeneration
         if (worldsLoadedDir != dirName) {
             _worlds.value = emptyList()
@@ -9440,19 +9552,13 @@ class McViewModel(
 
     /** 选择要启动的核心（按名称） */
     fun setActiveCore(name: String) {
+        if (serverState.value.isRunning || _stopInFlight.value || startRequestPending) {
+            _errorFlow.tryEmit("⚠️ Hãy dừng Server hiện tại trước khi chuyển sang quản lý máy chủ khác!")
+            return
+        }
         // 只切核心，不动运行模式 —— 运行模式由用户在「运行环境」弹窗里决定并完全生效。
         updateConfig { it.copy(activeCoreName = name) }
         invalidateConnectionCheck()
-        viewModelScope.launch {
-            refreshServerPropertiesNow()
-            loadWorlds()
-            refreshMods()
-            refreshInstalledPlugins()
-            refreshServerStorage()
-            val newDir = config.value.installedCores.firstOrNull { it.name == name }?.dirName ?: activeDirName() ?: "default"
-            // Chuyển hồ sơ/server đang xem chỉ cập nhật hiển thị của server đó, tuyệt đối KHÔNG ghi đè origin của tunnel cũ sang server mới!
-            playitController.onViewedServerChanged(newDir)
-        }
     }
 
     /** 删除一个已安装的核心（按名称） */
@@ -10137,226 +10243,6 @@ class McViewModel(
         }
     }
 
-    /**
-     * init 块必须放在类体末尾：这里启动的协程（Dispatchers.IO/Default）会在
-     * 构造函数完成前抢先执行，若 init 在类体前部，会读到尚未赋值的字段
-     * （historyMutex/playerManager 等），导致启动时 NullPointerException 崩溃。
-     */
-    init {
-        _autoCleanRamOnStart.value = metaPrefs().getBoolean("auto_clean_ram_on_start", true)
-        _autoBackupOnStop.value = metaPrefs().getBoolean("auto_backup_on_stop", true)
-        _autoUploadDriveOnStop.value = metaPrefs().getBoolean("auto_upload_drive_on_stop", false)
-        _autoInstallUpdateEnabled.value = metaPrefs().getBoolean("auto_install_update_enabled", true)
-        _cloudSyncFolderUri.value = metaPrefs().getString("cloud_sync_folder_uri", null)
-        // Tự động xóa file APK cài đặt sau khi cập nhật xong (trong cache/update và thư mục Download trên máy)
-        viewModelScope.launch(Dispatchers.IO) {
-            val (_, directBytes) = com.mineserve.mobile.data.AppUpdateService.cleanupInstalledApks(app)
-            val receiverBytes = metaPrefs().getLong("last_cleaned_apk_bytes", 0L)
-            if (receiverBytes > 0L) {
-                metaPrefs().edit()
-                    .remove("last_cleaned_apk_bytes")
-                    .remove("last_cleaned_apk_count")
-                    .apply()
-            }
-            val totalFreed = directBytes + receiverBytes
-            if (totalFreed > 0L) {
-                val mb = totalFreed.toDouble() / (1024.0 * 1024.0)
-                _messageFlow.tryEmit("🧹 Đã tự động xóa gói APK sau khi cập nhật xong (Giải phóng %.1f MB bộ nhớ)!".format(java.util.Locale.US, mb))
-            }
-        }
-        // Tự động phát hiện bản cập nhật mới tức thì (0ms) ngay khi mở App và kiểm tra định kỳ mỗi 3 phút
-        viewModelScope.launch {
-            while (true) {
-                if (uiVisible && _updateState.value !is UpdateUiState.Downloading) {
-                    checkForUpdate(manual = false)
-                }
-                delay(3 * 60_000L)
-            }
-        }
-        viewModelScope.launch {
-            McApplication.get(app).openUpdateRequest.collect { wantOpen ->
-                if (wantOpen) {
-                    McApplication.get(app).consumeOpenUpdateRequest()
-                    showUpdateDialog()
-                }
-            }
-        }
-        refreshDeviceProfile()
-        refreshLanIp(notifyOnChange = false)
-        runCatching {
-            val cm = app.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
-            val req = android.net.NetworkRequest.Builder().build()
-            cm?.registerNetworkCallback(req, networkChangeCallback)
-        }
-        scanUnregisteredServers()
-        refreshTrashedServers()
-        viewModelScope.launch {
-            config.map { it.activeCoreName }.distinctUntilChanged().collect {
-                loadPlayerHistory()
-                refreshServerStorage()
-                refreshServerOptPackStatus()
-            }
-        }
-        viewModelScope.launch {
-            config.map { it.installedCores }.distinctUntilChanged().collect {
-                refreshServerStorage()
-            }
-        }
-        viewModelScope.launch {
-            playitState.map { it.publicAddress to it.allocatedIpv4Address }.distinctUntilChanged().collect { (pub, alloc) ->
-                if (alloc.isNotBlank() && alloc.substringBeforeLast(":").matches(Regex("""^\d{1,3}(\.\d{1,3}){3}$"""))) {
-                    _playitNumericAddress.value = alloc
-                } else {
-                    resolvePlayitNumericIp(pub)
-                }
-            }
-        }
-        // 把「当前 Java 来源 + PRoot 发行版」投影到运行时。
-        //
-        // 运行时是启动链路（含 MCP、桌面组件、定时任务等拿不到 McConfig 的调用方）
-        // 唯一的判定依据，因此这份同步必须跟着 config 走；只在这里写一次，
-        // 避免每个调用点各自从 config 里取一遍（那种分散读取正是「换个入口行为就变了」
-        // 的来源）。用 distinctUntilChanged 避免无谓写入。
-        viewModelScope.launch {
-            config
-                .map { it.selectedJavaVendor to it.prootDistro }
-                .distinctUntilChanged()
-                .collect { (vendor, distro) ->
-                    repo.termuxRuntime.selectedProotVendor = vendor
-                    repo.termuxRuntime.selectedProotDistro = distro
-                }
-        }
-        // 起动完成后先把端口真源读一次。
-        //
-        // 历史上这份真源只在进入「服务器配置」页时才被读 —— 于是用户在配置文件里
-        // 把端口改掉之后，只要没再进过那个页面，地址栏、复制出来的地址、以及 STUN 的
-        // 转发目标就全部停在旧端口上（默认 25565）。用户看到的「本地地址没跟着变」
-        // 就是这个时间差。
-        viewModelScope.launch {
-            app.isBootstrapped.collect { ready -> if (ready) refreshServerPropertiesNow() }
-        }
-        viewModelScope.launch {
-            var wasRunning = false
-            serverState.collect { state ->
-                if (wasRunning && !state.isRunning) {
-                    interruptPlayerSessions()
-                    _lastRunLog.value = withContext(Dispatchers.IO) {
-                        delay(150)
-                        repo.termuxRuntime.readLastMcRunLog()
-                    }
-                }
-                wasRunning = state.isRunning
-            }
-        }
-        startServerResourceCollection()
-        // 订阅 serverExitFailures 前先补弹最近的失败（覆盖 App 重启/ViewModel 重建时已错过的事件）
-        controller.recentStartupFailure()?.let { showStartupFailureReport(it) }
-        // 订阅 consoleFlow，使用环形缓冲 + 批量刷新，避免每行 O(n) 拷贝。
-        viewModelScope.launch(Dispatchers.Default) {
-            controller.startupFailures.collect { showStartupFailureReport(it) }
-        }
-        viewModelScope.launch(Dispatchers.Default) {
-            val silentZeroListRegex = Regex("""(There are 0 of a max of \d+ players online:|Hiện có 0/\d+ người chơi đang online:)\s*$""")
-            var shownFirstZeroList = false
-            repo.termuxRuntime.consoleFlow.collect { line ->
-                parseConsoleLine(line)
-                val isZeroListPoll = silentZeroListRegex.containsMatchIn(line)
-                if (isZeroListPoll) {
-                    if (shownFirstZeroList) return@collect
-                    shownFirstZeroList = true
-                }
-                consoleBuffer.add(line)
-                pendingConsoleBuffer.add(line)
-            }
-        }
-        // Process only newly received lines. Older terminal rows keep their identity across UI flushes.
-        viewModelScope.launch(Dispatchers.Default) {
-            while (true) {
-                // 无 UI 订阅（后台/无页面），或界面不可见（Activity 已停止但 collectAsState 不销毁、订阅数仍 >0）
-                // 时长时间睡眠；控制台可见时以帧友好的频率刷新。
-                if (!uiVisible ||
-                    (_consoleLines.subscriptionCount.value <= 0 &&
-                        _consolePreviewLines.subscriptionCount.value <= 0 &&
-                        _terminalConsoleLines.subscriptionCount.value <= 0)
-                ) {
-                    delay(IDLE_LOG_FLUSH_MS)
-                    continue
-                }
-                delay(200)
-                val batch = pendingConsoleBuffer.snapshotAndClear()
-                if (batch.isNotEmpty()) {
-                    consoleGeneration++
-                }
-                if (terminalDisplayDirty) {
-                    terminalConsoleBuffer.replace(
-                        consoleBuffer.snapshot().map { TerminalLogProcessor.process(it, _logTranslationEnabled.value) }
-                    )
-                    terminalDisplayDirty = false
-                    terminalGeneration++
-                } else if (batch.isNotEmpty()) {
-                    batch.forEach { terminalConsoleBuffer.add(TerminalLogProcessor.process(it, _logTranslationEnabled.value)) }
-                    terminalGeneration++
-                }
-                if (_consoleLines.subscriptionCount.value > 0 && consoleUiGeneration != consoleGeneration) {
-                    _consoleLines.value = consoleBuffer.snapshot()
-                    consoleUiGeneration = consoleGeneration
-                }
-                if (_terminalConsoleLines.subscriptionCount.value > 0 && terminalUiGeneration != terminalGeneration) {
-                    _terminalConsoleLines.value = terminalConsoleBuffer.snapshot()
-                    terminalUiGeneration = terminalGeneration
-                }
-                val now = System.currentTimeMillis()
-                if (_consolePreviewLines.subscriptionCount.value > 0 &&
-                    previewUiGeneration != consoleGeneration &&
-                    now - lastPreviewPublishedAtMs >= CONSOLE_PREVIEW_FLUSH_MS
-                ) {
-                    _consolePreviewLines.value = consoleBuffer.last(8)
-                    previewUiGeneration = consoleGeneration
-                    lastPreviewPublishedAtMs = now
-                }
-            }
-        }
-        viewModelScope.launch(Dispatchers.Default) {
-            while (true) {
-                // 空闲降频：LogsScreen 不在前台、或 Activity 已停止（collectAsState 不销毁订阅数仍 >0）时，
-                // 每 200ms 醒一次纯属浪费（App 退到后台仍每秒唤醒 5~10 次，是待机耗电的主要来源）。
-                // 注意这里只延长"发布"的间隔，buffer 仍在持续接收，不会丢日志。
-                if (!uiVisible || _termuxLines.subscriptionCount.value <= 0) {
-                    delay(IDLE_LOG_FLUSH_MS)
-                    continue
-                }
-                delay(LOG_FLUSH_MS)
-                val batch = legacyTermuxBuffer.snapshotAndClear()
-                if (batch.isNotEmpty()) {
-                    val current = _termuxLines.value
-                    _termuxLines.value = (current + batch).takeLast(MAX_LOG_LINES).toImmutableList()
-                }
-            }
-        }
-        viewModelScope.launch(Dispatchers.Default) {
-            while (true) {
-                // 同上：终端会话面板不可见时降频；界面不在前台（uiVisible=false）同样降频。
-                val terminalVisible = _terminalSessions.subscriptionCount.value > 0 ||
-                    _activeTerminalSessionId.subscriptionCount.value > 0
-                if (!uiVisible || !terminalVisible) {
-                    delay(IDLE_LOG_FLUSH_MS)
-                    continue
-                }
-                delay(LOG_FLUSH_MS)
-                val batch = synchronized(terminalOutputBuffers) {
-                    terminalOutputBuffers.mapValues { (_, buffer) -> buffer.snapshotAndClear() }
-                        .filterValues { it.isNotEmpty() }
-                }
-                batch.forEach { (id, lines) ->
-                    updateTerminalSession(id) { session ->
-                        val additions = lines.map { TerminalLogProcessor.process(it, false) }
-                        session.copy(lines = (session.lines + additions).takeLast(MAX_LOG_LINES).toImmutableList())
-                    }
-                }
-            }
-        }
-    }
-
     // ── 后台保活（开机自启 / 周期保活） ─────────────────────────────
 
     /** 本地化字符串（ViewModel 中获取资源） */
@@ -10435,19 +10321,31 @@ class McViewModel(
 
     /** [Nâng cấp 1 - v2.8.7 Pro] Bật/tắt nhanh Luật Thế Giới (keepInventory, mobGriefing, doFireTick, playersSleepingPercentage) — Lưu bền vững & tự nạp khi mở Server */
     fun applyQuickGamerule(ruleName: String, value: String, labelVi: String) {
-        val dir = activeDirName() ?: "default"
+        val dir = activeDirName()
+        if (dir == null) {
+            _errorFlow.tryEmit("⚠️ Hãy chọn hoặc tạo một Server trước khi lưu Luật Thế Giới!")
+            return
+        }
         proPrefs.edit().putString("saved_gamerule_${dir}_$ruleName", value).apply()
         if (serverState.value.isRunning) {
-            sendCommand("gamerule $ruleName $value")
-            notifyActionDone("🎮 Đã áp dụng trực tiếp & lưu bền vững: $labelVi ($ruleName = $value)")
+            if (isNativeRustActive() || isBedrockServerActive()) {
+                notifyActionDone("💾 Đã lưu '$labelVi' cho chế độ Java (Nhân Rust Thuần / Bedrock hiện chưa nhận lệnh gamerule trực tiếp).")
+            } else {
+                sendCommand("gamerule $ruleName $value")
+                notifyActionDone("🎮 Đã áp dụng trực tiếp & lưu bền vững: $labelVi ($ruleName = $value)")
+            }
         } else {
-            notifyActionDone("🛡️ Đã lưu '$labelVi' ($ruleName = $value) — Sẽ tự động kích hoạt ngay khi Server mở!")
+            notifyActionDone("🛡️ Đã lưu '$labelVi' ($ruleName = $value) — Sẽ tự động kích hoạt ngay khi Server Java mở!")
         }
     }
 
     /** [v2.8.7] Bật đồng loạt toàn bộ Lá Chắn Chống Phá Hoại 1 Chạm (Anti-Grief Shield Pro) */
     fun enableFullAntiGriefShieldOneTap() {
-        val dir = activeDirName() ?: "default"
+        val dir = activeDirName()
+        if (dir == null) {
+            _errorFlow.tryEmit("⚠️ Hãy chọn hoặc tạo một Server trước khi bật Lá Chắn Chống Phá Hoại!")
+            return
+        }
         val rules = mapOf(
             "keepInventory" to "true",
             "mobGriefing" to "false",
@@ -10457,12 +10355,10 @@ class McViewModel(
         val editor = proPrefs.edit()
         rules.forEach { (k, v) -> editor.putString("saved_gamerule_${dir}_$k", v) }
         editor.apply()
-        if (dir != "default") {
-            viewModelScope.launch(Dispatchers.IO) {
-                runCatching { propertiesManager.setProperty(dir, "spawn-protection", "16") }
-            }
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { propertiesManager.setProperty(dir, "spawn-protection", "16") }
         }
-        if (serverState.value.isRunning) {
+        if (serverState.value.isRunning && !isNativeRustActive() && !isBedrockServerActive()) {
             rules.forEach { (k, v) -> sendCommand("gamerule $k $v") }
             sendCommand("say [MineHost Anti-Grief] 🛡️ Da bat tron bo La Chan Chong Pha Map (Giu do khi chet, Chong Creeper no, Tat lua chay lan, 1 nguoi ngu qua dem)!")
         }
@@ -10473,6 +10369,10 @@ class McViewModel(
     /** [Nâng cấp 1] Chỉnh nhanh Thời gian / Thời tiết trong thế giới 1 chạm */
     fun applyQuickWorldEnvironment(command: String, labelVi: String) {
         if (serverState.value.isRunning) {
+            if (isNativeRustActive()) {
+                _errorFlow.tryEmit("ℹ️ Nhân Rust Thuần (Pumpkin ARM64) hiện chưa hỗ trợ lệnh '$command' trực tiếp từ bảng điều khiển.")
+                return
+            }
             sendCommand(command)
             notifyActionDone("🌤️ Đã chỉnh Thế Giới: $labelVi")
         } else {
@@ -10484,6 +10384,10 @@ class McViewModel(
     fun runCountdownClearGroundItems(countdownSec: Int = 10) {
         if (!serverState.value.isRunning) {
             notifyActionDone("ℹ️ Hãy bật Server trước để dọn vật phẩm rơi trong thế giới!")
+            return
+        }
+        if (isNativeRustActive() || isBedrockServerActive()) {
+            _errorFlow.tryEmit("ℹ️ Nhân Rust Thuần / Bedrock tự tối ưu bộ nhớ gốc (~50MB RAM) và không dùng lệnh dọn thực thể @e[...] của Java!")
             return
         }
         viewModelScope.launch {
@@ -10540,12 +10444,19 @@ class McViewModel(
     fun clearHostileLagMobsAndGc() {
         viewModelScope.launch {
             if (serverState.value.isRunning) {
+                if (isNativeRustActive() || isBedrockServerActive()) {
+                    sendWorldSaveIfSupported()
+                    cleanRamNow()
+                    com.mineserve.mobile.server.ProHostFeatures.playTaskCompleteChime()
+                    notifyActionDone("🧹 Đã dọn bộ nhớ RAM hệ thống (Nhân Rust Thuần / Bedrock tự quản lý thực thể gốc, không cần lệnh @e[...] của Java)!")
+                    return@launch
+                }
                 listOf("zombie", "skeleton", "creeper", "spider", "phantom", "drowned", "enderman", "witch").forEach { mob ->
                     sendCommand("kill @e[type=$mob,name=!]")
                 }
                 sendCommand("kill @e[type=item]")
                 sendCommand("kill @e[type=experience_orb]")
-                sendCommand("save-all")
+                sendWorldSaveIfSupported()
                 sendCommand("say [MineHost] ⚡ Đã dọn quái đông gây lag (chừa thú cưng/dân làng) & lưu thế giới an toàn!")
             }
             cleanRamNow()
@@ -10573,7 +10484,7 @@ class McViewModel(
 
                     val serverDir = repo.termuxRuntime.serverDirFor(dirName)
                     val activeCore = config.value.installedCores.firstOrNull { it.name == config.value.activeCoreName }?.core
-                    if (activeCore != null && activeCore.supportsPlugins && !activeCore.isBedrock) {
+                    if (activeCore != null && activeCore.supportsPlugins && !activeCore.isBedrock && !isNativeRustActive()) {
                         // 2. Tinh chỉnh bukkit.yml (giảm giới hạn quái gây lag trên điện thoại)
                         val bukkitFile = java.io.File(serverDir, "bukkit.yml")
                         if (!bukkitFile.exists()) {
@@ -10648,7 +10559,7 @@ class McViewModel(
                 delay(1000L)
                 if (!serverState.value.isRunning) return@launch
             }
-            sendCommand("save-all")
+            sendWorldSaveIfSupported()
             delay(1200L)
             restartServer()
         }
@@ -10933,55 +10844,57 @@ class McViewModel(
                     propertiesManager.setProperty(dirName, "network-compression-threshold", "512")
                     propertiesManager.setProperty(dirName, "sync-chunk-writes", "false")
 
-                    val serverDir = repo.termuxRuntime.serverDirFor(dirName)
-                    val bukkitFile = java.io.File(serverDir, "bukkit.yml")
-                    bukkitFile.writeText(
-                        """
-                        spawn-limits:
-                          monsters: 20
-                          animals: 5
-                          water-animals: 2
-                          water-ambient: 3
-                          water-underground-creature: 2
-                          axolotls: 2
-                          ambient: 1
-                        ticks-per:
-                          animal-spawns: 400
-                          monster-spawns: 6
-                          water-spawns: 400
-                        """.trimIndent() + "\n",
-                        Charsets.UTF_8
-                    )
-                    val spigotFile = java.io.File(serverDir, "spigot.yml")
-                    spigotFile.writeText(
-                        """
-                        world-settings:
-                          default:
-                            mob-spawn-range: 3
-                            merge-radius:
-                              item: 5.0
-                              exp: 7.0
-                            entity-activation-range:
-                              animals: 12
-                              monsters: 18
-                              raiders: 24
-                              misc: 6
-                        """.trimIndent() + "\n",
-                        Charsets.UTF_8
-                    )
-                    val paperConfigDir = java.io.File(serverDir, "config").apply { mkdirs() }
-                    val paperWorldFile = java.io.File(paperConfigDir, "paper-world-defaults.yml")
-                    if (!paperWorldFile.exists()) {
-                        paperWorldFile.writeText(
+                    if (activeCoreObj()?.core?.supportsPlugins == true && !isBedrockServerActive() && !isNativeRustActive()) {
+                        val serverDir = repo.termuxRuntime.serverDirFor(dirName)
+                        val bukkitFile = java.io.File(serverDir, "bukkit.yml")
+                        bukkitFile.writeText(
                             """
-                            chunks:
-                              max-auto-save-chunks-per-tick: 4
-                              prevent-moving-into-unloaded-chunks: true
-                            spawn:
-                              keep-spawn-loaded: false
+                            spawn-limits:
+                              monsters: 20
+                              animals: 5
+                              water-animals: 2
+                              water-ambient: 3
+                              water-underground-creature: 2
+                              axolotls: 2
+                              ambient: 1
+                            ticks-per:
+                              animal-spawns: 400
+                              monster-spawns: 6
+                              water-spawns: 400
                             """.trimIndent() + "\n",
                             Charsets.UTF_8
                         )
+                        val spigotFile = java.io.File(serverDir, "spigot.yml")
+                        spigotFile.writeText(
+                            """
+                            world-settings:
+                              default:
+                                mob-spawn-range: 3
+                                merge-radius:
+                                  item: 5.0
+                                  exp: 7.0
+                                entity-activation-range:
+                                  animals: 12
+                                  monsters: 18
+                                  raiders: 24
+                                  misc: 6
+                            """.trimIndent() + "\n",
+                            Charsets.UTF_8
+                        )
+                        val paperConfigDir = java.io.File(serverDir, "config").apply { mkdirs() }
+                        val paperWorldFile = java.io.File(paperConfigDir, "paper-world-defaults.yml")
+                        if (!paperWorldFile.exists()) {
+                            paperWorldFile.writeText(
+                                """
+                                chunks:
+                                  max-auto-save-chunks-per-tick: 4
+                                  prevent-moving-into-unloaded-chunks: true
+                                spawn:
+                                  keep-spawn-loaded: false
+                                """.trimIndent() + "\n",
+                                Charsets.UTF_8
+                            )
+                        }
                     }
                 }
                 setAutoCleanRamOnStart(true)
@@ -11429,7 +11342,7 @@ class McViewModel(
         val isOnline = overrideOnline ?: st.isRunning
         val activeName = config.value.activeCoreName.orEmpty().ifBlank { "MineHost Server" }
         val pcAddr = playitState.value.publicAddress.ifBlank { "${lanIp.value}:${serverPort.value}" }
-        val peAddr = playitState.value.bedrockAddress.ifBlank { "${lanIp.value}:19132" }
+        val peAddr = resolveActiveBedrockShareAddress().orEmpty()
         val therm = _thermalInfo.value
         return com.mineserve.mobile.server.ProHostFeatures.renderServerVisualStatusCardPng(
             serverName = activeName,
@@ -11465,8 +11378,12 @@ class McViewModel(
     }
 
     fun ensureProMonitorsStarted() {
-        val dir = activeDirName() ?: "default"
-        _warpPoints.value = com.mineserve.mobile.server.ProHostFeatures.loadWarpPoints(proPrefs, dir)
+        val dir = activeDirName()
+        _warpPoints.value = if (dir != null) {
+            com.mineserve.mobile.server.ProHostFeatures.loadWarpPoints(proPrefs, dir)
+        } else {
+            emptyList()
+        }
         refreshRecentInstalledMods()
         refreshVoiceChatAndResourcePackStatus()
         refreshRustEngineStatus()
@@ -11500,49 +11417,63 @@ class McViewModel(
                     if (_soundOnServerReady.value) {
                         com.mineserve.mobile.server.ProHostFeatures.playServerReadyChime(app)
                     }
-                    // Tự động áp dụng lại các Luật Thế Giới (Anti-Grief Shield) đã lưu của Server
-                    val activeDir = activeDirName() ?: "default"
-                    listOf("keepInventory", "mobGriefing", "doFireTick", "playersSleepingPercentage").forEach { rule ->
-                        val savedVal = proPrefs.getString("saved_gamerule_${activeDir}_$rule", null)
-                        if (!savedVal.isNullOrBlank()) {
-                            sendCommand("gamerule $rule $savedVal")
+                    // Tự động áp dụng lại các Luật Thế Giới, Scoreboard & BossBar đã lưu cho Server Java
+                    val activeDir = activeDirName()
+                    if (activeDir != null && !isNativeRustActive() && !isBedrockServerActive()) {
+                        listOf("keepInventory", "mobGriefing", "doFireTick", "playersSleepingPercentage").forEach { rule ->
+                            val savedVal = proPrefs.getString("saved_gamerule_${activeDir}_$rule", null)
+                            if (!savedVal.isNullOrBlank()) {
+                                sendCommand("gamerule $rule $savedVal")
+                            }
                         }
-                    }
-                    // [v3.1.0] Tự động khôi phục Bảng Điểm Scoreboard & Thanh BossBar đã lưu của Server
-                    val savedScoreboard = proPrefs.getString("saved_scoreboard_$activeDir", "").orEmpty()
-                    if (savedScoreboard.isNotBlank() && savedScoreboard != "off") {
-                        com.mineserve.mobile.server.ProHostFeatures.buildScoreboardCommands(savedScoreboard).forEach { sendCommand(it) }
-                    }
-                    val savedBossEnabled = proPrefs.getBoolean("saved_bossbar_enabled_$activeDir", false)
-                    val savedBossText = proPrefs.getString("saved_bossbar_text_$activeDir", "").orEmpty()
-                    val savedBossColor = proPrefs.getString("saved_bossbar_color_$activeDir", "yellow").orEmpty()
-                    if (savedBossEnabled && savedBossText.isNotBlank()) {
-                        com.mineserve.mobile.server.ProHostFeatures.buildBossBarCommands(savedBossText, savedBossColor, true).forEach { sendCommand(it) }
+                        val savedScoreboard = proPrefs.getString("saved_scoreboard_$activeDir", "").orEmpty()
+                        if (savedScoreboard.isNotBlank() && savedScoreboard != "off") {
+                            com.mineserve.mobile.server.ProHostFeatures.buildScoreboardCommands(savedScoreboard).forEach { sendCommand(it) }
+                        }
+                        val savedBossEnabled = proPrefs.getBoolean("saved_bossbar_enabled_$activeDir", false)
+                        val savedBossText = proPrefs.getString("saved_bossbar_text_$activeDir", "").orEmpty()
+                        val savedBossColor = proPrefs.getString("saved_bossbar_color_$activeDir", "yellow").orEmpty()
+                        if (savedBossEnabled && savedBossText.isNotBlank()) {
+                            com.mineserve.mobile.server.ProHostFeatures.buildBossBarCommands(savedBossText, savedBossColor, true).forEach { sendCommand(it) }
+                        }
                     }
                     refreshPlayers()
                     refreshOnlinePlayers()
                     val activeName = config.value.activeCoreName.orEmpty().ifBlank { "Minecraft Server" }
                     val pcAddr = playitState.value.publicAddress.ifBlank { "${lanIp.value}:${serverPort.value}" }
-                    val peAddr = playitState.value.bedrockAddress.ifBlank { "${lanIp.value}:19132" }
+                    val peAddr = resolveActiveBedrockShareAddress()
                     val hook = _discordWebhookUrl.value.trim()
                     val tgToken = _telegramBotToken.value.trim()
                     val tgChat = _telegramChatId.value.trim()
                     if (hook.isNotBlank() || (tgToken.isNotBlank() && tgChat.isNotBlank())) {
                         val cardPng = withContext(Dispatchers.Default) { buildCurrentServerVisualCardBytes(overrideOnline = true) }
                         if (hook.isNotBlank()) {
+                            val discordDesc = buildString {
+                                appendLine("💻 **Địa chỉ PC (Java):** `$pcAddr`")
+                                if (peAddr != null) appendLine("📱 **Địa chỉ Điện thoại (PE):** `$peAddr`")
+                                appendLine("🌡️ **Nhiệt độ Host:** ${_thermalInfo.value.statusLabelVi}")
+                                append("🚀 Hãy vào chơi ngay!")
+                            }
                             com.mineserve.mobile.server.ProHostFeatures.sendDiscordWebhookWithVisualCard(
                                 webhookUrl = hook,
                                 title = "🟢 Server '$activeName' Đã Bật!",
-                                description = "💻 **Địa chỉ PC (Java):** `$pcAddr`\n📱 **Địa chỉ Điện thoại (PE):** `$peAddr`\n🌡️ **Nhiệt độ Host:** ${_thermalInfo.value.statusLabelVi}\n🚀 Hãy vào chơi ngay!",
+                                description = discordDesc,
                                 colorDecimal = 3066993,
                                 imagePngBytes = cardPng
                             )
                         }
                         if (tgToken.isNotBlank() && tgChat.isNotBlank()) {
+                            val tgCaption = buildString {
+                                appendLine("🟢 Server '$activeName' Đã Bật!")
+                                appendLine("💻 Địa chỉ PC (Java): $pcAddr")
+                                if (peAddr != null) appendLine("📱 Địa chỉ Điện thoại (PE): $peAddr")
+                                appendLine("🌡️ Thiết bị: ${_thermalInfo.value.statusLabelVi}")
+                                append("🕹️ Gõ /status, /ip, /list, /clearlag ngay trong nhóm để điều khiển!")
+                            }
                             com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotPhotoWithCaption(
                                 botToken = tgToken,
                                 chatId = tgChat,
-                                captionText = "🟢 Server '$activeName' Đã Bật!\n💻 Địa chỉ PC (Java): $pcAddr\n📱 Địa chỉ Điện thoại (PE): $peAddr\n🌡️ Thiết bị: ${_thermalInfo.value.statusLabelVi}\n🕹️ Gõ /status, /ip, /list, /clearlag ngay trong nhóm để điều khiển!",
+                                captionText = tgCaption,
                                 imagePngBytes = cardPng
                             )
                         }
@@ -11580,11 +11511,17 @@ class McViewModel(
         }
 
         viewModelScope.launch {
-            repo.termuxRuntime.consoleFlow.collect { line ->
+            repo.termuxRuntime.consoleFlow.collect { rawLine ->
+                val line = ConsoleLineParser.stripAnsi(rawLine)
                 // [v2.8.3] 1. Lọc tin nhắn Chat & Vào/Ra của người chơi vào Khung Chat trực tiếp + Báo Discord & Telegram
                 com.mineserve.mobile.server.ProHostFeatures.parseConsoleChatLine(line)?.let { entry ->
                     _liveChatMessages.update { (it + entry).takeLast(60) }
-                    if (entry.kind == "join" && _bossBarEnabled.value && _bossBarText.value.isNotBlank()) {
+                    if (entry.kind == "join" &&
+                        _bossBarEnabled.value &&
+                        _bossBarText.value.isNotBlank() &&
+                        !isNativeRustActive() &&
+                        !isBedrockServerActive()
+                    ) {
                         sendCommand("bossbar set minehost:banner players @a")
                     }
                     if ((entry.kind == "join" || entry.kind == "leave") && _discordNotifyJoinLeave.value) {
@@ -11616,7 +11553,7 @@ class McViewModel(
                 }
 
                 // [v2.8.3] 2. Lá chắn chống Bot / Spam kết nối (Anti-Bot Flood Guard)
-                if (_antiBotFloodGuard.value) {
+                if (_antiBotFloodGuard.value && !isNativeRustActive()) {
                     floodTracker.inspectLine(line)?.let { verdict ->
                         _blockedBotIpsCount.value = floodTracker.blockedCount()
                         sendCommand("ban-ip ${verdict.ip} [MineHost Anti-Bot] ${verdict.reasonVi}")
@@ -11635,7 +11572,7 @@ class McViewModel(
                     }
                 }
                 // OP Guard kiểm tra khi có người đăng nhập trùng tên Admin lúc chưa mở khóa
-                if (_opGuardEnabled.value && !_opGuardUnlockedSession.value) {
+                if (_opGuardEnabled.value && !_opGuardUnlockedSession.value && !isNativeRustActive()) {
                     val protectedAdmin = _opGuardAdminName.value.trim()
                     if (protectedAdmin.isNotBlank() &&
                         line.contains(protectedAdmin, ignoreCase = true) &&
@@ -11650,6 +11587,7 @@ class McViewModel(
         }
 
         // 2. Vòng lặp 60s: Đọc nhiệt độ pin + Lá chắn nhiệt độ + Tự dọn Lag 15 phút + Tự ngủ đông khi vắng khách
+        // (Bảo vệ tự tắt khi Pin yếu <=10% / Quá nhiệt >=45°C đã được McForegroundService xử lý định kỳ mỗi 30s)
         viewModelScope.launch {
             var emptyMinutesAccum = 0
             var clearLagMinutesAccum = 0
@@ -11660,7 +11598,7 @@ class McViewModel(
                 _lastGuardShutdownEvent.value = proPrefs.getString("last_guard_shutdown_event", "").orEmpty()
 
                 val isRunning = serverState.value.isRunning
-                if (isRunning && _autoClearLag15m.value) {
+                if (isRunning && _autoClearLag15m.value && !isNativeRustActive() && !isBedrockServerActive()) {
                     clearLagMinutesAccum += 1
                     if (clearLagMinutesAccum >= 15) {
                         clearLagMinutesAccum = 0
@@ -11669,7 +11607,7 @@ class McViewModel(
                 } else {
                     clearLagMinutesAccum = 0
                 }
-                if (isRunning && _autoThermalGuard.value && info.isOverheating) {
+                if (isRunning && _autoThermalGuard.value && info.isOverheating && !isNativeRustActive() && !isBedrockServerActive()) {
                     val now = System.currentTimeMillis()
                     if (now - lastThermalCooldownMs > 180_000L) {
                         lastThermalCooldownMs = now
@@ -11679,36 +11617,19 @@ class McViewModel(
                     }
                 }
 
-                // Tự động lưu Map & Tắt Server an toàn khi Pin yếu (<=10% chưa sạc) hoặc Quá nhiệt (>=45°C)
-                val criticalBat = _autoBatteryShutdownGuard.value && info.isCriticalLowBattery
-                val criticalTemp = _autoOverheatShutdownGuard.value && info.isCriticalOverheat
-                if (isRunning && (criticalBat || criticalTemp)) {
-                    val reasonVi = if (criticalBat) {
-                        "Pin điện thoại yếu còn ${info.batteryPercent}% (chưa cắm sạc)"
-                    } else {
-                        "Nhiệt độ máy đạt mức nguy hiểm ${String.format(java.util.Locale.US, "%.1f", info.tempCelsius)}°C"
-                    }
-                    val eventText = "🛡️ Đã tự động Lưu Map & Tắt Server lúc ${java.text.SimpleDateFormat("HH:mm dd/MM", java.util.Locale.getDefault()).format(java.util.Date())} do $reasonVi"
-                    proPrefs.edit().putString("last_guard_shutdown_event", eventText).apply()
-                    _lastGuardShutdownEvent.value = eventText
-                    sendCommand("""title @a title {"text":"⚠ BẢO VỆ MAP","color":"red","bold":true}""")
-                    sendCommand("say [MineHost Guard] $reasonVi -> Tu dong luu Map (save-all) va tat Server sau 10 giay de chong hong Map!")
-                    sendCommand("save-all")
-                    notifyActionDone("🛡️ $reasonVi! Đang tự động lưu Map & tắt Server an toàn...")
-                    kotlinx.coroutines.delay(8000L)
-                    sendCommand("save-all")
-                    kotlinx.coroutines.delay(1500L)
-                    stopServer()
-                }
-
                 val sleepTargetMin = _autoSleepIdleMinutes.value
-                if (isRunning && sleepTargetMin > 0) {
+                if (isRunning &&
+                    serverState.value.startupPhase == com.mineserve.mobile.data.StartupPhase.Ready &&
+                    !_stopInFlight.value &&
+                    !isNativeRustActive() &&
+                    sleepTargetMin > 0
+                ) {
                     if (serverState.value.onlinePlayers <= 0) {
                         emptyMinutesAccum += 1
                         if (emptyMinutesAccum >= sleepTargetMin) {
                             emptyMinutesAccum = 0
                             sendCommand("say [MineHost Auto-Sleep] Khong co nguoi choi trong $sleepTargetMin phut -> Tu dong luu map va tat Server tiet kiem pin!")
-                            sendCommand("save-all")
+                            sendWorldSaveIfSupported()
                             kotlinx.coroutines.delay(2000L)
                             stopServer()
                         }
@@ -11801,21 +11722,20 @@ class McViewModel(
         val st = serverState.value
         val activeName = config.value.activeCoreName.orEmpty().ifBlank { "MineHost Server" }
         val pcAddr = playitState.value.publicAddress.ifBlank { "${lanIp.value}:${serverPort.value}" }
-        val peAddr = playitState.value.bedrockAddress.ifBlank { "${lanIp.value}:19132" }
+        val peAddr = resolveActiveBedrockShareAddress()
         val timeStamp = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
 
         val isReadOnlyQuery = cmdItem.command in setOf("/ip", "/status", "/list", "/players", "/help")
         val savedAdminId = _telegramAdminSenderId.value.trim()
-        // Tự động ghi nhận Chủ Host nếu đây là chat cá nhân đã xác thực hoặc lần đầu Chủ Host bấm lệnh quản trị
-        if (savedAdminId.isBlank() && cmdItem.senderId.isNotBlank() && (cmdItem.isPrivateChat || !isReadOnlyQuery)) {
+        // BẢO MẬT CHỐNG CHIẾM QUYỀN TRONG NHÓM: Chỉ tự động gắn savedAdminId khi chat riêng 1-1 với Bot (chatId == senderId)
+        if (savedAdminId.isBlank() && cmdItem.senderId.isNotBlank() && cmdItem.chatId == cmdItem.senderId) {
             _telegramAdminSenderId.value = cmdItem.senderId
             proPrefs.edit().putString("telegram_admin_sender_id", cmdItem.senderId).apply()
         }
 
         val currentAdminId = _telegramAdminSenderId.value.trim()
-        val isSenderAdmin = cmdItem.isPrivateChat ||
-            currentAdminId.isBlank() ||
-            (cmdItem.senderId.isNotBlank() && cmdItem.senderId == currentAdminId)
+        val isSenderAdmin = (cmdItem.chatId == cmdItem.senderId) ||
+            (currentAdminId.isNotBlank() && cmdItem.senderId.isNotBlank() && cmdItem.senderId == currentAdminId)
 
         if (_telegramStrictSecurityLock.value) {
             if (isReadOnlyQuery && !_telegramAllowGroupMemberIp.value && !isSenderAdmin) {
@@ -11832,10 +11752,13 @@ class McViewModel(
                         botToken, cmdItem.callbackQueryId, "🛡️ Lệnh điều khiển chỉ dành riêng cho Chủ Host (Admin)!"
                     )
                 } else {
+                    val hint = if (currentAdminId.isBlank()) {
+                        " (Chủ Host hãy nhắn 1 tin riêng 1-1 với Bot hoặc tắt Khóa Bảo Mật trong App để cấp quyền nhóm)"
+                    } else ""
                     com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
                         botToken,
                         cmdItem.chatId,
-                        "🛡️ Khóa Bảo Mật Admin: Chỉ Chủ Host mới được dùng lệnh điều khiển '${cmdItem.command}'. Thành viên nhóm chỉ có thể gõ /ip hoặc /list!"
+                        "🛡️ Khóa Bảo Mật Admin: Chỉ Chủ Host mới được dùng lệnh điều khiển '${cmdItem.command}'.$hint Thành viên nhóm chỉ có thể gõ /ip hoặc /list!"
                     )
                 }
                 return
@@ -11860,7 +11783,7 @@ class McViewModel(
                     appendLine("🎛️ BẢNG ĐIỀU KHIỂN TỪ XA PRO — $activeName")
                     appendLine("• Trạng thái: ${if (st.isRunning) "🟢 ĐANG MỞ (ONLINE)" else "🔴 ĐANG TẮT (OFFLINE)"}")
                     appendLine("• 💻 Địa chỉ PC (Java): $pcAddr")
-                    appendLine("• 📱 Địa chỉ Điện thoại (PE): $peAddr")
+                    if (peAddr != null) appendLine("• 📱 Địa chỉ Điện thoại (PE): $peAddr")
                     appendLine("• 👥 Người chơi: ${st.onlinePlayers}/${st.maxPlayers} • ⚡ TPS: ${String.format(java.util.Locale.US, "%.1f", st.tps)}")
                     appendLine("• 🌡️ Thiết bị Host: ${_thermalInfo.value.statusLabelVi}")
                     appendLine("─────────────────")
@@ -11878,7 +11801,7 @@ class McViewModel(
                     appendLine("📊 BẢNG TRẠNG THÁI TRỰC QUAN — $activeName")
                     appendLine("• Trạng thái: ${if (st.isRunning) "🟢 ĐANG MỞ (ONLINE)" else "🔴 ĐANG TẮT (OFFLINE)"}")
                     appendLine("• 💻 Địa chỉ PC (Java): $pcAddr")
-                    appendLine("• 📱 Địa chỉ Điện thoại (PE): $peAddr")
+                    if (peAddr != null) appendLine("• 📱 Địa chỉ Điện thoại (PE): $peAddr")
                     appendLine("• ⚡ Hiệu năng: ${String.format(java.util.Locale.US, "%.1f", st.tps)} / 20.0 TPS")
                     appendLine("• 👥 Online: ${st.onlinePlayers}/${st.maxPlayers} người chơi")
                     appendLine("• 🌡️ Nhiệt độ & Pin: ${_thermalInfo.value.statusLabelVi}")
@@ -11893,28 +11816,49 @@ class McViewModel(
                 )
             }
             "/start_sv" -> {
-                if (st.isRunning) {
-                    com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
-                        botToken, cmdItem.chatId, "🟢 Server '$activeName' hiện đang mở sẵn rồi! (IP PC: $pcAddr)"
-                    )
-                } else {
-                    withContext(Dispatchers.Main) { startServer() }
-                    com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
-                        botToken, cmdItem.chatId, "🚀 Đã kích hoạt BẬT SERVER '$activeName' từ xa! Bot sẽ tự gửi Ảnh Trạng Thái HD ngay khi Server khởi động xong."
-                    )
+                val currentCfg = repo.currentConfig()
+                val activeCore = currentCfg.installedCores.find { it.name == currentCfg.activeCoreName }
+                when {
+                    currentCfg.activeCoreName == null || activeCore == null -> {
+                        com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
+                            botToken, cmdItem.chatId, "⚠️ Chưa có máy chủ nào được chọn trên điện thoại! Hãy mở App MineHost để tạo hoặc chọn 1 Server trước."
+                        )
+                    }
+                    st.isRunning -> {
+                        com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
+                            botToken, cmdItem.chatId, "🟢 Server '${activeCore.name}' hiện đang mở sẵn rồi! (IP PC: $pcAddr)"
+                        )
+                    }
+                    _stopInFlight.value || startRequestPending -> {
+                        com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
+                            botToken, cmdItem.chatId, "⏳ Máy chủ đang xử lý chuyển trạng thái bật/tắt, vui lòng đợi vài giây rồi thử lại!"
+                        )
+                    }
+                    else -> {
+                        if (!activeCore.core.isBedrock) {
+                            runCatching {
+                                val srvDir = repo.termuxRuntime.serverDirFor(activeCore.dirName).apply { mkdirs() }
+                                com.mineserve.mobile.server.EulaConsent.accept(srvDir)
+                            }
+                        }
+                        withContext(Dispatchers.Main) { startServer() }
+                        com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
+                            botToken, cmdItem.chatId, "🚀 Đã kích hoạt BẬT SERVER '${activeCore.name}' từ xa! Bot sẽ tự gửi Ảnh Trạng Thái HD ngay khi Server khởi động xong."
+                        )
+                    }
                 }
             }
-            "/stop_sv" -> {
+            "/stop_sv", "/stop" -> {
                 if (!st.isRunning) {
                     com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
                         botToken, cmdItem.chatId, "⚪ Server hiện đang ở trạng thái nghỉ."
                     )
                 } else {
-                    sendCommand("save-all")
+                    sendWorldSaveIfSupported()
                     kotlinx.coroutines.delay(1200L)
                     withContext(Dispatchers.Main) { stopServer() }
                     com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
-                        botToken, cmdItem.chatId, "🛑 Đã lưu toàn bộ Map (save-all) và DỪNG SERVER an toàn theo lệnh từ Telegram!"
+                        botToken, cmdItem.chatId, "🛑 Đã lưu toàn bộ Map và DỪNG SERVER an toàn theo lệnh từ Telegram!"
                     )
                 }
             }
@@ -11922,6 +11866,10 @@ class McViewModel(
                 if (!st.isRunning) {
                     com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
                         botToken, cmdItem.chatId, "⚠️ Hãy bật Server trước khi thả Hòm Tiếp Tế!"
+                    )
+                } else if (isNativeRustActive() || isBedrockServerActive()) {
+                    com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
+                        botToken, cmdItem.chatId, "ℹ️ Hòm Tiếp Tế Datapack chỉ hoạt động trên chế độ Java."
                     )
                 } else {
                     withContext(Dispatchers.Main) { triggerSurvivalPackAction("supply_drop") }
@@ -11935,6 +11883,10 @@ class McViewModel(
                     com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
                         botToken, cmdItem.chatId, "⚠️ Hãy bật Server trước khi triệu hồi Boss!"
                     )
+                } else if (isNativeRustActive() || isBedrockServerActive()) {
+                    com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
+                        botToken, cmdItem.chatId, "ℹ️ Triệu hồi Boss Datapack chỉ hoạt động trên chế độ Java."
+                    )
                 } else {
                     withContext(Dispatchers.Main) { triggerSurvivalPackAction("dragon_boss") }
                     com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
@@ -11946,6 +11898,10 @@ class McViewModel(
                 if (!st.isRunning) {
                     com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
                         botToken, cmdItem.chatId, "⚠️ Hãy bật Server trước khi gọi Đợt Zombie!"
+                    )
+                } else if (isNativeRustActive() || isBedrockServerActive()) {
+                    com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
+                        botToken, cmdItem.chatId, "ℹ️ Đợt Zombie Datapack chỉ hoạt động trên chế độ Java."
                     )
                 } else {
                     withContext(Dispatchers.Main) { triggerSurvivalPackAction("zombie_wave") }
@@ -11972,15 +11928,22 @@ class McViewModel(
                     com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
                         botToken, cmdItem.chatId, "⚠️ Server hiện đang tắt nên không cần dọn Lag."
                     )
+                } else if (isNativeRustActive() || isBedrockServerActive()) {
+                    sendWorldSaveIfSupported()
+                    com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
+                        botToken,
+                        cmdItem.chatId,
+                        "ℹ️ Server đang chạy Nhân Rust Thuần / Bedrock (tự tối ưu ~50MB RAM gốc, không dùng lệnh @e[...] của Java)."
+                    )
                 } else {
                     sendCommand("kill @e[type=item]")
                     sendCommand("kill @e[type=experience_orb]")
-                    sendCommand("save-all")
+                    sendWorldSaveIfSupported()
                     sendCommand("say [Telegram Bot] ${cmdItem.senderName} vua kich hoat don rac ClearLag & luu Map tu xa!")
                     com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
                         botToken,
                         cmdItem.chatId,
-                        "🧹 Đã thực thi dọn sạch vật phẩm rơi dưới đất (ClearLag) & lưu thế giới (save-all) thành công!"
+                        "🧹 Đã thực thi dọn sạch vật phẩm rơi dưới đất (ClearLag) & lưu thế giới thành công!"
                     )
                 }
             }
@@ -11988,6 +11951,10 @@ class McViewModel(
                 if (!st.isRunning) {
                     com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
                         botToken, cmdItem.chatId, "⚠️ Hãy bật Server trước khi chỉnh thời tiết!"
+                    )
+                } else if (isNativeRustActive()) {
+                    com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
+                        botToken, cmdItem.chatId, "ℹ️ Nhân Rust Thuần (Pumpkin) hiện chưa hỗ trợ lệnh thời tiết từ xa."
                     )
                 } else {
                     sendCommand("time set day")
@@ -12003,10 +11970,14 @@ class McViewModel(
                     com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
                         botToken, cmdItem.chatId, "⚠️ Server hiện đang tắt (Map đã được lưu an toàn)."
                     )
-                } else {
-                    sendCommand("save-all")
+                } else if (isNativeRustActive()) {
                     com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
-                        botToken, cmdItem.chatId, "💾 Đã lưu toàn bộ dữ liệu Thế giới (save-all) thành công!"
+                        botToken, cmdItem.chatId, "ℹ️ Nhân Rust Thuần tự động lưu dữ liệu thế giới liên tục xuống đĩa!"
+                    )
+                } else {
+                    sendWorldSaveIfSupported()
+                    com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
+                        botToken, cmdItem.chatId, "💾 Đã lưu toàn bộ dữ liệu Thế giới thành công!"
                     )
                 }
             }
@@ -12029,9 +12000,9 @@ class McViewModel(
             }
             "/backup", "/cloudbackup" -> {
                 com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
-                    botToken, cmdItem.chatId, "☁️ Đang nén thế giới hiện tại và gửi tệp sao lưu .zip lên Telegram cho bạn..."
+                    botToken, cmdItem.chatId, "☁️ Đang kiểm tra & nén thế giới hiện tại để gửi tệp sao lưu .zip lên Telegram cho bạn..."
                 )
-                withContext(Dispatchers.Main) { backupCurrentWorldToTelegramOneTap() }
+                withContext(Dispatchers.Main) { backupCurrentWorldToTelegramOneTap(notifyTelegramOnError = true) }
             }
         }
     }
@@ -12059,16 +12030,19 @@ class McViewModel(
             )
             val activeName = config.value.activeCoreName.orEmpty().ifBlank { "MineHost Server" }
             val pcAddr = playitState.value.publicAddress.ifBlank { "${lanIp.value}:${serverPort.value}" }
-            val peAddr = playitState.value.bedrockAddress.ifBlank { "${lanIp.value}:19132" }
+            val peAddr = resolveActiveBedrockShareAddress()
             val cardPng = withContext(Dispatchers.Default) { buildCurrentServerVisualCardBytes() }
+            val desc = buildString {
+                appendLine("🟢 **Trạng thái:** ${if (serverState.value.isRunning) "Đang mở (Online)" else "Đang chờ bật"}")
+                appendLine("💻 **Địa chỉ PC (Java):** `$pcAddr`")
+                if (peAddr != null) appendLine("📱 **Địa chỉ Điện thoại (PE):** `$peAddr`")
+                appendLine("👥 **Online:** ${serverState.value.onlinePlayers}/${serverState.value.maxPlayers} người chơi")
+                append("🌡️ **Thiết bị:** ${_thermalInfo.value.statusLabelVi}")
+            }
             val ok = com.mineserve.mobile.server.ProHostFeatures.sendDiscordWebhookWithVisualCard(
                 webhookUrl = url,
                 title = "🎉 Kết nối Discord Webhook Thành Công! ($activeName)",
-                description = "🟢 **Trạng thái:** ${if (serverState.value.isRunning) "Đang mở (Online)" else "Đang chờ bật"}\n" +
-                    "💻 **Địa chỉ PC (Java):** `$pcAddr`\n" +
-                    "📱 **Địa chỉ Điện thoại (PE):** `$peAddr`\n" +
-                    "👥 **Online:** ${serverState.value.onlinePlayers}/${serverState.value.maxPlayers} người chơi\n" +
-                    "🌡️ **Thiết bị:** ${_thermalInfo.value.statusLabelVi}",
+                description = desc,
                 colorDecimal = 3447003,
                 imagePngBytes = cardPng
             )
@@ -12148,7 +12122,7 @@ class McViewModel(
     fun resetTelegramAdminSenderId() {
         _telegramAdminSenderId.value = ""
         proPrefs.edit().putString("telegram_admin_sender_id", "").apply()
-        notifyActionDone("🔄 Đã đặt lại quyền Admin Telegram! Người đầu tiên gõ /menu trong Chat đã lưu sẽ được khóa làm Chủ Host.")
+        notifyActionDone("🔄 Đã đặt lại quyền Admin Telegram! Hãy nhắn 1 tin riêng 1-1 với Bot để khóa lại tài khoản Chủ Host.")
     }
 
     fun sendTelegramControlPanelMenu(botToken: String, chatId: String) {
@@ -12163,12 +12137,12 @@ class McViewModel(
             val st = serverState.value
             val activeName = config.value.activeCoreName.orEmpty().ifBlank { "MineHost Server" }
             val pcAddr = playitState.value.publicAddress.ifBlank { "${lanIp.value}:${serverPort.value}" }
-            val peAddr = playitState.value.bedrockAddress.ifBlank { "${lanIp.value}:19132" }
+            val peAddr = resolveActiveBedrockShareAddress()
             val menuText = buildString {
                 appendLine("🎛️ BẢNG ĐIỀU KHIỂN TỪ XA PRO — $activeName")
                 appendLine("• Trạng thái: ${if (st.isRunning) "🟢 ĐANG MỞ (ONLINE)" else "🔴 ĐANG TẮT (OFFLINE)"}")
                 appendLine("• 💻 Địa chỉ PC (Java): $pcAddr")
-                appendLine("• 📱 Địa chỉ Điện thoại (PE): $peAddr")
+                if (peAddr != null) appendLine("• 📱 Địa chỉ Điện thoại (PE): $peAddr")
                 appendLine("• 👥 Người chơi: ${st.onlinePlayers}/${st.maxPlayers} • ⚡ TPS: ${String.format(java.util.Locale.US, "%.1f", st.tps)}")
                 appendLine("• 🌡️ Thiết bị Host: ${_thermalInfo.value.statusLabelVi}")
                 appendLine("• 🔒 Bảo mật: Chỉ nhận lệnh từ Chat ID đã khóa ($cleanChatId)")
@@ -12244,13 +12218,13 @@ class McViewModel(
             )
             val activeName = config.value.activeCoreName.orEmpty().ifBlank { "MineHost Server" }
             val pcAddr = playitState.value.publicAddress.ifBlank { "${lanIp.value}:${serverPort.value}" }
-            val peAddr = playitState.value.bedrockAddress.ifBlank { "${lanIp.value}:19132" }
+            val peAddr = resolveActiveBedrockShareAddress()
             val cardPng = withContext(Dispatchers.Default) { buildCurrentServerVisualCardBytes() }
             val msg = buildString {
                 appendLine("🎉 Kết nối Trợ Lý Telegram Pro Thành Công! ($activeName)")
                 appendLine("🟢 Trạng thái: ${if (serverState.value.isRunning) "Đang mở (Online)" else "Đang chờ bật"}")
                 appendLine("💻 Địa chỉ PC (Java): $pcAddr")
-                appendLine("📱 Địa chỉ Điện thoại (PE): $peAddr")
+                if (peAddr != null) appendLine("📱 Địa chỉ Điện thoại (PE): $peAddr")
                 appendLine("👥 Online: ${serverState.value.onlinePlayers}/${serverState.value.maxPlayers} người chơi")
                 appendLine("🌡️ Thiết bị: ${_thermalInfo.value.statusLabelVi}")
                 appendLine("🔒 Bảo mật: Đã khóa độc quyền cho Chat ID $cleanChatId")
@@ -12338,6 +12312,10 @@ class McViewModel(
             _errorFlow.tryEmit("Hãy bật Server trước khi kích hoạt sự kiện!")
             return
         }
+        if (isNativeRustActive() || isBedrockServerActive()) {
+            _errorFlow.tryEmit("ℹ️ Bảng Sự Kiện Mini sử dụng lệnh Java (title/effect) — hãy chuyển sang chế độ '☕ Java Mod' hoặc '⚡ Java Turbo'!")
+            return
+        }
         when (eventKey) {
             "supply_drop" -> {
                 sendCommand("""title @a actionbar {"text":"🎁 Rương Tiếp Tế: Táo Vàng + Kim Cương + Pháo Hoa!","color":"gold","bold":true}""")
@@ -12380,6 +12358,10 @@ class McViewModel(
             _errorFlow.tryEmit("Hãy bật Server trước khi gắn Danh hiệu VIP!")
             return
         }
+        if (isNativeRustActive() || isBedrockServerActive()) {
+            _errorFlow.tryEmit("ℹ️ Danh hiệu màu tên (/team) chỉ hỗ trợ trên chế độ Java!")
+            return
+        }
         val target = targetPlayer?.trim().orEmpty()
         if (target.isBlank()) {
             _errorFlow.tryEmit("⚠️ Hãy chạm chọn người chơi hoặc tự nhập tên vào ô trước khi gắn Danh hiệu VIP!")
@@ -12408,6 +12390,11 @@ class McViewModel(
             _errorFlow.tryEmit("Server đang dừng.")
             return
         }
+        if (isNativeRustActive() || isBedrockServerActive()) {
+            sendWorldSaveIfSupported()
+            _errorFlow.tryEmit("ℹ️ Nút Đỏ Chống Phá TNT (@e[type=tnt]) sử dụng lệnh Java — hãy chuyển sang chế độ Java để dùng đầy đủ!")
+            return
+        }
         sendCommand("gamerule mobGriefing false")
         sendCommand("gamerule doFireTick false")
         sendCommand("gamerule tntExplodes false")
@@ -12417,13 +12404,13 @@ class McViewModel(
         sendCommand("kill @e[type=creeper]")
         sendCommand("kill @e[type=fireball]")
         sendCommand("gamemode spectator @a")
-        sendCommand("save-all")
+        sendWorldSaveIfSupported()
         sendCommand("say [MineHost BAO VE KHAN CAP] Da xoa sach TNT/Wither, tat lua chay lan va chuyen sang Khán Giả de bao ve Map!")
         notifyActionDone("🚨 ĐÃ KÍCH HOẠT CỨU NGUY KHẨN CẤP: Xóa sạch TNT/Wither, tắt cháy nổ & đóng băng sang Khán Giả!")
     }
 
     fun restoreSurvivalAfterPanic() {
-        if (!serverState.value.isRunning) return
+        if (!serverState.value.isRunning || isNativeRustActive()) return
         sendCommand("gamemode survival @a")
         sendCommand("say [MineHost] Da khoi phuc che do Sinh Ton cho toan bo nguoi choi!")
         notifyActionDone("🟢 Đã khôi phục chế độ Sinh Tồn cho tất cả người chơi!")
@@ -12431,7 +12418,11 @@ class McViewModel(
 
     /** #9: Sổ Tay Điểm Dịch Chuyển Nhanh (Warp Book — 0 MB RAM) */
     fun addWarpPoint(name: String, x: Int, y: Int, z: Int) {
-        val dir = activeDirName() ?: "default"
+        val dir = activeDirName()
+        if (dir == null) {
+            _errorFlow.tryEmit("⚠️ Hãy chọn hoặc tạo một Server trước khi lưu điểm dịch chuyển!")
+            return
+        }
         val cleanName = name.trim().ifBlank { "Điểm nhớ ($x, $y, $z)" }
         val updated = _warpPoints.value + com.mineserve.mobile.server.ProHostFeatures.WarpPoint(
             id = "w_${System.currentTimeMillis()}",
@@ -12446,7 +12437,7 @@ class McViewModel(
     }
 
     fun deleteWarpPoint(id: String) {
-        val dir = activeDirName() ?: "default"
+        val dir = activeDirName() ?: return
         val updated = _warpPoints.value.filterNot { it.id == id }
         _warpPoints.value = updated
         com.mineserve.mobile.server.ProHostFeatures.saveWarpPoints(proPrefs, dir, updated)
@@ -12463,7 +12454,9 @@ class McViewModel(
             _errorFlow.tryEmit("⚠️ Hãy chạm chọn người chơi hoặc tự nhập tên vào ô trước khi dịch chuyển!")
             return
         }
-        sendCommand("effect give $target minecraft:slow_falling 15 1 true")
+        if (!isNativeRustActive() && !isBedrockServerActive()) {
+            sendCommand("effect give $target minecraft:slow_falling 15 1 true")
+        }
         sendCommand("tp $target ${warp.x} ${warp.y} ${warp.z}")
         notifyActionDone("📍 Đã dịch chuyển ${if (target == "@a") "cả nhóm (@a)" else target} tới ${warp.name} (${warp.x}, ${warp.y}, ${warp.z})!")
     }
@@ -12475,22 +12468,31 @@ class McViewModel(
         notifyActionDone(if (enabled) "🌡️ Đã bật Tự động dọn lag giảm nhiệt khi máy nóng trên 43°C!" else "🌡️ Đã tắt Lá chắn nhiệt độ tự động.")
     }
 
-    /** #11: Cài đặt nhanh Datapack (.zip) 1 chạm vào world/datapacks/ */
+    /** #11: Cài đặt nhanh Datapack (.zip) 1 chạm vào <world>/datapacks/ */
     fun installDatapackFromUri(uri: Uri) {
         val dirName = activeDirName()
         if (dirName == null) {
             _errorFlow.tryEmit("Hãy chọn một Server trước khi cài Datapack!")
             return
         }
-        val displayName = queryDisplayName(uri) ?: "datapack_${System.currentTimeMillis()}.zip"
+        if (isNativeRustActive() || isBedrockServerActive()) {
+            _errorFlow.tryEmit("⚠️ Datapack (.zip) chỉ hoạt động trên chế độ Java — hãy chuyển sang '☕ Java Mod' hoặc '⚡ Java Turbo'!")
+            return
+        }
+        val targetWorld = _activeWorldName.value.ifBlank { "world" }
         val serverDir = repo.termuxRuntime.serverDirFor(dirName)
         viewModelScope.launch {
-            val res = com.mineserve.mobile.server.ProHostFeatures.installDatapackZip(app, uri, displayName, serverDir)
+            val res = com.mineserve.mobile.server.ProHostFeatures.installDatapackZip(
+                app,
+                serverDir,
+                uri,
+                targetWorld
+            )
             res.onSuccess { savedName ->
                 if (serverState.value.isRunning) {
                     sendCommand("reload")
                 }
-                notifyActionDone("📦 Đã cài Datapack '$savedName' vào world/datapacks/ ${if (serverState.value.isRunning) "và tự động /reload kích hoạt!" else "thành công!"}")
+                notifyActionDone("📦 Đã cài Datapack '$savedName' vào $targetWorld/datapacks/ ${if (serverState.value.isRunning) "và tự động /reload kích hoạt!" else "thành công!"}")
             }.onFailure { err ->
                 _errorFlow.tryEmit("Lỗi cài Datapack: ${err.message}")
             }
@@ -12533,45 +12535,86 @@ class McViewModel(
                     "running" to if (serverState.value.isRunning) "🟢 Đang mở" else "⚪ Đang dừng",
                     "players" to "${serverState.value.onlinePlayers}/${serverState.value.maxPlayers} người chơi",
                     "tps" to String.format(java.util.Locale.US, "%.1f", serverState.value.tps),
-                    "temp" to _thermalInfo.value.statusLabelVi
+                    "temp" to _thermalInfo.value.statusLabelVi,
+                    "logs" to consolePreviewLines.value.joinToString("\n")
                 )
             },
             onAction = { act, cmd ->
-                when (act) {
-                    "clear_lag" -> {
-                        clearHostileLagMobsAndGc()
-                        "✅ Đã dọn sạch vật phẩm rác & lưu thế giới!"
+                kotlinx.coroutines.runBlocking(Dispatchers.Main.immediate) {
+                    when (act) {
+                        "start_sv" -> {
+                            val currentCfg = repo.currentConfig()
+                            val activeCore = currentCfg.installedCores.find { it.name == currentCfg.activeCoreName }
+                            when {
+                                currentCfg.activeCoreName == null || activeCore == null ->
+                                    "⚠️ Chưa có Server nào được chọn trên điện thoại!"
+                                serverState.value.isRunning ->
+                                    "🟢 Server '${activeCore.name}' đang chạy sẵn!"
+                                _stopInFlight.value || startRequestPending ->
+                                    "⏳ Máy chủ đang bận chuyển trạng thái, vui lòng đợi vài giây!"
+                                else -> {
+                                    if (!activeCore.core.isBedrock) {
+                                        withContext(Dispatchers.IO) {
+                                            runCatching {
+                                                val srvDir = repo.termuxRuntime.serverDirFor(activeCore.dirName).apply { mkdirs() }
+                                                com.mineserve.mobile.server.EulaConsent.accept(srvDir)
+                                            }
+                                        }
+                                    }
+                                    startServer()
+                                    "🚀 Đã kích hoạt BẬT SERVER '${activeCore.name}'!"
+                                }
+                            }
+                        }
+                        "backup_tg" -> {
+                            backupCurrentWorldToTelegramOneTap()
+                            "☁️ Đã kích hoạt nén & sao lưu Map lên Telegram!"
+                        }
+                        "clear_lag" -> {
+                            clearHostileLagMobsAndGc()
+                            "✅ Đã kích hoạt dọn dẹp tài nguyên & lưu thế giới!"
+                        }
+                        "day_clear" -> {
+                            if (!serverState.value.isRunning) {
+                                "⚠️ Server đang dừng, hãy bật Server trước!"
+                            } else if (isNativeRustActive()) {
+                                "ℹ️ Nhân Rust Thuần chưa hỗ trợ lệnh thời tiết trực tiếp."
+                            } else {
+                                sendCommand("time set day")
+                                sendCommand("weather clear")
+                                "☀️ Đã chỉnh Trời Sáng & Tạnh Mưa!"
+                            }
+                        }
+                        "supply_drop" -> {
+                            triggerFunMiniEvent("supply_drop")
+                            "🎁 Đã gửi yêu cầu thả Rương Tiếp Tế!"
+                        }
+                        "exp_rain" -> {
+                            triggerFunMiniEvent("exp_rain")
+                            "✨ Đã gửi yêu cầu tặng +30 Cấp EXP!"
+                        }
+                        "panic" -> {
+                            triggerAntiGriefPanic()
+                            "🚨 Đã kích hoạt Chống Phá Map!"
+                        }
+                        "save_stop" -> {
+                            if (!serverState.value.isRunning) {
+                                "⚪ Server hiện đang dừng sẵn."
+                            } else {
+                                sendWorldSaveIfSupported()
+                                stopServer()
+                                "🛑 Đã lưu thế giới và dừng Server an toàn!"
+                            }
+                        }
+                        "cmd" -> {
+                            val cleanCmd = cmd.trim().removePrefix("/")
+                            if (cleanCmd.isNotBlank()) {
+                                sendCommand(cleanCmd)
+                                "🚀 Đã gửi lệnh: /$cleanCmd"
+                            } else "⚠️ Lệnh trống."
+                        }
+                        else -> "✅ Đã nhận thao tác."
                     }
-                    "day_clear" -> {
-                        sendCommand("time set day")
-                        sendCommand("weather clear")
-                        "☀️ Đã chỉnh Trời Sáng & Tạnh Mưa!"
-                    }
-                    "supply_drop" -> {
-                        triggerFunMiniEvent("supply_drop")
-                        "🎁 Đã thả Rương Tiếp Tế cho toàn Server!"
-                    }
-                    "exp_rain" -> {
-                        triggerFunMiniEvent("exp_rain")
-                        "✨ Đã tặng +30 Cấp EXP cho toàn Server!"
-                    }
-                    "panic" -> {
-                        triggerAntiGriefPanic()
-                        "🚨 Đã kích hoạt Chống Phá Map (Xóa TNT & Đóng băng Khán Giả)!"
-                    }
-                    "save_stop" -> {
-                        sendCommand("save-all")
-                        stopServer()
-                        "🛑 Đã lưu thế giới và dừng Server!"
-                    }
-                    "cmd" -> {
-                        val cleanCmd = cmd.trim().removePrefix("/")
-                        if (cleanCmd.isNotBlank()) {
-                            sendCommand(cleanCmd)
-                            "🚀 Đã gửi lệnh: /$cleanCmd"
-                        } else "⚠️ Lệnh trống."
-                    }
-                    else -> "✅ Đã nhận thao tác."
                 }
             }
         )
@@ -12638,6 +12681,10 @@ class McViewModel(
     fun installAllMissingModDependencies(autoRestartAfter: Boolean = false) {
         val deps = _missingModDependencies.value
         if (deps.isEmpty() || _installingMissingDeps.value) return
+        if (serverState.value.isRunning || _stopInFlight.value) {
+            _errorFlow.tryEmit("⚠️ Hãy dừng Server trước khi cài hoặc gỡ Mod/Plugin để tránh lỗi sập tiến trình!")
+            return
+        }
         val dirName = activeDirName()
         if (dirName == null) {
             _errorFlow.tryEmit("Hãy chọn một Server trước khi cài thư viện Mod!")
@@ -12697,21 +12744,26 @@ class McViewModel(
                 val st = serverState.value
                 val activeCore = cfg.installedCores.find { it.name == cfg.activeCoreName }
                 val serverName = cfg.activeCoreName.orEmpty().ifBlank { "MineHost Server" }
-                val coreLabel = activeCore?.core?.displayName ?: cfg.selectedCore.displayName
+                val coreLabel = if (isNativeRustActive()) "Rust ARM64" else (activeCore?.core?.displayName ?: cfg.selectedCore.displayName)
                 val mcVer = activeCore?.version?.ifBlank { cfg.mcVersion } ?: cfg.mcVersion
 
-                val lan = lanIp.value.ifBlank { "127.0.0.1" }
+                val lan = lanIp.value.takeIf { it.isNotBlank() && it != "--" } ?: "127.0.0.1"
                 val port = serverPort.value
                 val pubJava = javaIpOverride?.takeIf { it.isNotBlank() }
                     ?: playitState.value.publicAddress.takeIf { it.isNotBlank() }
                     ?: "$lan:$port"
 
-                val rawPe = playitState.value.bedrockAddress
-                val peHost = peHostOverride?.takeIf { it.isNotBlank() }
-                    ?: rawPe.substringBeforeLast(":", "").ifBlank { pubJava.substringBeforeLast(":") }
-                val pePort = pePortOverride?.takeIf { it.isNotBlank() }
-                    ?: rawPe.substringAfterLast(":", "").takeIf { it.all(Char::isDigit) && it.isNotBlank() }
-                    ?: "19132"
+                val resolvedPe = resolveActiveBedrockShareAddress()
+                val hasBedrockEndpoint = !peHostOverride.isNullOrBlank() || resolvedPe != null
+                val peHost = if (hasBedrockEndpoint) {
+                    peHostOverride?.takeIf { it.isNotBlank() }
+                        ?: resolvedPe?.substringBeforeLast(":", "").orEmpty().ifBlank { pubJava.substringBeforeLast(":") }
+                } else ""
+                val pePort = if (hasBedrockEndpoint) {
+                    pePortOverride?.takeIf { it.isNotBlank() }
+                        ?: resolvedPe?.substringAfterLast(":", "")?.takeIf { it.all(Char::isDigit) && it.isNotBlank() }
+                        ?: resolveLiveBedrockServerPort(activeDirName()).toString()
+                } else ""
 
                 val pngFile = com.mineserve.mobile.server.ProHostFeatures.renderServerInviteCardPng(
                     context = app,
@@ -12735,9 +12787,15 @@ class McViewModel(
                 val inviteText = buildString {
                     appendLine("🎮 THẺ MỜI VÀO SERVER MINECRAFT: $serverName")
                     appendLine("📦 Phiên bản: Minecraft $mcVer ($coreLabel)")
-                    appendLine("💻 Máy tính (Java PC): $pubJava")
-                    appendLine("📱 Điện thoại (Bedrock PE): IP $peHost  |  Port $pePort")
-                    append("✨ Vào chơi chung ngay (Hỗ trợ cả PC & Điện thoại)!")
+                    if (!isBedrockServerActive()) {
+                        appendLine("💻 Máy tính (Java PC): $pubJava")
+                    }
+                    if (hasBedrockEndpoint) {
+                        appendLine("📱 Điện thoại (Bedrock PE): IP $peHost  |  Port $pePort")
+                        append("✨ Vào chơi chung ngay (Hỗ trợ kết nối Điện thoại PE)!")
+                    } else {
+                        append("✨ Vào chơi chung ngay!")
+                    }
                 }
 
                 val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
@@ -12790,7 +12848,11 @@ class McViewModel(
 
     /** #2 (v2.8.3): Quét & Hoàn tác (tạm tắt) các Mod vừa cài gần nhất gây văng Server */
     fun refreshRecentInstalledMods() {
-        val dirName = activeDirName() ?: return
+        val dirName = activeDirName()
+        if (dirName == null) {
+            _recentInstalledModNames.value = emptyList()
+            return
+        }
         val serverDir = repo.termuxRuntime.serverDirFor(dirName)
         viewModelScope.launch(Dispatchers.IO) {
             val recent = com.mineserve.mobile.server.ProHostFeatures.findRecentInstalledMods(serverDir)
@@ -12800,6 +12862,10 @@ class McViewModel(
     }
 
     fun rollbackRecentModsNow() {
+        if (serverState.value.isRunning || _stopInFlight.value) {
+            _errorFlow.tryEmit("⚠️ Hãy dừng Server trước khi cài hoặc gỡ Mod/Plugin để tránh lỗi sập tiến trình!")
+            return
+        }
         val dirName = activeDirName()
         if (dirName == null) {
             _errorFlow.tryEmit("Hãy chọn một Server trước!")
@@ -12829,9 +12895,7 @@ class McViewModel(
             _errorFlow.tryEmit("Hãy bật Server trước khi gửi tin nhắn vào trong game!")
             return
         }
-        val activeInstalled = config.value.installedCores.find { it.name == config.value.activeCoreName }
-        val isBedrock = activeInstalled?.core?.isBedrock == true
-        if (isBedrock) {
+        if (isBedrockServerActive() || isNativeRustActive()) {
             sendCommand("say [Chu Server] $clean")
         } else {
             val escaped = clean
@@ -12855,9 +12919,17 @@ class McViewModel(
     /** #4 (v2.8.3): Cài đặt gói Modpack .mrpack (Modrinth) 1 chạm & tự động lọc bỏ Mod chỉ dành cho Client */
     fun installMrpackFromUri(uri: Uri) {
         if (_mrpackInstallBusy.value) return
+        if (serverState.value.isRunning || _stopInFlight.value) {
+            _errorFlow.tryEmit("⚠️ Hãy dừng Server trước khi cài hoặc gỡ Mod/Plugin để tránh lỗi sập tiến trình!")
+            return
+        }
         val dirName = activeDirName()
         if (dirName == null) {
             _errorFlow.tryEmit("Hãy chọn hoặc tạo một Server trước khi cài gói Modpack .mrpack!")
+            return
+        }
+        if (isNativeRustActive() || activeCoreObj()?.core?.supportsMods != true) {
+            _errorFlow.tryEmit("⚠️ Gói Modpack .mrpack cần Server hỗ trợ Mod (Fabric / Forge / NeoForge / Quilt) ở chế độ ☕ Java Mod!")
             return
         }
         val serverDir = repo.termuxRuntime.serverDirFor(dirName)
@@ -13043,17 +13115,22 @@ class McViewModel(
     }
 
     fun readSavedGameruleBoolean(ruleName: String, defaultVal: Boolean = true): Boolean {
-        val dir = activeDirName() ?: "default"
+        val dir = activeDirName() ?: return defaultVal
         val raw = proPrefs.getString("saved_gamerule_${dir}_$ruleName", null) ?: return defaultVal
         return when (ruleName) {
             "mobGriefing", "doFireTick" -> !raw.equals("false", ignoreCase = true)
-            "playersSleepingPercentage" -> raw.trim() == "1"
+            "playersSleepingPercentage" -> raw.trim() in setOf("0", "1")
             else -> raw.equals("true", ignoreCase = true)
         }
     }
 
     fun refreshVoiceChatAndResourcePackStatus() {
-        val dirName = activeDirName() ?: return
+        val dirName = activeDirName()
+        if (dirName == null) {
+            _voiceChatStatus.value = com.mineserve.mobile.server.ProHostFeatures.VoiceChatStatus()
+            _serverResourcePackInfo.value = com.mineserve.mobile.server.ProHostFeatures.ServerResourcePackInfo()
+            return
+        }
         val serverDir = repo.termuxRuntime.serverDirFor(dirName)
         viewModelScope.launch(Dispatchers.IO) {
             _voiceChatStatus.value = com.mineserve.mobile.server.ProHostFeatures.inspectSimpleVoiceChatStatus(serverDir)
@@ -13064,18 +13141,28 @@ class McViewModel(
     /** #3 (v2.8.7): Cài đặt Simple Voice Chat (Mic trong game) 1 chạm + Tự mở cổng UDP 24454 + Thanh tiến trình 0-100% */
     fun installSimpleVoiceChatOneTap(udpPort: Int = 24454) {
         if (_liveTaskProgress.value.active) return
+        if (serverState.value.isRunning || _stopInFlight.value) {
+            _errorFlow.tryEmit("⚠️ Hãy dừng Server trước khi cài hoặc gỡ Mod/Plugin để tránh lỗi sập tiến trình!")
+            return
+        }
         val dirName = activeDirName()
-        if (dirName == null) {
+        val activeInstalled = activeCoreObj()
+        if (dirName == null || activeInstalled == null) {
             _errorFlow.tryEmit("Hãy chọn hoặc tạo một Server trước khi cài Voice Chat!")
             return
         }
-        val activeInstalled = config.value.installedCores.find { it.name == config.value.activeCoreName }
-        val core = activeInstalled?.core ?: config.value.selectedCore
-        if (core.isBedrock) {
-            _errorFlow.tryEmit("Simple Voice Chat dành cho Server Java (Fabric / Forge / NeoForge / Paper / Purpur).")
+        val core = activeInstalled.core
+        if (isNativeRustActive() ||
+            core.isBedrock ||
+            core == ServerCore.Vanilla ||
+            core == ServerCore.Velocity ||
+            core == ServerCore.BungeeCord ||
+            (!core.supportsMods && !core.supportsPlugins)
+        ) {
+            _errorFlow.tryEmit("⚠️ Simple Voice Chat cần Server hỗ trợ Mod hoặc Plugin (Fabric / Forge / NeoForge / Paper / Purpur) — hãy chuyển sang chế độ ☕ Java Mod!")
             return
         }
-        val mcVer = activeInstalled?.version?.ifBlank { config.value.mcVersion } ?: config.value.mcVersion
+        val mcVer = activeInstalled.version.ifBlank { config.value.mcVersion }
         val serverDir = repo.termuxRuntime.serverDirFor(dirName)
 
         viewModelScope.launch {
@@ -13126,6 +13213,10 @@ class McViewModel(
         val dirName = activeDirName()
         if (dirName == null) {
             _errorFlow.tryEmit("Hãy chọn một Server trước khi gắn Resource Pack!")
+            return
+        }
+        if (isBedrockServerActive() || isNativeRustActive()) {
+            _errorFlow.tryEmit("ℹ️ Gắn Resource Pack SHA-1 dành cho Server Java (chế độ ☕ Java Mod / ⚡ Java Turbo).")
             return
         }
         val serverDir = repo.termuxRuntime.serverDirFor(dirName)
@@ -13181,6 +13272,10 @@ class McViewModel(
             _errorFlow.tryEmit("Hãy chọn hoặc tạo một Server trước!")
             return
         }
+        if (isNativeRustActive() || isBedrockServerActive()) {
+            _errorFlow.tryEmit("⚠️ Pack Sinh Tồn sử dụng Datapack Java — hãy chọn chế độ '☕ Java Mod' hoặc '⚡ Java Turbo' để chơi!")
+            return
+        }
         val serverDir = repo.termuxRuntime.serverDirFor(dirName)
         viewModelScope.launch {
             _liveTaskProgress.value = LiveTaskProgressState(
@@ -13230,6 +13325,10 @@ class McViewModel(
     fun triggerSurvivalPackAction(actionKey: String) {
         if (!serverState.value.isRunning) {
             _errorFlow.tryEmit("⚠️ Hãy bật Server trước khi kích hoạt Đạo Cụ Pack Sinh Tồn!")
+            return
+        }
+        if (isNativeRustActive() || isBedrockServerActive()) {
+            _errorFlow.tryEmit("⚠️ Đạo cụ Pack Sinh Tồn sử dụng Datapack Java — hãy chuyển sang chế độ '☕ Java Mod' hoặc '⚡ Java Turbo'!")
             return
         }
         when (actionKey) {
@@ -13306,17 +13405,36 @@ class McViewModel(
     val skinRestorerStatus: StateFlow<com.mineserve.mobile.server.ProHostFeatures.SkinRestorerStatus> = _skinRestorerStatus.asStateFlow()
 
     fun refreshSkinRestorerStatus() {
-        val dirName = activeDirName() ?: return
+        val dirName = activeDirName()
+        if (dirName == null) {
+            _skinRestorerStatus.value = com.mineserve.mobile.server.ProHostFeatures.SkinRestorerStatus()
+            return
+        }
         val serverDir = repo.termuxRuntime.serverDirFor(dirName)
         _skinRestorerStatus.value = com.mineserve.mobile.server.ProHostFeatures.inspectSkinRestorerStatus(serverDir)
     }
 
     fun installSkinRestorerOneTap() {
         if (_liveTaskProgress.value.active) return
-        val activeCore = config.value.installedCores.find { it.name == config.value.activeCoreName }
+        if (serverState.value.isRunning || _stopInFlight.value) {
+            _errorFlow.tryEmit("⚠️ Hãy dừng Server trước khi cài hoặc gỡ Mod/Plugin để tránh lỗi sập tiến trình!")
+            return
+        }
+        val activeCore = activeCoreObj()
         val dirName = activeDirName()
         if (activeCore == null || dirName == null) {
             _errorFlow.tryEmit("Hãy chọn hoặc tạo một Server trước khi cài Đồng Bộ Skin!")
+            return
+        }
+        val core = activeCore.core
+        if (isNativeRustActive() ||
+            core.isBedrock ||
+            core == ServerCore.Vanilla ||
+            core == ServerCore.Velocity ||
+            core == ServerCore.BungeeCord ||
+            (!core.supportsMods && !core.supportsPlugins)
+        ) {
+            _errorFlow.tryEmit("⚠️ Đồng Bộ Skin (SkinsRestorer / FabricTailor) cần Server chạy Fabric / Forge / Paper — hãy chuyển sang chế độ ☕ Java Mod!")
             return
         }
         val serverDir = repo.termuxRuntime.serverDirFor(dirName)
@@ -13361,6 +13479,10 @@ class McViewModel(
             _errorFlow.tryEmit("⚠️ Hãy bật Server trước khi đổi Skin trong game!")
             return
         }
+        if (isNativeRustActive() || isBedrockServerActive()) {
+            _errorFlow.tryEmit("ℹ️ Lệnh đổi Skin trực tiếp chỉ hoạt động trên Server Java đã cài SkinsRestorer / FabricTailor.")
+            return
+        }
         val p = targetPlayer.trim()
         val skin = skinNameOrUrl.trim().ifBlank { p }
         if (p.isBlank()) {
@@ -13381,7 +13503,11 @@ class McViewModel(
     val rustEngineStatus: StateFlow<com.mineserve.mobile.server.ProHostFeatures.RustEngineStatus> = _rustEngineStatus.asStateFlow()
 
     fun refreshRustEngineStatus() {
-        val dirName = activeDirName() ?: return
+        val dirName = activeDirName()
+        if (dirName == null) {
+            _rustEngineStatus.value = com.mineserve.mobile.server.ProHostFeatures.RustEngineStatus()
+            return
+        }
         val rootDir = repo.termuxRuntime.installer.rootDir
         val serverDir = repo.termuxRuntime.serverDirFor(dirName)
         _rustEngineStatus.value = com.mineserve.mobile.server.ProHostFeatures.inspectRustEngineStatus(rootDir, serverDir)
@@ -13394,6 +13520,10 @@ class McViewModel(
             return
         }
         val dirName = activeDirName() ?: return
+        if (activeCoreObj()?.serverFile == "pumpkin") {
+            _errorFlow.tryEmit("ℹ️ Máy chủ này được tạo riêng bằng Nhân Rust Thuần (không có server.jar Java). Hãy tạo thêm Server Fabric / Paper trong Kho Cài Đặt nếu muốn chơi Mod/Plugin!")
+            return
+        }
         val rootDir = repo.termuxRuntime.installer.rootDir
         val serverDir = repo.termuxRuntime.serverDirFor(dirName)
         viewModelScope.launch(Dispatchers.IO) {
@@ -13417,6 +13547,14 @@ class McViewModel(
         val dirName = activeDirName()
         if (dirName == null) {
             _errorFlow.tryEmit("Hãy chọn hoặc tạo một Server trước khi bật Chế Độ Rust-JVM Turbo!")
+            return
+        }
+        if (activeCoreObj()?.core == ServerCore.PocketMine) {
+            _errorFlow.tryEmit("⚠️ PocketMine-MP chạy bằng PHP nên không sử dụng chế độ tăng tốc Rust-JVM Turbo!")
+            return
+        }
+        if (activeCoreObj()?.serverFile == "pumpkin") {
+            _errorFlow.tryEmit("ℹ️ Máy chủ này đang chạy Nhân Rust Thuần chuyên biệt (~50MB RAM) nên không cần bật Rust-JVM Turbo!")
             return
         }
         val rootDir = repo.termuxRuntime.installer.rootDir
@@ -13449,6 +13587,10 @@ class McViewModel(
         val dirName = activeDirName()
         if (dirName == null) {
             _errorFlow.tryEmit("Hãy chọn hoặc tạo một Server trước khi bật Nhân Rust Thuần!")
+            return
+        }
+        if (isBedrockServerActive()) {
+            _errorFlow.tryEmit("⚠️ Máy chủ Bedrock (${activeCoreObj()?.core?.displayName ?: "Bedrock"}) không chuyển sang Nhân Rust Thuần — hãy dùng nút '🦀 Tạo Nhanh Server Rust Thuần' để tạo máy chủ Rust độc lập!")
             return
         }
         val rootDir = repo.termuxRuntime.installer.rootDir
@@ -13490,6 +13632,115 @@ class McViewModel(
         }
     }
 
+    /** [v3.1.1] Tạo mới hoàn chỉnh 1 Server Rust Thuần độc lập 1 chạm (Hoạt động ngay cả khi có 0 Server & KHÔNG cần cài Java!) */
+    fun createStandaloneRustServerOneTap(
+        customName: String = "Server Rust Siêu Nhẹ",
+        onCreated: (() -> Unit)? = null
+    ) {
+        if (_liveTaskProgress.value.active || _isDownloadingCore.value) return
+        viewModelScope.launch {
+            val existingCores = repo.currentConfig().installedCores
+            val baseTitle = customName.trim().ifBlank { "Server Rust Siêu Nhẹ" }
+            var cleanTitle = baseTitle
+            var titleIdx = 2
+            while (existingCores.any { it.name.equals(cleanTitle, ignoreCase = true) }) {
+                cleanTitle = "$baseTitle $titleIdx"
+                titleIdx++
+            }
+
+            val serversRoot = repo.termuxRuntime.serversDir.apply { mkdirs() }
+            var dirName = "rust_server"
+            var dirIdx = 2
+            while (
+                java.io.File(serversRoot, dirName).exists() ||
+                existingCores.any { it.dirName.equals(dirName, ignoreCase = true) }
+            ) {
+                dirName = "rust_server_$dirIdx"
+                dirIdx++
+            }
+
+            val rootDir = repo.termuxRuntime.installer.rootDir.apply { mkdirs() }
+            val serverDir = repo.termuxRuntime.serverDirFor(dirName)
+            _liveTaskProgress.value = LiveTaskProgressState(
+                active = true,
+                progress = 0.06f,
+                title = "🦀 Đang tạo '$cleanTitle' (Pumpkin ARM64)...",
+                detail = "Không cần cài Java • Khởi động 0.2s • Chỉ tốn ~50MB RAM"
+            )
+            try {
+                withContext(Dispatchers.IO) {
+                    serverDir.mkdirs()
+                    java.io.File(serverDir, "eula.txt").writeText("eula=true\n", Charsets.UTF_8)
+                    runCatching { com.mineserve.mobile.server.EulaConsent.accept(serverDir) }
+                    val propText = buildString {
+                        appendLine("server-port=25565")
+                        appendLine("level-name=world")
+                        appendLine("online-mode=false")
+                        appendLine("motd=MineHost Rust Server")
+                        appendLine("gamemode=survival")
+                        appendLine("difficulty=normal")
+                        appendLine("max-players=20")
+                        appendLine("view-distance=6")
+                        appendLine("simulation-distance=4")
+                    }
+                    java.io.File(serverDir, "server.properties").writeText(propText, Charsets.UTF_8)
+                }
+
+                val res = com.mineserve.mobile.server.ProHostFeatures.installAndEnableNativeRustEngine(
+                    rootDir = rootDir,
+                    serverDir = serverDir,
+                    javaPort = 25565,
+                    serverName = cleanTitle,
+                    onProgress = { ratio, msg ->
+                        _liveTaskProgress.value = LiveTaskProgressState(
+                            active = true,
+                            progress = ratio.coerceIn(0f, 1f),
+                            title = msg,
+                            detail = "Đang cấu hình tự động cho '$cleanTitle' (Cổng Java 25565 + Bedrock PE 19132)"
+                        )
+                    }
+                )
+
+                res.onSuccess { status ->
+                    val newCore = com.mineserve.mobile.data.InstalledCore(
+                        name = cleanTitle,
+                        core = ServerCore.Vanilla,
+                        version = "1.21.4",
+                        dirName = dirName,
+                        serverFile = "pumpkin"
+                    )
+                    val canSwitchActive = !serverState.value.isRunning && !_stopInFlight.value && !startRequestPending
+                    repo.updateAndSaveConfig { current ->
+                        current.copy(
+                            installedCores = current.installedCores + newCore,
+                            activeCoreName = if (canSwitchActive) cleanTitle else (current.activeCoreName ?: cleanTitle)
+                        )
+                    }
+                    if (canSwitchActive) {
+                        _rustEngineStatus.value = status
+                    }
+                    refreshRustEngineStatus()
+                    refreshServerPropertiesNow()
+                    loadWorlds()
+                    refreshServerStorage()
+                    com.mineserve.mobile.server.ProHostFeatures.playTaskCompleteChime()
+                    notifyActionDone("🦀 Đã tạo xong '$cleanTitle' (Nhân Rust ARM64 • Không cần cài Java)! Bấm BẬT SERVER để chạy ngay!")
+                    withContext(Dispatchers.Main) {
+                        onCreated?.invoke()
+                    }
+                }.onFailure { err ->
+                    withContext(Dispatchers.IO) { runCatching { serverDir.deleteRecursively() } }
+                    _errorFlow.tryEmit("❌ Không thể tạo Server Rust Thuần: ${err.message}")
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.IO) { runCatching { serverDir.deleteRecursively() } }
+                _errorFlow.tryEmit("❌ Lỗi tạo Server Rust Thuần: ${e.message}")
+            } finally {
+                _liveTaskProgress.value = LiveTaskProgressState()
+            }
+        }
+    }
+
     /** Chuyển từ Nhân Rust Thuần về lại Nhân Java gốc 1 chạm (Giữ nguyên 100% Map, Mod & Plugin cũ) */
     fun disableNativeRustEngineOneTap() {
         if (serverState.value.isRunning) {
@@ -13497,6 +13748,10 @@ class McViewModel(
             return
         }
         val dirName = activeDirName() ?: return
+        if (activeCoreObj()?.serverFile == "pumpkin") {
+            _errorFlow.tryEmit("ℹ️ Máy chủ này được tạo chuyên biệt bằng Nhân Rust Thuần (không có server.jar Java). Bạn có thể tạo thêm Server Fabric / Paper mới nếu muốn chơi Mod/Plugin!")
+            return
+        }
         val rootDir = repo.termuxRuntime.installer.rootDir
         val serverDir = repo.termuxRuntime.serverDirFor(dirName)
         viewModelScope.launch(Dispatchers.IO) {
@@ -13539,7 +13794,15 @@ class McViewModel(
     val bossBarEnabled: StateFlow<Boolean> = _bossBarEnabled.asStateFlow()
 
     fun refreshHudAndLagRadarState() {
-        val dirName = activeDirName() ?: return
+        val dirName = activeDirName()
+        if (dirName == null) {
+            _activeScoreboardPreset.value = ""
+            _bossBarText.value = ""
+            _bossBarColor.value = "yellow"
+            _bossBarEnabled.value = false
+            _lagHotspotReport.value = com.mineserve.mobile.server.ProHostFeatures.LagHotspotReport()
+            return
+        }
         _activeScoreboardPreset.value = proPrefs.getString("saved_scoreboard_$dirName", "").orEmpty()
         _bossBarText.value = proPrefs.getString("saved_bossbar_text_$dirName", "").orEmpty()
         _bossBarColor.value = proPrefs.getString("saved_bossbar_color_$dirName", "yellow").orEmpty()
@@ -13550,16 +13813,30 @@ class McViewModel(
         }
     }
 
-    /** 1. Sao lưu Map đang chọn lên đám mây Telegram 1 chạm (tự động save-all nếu Server đang chạy) */
-    fun backupCurrentWorldToTelegramOneTap(worldNameOverride: String? = null) {
-        if (_liveTaskProgress.value.active) return
-        val dirName = activeDirName()
-        if (dirName == null) {
-            _errorFlow.tryEmit("Hãy chọn một Server trước khi sao lưu Map lên Telegram!")
-            return
-        }
+    /** 1. Sao lưu Map đang chọn lên đám mây Telegram 1 chạm (tự động lưu thế giới nếu Server đang chạy) */
+    fun backupCurrentWorldToTelegramOneTap(
+        worldNameOverride: String? = null,
+        notifyTelegramOnError: Boolean = false
+    ) {
         val token = _telegramBotToken.value.trim()
         val chat = _telegramChatId.value.trim()
+        fun emitBackupError(msg: String) {
+            _errorFlow.tryEmit(msg)
+            if (notifyTelegramOnError && token.length >= 15 && token.contains(":") && chat.isNotBlank()) {
+                viewModelScope.launch(Dispatchers.IO) {
+                    com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(token, chat, msg)
+                }
+            }
+        }
+        if (_liveTaskProgress.value.active) {
+            emitBackupError("⏳ Đang có tác vụ khác đang chạy trên máy chủ (${_liveTaskProgress.value.title.ifBlank { "Đang bận" }}), vui lòng thử sao lưu lại sau ít phút!")
+            return
+        }
+        val dirName = activeDirName()
+        if (dirName == null) {
+            emitBackupError("⚠️ Chưa có máy chủ nào được chọn trên điện thoại để sao lưu Map lên Telegram!")
+            return
+        }
         if (token.length < 15 || !token.contains(":") || chat.isBlank()) {
             _errorFlow.tryEmit("⚠️ Bạn chưa kết nối Bot Telegram! Hãy vào mục 'Điều khiển từ xa' nhập Token & Chat ID trước.")
             return
@@ -13583,8 +13860,8 @@ class McViewModel(
                 detail = "Tự động lưu dữ liệu mới nhất & nén .zip an toàn"
             )
             try {
-                if (serverState.value.isRunning) {
-                    sendCommand("save-all")
+                if (serverState.value.isRunning && !isNativeRustActive()) {
+                    sendWorldSaveIfSupported()
                     kotlinx.coroutines.delay(1200L)
                 }
                 val res = com.mineserve.mobile.server.ProHostFeatures.backupWorldToTelegramCloud(
@@ -13607,8 +13884,10 @@ class McViewModel(
                     com.mineserve.mobile.server.ProHostFeatures.playTaskCompleteChime()
                     notifyActionDone(summary)
                 }.onFailure { err ->
-                    _errorFlow.tryEmit("❌ Lỗi sao lưu lên Telegram: ${err.message}")
+                    emitBackupError("❌ Lỗi sao lưu lên Telegram: ${err.message}")
                 }
+            } catch (e: Exception) {
+                emitBackupError("❌ Lỗi sao lưu lên Telegram: ${e.message}")
             } finally {
                 _liveTaskProgress.value = LiveTaskProgressState()
             }
@@ -13617,7 +13896,15 @@ class McViewModel(
 
     /** 2A. Bật / Đổi / Tắt Bảng Điểm Scoreboard cạnh phải màn hình trong game (0 MB RAM) */
     fun applyInGameScoreboardPresetOneTap(presetId: String) {
-        val dirName = activeDirName() ?: "default"
+        val dirName = activeDirName()
+        if (dirName == null) {
+            _errorFlow.tryEmit("⚠️ Hãy chọn hoặc tạo một Server trước khi bật Bảng Điểm Scoreboard!")
+            return
+        }
+        if (isNativeRustActive() || isBedrockServerActive()) {
+            _errorFlow.tryEmit("ℹ️ Bảng Điểm Scoreboard gốc (0 MB RAM) sử dụng lệnh Java — hãy chuyển sang chế độ '☕ Java Mod' hoặc '⚡ Java Turbo'!")
+            return
+        }
         _activeScoreboardPreset.value = if (presetId == "off") "" else presetId
         proPrefs.edit().putString("saved_scoreboard_$dirName", presetId).apply()
         if (serverState.value.isRunning) {
@@ -13639,7 +13926,15 @@ class McViewModel(
 
     /** 2B. Bật / Cập nhật / Ẩn Thanh Thông Báo BossBar trên đỉnh màn hình trong game (0 MB RAM) */
     fun applyInGameBossBarOneTap(text: String, colorId: String, enabled: Boolean) {
-        val dirName = activeDirName() ?: "default"
+        val dirName = activeDirName()
+        if (dirName == null) {
+            _errorFlow.tryEmit("⚠️ Hãy chọn hoặc tạo một Server trước khi cài Thanh Thông Báo BossBar!")
+            return
+        }
+        if (isNativeRustActive() || isBedrockServerActive()) {
+            _errorFlow.tryEmit("ℹ️ Thanh Thông Báo BossBar gốc (0 MB RAM) sử dụng lệnh Java — hãy chuyển sang chế độ '☕ Java Mod' hoặc '⚡ Java Turbo'!")
+            return
+        }
         val cleanText = text.trim()
         if (enabled && cleanText.isBlank()) {
             _errorFlow.tryEmit("⚠️ Hãy nhập nội dung chữ muốn hiển thị trên thanh BossBar đầu màn hình!")
@@ -13697,14 +13992,241 @@ class McViewModel(
             _errorFlow.tryEmit("⚠️ Hãy bật Server trước khi dọn thực thể gây Lag trong game!")
             return
         }
+        if (isNativeRustActive() || isBedrockServerActive()) {
+            _errorFlow.tryEmit("ℹ️ Nhân Rust Thuần / Bedrock tự quản lý thực thể gốc nhẹ mượt (~50MB RAM) và không dùng lệnh @e[...] của Java!")
+            return
+        }
         com.mineserve.mobile.server.ProHostFeatures.buildSmartSafePurgeCommands(includeHostileMobs).forEach { sendCommand(it) }
-        sendCommand("save-all")
+        sendWorldSaveIfSupported()
         if (includeHostileMobs) {
             sendCommand("""tellraw @a [{"text":"[🛡️ Dọn Lag An Toàn] ","color":"green","bold":true},{"text":"Đã quét sạch vật phẩm rác & quái hoang gây giật (An toàn 100% cho Dân làng, Thú cưng & Máy farm)!","color":"yellow"}]""")
             notifyActionDone("🧹 Đã dọn sạch vật phẩm rác + quái hoang gây Lag (Giữ an toàn 100% Dân làng, Thú cưng, Gia súc & Giá giáp)!")
         } else {
             sendCommand("""tellraw @a [{"text":"[🧹 ClearLag] ","color":"aqua","bold":true},{"text":"Đã dọn sạch vật phẩm rơi dưới đất, mũi tên cắm & hạt XP thừa!","color":"green"}]""")
             notifyActionDone("🧹 Đã dọn sạch vật phẩm rơi, hạt XP & mũi tên thừa (Giữ nguyên 100% mọi sinh vật)!")
+        }
+    }
+
+    /**
+     * init 块必须放在类体最末尾：确保所有属性（包括 proPrefs、_rustEngineStatus、_tpsHistory 等）
+     * 均已完成初始化，避免协程抢先执行或同步收集时触发 NullPointerException。
+     */
+    init {
+        _autoCleanRamOnStart.value = metaPrefs().getBoolean("auto_clean_ram_on_start", true)
+        _autoBackupOnStop.value = metaPrefs().getBoolean("auto_backup_on_stop", true)
+        _autoUploadDriveOnStop.value = metaPrefs().getBoolean("auto_upload_drive_on_stop", false)
+        _autoInstallUpdateEnabled.value = metaPrefs().getBoolean("auto_install_update_enabled", true)
+        _cloudSyncFolderUri.value = metaPrefs().getString("cloud_sync_folder_uri", null)
+        skippedReleaseTag = proPrefs.getString("skipped_ota_tag", null)
+
+        // Tự động xóa file APK cài đặt sau khi cập nhật xong (trong cache/update và thư mục Download trên máy)
+        viewModelScope.launch(Dispatchers.IO) {
+            val (_, directBytes) = com.mineserve.mobile.data.AppUpdateService.cleanupInstalledApks(app)
+            val receiverBytes = metaPrefs().getLong("last_cleaned_apk_bytes", 0L)
+            if (receiverBytes > 0L) {
+                metaPrefs().edit()
+                    .remove("last_cleaned_apk_bytes")
+                    .remove("last_cleaned_apk_count")
+                    .apply()
+            }
+            val totalFreed = directBytes + receiverBytes
+            if (totalFreed > 0L) {
+                val mb = totalFreed.toDouble() / (1024.0 * 1024.0)
+                _messageFlow.tryEmit("🧹 Đã tự động xóa gói APK sau khi cập nhật xong (Giải phóng %.1f MB bộ nhớ)!".format(java.util.Locale.US, mb))
+            }
+        }
+        // Kiểm tra cập nhật lúc mở App và định kỳ mỗi 6 tiếng (bảo vệ tuyệt đối giới hạn 60 req/giờ của GitHub API)
+        viewModelScope.launch {
+            while (true) {
+                if (uiVisible && _updateState.value !is UpdateUiState.Downloading) {
+                    checkForUpdate(manual = false)
+                }
+                delay(6L * 60L * 60L * 1000L)
+            }
+        }
+        viewModelScope.launch {
+            McApplication.get(app).openUpdateRequest.collect { wantOpen ->
+                if (wantOpen) {
+                    McApplication.get(app).consumeOpenUpdateRequest()
+                    showUpdateDialog()
+                }
+            }
+        }
+        refreshDeviceProfile()
+        refreshLanIp(notifyOnChange = false)
+        runCatching {
+            val cm = app.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+            val req = android.net.NetworkRequest.Builder().build()
+            cm?.registerNetworkCallback(req, networkChangeCallback)
+        }
+        scanUnregisteredServers()
+        refreshTrashedServers()
+        // Đồng bộ toàn diện trạng thái khi đổi Server hoặc khi xóa hết về 0 Server (không để lại dữ liệu bóng ma)
+        viewModelScope.launch {
+            config.map { it.activeCoreName }.distinctUntilChanged().collect {
+                _tpsHistory.value = emptyList()
+                _ramHistory.value = emptyList()
+                _liveChatMessages.value = emptyList()
+                _missingModDependencies.value = emptyList()
+                clearSelectedInventoryState()
+                val dir = activeDirName()
+                _warpPoints.value = if (dir != null) {
+                    com.mineserve.mobile.server.ProHostFeatures.loadWarpPoints(proPrefs, dir)
+                } else {
+                    emptyList()
+                }
+                loadPlayerHistory()
+                refreshPlayers()
+                refreshServerStorage()
+                refreshServerPropertiesNow()
+                loadWorlds()
+                refreshMods()
+                refreshInstalledPlugins()
+                refreshServerOptPackStatus()
+                refreshRustEngineStatus()
+                refreshHudAndLagRadarState()
+                refreshVoiceChatAndResourcePackStatus()
+                refreshSkinRestorerStatus()
+                refreshRecentInstalledMods()
+            }
+        }
+        viewModelScope.launch {
+            config.map { it.installedCores }.distinctUntilChanged().collect {
+                refreshServerStorage()
+            }
+        }
+        viewModelScope.launch {
+            playitState.map { it.publicAddress to it.allocatedIpv4Address }.distinctUntilChanged().collect { (pub, alloc) ->
+                if (alloc.isNotBlank() && alloc.substringBeforeLast(":").matches(Regex("""^\d{1,3}(\.\d{1,3}){3}$"""))) {
+                    _playitNumericAddress.value = alloc
+                } else {
+                    resolvePlayitNumericIp(pub)
+                }
+            }
+        }
+        viewModelScope.launch {
+            config
+                .map { it.selectedJavaVendor to it.prootDistro }
+                .distinctUntilChanged()
+                .collect { (vendor, distro) ->
+                    repo.termuxRuntime.selectedProotVendor = vendor
+                    repo.termuxRuntime.selectedProotDistro = distro
+                }
+        }
+        viewModelScope.launch {
+            app.isBootstrapped.collect { ready -> if (ready) refreshServerPropertiesNow() }
+        }
+        viewModelScope.launch {
+            var wasRunning = false
+            serverState.collect { state ->
+                if (wasRunning && !state.isRunning) {
+                    interruptPlayerSessions()
+                    _lastRunLog.value = withContext(Dispatchers.IO) {
+                        delay(150)
+                        repo.termuxRuntime.readLastMcRunLog()
+                    }
+                }
+                wasRunning = state.isRunning
+            }
+        }
+        startServerResourceCollection()
+        controller.recentStartupFailure()?.let { showStartupFailureReport(it) }
+        viewModelScope.launch(Dispatchers.Default) {
+            controller.startupFailures.collect { showStartupFailureReport(it) }
+        }
+        viewModelScope.launch(Dispatchers.Default) {
+            val silentZeroListRegex = Regex("""(There are 0 of a max of \d+ players online:|Hiện có 0/\d+ người chơi đang online:)\s*$""")
+            var shownFirstZeroList = false
+            repo.termuxRuntime.consoleFlow.collect { rawLine ->
+                val cleanLine = ConsoleLineParser.stripAnsi(rawLine)
+                parseConsoleLine(cleanLine)
+                val isZeroListPoll = silentZeroListRegex.containsMatchIn(cleanLine)
+                if (isZeroListPoll) {
+                    if (shownFirstZeroList) return@collect
+                    shownFirstZeroList = true
+                }
+                consoleBuffer.add(cleanLine)
+                pendingConsoleBuffer.add(cleanLine)
+            }
+        }
+        viewModelScope.launch(Dispatchers.Default) {
+            while (true) {
+                if (!uiVisible ||
+                    (_consoleLines.subscriptionCount.value <= 0 &&
+                        _consolePreviewLines.subscriptionCount.value <= 0 &&
+                        _terminalConsoleLines.subscriptionCount.value <= 0)
+                ) {
+                    delay(IDLE_LOG_FLUSH_MS)
+                    continue
+                }
+                delay(200)
+                val batch = pendingConsoleBuffer.snapshotAndClear()
+                if (batch.isNotEmpty()) {
+                    consoleGeneration++
+                }
+                if (terminalDisplayDirty) {
+                    terminalConsoleBuffer.replace(
+                        consoleBuffer.snapshot().map { TerminalLogProcessor.process(it, _logTranslationEnabled.value) }
+                    )
+                    terminalDisplayDirty = false
+                    terminalGeneration++
+                } else if (batch.isNotEmpty()) {
+                    batch.forEach { terminalConsoleBuffer.add(TerminalLogProcessor.process(it, _logTranslationEnabled.value)) }
+                    terminalGeneration++
+                }
+                if (_consoleLines.subscriptionCount.value > 0 && consoleUiGeneration != consoleGeneration) {
+                    _consoleLines.value = consoleBuffer.snapshot()
+                    consoleUiGeneration = consoleGeneration
+                }
+                if (_terminalConsoleLines.subscriptionCount.value > 0 && terminalUiGeneration != terminalGeneration) {
+                    _terminalConsoleLines.value = terminalConsoleBuffer.snapshot()
+                    terminalUiGeneration = terminalGeneration
+                }
+                val now = System.currentTimeMillis()
+                if (_consolePreviewLines.subscriptionCount.value > 0 &&
+                    previewUiGeneration != consoleGeneration &&
+                    now - lastPreviewPublishedAtMs >= CONSOLE_PREVIEW_FLUSH_MS
+                ) {
+                    _consolePreviewLines.value = consoleBuffer.last(8)
+                    previewUiGeneration = consoleGeneration
+                    lastPreviewPublishedAtMs = now
+                }
+            }
+        }
+        viewModelScope.launch(Dispatchers.Default) {
+            while (true) {
+                if (!uiVisible || _termuxLines.subscriptionCount.value <= 0) {
+                    delay(IDLE_LOG_FLUSH_MS)
+                    continue
+                }
+                delay(LOG_FLUSH_MS)
+                val batch = legacyTermuxBuffer.snapshotAndClear()
+                if (batch.isNotEmpty()) {
+                    val current = _termuxLines.value
+                    _termuxLines.value = (current + batch).takeLast(MAX_LOG_LINES).toImmutableList()
+                }
+            }
+        }
+        viewModelScope.launch(Dispatchers.Default) {
+            while (true) {
+                val terminalVisible = _terminalSessions.subscriptionCount.value > 0 ||
+                    _activeTerminalSessionId.subscriptionCount.value > 0
+                if (!uiVisible || !terminalVisible) {
+                    delay(IDLE_LOG_FLUSH_MS)
+                    continue
+                }
+                delay(LOG_FLUSH_MS)
+                val batch = synchronized(terminalOutputBuffers) {
+                    terminalOutputBuffers.mapValues { (_, buffer) -> buffer.snapshotAndClear() }
+                        .filterValues { it.isNotEmpty() }
+                }
+                batch.forEach { (id, lines) ->
+                    updateTerminalSession(id) { session ->
+                        val additions = lines.map { TerminalLogProcessor.process(it, false) }
+                        session.copy(lines = (session.lines + additions).takeLast(MAX_LOG_LINES).toImmutableList())
+                    }
+                }
+            }
         }
     }
 }

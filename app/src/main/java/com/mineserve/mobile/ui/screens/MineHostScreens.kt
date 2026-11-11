@@ -530,7 +530,7 @@ fun MineHostOverview(
                                     if (state.isRunning) Color(0xFF10B981).copy(alpha = pulseAlpha) else MaterialTheme.colorScheme.primary,
                                     RoundedCornerShape(14.dp)
                                 )
-                                .clickable { navigate(SubPage.ServerIcon) },
+                                .clickable(enabled = active != null) { navigate(SubPage.ServerIcon) },
                             contentAlignment = Alignment.Center
                         ) {
                             if (active != null) {
@@ -918,6 +918,23 @@ fun MineHostOverview(
                                     modifier = Modifier.padding(horizontal = 4.dp)
                                 )
                             }
+                        }
+                    }
+
+                    if (active == null) {
+                        Button(
+                            onClick = { vm.createStandaloneRustServerOneTap() },
+                            enabled = ready && !liveTask.active && !busy,
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)
+                        ) {
+                            Text(
+                                "🦀 Tạo Nhanh Server Rust Thuần (Không cần cài Java • ~50MB RAM)",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.5.sp
+                            )
                         }
                     }
 
@@ -2573,9 +2590,9 @@ fun MineHostOverview(
         if (active != null && (overviewTab == 1 || overviewTab == 2 || overviewTab == 5)) {
             item(key = "six_upgrades_world_gamerules_card") {
                 var keepInvSwitch by remember(active.dirName) { mutableStateOf(vm.readSavedGameruleBoolean("keepInventory", true)) }
-                var antiCreeperSwitch by remember(active.dirName) { mutableStateOf(vm.readSavedGameruleBoolean("mobGriefing", true)) }
-                var onePlayerSleepSwitch by remember(active.dirName) { mutableStateOf(vm.readSavedGameruleBoolean("playersSleepingPercentage", true)) }
-                var noFireSpreadSwitch by remember(active.dirName) { mutableStateOf(vm.readSavedGameruleBoolean("doFireTick", true)) }
+                var antiCreeperSwitch by remember(active.dirName) { mutableStateOf(!vm.readSavedGameruleBoolean("mobGriefing", true)) }
+                var onePlayerSleepSwitch by remember(active.dirName) { mutableStateOf(vm.readSavedGameruleBoolean("playersSleepingPercentage", false)) }
+                var noFireSpreadSwitch by remember(active.dirName) { mutableStateOf(!vm.readSavedGameruleBoolean("doFireTick", true)) }
                 val voiceChatStatus by vm.voiceChatStatus.collectAsStateWithLifecycle()
                 val resPackInfo by vm.serverResourcePackInfo.collectAsStateWithLifecycle()
                 val homeAddonLauncher = androidx.activity.compose.rememberLauncherForActivityResult(

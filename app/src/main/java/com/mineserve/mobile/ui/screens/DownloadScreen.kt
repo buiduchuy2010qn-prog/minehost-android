@@ -103,6 +103,7 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
     val isLoadingVersions by vm.isLoadingVersions.collectAsState()
     val isDownloadingCore by vm.isDownloadingCore.collectAsState()
     val downloadProgress by vm.downloadProgress.collectAsState()
+    val liveTask by vm.liveTaskProgress.collectAsState()
     val consoleLines by vm.consolePreviewLines.collectAsState()
     val importingServer by vm.isImportingServer.collectAsState()
     val importProgress by vm.importProgress.collectAsState()
@@ -308,6 +309,65 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
             LazyColumn(
                 modifier = Modifier.weight(1f)
             ) {
+            item(key = "quick_rust_one_tap_card") {
+                McCard(title = "🦀 Tạo Server Rust Thuần 1 Chạm (Pumpkin ARM64)") {
+                    Text(
+                        "Không cần tải bộ Java • Mở trong 0.2 giây • Chỉ tốn ~50MB RAM • Dành cho Sinh tồn Vanilla nhẹ mượt",
+                        color = Muted,
+                        fontSize = 11.5.sp,
+                        lineHeight = 16.sp
+                    )
+                    if (liveTask.active) {
+                        Spacer(Modifier.height(8.dp))
+                        val pct = (liveTask.progress.coerceIn(0f, 1f) * 100).toInt()
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(McShape.Row)
+                                .background(Indigo.copy(alpha = 0.12f))
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(liveTask.title, fontSize = 11.5.sp, fontWeight = FontWeight.ExtraBold, color = Indigo)
+                                Text("${pct}%", fontSize = 11.5.sp, fontWeight = FontWeight.ExtraBold, color = Mint)
+                            }
+                            LinearProgressIndicator(
+                                progress = { liveTask.progress.coerceIn(0f, 1f) },
+                                modifier = Modifier.fillMaxWidth().height(6.dp),
+                                color = Mint,
+                                trackColor = Indigo.copy(alpha = 0.2f)
+                            )
+                            if (liveTask.detail.isNotBlank()) {
+                                Text(liveTask.detail, fontSize = 10.5.sp, color = Muted)
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Button(
+                        onClick = {
+                            vm.createStandaloneRustServerOneTap {
+                                onBack?.invoke()
+                            }
+                        },
+                        enabled = !liveTask.active && !isDownloadingCore && !serverState.isRunning,
+                        colors = ButtonDefaults.buttonColors(containerColor = Mint),
+                        shape = McShape.ControlCompact,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 46.dp)
+                    ) {
+                        Text(
+                            "🦀 Tạo Ngay Server Rust",
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+                }
+            }
             item(key = "flexible_configurator") {
                 McCard(title = "🛠️ Thiết Lập Server Linh Hoạt (Tự chọn Core • Phiên bản • Chế độ • PC+PE)") {
                     Text(
@@ -760,7 +820,7 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                                                     vm.setActiveCore(core.name)
                                                     scope.launch { snackbarHostState.showInstantSnackbar("✅ Đã chọn máy chủ: ${core.name}") }
                                                 },
-                                                enabled = !isSelectedCore,
+                                                enabled = !isSelectedCore && !serverState.isRunning,
                                                 shape = McShape.ControlCompact,
                                                 border = BorderStroke(1.dp, if (isSelectedCore) Mint else Indigo),
                                                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
@@ -2322,6 +2382,7 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
 private data class InstallerJavaRequirement(
     val recommendedJava: JavaVersion,
     val preferredVendor: JavaVendor,
+    val acceptableVersions: Set<JavaVersion>,
     val exactLegacyForgeRequirement: Boolean,
     val reasonTextVi: String
 )
@@ -2332,10 +2393,11 @@ private fun installerJavaRequirement(
 ): InstallerJavaRequirement? {
     if (core == ServerCore.PocketMine) return null
 
-    if (core.isBedrock || core == ServerCore.Velocity || core == ServerCore.BungeeCord) {
+    if (core == ServerCore.PowerNukkitX || core.isBedrock || core == ServerCore.Velocity || core == ServerCore.BungeeCord) {
         return InstallerJavaRequirement(
             recommendedJava = JavaVersion.Java21,
             preferredVendor = JavaVendor.Termux,
+            acceptableVersions = setOf(JavaVersion.Java21, JavaVersion.Java25),
             exactLegacyForgeRequirement = false,
             reasonTextVi = "Máy chủ ${core.displayName} yêu cầu Java 21 (LTS) để khởi động ổn định."
         )
@@ -2354,6 +2416,7 @@ private fun installerJavaRequirement(
         return InstallerJavaRequirement(
             recommendedJava = JavaVersion.Java25,
             preferredVendor = JavaVendor.Termux,
+            acceptableVersions = setOf(JavaVersion.Java25, JavaVersion.Java21),
             exactLegacyForgeRequirement = false,
             reasonTextVi = "Minecraft $minecraftVersion (Thế hệ 26.x) khuyên dùng Java 25 (hoặc Java 21)."
         )
@@ -2363,17 +2426,29 @@ private fun installerJavaRequirement(
         return InstallerJavaRequirement(
             recommendedJava = JavaVersion.Java21,
             preferredVendor = JavaVendor.Termux,
+            acceptableVersions = setOf(JavaVersion.Java21, JavaVersion.Java25),
             exactLegacyForgeRequirement = false,
             reasonTextVi = "Khuyên dùng Java 21 (LTS) cho các phiên bản Minecraft hiện đại."
         )
     }
 
-    if (core == ServerCore.Forge && (minor <= 12)) {
+    if (core == ServerCore.Forge && minor <= 12) {
         return InstallerJavaRequirement(
             recommendedJava = JavaVersion.Java8,
             preferredVendor = JavaVendor.Proot,
+            acceptableVersions = setOf(JavaVersion.Java8, JavaVersion.Java11),
             exactLegacyForgeRequirement = true,
-            reasonTextVi = "Forge $minecraftVersion bắt buộc dùng đúng Java 8 (PRoot Ubuntu 20.04)."
+            reasonTextVi = "Forge $minecraftVersion bắt buộc dùng Java 8 (PRoot Ubuntu 20.04) hoặc Java 11 (không dùng Java 17)."
+        )
+    }
+
+    if (core == ServerCore.Forge && minor <= 16) {
+        return InstallerJavaRequirement(
+            recommendedJava = JavaVersion.Java11,
+            preferredVendor = JavaVendor.Termux,
+            acceptableVersions = setOf(JavaVersion.Java8, JavaVersion.Java11),
+            exactLegacyForgeRequirement = true,
+            reasonTextVi = "Forge $minecraftVersion (≤ 1.16.5) yêu cầu Java 8 hoặc Java 11 (không tương thích Java 17+)."
         )
     }
 
@@ -2381,20 +2456,23 @@ private fun installerJavaRequirement(
         minor <= 16 -> InstallerJavaRequirement(
             recommendedJava = JavaVersion.Java11,
             preferredVendor = JavaVendor.Termux,
+            acceptableVersions = setOf(JavaVersion.Java8, JavaVersion.Java11, JavaVersion.Java17),
             exactLegacyForgeRequirement = false,
             reasonTextVi = "Minecraft $minecraftVersion (1.7.10–1.16.5) tương thích tốt nhất với Java 11 hoặc Java 8."
         )
         minor > 20 || (minor == 20 && patch >= 5) -> InstallerJavaRequirement(
-            recommendedJava = if (core.needsInstaller) JavaVersion.Java25 else JavaVersion.Java21,
+            recommendedJava = JavaVersion.Java21,
             preferredVendor = JavaVendor.Termux,
+            acceptableVersions = setOf(JavaVersion.Java21, JavaVersion.Java25),
             exactLegacyForgeRequirement = false,
-            reasonTextVi = "Minecraft $minecraftVersion (1.20.5–1.21.11) yêu cầu tối thiểu Java 21 (hoặc Java 25 khi chạy trình cài Forge/NeoForge)."
+            reasonTextVi = "Minecraft $minecraftVersion (≥ 1.20.5) yêu cầu tối thiểu Java 21 (LTS)."
         )
         else -> InstallerJavaRequirement(
             recommendedJava = JavaVersion.Java17,
             preferredVendor = JavaVendor.Termux,
+            acceptableVersions = setOf(JavaVersion.Java17, JavaVersion.Java21),
             exactLegacyForgeRequirement = false,
-            reasonTextVi = "Minecraft $minecraftVersion (1.17–1.20.4) yêu cầu Java 17 (LTS)."
+            reasonTextVi = "Minecraft $minecraftVersion (1.17–1.20.4) tương thích chuẩn với Java 17 và Java 21 (LTS)."
         )
     }
 }
@@ -2414,14 +2492,7 @@ private fun InstallerJavaNotice(
     var showJavaGuide by rememberSaveable { mutableStateOf(false) }
 
     val targetRuntime = JavaRuntime(requirement.preferredVendor, requirement.recommendedJava)
-    // Với MC 1.20.5–1.21.11: cả Java 21 và Java 25 đều chạy tốt
-    val acceptableVersions = remember(requirement.recommendedJava, minecraftVersion) {
-        when (requirement.recommendedJava) {
-            JavaVersion.Java21, JavaVersion.Java25 -> setOf(JavaVersion.Java21, JavaVersion.Java25)
-            JavaVersion.Java11 -> setOf(JavaVersion.Java11, JavaVersion.Java8, JavaVersion.Java17)
-            else -> setOf(requirement.recommendedJava)
-        }
-    }
+    val acceptableVersions = requirement.acceptableVersions
     val matchingInstalledRuntime = installedJava.firstOrNull { it.version == requirement.recommendedJava }
         ?: installedJava.firstOrNull { it.version in acceptableVersions }
     val isCurrentlyCompatible = selectedJavaRuntime in installedJava && selectedJavaRuntime.version in acceptableVersions

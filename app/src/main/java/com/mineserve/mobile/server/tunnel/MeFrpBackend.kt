@@ -1,5 +1,6 @@
 package com.mineserve.mobile.server.tunnel
 
+import com.mineserve.mobile.data.FrpLocalTarget
 import com.mineserve.mobile.data.McConfig
 import com.mineserve.mobile.data.TunnelStatus
 import com.mineserve.mobile.data.TunnelType
@@ -44,7 +45,12 @@ class MeFrpBackend(
         }
 
         // 阻塞 HTTP；调用方（TunnelBackend.start）已在 IO 线程。
-        val configText = MeFrpApi.proxyConfig(token, tunnelId)
+        val rawConfig = MeFrpApi.proxyConfig(token, tunnelId)
+        val aligned = FrpLocalTarget.align(rawConfig, config.localPort)
+        if (aligned.changed > 0) {
+            log("[mefrp] 已将隧道本地转发端口从 ${aligned.from} 对齐为服务端真实端口 ${config.localPort}")
+        }
+        val configText = aligned.text
         lastConfigText = configText
 
         val file = File(tunnelDir, "frpc-mefrp.toml")

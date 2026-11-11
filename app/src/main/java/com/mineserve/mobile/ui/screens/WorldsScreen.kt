@@ -44,7 +44,19 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {},
     val importStatus by vm.worldImportStatus.collectAsState()
     val healthReport by vm.worldHealthReport.collectAsState()
     val config by vm.config.collectAsState()
-    val supportsJavaWorldCreation = !vm.isPowerNukkitXActive()
+    val rustStatus by vm.rustEngineStatus.collectAsState()
+    val installedPlugins by vm.installedPlugins.collectAsState()
+    val mods by vm.mods.collectAsState()
+    val activeCoreObj = config.installedCores.firstOrNull { it.name == config.activeCoreName }
+    val isNonJavaWorldEngine = vm.isPowerNukkitXActive() || activeCoreObj?.core?.isBedrock == true || rustStatus.isNativeRustEnabled
+    val supportsJavaWorldCreation = activeCoreObj != null && !isNonJavaWorldEngine
+    val hasGeyserInstalled = remember(activeCoreObj?.dirName, installedPlugins, mods) {
+        val dir = activeCoreObj?.dirName
+        (dir != null && vm.crossplayMarker(dir).isNotEmpty()) ||
+            installedPlugins.any { it.fileName.contains("geyser", ignoreCase = true) && it.isEnabled } ||
+            mods.any { it.fileName.contains("geyser", ignoreCase = true) && it.isEnabled }
+    }
+    val showPeAddonImport = activeCoreObj?.core?.isBedrock == true || hasGeyserInstalled
     val serverStorageMap by vm.serverStorageMap.collectAsState()
     val activeStorage = config.activeCoreName?.let { serverStorageMap[it] }
     val autoBackupOnStop by vm.autoBackupOnStop.collectAsState()
@@ -52,7 +64,7 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {},
     val cloudSyncFolderUri by vm.cloudSyncFolderUri.collectAsState()
     val lastBackupFilePath by vm.lastBackupFilePath.collectAsState()
     val runningFlow = remember(vm) { vm.serverState.map { it.isRunning }.distinctUntilChanged() }
-    val running by runningFlow.collectAsState(initial = true)
+    val running by runningFlow.collectAsState(initial = false)
     val activeWorldExists = active.isNotBlank() && worlds.any { it.name == active }
     val canManageWorlds = ready && config.activeCoreName != null && !loading && !running && !importing
     var hasStoragePerm by remember { mutableStateOf(ExternalBackupStore.hasPermission(context)) }
@@ -170,7 +182,7 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {},
     }
 
     fun selectPlayableMode(modeId: String, title: String) {
-        if (vm.isPowerNukkitXActive()) return
+        if (!supportsJavaWorldCreation) return
         val folder = ProHostFeatures.PLAYABLE_WORLD_MODES.firstOrNull { it.id == modeId }?.folderName
         val existingWorld = worlds.firstOrNull { it.name == folder }
         if (existingWorld != null) {
@@ -208,7 +220,35 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {},
             }
         }
 
-        if (sectionTab == 0 && selectedWorldName == null) item(key = "current_world_summary") {
+        if (config.installedCores.isEmpty()) item(key = "no_server_worlds_empty") {
+            HostCard("Chưa có máy chủ") {
+                Text(
+                    "Hiện chưa có máy chủ nào được tạo trên ứng dụng. Hãy tạo một máy chủ trước (hoặc bấm nút Tạo Nhanh Server Rust Thuần bên dưới) để quản lý thế giới, sao lưu và cài đặt Map!",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = { vm.createStandaloneRustServerOneTap() },
+                        enabled = !liveTask.active,
+                        shape = McShape.ControlCompact
+                    ) {
+                        Text("🦀 Tạo Nhanh Server Rust (~50MB RAM)")
+                    }
+                    OutlinedButton(
+                        onClick = onBack,
+                        shape = McShape.ControlCompact
+                    ) {
+                        Text("← Quay lại tạo Server")
+                    }
+                }
+            }
+        }
+
+        if (config.installedCores.isNotEmpty() && sectionTab == 0 && selectedWorldName == null) item(key = "current_world_summary") {
             val activeWorldObj = worlds.firstOrNull { it.name == active }
             val activeModeBadge = activeWorldObj?.let { ProHostFeatures.detectWorldPlayableModeLabel(it.dir) } ?: "🌲 Sinh Tồn"
             HostCard("🌍 Map Đang Dùng Trong Server") {
@@ -421,18 +461,20 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {},
                             Text("Nhập từ Thư mục", color = MaterialTheme.colorScheme.primary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }
-                    Spacer(Modifier.height(6.dp))
-                    Button(
-                        onClick = { peAddonLauncher.launch("*/*") },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                        shape = McShape.ControlCompact
-                    ) {
-                        Text(
-                            "Cài addon PE (.mcpack / .mcaddon / .zip)",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
+                    if (showPeAddonImport) {
+                        Spacer(Modifier.height(6.dp))
+                        Button(
+                            onClick = { peAddonLauncher.launch("*/*") },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                            shape = McShape.ControlCompact
+                        ) {
+                            Text(
+                                "Cài addon PE (.mcpack / .mcaddon / .zip)",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
                     }
 
                     if (importing) {
@@ -444,17 +486,18 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {},
             }
 
             // NÂNG CẤP PRO MAX: KHO FULL PACK SINH TỒN 1 CHẠM (ONEBLOCK, ĐẠI DỊCH ZOMBIE, SĂN RỒNG RPG, SKYBLOCK, RLCRAFT, PARKOUR, LUCKY ISLAND)
-            if ((sectionTab == 0 || sectionTab == 4) && selectedWorldName == null) item(key = "playable_mode_worlds_pro_card") {
+            if (config.installedCores.isNotEmpty() && (sectionTab == 0 || sectionTab == 4) && selectedWorldName == null) item(key = "playable_mode_worlds_pro_card") {
                 WorldToolsSection(
                     "🎮 Kho Full Pack Sinh Tồn 1 Chạm",
                     if (supportsJavaWorldCreation) "OneBlock 10 Cấp • Đại Dịch Zombie • Săn Rồng RPG • SkyBlock • RLCraft"
-                    else "PowerNukkitX không hỗ trợ datapack Java",
+                    else if (rustStatus.isNativeRustEnabled) "Nhân Rust Thuần chưa hỗ trợ Datapack Java — Hãy chọn ☕ Java Mod / ⚡ Java Turbo"
+                    else "Máy chủ Bedrock không hỗ trợ Datapack Java",
                     expandForTask = liveTask.active,
                     initiallyExpanded = sectionTab == 4
                 ) {
                     Text(
                         if (supportsJavaWorldCreation) "Chạm vào bất kỳ Pack Sinh Tồn nào bên dưới để hiện bảng Xác Nhận Chuyển Map. Map cũ của bạn luôn được giữ nguyên 100%, không tốn thêm RAM (Chơi chung được cả PC Java & Điện thoại PE)!"
-                        else "Các chế độ này chỉ hỗ trợ máy chủ Java. Với PowerNukkitX, hãy nhập map Bedrock hoặc chuyển map đã có trong danh sách.",
+                        else "Pack Sinh Tồn sử dụng Datapack Java — hãy chuyển sang chế độ '☕ Java Mod' hoặc '⚡ Java Turbo' trên máy chủ Java để tạo và chơi!",
                         fontSize = 14.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -581,22 +624,22 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {},
                     ) {
                         OutlinedButton(
                             onClick = { vm.triggerSurvivalPackAction("supply_drop") },
-                            enabled = running,
+                            enabled = running && supportsJavaWorldCreation,
                             shape = McShape.ControlCompact
                         ) { Text("🪂 Thả Tiếp Tế Quân Sự", fontSize = 13.sp) }
                         OutlinedButton(
                             onClick = { vm.triggerSurvivalPackAction("zombie_wave") },
-                            enabled = running,
+                            enabled = running && supportsJavaWorldCreation,
                             shape = McShape.ControlCompact
                         ) { Text("🧟 Gọi Đợt Zombie", fontSize = 13.sp) }
                         OutlinedButton(
                             onClick = { vm.triggerSurvivalPackAction("dragon_boss") },
-                            enabled = running,
+                            enabled = running && supportsJavaWorldCreation,
                             shape = McShape.ControlCompact
                         ) { Text("🐉 Triệu Hồi Boss Rồng", fontSize = 13.sp) }
                         OutlinedButton(
                             onClick = { vm.triggerSurvivalPackAction("dragon_kit") },
-                            enabled = running,
+                            enabled = running && supportsJavaWorldCreation,
                             shape = McShape.ControlCompact
                         ) { Text("⚔️ Phát Bộ Đồ Săn Rồng", fontSize = 13.sp) }
                     }
@@ -604,6 +647,7 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {},
                     Spacer(Modifier.height(4.dp))
                     Button(
                         onClick = { vm.enableFullAntiGriefShieldOneTap() },
+                        enabled = supportsJavaWorldCreation,
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                         shape = McShape.ControlCompact,
                         modifier = Modifier.fillMaxWidth()
@@ -645,11 +689,11 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {},
                 WorldToolsSection(
                     "Tạo map từ seed",
                     if (supportsJavaWorldCreation) "Java · Chọn địa hình và seed"
-                    else "Ứng dụng chưa hỗ trợ tạo map theo seed trên PowerNukkitX"
+                    else "Chỉ áp dụng cho máy chủ Java (☕ Java Mod / ⚡ Java Turbo)"
                 ) {
                     if (!supportsJavaWorldCreation) {
                         Text(
-                            "Seed và địa hình trong mục này chỉ áp dụng cho máy chủ Java. Với PowerNukkitX, bạn vẫn có thể nhập, chuyển và sao lưu map Bedrock.",
+                            "Seed và kiểu địa hình trong mục này chỉ áp dụng cho máy chủ Java chuẩn. Hãy chuyển sang chế độ Java hoặc nhập, chuyển đổi và sao lưu map đã có.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -741,7 +785,7 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {},
                     Spacer(Modifier.height(6.dp))
                     Button(
                         onClick = {
-                            if (vm.isPowerNukkitXActive()) return@Button
+                            if (!supportsJavaWorldCreation) return@Button
                             pendingPresetWorld = PresetWorldRequest(
                                 name = presetNameInput,
                                 seed = presetSeedInput,
@@ -814,7 +858,7 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {},
 
             if (loading) {
                 item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
-            } else if (worlds.isEmpty()) {
+            } else if (config.installedCores.isNotEmpty() && worlds.isEmpty()) {
                 item {
                     HostCard("Chưa có thế giới trong Server đang chọn") {
                         Text(
@@ -829,7 +873,7 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {},
             items(worlds.filter { selectedWorldName == null || it.name == selectedWorldName }.sortedByDescending { it.isActive },
                 key = { "world_${config.activeCoreName}_${it.name}" }) { world ->
                 val isJava = world.kind == Worlds.Kind.Java
-                val isBedrockServer = vm.isPowerNukkitXActive()
+                val isBedrockServer = activeCoreObj?.core?.isBedrock == true || vm.isPowerNukkitXActive()
                 val compatible = (isJava && !isBedrockServer) || (!isJava && isBedrockServer)
                 val modeBadge = remember(world.dir, world.name) {
                     ProHostFeatures.detectWorldPlayableModeLabel(world.dir)

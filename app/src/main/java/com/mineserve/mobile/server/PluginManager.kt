@@ -2718,6 +2718,10 @@ class PluginManager(
                         content = content.replace(Regex("""auth-type:\s*(online|floodgate|offline)"""), "auth-type: $forceAuthType")
                     }
                     content = content.replace(Regex("""clone-remote-port:\s*true"""), "clone-remote-port: false")
+                    content = content.replace(
+                        Regex("""(?m)(^remote:\s*(?:\r?\n\s+[^\r\n]+)*?\r?\n\s+port:\s*)\d+"""),
+                        "$1$javaPort"
+                    )
                     cfgFile.writeText(content, Charsets.UTF_8)
                 }
             }

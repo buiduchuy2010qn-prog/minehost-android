@@ -405,7 +405,7 @@ data class JavaRuntime(val vendor: JavaVendor, val version: JavaVersion) {
     val displayName: String get() = version.displayName
 
     companion object {
-        val Default = JavaRuntime(JavaVendor.Termux, JavaVersion.Java17)
+        val Default = JavaRuntime(JavaVendor.Fcl, JavaVersion.Java21)
 
         /** 全部可选运行环境，按来源分组顺序展开（Termux 在前）。 */
         val all: List<JavaRuntime>
@@ -645,7 +645,7 @@ data class McConfig(
      * （MC 版本要求的 Java 版本），来源决定用哪一套 JDK 实现。
      * 默认 [JavaVendor.Termux]，与历史行为一致（旧配置解析后自然落到这里）。
      */
-    val selectedJavaVendor: JavaVendor = JavaVendor.Termux,
+    val selectedJavaVendor: JavaVendor = JavaVendor.Fcl,
     /**
      * Termux 来源的 JDK 启动时是否挂 IPv6 兼容层（见 [JvmFlavor]）。
      *

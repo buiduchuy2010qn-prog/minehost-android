@@ -370,6 +370,12 @@ class BootstrapInstaller(private val context: Context) {
                 postSetup()
 
                 readyFile.writeText(System.currentTimeMillis().toString())
+                runCatching { if (rootfsFile.exists()) rootfsFile.delete() }
+                runCatching {
+                    tmpDir.listFiles()?.forEach { f ->
+                        if (f.isFile && f.name.startsWith("bootstrap-") && f.name.endsWith(".zip")) f.delete()
+                    }
+                }
                 onProgress(InstallPhase.DONE, 100)
                 log("Termux 环境初始化完成")
                 true

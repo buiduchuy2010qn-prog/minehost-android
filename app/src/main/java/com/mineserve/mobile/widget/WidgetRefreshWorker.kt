@@ -34,13 +34,18 @@ class WidgetRefreshWorker(context: Context, params: WorkerParameters) : Coroutin
         return Result.success()
     }
 
-    /** MC 以 App 私有 Termux 环境运行：cmdline 含应用私有路径且为 java/proot 启动。 */
+    /** MC 以 App 私有环境运行：cmdline 含本应用 filesDir 路径且为 java / pumpkin / php 进程。 */
     private fun anyMcProcessAlive(): Boolean = runCatching {
+        val appFilesMarker = applicationContext.filesDir.absolutePath
         File("/proc").listFiles { f -> f.isDirectory && f.name.toIntOrNull() != null }
             ?.any { p ->
                 runCatching {
                     val cmd = File(p, "cmdline").readBytes().decodeToString()
-                    cmd.contains("com.mineserve.mobile/files/home") && cmd.contains("java")
+                    cmd.contains(appFilesMarker) && (
+                        cmd.contains("java") ||
+                            cmd.contains("pumpkin") ||
+                            cmd.contains("php")
+                        )
                 }.getOrDefault(false)
             } ?: false
     }.getOrDefault(false)

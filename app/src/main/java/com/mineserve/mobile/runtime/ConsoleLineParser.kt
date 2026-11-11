@@ -49,8 +49,12 @@ data class ConsoleSignals(
  */
 object ConsoleLineParser {
 
+    private val ANSI_REGEX = Regex("\u001B\\[[0-9;]*[A-Za-z]")
     private val PLAYERS_REGEX = Regex("There are (\\d+) of a max of (\\d+) players online")
     private val TPS_REGEX = Regex("TPS from last 1m.*?:\\s*([\\d.]+)")
+
+    fun stripAnsi(raw: String): String =
+        if (raw.indexOf('\u001B') >= 0) ANSI_REGEX.replace(raw, "") else raw
 
     /** 命中玩家数/就绪/TPS 判定所必需的廉价子串。 */
     private const val KEY_PLAYERS = "players online"
@@ -78,9 +82,10 @@ object ConsoleLineParser {
      * 与通知/记录副作用，仍由各自的消费者处理，避免把 UI 语义塞进纯解析层。
      */
     fun parse(line: String): ConsoleSignals {
-        synchronized(cache) { cache[line]?.let { return it } }
-        val result = parseUncached(line)
-        synchronized(cache) { cache[line] = result }
+        val clean = stripAnsi(line)
+        synchronized(cache) { cache[clean]?.let { return it } }
+        val result = parseUncached(clean)
+        synchronized(cache) { cache[clean] = result }
         return result
     }
 

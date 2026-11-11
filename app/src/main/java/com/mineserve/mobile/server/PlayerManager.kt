@@ -41,8 +41,9 @@ class PlayerManager(private val termux: TermuxRuntime) {
     private val powerNukkitLeaveRegex = Regex("(?:^|[: ]\\s*)([A-Za-z0-9_.]{1,16})(?:\\[[^]]*])?\\s+disconnected(?:[: ]|$)", RegexOption.IGNORE_CASE)
 
     fun extractPowerNukkitPlayerEvent(line: String): Pair<String, Boolean>? {
-        powerNukkitJoinRegex.find(line)?.groupValues?.getOrNull(1)?.let { return it to true }
-        powerNukkitLeaveRegex.find(line)?.groupValues?.getOrNull(1)?.let { return it to false }
+        val clean = com.mineserve.mobile.runtime.ConsoleLineParser.stripAnsi(line)
+        powerNukkitJoinRegex.find(clean)?.groupValues?.getOrNull(1)?.let { return it to true }
+        powerNukkitLeaveRegex.find(clean)?.groupValues?.getOrNull(1)?.let { return it to false }
         return null
     }
 
@@ -555,8 +556,9 @@ class PlayerManager(private val termux: TermuxRuntime) {
      * 匹配 "players online: <names>" 格式
      */
     fun parseOnlinePlayers(logLine: String): List<String>? {
+        val clean = com.mineserve.mobile.runtime.ConsoleLineParser.stripAnsi(logLine)
         val regex = Regex("players online:\\s*(.*)")
-        val match = regex.find(logLine) ?: return null
+        val match = regex.find(clean) ?: return null
         val names = match.groupValues[1].trim()
         if (names.isEmpty()) return emptyList()
         return names.split(",").map { it.trim() }.filter { it.isNotEmpty() }
@@ -566,7 +568,8 @@ class PlayerManager(private val termux: TermuxRuntime) {
      * 从进服/离服日志行中提取玩家名。
      */
     fun extractPlayerName(logLine: String): String? {
-        val m = joinLeaveStrictRegex.find(logLine) ?: joinLeaveLooseRegex.find(logLine) ?: return null
+        val clean = com.mineserve.mobile.runtime.ConsoleLineParser.stripAnsi(logLine)
+        val m = joinLeaveStrictRegex.find(clean) ?: joinLeaveLooseRegex.find(clean) ?: return null
         return m.groupValues[1]
     }
 

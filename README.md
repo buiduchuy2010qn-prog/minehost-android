@@ -1,9 +1,9 @@
 <div align="center">
 
 # 🇻🇳 MINEHOST PRO — ANDROID MINECRAFT SERVER ENGINE
-### **v3.1.0 (Build 69 • Official Community Edition)**
+### **v3.1.1 (Build 70 • Official Community Edition)**
 
-[![Release](https://img.shields.io/badge/RELEASE-v3.1.0%20(Build%2069)-10B981?style=for-the-badge&logo=android&logoColor=white)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
+[![Release](https://img.shields.io/badge/RELEASE-v3.1.1%20(Build%2070)-10B981?style=for-the-badge&logo=android&logoColor=white)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
 [![Engine](https://img.shields.io/badge/3--ENGINE-JAVA%20•%20RUST%20TURBO%20•%20NATIVE%20RUST-EA580C?style=for-the-badge&logo=rust&logoColor=white)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
 [![Platform](https://img.shields.io/badge/ANDROID-8.0%2B%20(ARM64)-0EA5E9?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases)
 [![Crossplay](https://img.shields.io/badge/CROSSPLAY-JAVA%20PC%20%2B%20BEDROCK%20PE-F59E0B?style=for-the-badge&logo=reverbnation&logoColor=white)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
@@ -12,13 +12,13 @@
 
 **Biến điện thoại Android thành máy chủ Minecraft chuyên nghiệp (Paper, Purpur, Fabric, Forge, NeoForge, Vanilla, Bedrock & Nhân Rust siêu nhẹ) — Hỗ trợ chơi chung PC & Điện thoại PE không cần thuê VPS hay mở Port Router.**
 
-### 👉 [**📥 TẢI NGAY APK v3.1.0 MỚI NHẤT (`minehost-3.1.0-arm64.apk`)**](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/download/v3.1.0/minehost-3.1.0-arm64.apk)
+### 👉 [**📥 TẢI NGAY APK v3.1.1 MỚI NHẤT (`minehost-3.1.1-arm64.apk`)**](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/download/v3.1.1/minehost-3.1.1-arm64.apk)
 
 </div>
 
 ---
 
-## ✨ Đột Phá Mới Nhất Trên Bản `v3.1.0` (Build 69)
+## ✨ Đột Phá Mới Nhất Trên Bản `v3.1.1` (Build 70)
 
 | Hạng mục nâng cấp | Công nghệ & Cơ chế hoạt động |
 | :--- | :--- |
@@ -55,9 +55,9 @@
 ## 📦 Thông Số Kỹ Thuật & Cập Nhật OTA
 
 - **Định danh gói (`applicationId`):** `vn.minehost.pro`
-- **Phiên bản mới nhất:** `v3.1.0` (`versionCode = 69`)
+- **Phiên bản mới nhất:** `v3.1.1` (`versionCode = 70`)
 - **Kiến trúc hỗ trợ:** `arm64-v8a` (Android 8.0 / API 26 trở lên)
-- **Môi trường Runtime:** OpenJDK `8`, `17`, `21`, `25` (Termux glibc/proot & FCL Native Runtime) + Native ARM64 Rust Engine
+- **Môi trường Runtime siêu nhẹ:** Mặc định **FCL Native Android JRE (`35.5 MB` cho Java 17 • `43.0 MB` cho Java 21)** tự tải tức thì + Hỗ trợ OpenJDK `8/11/17/21/25` & **Nhân Rust ARM64 độc lập 1 chạm (không cần cài Java)**
 - **Cập nhật OTA Tự Động:** Tự phát hiện bản mới ngay khi mở ứng dụng, xác thực chữ ký số gốc (`CN=MineHost Android`), cài đè trực tiếp **giữ nguyên 100% Thế giới, Mod, Plugin & Cài đặt**, và tự động dọn sạch tệp `.apk` cũ sau khi nâng cấp.
 
 ---

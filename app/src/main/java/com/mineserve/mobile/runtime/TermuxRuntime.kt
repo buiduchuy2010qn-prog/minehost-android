@@ -533,6 +533,71 @@ class TermuxRuntime(context: Context) {
     fun isJavaReadyForDistro(version: JavaVersion, distro: ProotDistro): Boolean =
         distro.profileFor(version)?.let { isContainerJavaReady(it) } ?: false
 
+    fun isJavaReadyForDistro(distro: ProotDistro, version: JavaVersion): Boolean =
+        isJavaReadyForDistro(version, distro)
+
+    /**
+     * Trả về đường dẫn thực thi `java` trên host cho [vendor] & [version]
+     * (với [JavaVendor.Fcl] trả về `fclJre.javaBinary(version).absolutePath`).
+     */
+    fun resolveHostJavaBinaryPath(version: JavaVersion, vendor: JavaVendor): String? =
+        if (vendor == JavaVendor.Fcl) {
+            fclJre.javaBinary(version).absolutePath
+        } else {
+            resolveJavaPath(installer.rootDir.absolutePath, version, vendor)
+        }
+
+    /**
+     * Thực thi một lệnh công cụ Java trên host (như Forge/NeoForge/Quilt installer)
+     * với đúng `JAVA_HOME` và `LD_LIBRARY_PATH` tương ứng của [javaVendor] (hỗ trợ đầy đủ [JavaVendor.Fcl]).
+     */
+    fun execHostJava(
+        javaVersion: JavaVersion,
+        javaVendor: JavaVendor,
+        vararg args: String
+    ): Int {
+        val prefix = installer.rootDir.absolutePath
+        val javaPath = if (javaVendor == JavaVendor.Fcl) {
+            fclJre.javaBinary(javaVersion).absolutePath
+        } else {
+            resolveJavaPath(prefix, javaVersion, javaVendor) ?: "java"
+        }
+        val jvmBinDir = File(javaPath).parentFile?.absolutePath ?: "$prefix/bin"
+        val javaHome = File(javaPath).parentFile?.parentFile?.absolutePath ?: prefix
+        val jvmLibDir = File(javaHome, "lib").absolutePath
+        val compatUsr = "$prefix/data/data/com.termux/files/usr"
+        val libraryPath = if (javaVendor == JavaVendor.Fcl) {
+            "$jvmLibDir:$jvmLibDir/server:$jvmLibDir/jli:$prefix/lib:$compatUsr/lib:$prefix/usr/lib:/system/lib64"
+        } else {
+            "$jvmLibDir:$jvmLibDir/server:$jvmLibDir/jli:$prefix/lib:$compatUsr/lib:$prefix/usr/lib:/system/lib64"
+        }
+        val nativeAccessArg = if (javaVersion == JavaVersion.Java25) "--enable-native-access=ALL-UNNAMED " else ""
+        val cmd = "export PATH='$jvmBinDir:$prefix/bin:$prefix/usr/bin:$compatUsr/bin:$prefix/bin/applets:$prefix/libexec:/system/bin:/system/xbin'; " +
+            "export LD_LIBRARY_PATH='$libraryPath'; " +
+            preloadEnv(JvmFlavor.PatchedJdk, javaVendor) +
+            "export JAVA_HOME='$javaHome'; " +
+            "export PREFIX='$prefix'; " +
+            "export HOME='$prefix/home'; " +
+            "export TMPDIR='$prefix/tmp'; " +
+            "exec ${shellQuote(javaPath)} $nativeAccessArg" +
+            args.joinToString(" ") { shellQuote(it) }
+        val pb = ProcessBuilder("/system/bin/sh", "-c", cmd).apply {
+            redirectErrorStream(true)
+            redirectInput(File("/dev/null"))
+            directory(File(installer.rootDir, "home").apply { mkdirs() })
+            environment().putAll(executor.termuxEnv())
+        }
+        val process = pb.start()
+        runCatching { process.outputStream.close() }
+        process.inputStream.bufferedReader().useLines { seq ->
+            seq.forEach { line ->
+                executor.emit(line)
+                Log.d(TAG, "  | $line")
+            }
+        }
+        return process.waitFor()
+    }
+
     fun installedJavaVersions(): Set<JavaVersion> =
         JavaVersion.values().filter { isJavaInstalled(it, JavaVendor.Termux) }.toSet()
 
@@ -3290,11 +3355,26 @@ class TermuxRuntime(context: Context) {
                 val cmdline = try {
                     File(f, "cmdline").readText().replace('\u0000', ' ')
                 } catch (_: Exception) { return@forEach }
-                val isMc = cmdline.contains("java") && if (target != null) {
-                    matchesManagedServer(cmdline, target)
+                val comm = runCatching {
+                    File(f, "comm").takeIf { it.isFile }?.readText()?.trim()
+                }.getOrNull().orEmpty()
+                val cwd = runCatching { Os.readlink("/proc/$pid/cwd") }.getOrNull()
+                val appFilesPath = appContext.filesDir.absolutePath
+                val matchesTargetDir = target == null ||
+                    matchesManagedServer(cmdline, target) ||
+                    (cwd != null && cwd == target)
+                val isJavaMc = (comm == "java" || cmdline.contains("java")) && if (target != null) {
+                    matchesTargetDir
                 } else {
                     cmdline.contains(".jar") && cmdline.contains("nogui")
                 }
+                val isPumpkin = (comm.startsWith("pumpkin") || cmdline.contains("pumpkin")) &&
+                    (cmdline.contains(appFilesPath) || (cwd != null && cwd.startsWith(appFilesPath))) &&
+                    (matchesTargetDir || cwd == null)
+                val isPhp = (comm == "php" || cmdline.contains("/php")) &&
+                    (cmdline.contains(appFilesPath) || (cwd != null && cwd.startsWith(appFilesPath))) &&
+                    matchesTargetDir
+                val isMc = isJavaMc || isPumpkin || isPhp
                 val ambiguousWhenRunning = target == null &&
                     synchronized(mcProcessLock) { mcProcess?.isAlive == true }
                 if (isMc && !ambiguousWhenRunning) {
@@ -3970,6 +4050,7 @@ class TermuxRuntime(context: Context) {
                 var line = reader.readLine()
                 var lineCount = 0
                 while (line != null) {
+                    observeConsoleLineForShutdown(line)
                     executor.emit(line)
                     writer.appendLine(line)
                     // 批量 flush：每 50 行或退出时写入磁盘，避免每行一次 IO
@@ -4351,6 +4432,8 @@ class TermuxRuntime(context: Context) {
             }
             // Nếu sau 2 giây gửi "stop\n" mà tiến trình vẫn chưa thoát, gửi kèm tín hiệu SIGTERM chuẩn
             // tới JVM để kích hoạt ShutdownHook lưu Map và đóng các Mod cứng đầu.
+            // Nếu findServerPid() trả về null (ví dụ Pumpkin / PHP hoặc thiết bị ẩn /proc),
+            // fallback về mcProcess?.destroy() (gửi SIGTERM trên Android JVM) để không bao giờ bị treo chờ hết thời gian.
             if (!sigtermSent && now - stopStartMs >= 2_000L) {
                 sigtermSent = true
                 runCatching {
@@ -4361,6 +4444,8 @@ class TermuxRuntime(context: Context) {
                     val srvPid = mcServerPid ?: mcPid?.let(::findServerPid)
                     if (srvPid != null && srvPid > 0) {
                         android.os.Process.sendSignal(srvPid, 15) // SIGTERM triggers clean JVM shutdown hook
+                    } else {
+                        (mcProcess ?: proc).destroy()
                     }
                 }
             }
@@ -4740,17 +4825,26 @@ class TermuxRuntime(context: Context) {
             }
             return false
         }
+        val appFilesPath = appContext.filesDir.absolutePath
         entries.filter { it.pid == rootPid || isDescendant(it.pid) }
-            .filter { it.comm == "java" || it.cmdline.substringBefore('\u0000').substringAfterLast('/') == "java" }
-            // 多个 java 后代时优先选「真正在跑服务端」的那个。
+            .filter { entry ->
+                val exeName = entry.cmdline.substringBefore('\u0000').substringAfterLast('/')
+                val isJava = entry.comm == "java" || exeName == "java"
+                val isPumpkin = (entry.comm.startsWith("pumpkin") || entry.cmdline.contains("pumpkin")) &&
+                    (entry.cmdline.contains(appFilesPath) || runCatching { Os.readlink("/proc/${entry.pid}/cwd")?.startsWith(appFilesPath) == true }.getOrDefault(false))
+                val isPhp = (entry.comm == "php" || exeName == "php" || entry.cmdline.contains("/php")) &&
+                    (entry.cmdline.contains(appFilesPath) || runCatching { Os.readlink("/proc/${entry.pid}/cwd")?.startsWith(appFilesPath) == true }.getOrDefault(false))
+                isJava || isPumpkin || isPhp
+            }
+            // 多个后代时优先选「真正在跑服务端」的那个。
             // 来宾链路下 cmdline 里是 `/srv/mineserve` 或 rootfs 内路径，
             // 原先只匹配宿主 installer.rootDir 会让容器场景全部退化成等权，
             // 从而可能选中 installer 那个短命进程而不是服务端。
             .maxByOrNull {
                 when {
-                    it.cmdline.contains(".jar") -> 3
+                    it.cmdline.contains(".jar") || it.cmdline.contains(".phar") || it.comm.startsWith("pumpkin") -> 3
                     it.cmdline.contains(GUEST_SERVER_DIR) -> 2
-                    it.cmdline.contains(installer.rootDir.absolutePath) -> 2
+                    it.cmdline.contains(installer.rootDir.absolutePath) || it.cmdline.contains(appFilesPath) -> 2
                     else -> 1
                 }
             }
@@ -4760,6 +4854,7 @@ class TermuxRuntime(context: Context) {
     /** Android exposes our app's child relationship in procfs even though Process.pid() is absent. */
     private fun findMcChildPid(): Int? = try {
         val parentPid = android.os.Process.myPid().toString()
+        val appFilesPath = appContext.filesDir.absolutePath
         File("/proc").listFiles()?.firstNotNullOfOrNull { dir ->
             if (!dir.name.all(Char::isDigit)) return@firstNotNullOfOrNull null
             val stat = File(dir, "stat").takeIf { it.isFile }?.readText() ?: return@firstNotNullOfOrNull null
@@ -4773,6 +4868,7 @@ class TermuxRuntime(context: Context) {
             // 进而内存/CPU/TPS 全部取不到）。GUEST_SERVER_DIR 是 `/srv/mineserve`，
             // 它不可能出现在非容器进程里，因此不会误认。
             if (cmdline.contains(installer.rootDir.absolutePath) ||
+                cmdline.contains(appFilesPath) ||
                 cmdline.contains(GUEST_SERVER_DIR)
             ) dir.name.toIntOrNull() else null
         }

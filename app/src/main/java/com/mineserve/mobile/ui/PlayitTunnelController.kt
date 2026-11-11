@@ -3,12 +3,16 @@ package com.mineserve.mobile.ui
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
+import com.mineserve.mobile.McApplication
+import com.mineserve.mobile.data.ServerCore
 import com.mineserve.mobile.server.DiagnosticRedactor
+import com.mineserve.mobile.server.ProHostFeatures
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -18,11 +22,15 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.DataInputStream
+import java.io.File
 import java.io.IOException
 import java.io.InputStreamReader
 import java.net.DatagramPacket
@@ -196,6 +204,7 @@ class PlayitTunnelController(
 ) {
     private val appContext = context.applicationContext
     private val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val playitPrefs = appContext.getSharedPreferences("playit_prefs", Context.MODE_PRIVATE)
 
     internal val sessionGeneration = AtomicLong(0L)
 
@@ -277,9 +286,87 @@ class PlayitTunnelController(
     private val activeConnectionCount = AtomicInteger(0)
     private val recentClaimKeys = ConcurrentHashMap<String, Long>()
     private var networkCallbackRegistered = false
+    private val syncTrigger = Channel<Unit>(Channel.CONFLATED)
+    private val tunnelSyncMutex = Mutex()
+    private val autoCreatedJavaServers = ConcurrentHashMap.newKeySet<String>()
+    private val autoCreatedBedrockServers = ConcurrentHashMap.newKeySet<String>()
 
     init {
+        setSessionRunningInPrefs(running = false)
         loadSavedTunnelRoutes()
+    }
+
+    private data class ServerTunnelCapabilities(
+        val isPureBedrock: Boolean,
+        val hasGeyser: Boolean,
+        val hasNativeRust: Boolean
+    ) {
+        val needsJavaTcp: Boolean get() = !isPureBedrock
+        val needsBedrockUdp: Boolean get() = isPureBedrock || hasGeyser || hasNativeRust
+    }
+
+    private fun setSessionRunningInPrefs(running: Boolean, clearLastAddresses: Boolean = false) {
+        runCatching {
+            prefs.edit().putBoolean("is_session_running", running).apply()
+            playitPrefs.edit().apply {
+                putBoolean("is_session_running", running)
+                if (clearLastAddresses) {
+                    remove("last_java_address")
+                    remove("last_bedrock_address")
+                }
+                apply()
+            }
+        }
+    }
+
+    private fun hasGeyserInstalledInServerDir(serverDir: File): Boolean {
+        val jarDirs = listOf(File(serverDir, "plugins"), File(serverDir, "mods"))
+        val hasGeyserJar = jarDirs.any { dir ->
+            dir.isDirectory && dir.listFiles()?.any { f ->
+                f.isFile &&
+                    !f.name.startsWith("-") &&
+                    f.name.endsWith(".jar", ignoreCase = true) &&
+                    f.name.contains("geyser", ignoreCase = true)
+            } == true
+        }
+        if (hasGeyserJar) return true
+        val configCandidates = listOf(
+            File(serverDir, "plugins/Geyser-Spigot/config.yml"),
+            File(serverDir, "plugins/Geyser/config.yml"),
+            File(serverDir, "config/Geyser-Fabric/config.yml"),
+            File(serverDir, "config/Geyser-NeoForge/config.yml"),
+            File(serverDir, "config/Geyser/config.yml")
+        )
+        return configCandidates.any { it.isFile && it.length() >= 64L }
+    }
+
+    private fun resolveServerTunnelCapabilities(serverId: String): ServerTunnelCapabilities {
+        return runCatching {
+            val app = McApplication.get(appContext)
+            val cfg = app.repository.currentConfig()
+            val cleanId = serverId.trim()
+            val activeCore = cfg.installedCores.firstOrNull {
+                cleanId.isNotBlank() && cleanId != "default" && (it.dirName == cleanId || it.name == cleanId)
+            } ?: cfg.installedCores.firstOrNull { it.name == cfg.activeCoreName }
+            val coreType = activeCore?.core ?: cfg.selectedCore
+            val dirName = activeCore?.dirName?.takeIf { it.isNotBlank() }
+                ?: cleanId.takeIf { it.isNotBlank() && it != "default" }
+            val srvDir = dirName?.let { app.termuxRuntime.serverDirFor(it) }
+            val hasNativeRust = srvDir != null && ProHostFeatures.isNativeRustServerModeEnabled(srvDir)
+            val isPureBedrock = !hasNativeRust && (
+                coreType == ServerCore.PowerNukkitX ||
+                    coreType == ServerCore.PocketMine ||
+                    coreType == ServerCore.Allay
+                )
+            val hasGeyser = srvDir != null && hasGeyserInstalledInServerDir(srvDir)
+            ServerTunnelCapabilities(
+                isPureBedrock = isPureBedrock,
+                hasGeyser = hasGeyser,
+                hasNativeRust = hasNativeRust
+            )
+        }.getOrDefault(
+            ServerTunnelCapabilities(isPureBedrock = false, hasGeyser = false, hasNativeRust = false)
+        )
     }
 
     private class LocalBedrockUdpClient(
@@ -603,12 +690,15 @@ class PlayitTunnelController(
     fun resetSecretKey() {
         stop()
         clearAllTunnelRoutes()
+        autoCreatedJavaServers.clear()
+        autoCreatedBedrockServers.clear()
         prefs.edit()
             .remove(KEY_SECRET)
             .remove(KEY_LAST_ADDRESS)
             .remove(KEY_LAST_BEDROCK_ADDRESS)
             .remove(KEY_LAST_AGENT_ID)
             .apply()
+        setSessionRunningInPrefs(running = false, clearLastAddresses = true)
         updateState {
             PlayitUiState(
                 stage = PlayitStage.Idle,
@@ -648,27 +738,70 @@ class PlayitTunnelController(
 
         val activePort = resolveValidPort(currentPortProvider, 25565)
         val bedrockPort = resolveValidPort(currentBedrockPortProvider, 19132)
-        // Nếu Agent chỉ có duy nhất 1 route cho giao thức đó (từ server đã tắt trước đó), chuyển route đó sang hostingServerId đang bật
-        rebindSingleSharedRouteToHostingServer(hostingServerId, TunnelProtocol.JAVA_TCP, activePort)
-        rebindSingleSharedRouteToHostingServer(hostingServerId, TunnelProtocol.BEDROCK_UDP, bedrockPort)
+        val caps = resolveServerTunnelCapabilities(hostingServerId)
+        // Nếu Agent chỉ có duy nhất 1 route cho giao thức cần thiết (từ server đã tắt trước đó), chuyển route đó sang hostingServerId đang bật
+        if (caps.needsJavaTcp) {
+            rebindSingleSharedRouteToHostingServer(hostingServerId, TunnelProtocol.JAVA_TCP, activePort)
+        }
+        if (caps.needsBedrockUdp) {
+            rebindSingleSharedRouteToHostingServer(hostingServerId, TunnelProtocol.BEDROCK_UDP, bedrockPort)
+        }
         // Cập nhật cổng đích của đúng hostingServerId (không đụng tới các server khác khi có nhiều tunnel!)
         updateServerRouteTargetPortIfBound(hostingServerId, TunnelProtocol.JAVA_TCP, activePort)
         updateServerRouteTargetPortIfBound(hostingServerId, TunnelProtocol.BEDROCK_UDP, bedrockPort)
 
+        setSessionRunningInPrefs(running = true)
+        if (!caps.needsJavaTcp) {
+            runCatching { playitPrefs.edit().remove("last_java_address").apply() }
+        }
+        if (!caps.needsBedrockUdp) {
+            runCatching { playitPrefs.edit().remove("last_bedrock_address").apply() }
+        }
+
+        val boundJavaRoute = if (caps.needsJavaTcp) getRouteForServer(hostingServerId, TunnelProtocol.JAVA_TCP) else null
+        val boundBedrockRoute = if (caps.needsBedrockUdp) getRouteForServer(hostingServerId, TunnelProtocol.BEDROCK_UDP) else null
+        val hasAllNeededRoutes = (!caps.needsJavaTcp || boundJavaRoute?.userEnabled == true) &&
+            (!caps.needsBedrockUdp || boundBedrockRoute?.userEnabled == true)
+
         if (tunnelJob?.isActive == true && !forceRefresh) {
-            updateState {
-                it.copy(
+            updateState { cur ->
+                val resolvedJavaAddr = if (caps.needsJavaTcp) (boundJavaRoute?.publicAddress ?: "") else ""
+                val resolvedJavaIpv4 = if (caps.needsJavaTcp) (boundJavaRoute?.allocatedIpv4 ?: "") else ""
+                val resolvedPeAddr = if (caps.needsBedrockUdp) (boundBedrockRoute?.publicAddress ?: "") else ""
+                val resolvedPeIpv4 = if (caps.needsBedrockUdp) (boundBedrockRoute?.allocatedIpv4 ?: "") else ""
+                cur.copy(
                     hostingServerId = hostingServerId,
                     viewedServerId = viewedServerId,
                     javaLocalPort = activePort,
-                    bedrockLocalPort = bedrockPort
+                    bedrockLocalPort = bedrockPort,
+                    publicAddress = resolvedJavaAddr,
+                    secondaryAddress = if (resolvedJavaAddr.isNotBlank() && cur.hostingServerId == hostingServerId) cur.secondaryAddress else "",
+                    allocatedIpv4Address = resolvedJavaIpv4,
+                    bedrockAddress = resolvedPeAddr,
+                    bedrockIpv4Address = resolvedPeIpv4
                 )
+            }
+            if (!hasAllNeededRoutes) {
+                autoCreatedJavaServers.remove(hostingServerId)
+                autoCreatedBedrockServers.remove(hostingServerId)
+                syncTrigger.trySend(Unit)
+                val savedSecret = getSavedSecret()
+                val currentGen = sessionGeneration.get()
+                if (!savedSecret.isNullOrBlank()) {
+                    activeSessionScope?.launch {
+                        runCatching {
+                            syncAndBindRoutesOnce(currentGen, savedSecret)
+                        }
+                    }
+                }
             }
             return
         }
 
         // Hủy phiên cũ hoàn toàn trước khi mở phiên mới để đảm bảo chỉ có 1 vòng control hợp lệ tại 1 thời điểm
         cancelCurrentSessionResources()
+        autoCreatedJavaServers.remove(hostingServerId)
+        autoCreatedBedrockServers.remove(hostingServerId)
         val newGen = sessionGeneration.incrementAndGet()
         activeConnectionCount.set(0)
         forceReauthRequested.set(false)
@@ -687,6 +820,11 @@ class PlayitTunnelController(
                 bedrockLocalPort = bedrockPort,
                 isAgentOnline = false,
                 controlSessionValid = false,
+                publicAddress = "",
+                secondaryAddress = "",
+                allocatedIpv4Address = "",
+                bedrockAddress = "",
+                bedrockIpv4Address = "",
                 errorMessage = "",
                 lastLocalTargetError = ""
             )
@@ -781,6 +919,7 @@ class PlayitTunnelController(
     fun stop() {
         val newGen = sessionGeneration.incrementAndGet()
         cancelCurrentSessionResources()
+        setSessionRunningInPrefs(running = false)
         updateState {
             it.copy(
                 stage = PlayitStage.Idle,
@@ -904,6 +1043,7 @@ class PlayitTunnelController(
                             }
                             "UserRejected" -> {
                                 claimCode = ""
+                                setSessionRunningInPrefs(running = false)
                                 updateStateForSession(sessionGen) {
                                     it.copy(
                                         stage = PlayitStage.Error,
@@ -963,6 +1103,7 @@ class PlayitTunnelController(
 
                 val nowTimeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
                 appendLog("🟢 Agent Playit.gg ĐÃ ONLINE trên kênh điều khiển UDP (${controlAddr.address.hostAddress}:${controlAddr.port}). Đang đồng bộ danh sách tunnel...")
+                setSessionRunningInPrefs(running = true)
 
                 updateStateForSession(sessionGen) {
                     it.copy(
@@ -1010,6 +1151,7 @@ class PlayitTunnelController(
                     delay(waitMs)
                 } else {
                     appendLog("❌ Khóa Agent Playit bị từ chối sau $MAX_AUTH_RETRIES lần thử (${classified.message}). Đã dừng thử lại để bảo toàn khóa hiện tại.")
+                    setSessionRunningInPrefs(running = false)
                     updateStateForSession(sessionGen) {
                         it.copy(
                             stage = PlayitStage.Error,
@@ -1026,6 +1168,7 @@ class PlayitTunnelController(
             } catch (e: FatalPlayitException) {
                 val classified = classifyPlayitError(e, "config")
                 appendLog("❌ Lỗi cấu hình Playit.gg: ${classified.message}")
+                setSessionRunningInPrefs(running = false)
                 updateStateForSession(sessionGen) {
                     it.copy(
                         stage = PlayitStage.Error,
@@ -1047,6 +1190,7 @@ class PlayitTunnelController(
 
                 if (consecutiveFailures > MAX_CONSECUTIVE_CONTROL_RETRIES) {
                     appendLog("❌ Đã vượt quá giới hạn $MAX_CONSECUTIVE_CONTROL_RETRIES lần kết nối lại liên tiếp (${classified.message}). Tạm dừng chờ người dùng bấm Bật lại.")
+                    setSessionRunningInPrefs(running = false)
                     updateStateForSession(sessionGen) {
                         it.copy(
                             stage = PlayitStage.Error,
@@ -1450,6 +1594,167 @@ class PlayitTunnelController(
     @Volatile
     private var _lastKnownClientAddrStr: String = ""
 
+    private suspend fun syncAndBindRoutesOnce(sessionGen: Long, secret: String) {
+        tunnelSyncMutex.withLock {
+            currentCoroutineContext().ensureActive()
+            if (!isSessionActive(sessionGen)) return
+            val activeSrvId = hostingServerId
+            val activeJavaPort = resolveValidPort(currentPortProvider, 25565)
+            val activeBedrockPort = resolveValidPort(currentBedrockPortProvider, 19132)
+            val caps = resolveServerTunnelCapabilities(activeSrvId)
+
+            var syncResult = syncTunnelsWithPlayitApi(
+                secret = secret,
+                defaultServerId = activeSrvId,
+                localJavaPort = activeJavaPort,
+                localBedrockPort = activeBedrockPort
+            )
+            currentCoroutineContext().ensureActive()
+            if (!isSessionActive(sessionGen)) return
+
+            if (caps.needsJavaTcp &&
+                syncResult.javaPrimary.isBlank() &&
+                !syncResult.hasDisabledJavaTunnel &&
+                syncResult.agentId.isNotBlank() &&
+                autoCreatedJavaServers.add(activeSrvId)
+            ) {
+                appendLog("Agent (${syncResult.agentName.ifBlank { syncResult.agentId.take(8) }}) chưa có tunnel Java TCP, đang tạo mới cho máy chủ '$activeSrvId' (127.0.0.1:$activeJavaPort)...")
+                if (createMinecraftJavaTunnel(secret, syncResult.agentId, activeJavaPort)) {
+                    for (attempt in 1..6) {
+                        delay(1500)
+                        currentCoroutineContext().ensureActive()
+                        if (!isSessionActive(sessionGen)) return
+                        syncResult = syncTunnelsWithPlayitApi(
+                            secret = secret,
+                            defaultServerId = activeSrvId,
+                            localJavaPort = activeJavaPort,
+                            localBedrockPort = activeBedrockPort
+                        )
+                        if (syncResult.javaPrimary.isNotBlank()) break
+                    }
+                }
+            }
+
+            if (caps.needsBedrockUdp &&
+                syncResult.bedrockPrimary.isBlank() &&
+                !syncResult.hasDisabledBedrockTunnel &&
+                syncResult.agentId.isNotBlank() &&
+                autoCreatedBedrockServers.add(activeSrvId)
+            ) {
+                appendLog("Agent (${syncResult.agentName.ifBlank { syncResult.agentId.take(8) }}) chưa có tunnel Bedrock UDP, đang tạo mới cho máy chủ '$activeSrvId' (127.0.0.1:$activeBedrockPort)...")
+                if (createMinecraftBedrockTunnelInternal(secret, syncResult.agentId, activeBedrockPort)) {
+                    for (attempt in 1..5) {
+                        delay(1500)
+                        currentCoroutineContext().ensureActive()
+                        if (!isSessionActive(sessionGen)) return
+                        syncResult = syncTunnelsWithPlayitApi(
+                            secret = secret,
+                            defaultServerId = activeSrvId,
+                            localJavaPort = activeJavaPort,
+                            localBedrockPort = activeBedrockPort
+                        )
+                        if (syncResult.bedrockPrimary.isNotBlank()) break
+                    }
+                }
+            }
+
+            currentCoroutineContext().ensureActive()
+            if (!isSessionActive(sessionGen)) return
+
+            val effectiveJavaPrimary = if (caps.needsJavaTcp) syncResult.javaPrimary else ""
+            val effectiveJavaSecondary = if (caps.needsJavaTcp) syncResult.javaSecondary else ""
+            val effectiveJavaIpv4 = if (caps.needsJavaTcp) syncResult.javaAllocatedIpv4 else ""
+            val effectiveBedrockPrimary = if (caps.needsBedrockUdp) syncResult.bedrockPrimary else ""
+            val effectiveBedrockIpv4 = if (caps.needsBedrockUdp) syncResult.bedrockAllocatedIpv4 else ""
+
+            val nowTimeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+            if (effectiveJavaPrimary.isNotBlank()) {
+                prefs.edit()
+                    .putString(KEY_LAST_ADDRESS, effectiveJavaPrimary)
+                    .putString(KEY_LAST_AGENT_ID, syncResult.agentId)
+                    .apply()
+                runCatching {
+                    playitPrefs.edit().putString("last_java_address", effectiveJavaPrimary).apply()
+                }
+            } else if (!caps.needsJavaTcp) {
+                runCatching {
+                    playitPrefs.edit().remove("last_java_address").apply()
+                }
+            }
+            if (effectiveBedrockPrimary.isNotBlank()) {
+                prefs.edit().putString(KEY_LAST_BEDROCK_ADDRESS, effectiveBedrockPrimary).apply()
+                runCatching {
+                    playitPrefs.edit().putString("last_bedrock_address", effectiveBedrockPrimary).apply()
+                }
+            } else if (!caps.needsBedrockUdp) {
+                runCatching {
+                    playitPrefs.edit().remove("last_bedrock_address").apply()
+                }
+            }
+
+            val hasAnyPublicAddr = effectiveJavaPrimary.isNotBlank() || effectiveBedrockPrimary.isNotBlank()
+            val peRoutePort = getRouteForServer(activeSrvId, TunnelProtocol.BEDROCK_UDP)?.targetPort ?: activeBedrockPort
+            val peNote = when {
+                !caps.needsBedrockUdp ->
+                    "Máy chủ hiện tại là Java thuần (chưa bật GeyserMC / Nhân Rust) — chỉ dùng cổng TCP Java"
+                effectiveBedrockPrimary.isNotBlank() ->
+                    "Đã có cổng UDP công khai cho PE ($effectiveBedrockPrimary -> 127.0.0.1:$peRoutePort)"
+                syncResult.hasDisabledBedrockTunnel ->
+                    "Tunnel UDP Bedrock đang bị người dùng tắt (Disabled) trên playit.gg — ứng dụng giữ nguyên không tự bật lại"
+                syncResult.pendingBedrockStatus.isNotBlank() ->
+                    "Đang chờ Playit cấp phát cổng UDP PE (${syncResult.pendingBedrockStatus})"
+                else ->
+                    "PE chưa dùng được từ mạng ngoài (chưa có tunnel UDP minecraft-bedrock trên Agent này)"
+            }
+
+            val triedJava = caps.needsJavaTcp && activeSrvId in autoCreatedJavaServers && !syncResult.hasDisabledJavaTunnel
+            val triedBedrock = caps.needsBedrockUdp && activeSrvId in autoCreatedBedrockServers && !syncResult.hasDisabledBedrockTunnel
+
+            // QUAN TRỌNG (Group B): Chỉ cập nhật dữ liệu địa chỉ khi phiên còn hợp lệ,
+            // TUYỆT ĐỐI KHÔNG tự đặt stage = Running hoặc isAgentOnline = true!
+            updateStateForSession(sessionGen) { cur ->
+                if (cur.stage == PlayitStage.Idle) return@updateStateForSession cur
+                val controlOnline = cur.isAgentOnline && cur.controlSessionValid
+                val newPhase = when {
+                    !controlOnline -> cur.phaseDetail
+                    cur.activeConnections > 0 || cur.activeUdpFlows > 0 -> "Đang chuyển tiếp"
+                    hasAnyPublicAddr -> "Có địa chỉ"
+                    else -> "Agent online"
+                }
+                cur.copy(
+                    agentId = syncResult.agentId,
+                    agentName = syncResult.agentName,
+                    javaLocalPort = getRouteForServer(activeSrvId, TunnelProtocol.JAVA_TCP)?.targetPort ?: activeJavaPort,
+                    bedrockLocalPort = peRoutePort,
+                    publicAddress = effectiveJavaPrimary,
+                    secondaryAddress = effectiveJavaSecondary,
+                    allocatedIpv4Address = effectiveJavaIpv4,
+                    bedrockAddress = effectiveBedrockPrimary,
+                    bedrockIpv4Address = effectiveBedrockIpv4,
+                    bedrockStatusNote = peNote,
+                    phaseDetail = newPhase,
+                    statusText = when {
+                        !controlOnline -> cur.statusText
+                        hasAnyPublicAddr -> "Agent Online • Đã có địa chỉ công khai (${syncResult.agentName.ifBlank { syncResult.agentId.take(8) }})"
+                        caps.needsJavaTcp && syncResult.hasDisabledJavaTunnel -> "Agent Online — Tunnel Java đang bị tắt (Disabled) trên playit.gg"
+                        caps.needsBedrockUdp && syncResult.hasDisabledBedrockTunnel -> "Agent Online — Tunnel Bedrock đang bị tắt (Disabled) trên playit.gg"
+                        caps.needsJavaTcp && syncResult.pendingJavaStatus.isNotBlank() -> "Agent Online — Đang chờ Playit cấp cổng (${syncResult.pendingJavaStatus})..."
+                        caps.needsBedrockUdp && syncResult.pendingBedrockStatus.isNotBlank() -> "Agent Online — Đang chờ Playit cấp cổng PE (${syncResult.pendingBedrockStatus})..."
+                        else -> "Agent Online — Chưa có cổng tunnel trên tài khoản Playit"
+                    },
+                    errorMessage = if (!hasAnyPublicAddr && syncResult.noticeMessage.isNotBlank()) {
+                        syncResult.noticeMessage
+                    } else if (!hasAnyPublicAddr && (triedJava || triedBedrock)) {
+                        "Agent đang Online nhưng chưa lấy được địa chỉ công khai (có thể tài khoản Playit đã đầy giới hạn 4 tunnel miễn phí). -> Cách sửa: Xóa bớt tunnel cũ trên playit.gg."
+                    } else {
+                        cur.errorMessage
+                    },
+                    lastUpdatedText = nowTimeStr
+                )
+            }
+        }
+    }
+
     /**
      * Luồng đồng bộ Rundata & Tunnels chạy nền độc lập (Group B & C):
      * - KHÔNG BAO GIỜ tự ép `stage = PlayitStage.Running` hoặc `isAgentOnline = true`!
@@ -1457,137 +1762,13 @@ class PlayitTunnelController(
      * - Chỉ đọc danh sách (`syncTunnelsWithPlayitApi` read-only), không tự ý sửa origin các tunnel cũ hay tự bật lại tunnel người dùng đã tắt.
      */
     internal suspend fun runBackgroundTunnelSyncLoop(sessionGen: Long, secret: String) {
-        var triedAutoCreateJava = false
-        var triedAutoCreateBedrock = false
+        autoCreatedJavaServers.clear()
+        autoCreatedBedrockServers.clear()
 
         while (isSessionActive(sessionGen)) {
             try {
                 currentCoroutineContext().ensureActive()
-                val activeSrvId = hostingServerId
-                val activeJavaPort = resolveValidPort(currentPortProvider, 25565)
-                val activeBedrockPort = resolveValidPort(currentBedrockPortProvider, 19132)
-
-                var syncResult = syncTunnelsWithPlayitApi(
-                    secret = secret,
-                    defaultServerId = activeSrvId,
-                    localJavaPort = activeJavaPort,
-                    localBedrockPort = activeBedrockPort
-                )
-                currentCoroutineContext().ensureActive()
-                if (!isSessionActive(sessionGen)) return
-
-                if (syncResult.javaPrimary.isBlank() &&
-                    !syncResult.hasDisabledJavaTunnel &&
-                    !triedAutoCreateJava &&
-                    syncResult.agentId.isNotBlank()
-                ) {
-                    triedAutoCreateJava = true
-                    appendLog("Agent (${syncResult.agentName.ifBlank { syncResult.agentId.take(8) }}) chưa có tunnel Java TCP, đang tạo mới cho máy chủ '$activeSrvId' (127.0.0.1:$activeJavaPort)...")
-                    if (createMinecraftJavaTunnel(secret, syncResult.agentId, activeJavaPort)) {
-                        for (attempt in 1..6) {
-                            delay(1500)
-                            currentCoroutineContext().ensureActive()
-                            if (!isSessionActive(sessionGen)) return
-                            syncResult = syncTunnelsWithPlayitApi(
-                                secret = secret,
-                                defaultServerId = activeSrvId,
-                                localJavaPort = activeJavaPort,
-                                localBedrockPort = activeBedrockPort
-                            )
-                            if (syncResult.javaPrimary.isNotBlank()) break
-                        }
-                    }
-                }
-
-                if (syncResult.bedrockPrimary.isBlank() &&
-                    !syncResult.hasDisabledBedrockTunnel &&
-                    !triedAutoCreateBedrock &&
-                    syncResult.agentId.isNotBlank()
-                ) {
-                    triedAutoCreateBedrock = true
-                    if (createMinecraftBedrockTunnelInternal(secret, syncResult.agentId, activeBedrockPort)) {
-                        for (attempt in 1..5) {
-                            delay(1500)
-                            currentCoroutineContext().ensureActive()
-                            if (!isSessionActive(sessionGen)) return
-                            syncResult = syncTunnelsWithPlayitApi(
-                                secret = secret,
-                                defaultServerId = activeSrvId,
-                                localJavaPort = activeJavaPort,
-                                localBedrockPort = activeBedrockPort
-                            )
-                            if (syncResult.bedrockPrimary.isNotBlank()) break
-                        }
-                    }
-                }
-
-                currentCoroutineContext().ensureActive()
-                if (!isSessionActive(sessionGen)) return
-
-                val nowTimeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
-                if (syncResult.javaPrimary.isNotBlank()) {
-                    prefs.edit()
-                        .putString(KEY_LAST_ADDRESS, syncResult.javaPrimary)
-                        .putString(KEY_LAST_AGENT_ID, syncResult.agentId)
-                        .apply()
-                }
-                if (syncResult.bedrockPrimary.isNotBlank()) {
-                    prefs.edit().putString(KEY_LAST_BEDROCK_ADDRESS, syncResult.bedrockPrimary).apply()
-                }
-
-                val hasAnyPublicAddr = syncResult.javaPrimary.isNotBlank() || syncResult.bedrockPrimary.isNotBlank()
-                val peRoutePort = getRouteForServer(activeSrvId, TunnelProtocol.BEDROCK_UDP)?.targetPort ?: activeBedrockPort
-                val peNote = when {
-                    syncResult.bedrockPrimary.isNotBlank() ->
-                        "Đã có cổng UDP công khai cho PE (${syncResult.bedrockPrimary} -> 127.0.0.1:$peRoutePort)"
-                    syncResult.hasDisabledBedrockTunnel ->
-                        "Tunnel UDP Bedrock đang bị người dùng tắt (Disabled) trên playit.gg — ứng dụng giữ nguyên không tự bật lại"
-                    syncResult.pendingBedrockStatus.isNotBlank() ->
-                        "Đang chờ Playit cấp phát cổng UDP PE (${syncResult.pendingBedrockStatus})"
-                    else ->
-                        "PE chưa dùng được từ mạng ngoài (chưa có tunnel UDP minecraft-bedrock trên Agent này)"
-                }
-
-                // QUAN TRỌNG (Group B): Chỉ cập nhật dữ liệu địa chỉ khi phiên còn hợp lệ,
-                // TUYỆT ĐỐI KHÔNG tự đặt stage = Running hoặc isAgentOnline = true!
-                updateStateForSession(sessionGen) { cur ->
-                    if (cur.stage == PlayitStage.Idle) return@updateStateForSession cur
-                    val controlOnline = cur.isAgentOnline && cur.controlSessionValid
-                    val newPhase = when {
-                        !controlOnline -> cur.phaseDetail
-                        cur.activeConnections > 0 || cur.activeUdpFlows > 0 -> "Đang chuyển tiếp"
-                        hasAnyPublicAddr -> "Có địa chỉ"
-                        else -> "Agent online"
-                    }
-                    cur.copy(
-                        agentId = syncResult.agentId,
-                        agentName = syncResult.agentName,
-                        javaLocalPort = getRouteForServer(activeSrvId, TunnelProtocol.JAVA_TCP)?.targetPort ?: activeJavaPort,
-                        bedrockLocalPort = peRoutePort,
-                        publicAddress = syncResult.javaPrimary,
-                        secondaryAddress = syncResult.javaSecondary,
-                        allocatedIpv4Address = syncResult.javaAllocatedIpv4,
-                        bedrockAddress = syncResult.bedrockPrimary,
-                        bedrockIpv4Address = syncResult.bedrockAllocatedIpv4,
-                        bedrockStatusNote = peNote,
-                        phaseDetail = newPhase,
-                        statusText = when {
-                            !controlOnline -> cur.statusText
-                            hasAnyPublicAddr -> "Agent Online • Đã có địa chỉ công khai (${syncResult.agentName.ifBlank { syncResult.agentId.take(8) }})"
-                            syncResult.hasDisabledJavaTunnel -> "Agent Online — Tunnel Java đang bị tắt (Disabled) trên playit.gg"
-                            syncResult.pendingJavaStatus.isNotBlank() -> "Agent Online — Đang chờ Playit cấp cổng (${syncResult.pendingJavaStatus})..."
-                            else -> "Agent Online — Chưa có cổng tunnel trên tài khoản Playit"
-                        },
-                        errorMessage = if (!hasAnyPublicAddr && syncResult.noticeMessage.isNotBlank()) {
-                            syncResult.noticeMessage
-                        } else if (!hasAnyPublicAddr && triedAutoCreateJava && !syncResult.hasDisabledJavaTunnel) {
-                            "Agent đang Online nhưng chưa lấy được địa chỉ công khai (có thể tài khoản Playit đã đầy giới hạn 4 tunnel miễn phí). -> Cách sửa: Xóa bớt tunnel cũ trên playit.gg."
-                        } else {
-                            cur.errorMessage
-                        },
-                        lastUpdatedText = nowTimeStr
-                    )
-                }
+                syncAndBindRoutesOnce(sessionGen, secret)
             } catch (ce: CancellationException) {
                 throw ce
             } catch (e: InvalidSecretException) {
@@ -1603,7 +1784,9 @@ class PlayitTunnelController(
                 // Lỗi mạng tạm thời khi đọc danh sách không làm sập hay đổi trạng thái kênh UDP Control
             }
 
-            delay(5_000L)
+            withTimeoutOrNull(5_000L) {
+                syncTrigger.receive()
+            }
         }
     }
 

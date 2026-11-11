@@ -19,6 +19,10 @@ import com.mineserve.mobile.R
 import com.mineserve.mobile.data.AutomationScheduler
 import com.mineserve.mobile.data.EventLogStore
 import com.mineserve.mobile.data.InstallStep
+import com.mineserve.mobile.data.InstalledCore
+import com.mineserve.mobile.data.McConfig
+import com.mineserve.mobile.data.ServerCore
+import com.mineserve.mobile.data.ServerPort
 import com.mineserve.mobile.data.StartupPhase
 import com.mineserve.mobile.data.StepStatus
 import com.mineserve.mobile.data.WidgetEventType
@@ -26,6 +30,9 @@ import com.mineserve.mobile.runtime.ConsoleLineParser
 import com.mineserve.mobile.runtime.TermuxRuntime
 import com.mineserve.mobile.server.BackupManager
 import com.mineserve.mobile.server.ExternalBackupStore
+import com.mineserve.mobile.server.PowerNukkitXConfigManager
+import com.mineserve.mobile.server.ProHostFeatures
+import com.mineserve.mobile.server.ServerPropertiesManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -62,6 +69,7 @@ class McForegroundService : Service() {
     // ponytail: one active server process, so one service-wide backup lock is enough.
     @Volatile private var autoBackupRunning = false
     @Volatile private var cachedDirName: String? = null
+    @Volatile private var cachedConfig: McConfig? = null
     /** 是否已调用过 startForeground（幂等护栏，见 [ensureForeground]） */
     @Volatile private var foregroundStarted = false
     private val watchdogStarted = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -114,6 +122,7 @@ class McForegroundService : Service() {
     private fun startConsoleParsing() {
         scope.launch {
             McApplication.get(this@McForegroundService).repository.configFlow.collect { config ->
+                cachedConfig = config
                 cachedDirName = config.installedCores.find { it.name == config.activeCoreName }?.dirName
             }
         }
@@ -153,22 +162,43 @@ class McForegroundService : Service() {
     /** 玩家进离服与聊天公告写入事件日志组件的数据源。 */
     private fun recordWidgetEvents(line: String) {
         val dir = cachedDirName ?: return
+        val clean = ConsoleLineParser.stripAnsi(line)
         val context = this@McForegroundService
-        chatRegex.find(line)?.let {
+        chatRegex.find(clean)?.let {
             EventLogStore.add(context, dir, WidgetEventType.CHAT, it.groupValues[1], it.groupValues[2])
         }
-        joinRegex.find(line)?.let {
+        joinRegex.find(clean)?.let {
             EventLogStore.add(context, dir, WidgetEventType.JOIN, it.groupValues[1])
         }
-        leaveRegex.find(line)?.let {
+        leaveRegex.find(clean)?.let {
             EventLogStore.add(context, dir, WidgetEventType.LEAVE, it.groupValues[1])
         }
-        pnxJoinRegex.find(line)?.let {
+        pnxJoinRegex.find(clean)?.let {
             EventLogStore.add(context, dir, WidgetEventType.JOIN, it.groupValues[1])
         }
-        pnxLeaveRegex.find(line)?.let {
+        pnxLeaveRegex.find(clean)?.let {
             EventLogStore.add(context, dir, WidgetEventType.LEAVE, it.groupValues[1])
         }
+    }
+
+    private fun resolveActiveRuntimeInfo(config: McConfig? = cachedConfig): Pair<InstalledCore?, Boolean> {
+        val cfg = config ?: runCatching { McApplication.get(this).repository.currentConfig() }.getOrNull()
+        val active = cfg?.installedCores?.find { it.name == cfg.activeCoreName }
+        val srvDir = active?.let { termux.serverDirFor(it.dirName) }
+        val isRust = srvDir != null && ProHostFeatures.isNativeRustServerModeEnabled(srvDir)
+        return active to isRust
+    }
+
+    private fun sendSafeWorldSave(active: InstalledCore?, isRust: Boolean): Boolean {
+        if (isRust) return false
+        val cmd = when (active?.core) {
+            ServerCore.Allay -> "save"
+            ServerCore.PocketMine -> "save-all"
+            null -> "save-all"
+            else -> active.core.consoleSaveCommand
+        }
+        termux.sendCommand(cmd)
+        return true
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -208,16 +238,18 @@ class McForegroundService : Service() {
             }
             ACTION_QUICK_COPY_IP -> {
                 ensureForeground()
-                val ipToCopy = resolveCurrentShareAddress()
-                android.os.Handler(android.os.Looper.getMainLooper()).post {
-                    runCatching {
-                        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
-                        cm?.setPrimaryClip(android.content.ClipData.newPlainText("MineHost Server IP", ipToCopy))
-                        android.widget.Toast.makeText(
-                            applicationContext,
-                            "📋 Đã sao chép IP Server: $ipToCopy",
-                            android.widget.Toast.LENGTH_SHORT
-                        ).show()
+                scope.launch {
+                    val ipToCopy = resolveCurrentShareAddress()
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        runCatching {
+                            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                            cm?.setPrimaryClip(android.content.ClipData.newPlainText("MineHost Server IP", ipToCopy))
+                            android.widget.Toast.makeText(
+                                applicationContext,
+                                "📋 Đã sao chép IP Server: $ipToCopy",
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                        }
                     }
                 }
             }
@@ -225,11 +257,16 @@ class McForegroundService : Service() {
                 ensureForeground()
                 scope.launch {
                     runCatching {
-                        termux.sendCommand("kill @e[type=item]")
-                        termux.sendCommand("kill @e[type=experience_orb]")
-                        termux.sendCommand("kill @e[type=arrow]")
-                        termux.sendCommand("save-all")
-                        termux.sendCommand("say [MineHost] Da don sach vat pham rac & luu map tu thanh thong bao!")
+                        val (active, isRust) = resolveActiveRuntimeInfo()
+                        if (active?.core != ServerCore.PocketMine && !isRust) {
+                            termux.sendCommand("kill @e[type=item]")
+                            termux.sendCommand("kill @e[type=experience_orb]")
+                            termux.sendCommand("kill @e[type=arrow]")
+                        }
+                        sendSafeWorldSave(active, isRust)
+                        if (!isRust) {
+                            termux.sendCommand("say [MineHost] Da don sach vat pham rac & luu map tu thanh thong bao!")
+                        }
                         System.gc()
                         android.os.Handler(android.os.Looper.getMainLooper()).post {
                             android.widget.Toast.makeText(
@@ -268,13 +305,17 @@ class McForegroundService : Service() {
                         android.os.Handler(android.os.Looper.getMainLooper()).post {
                             android.widget.Toast.makeText(
                                 applicationContext,
-                                "🛑 Đang lưu Map (save-all) và tắt Server an toàn...",
+                                "🛑 Đang lưu Map và tắt Server an toàn...",
                                 android.widget.Toast.LENGTH_SHORT
                             ).show()
                         }
-                        termux.sendCommand("say [MineHost] Dang luu map va tat Server an toan...")
-                        termux.sendCommand("save-all")
-                        kotlinx.coroutines.delay(1500L)
+                        val (active, isRust) = resolveActiveRuntimeInfo()
+                        if (!isRust) {
+                            termux.sendCommand("say [MineHost] Dang luu map va tat Server an toan...")
+                        }
+                        if (sendSafeWorldSave(active, isRust)) {
+                            kotlinx.coroutines.delay(1500L)
+                        }
                         termux.stopMc()
                         McApplication.get(this@McForegroundService).repository.updateServerState {
                             it.copy(isRunning = false, runningSinceMs = 0L)
@@ -473,11 +514,13 @@ class McForegroundService : Service() {
             try {
                 val config = runCatching { app.repository.configFlow.first() }.getOrNull()
                 if (config != null) {
-                    termux.sendCommand("list")
-                    if (config.installedCores.any {
-                            it.name == config.activeCoreName && it.core == com.mineserve.mobile.data.ServerCore.Paper
-                        }
-                    ) {
+                    val active = config.installedCores.find { it.name == config.activeCoreName }
+                    val srvDir = active?.let { termux.serverDirFor(it.dirName) }
+                    val isRust = srvDir != null && ProHostFeatures.isNativeRustServerModeEnabled(srvDir)
+                    if (active?.core != ServerCore.PocketMine) {
+                        termux.sendCommand("list")
+                    }
+                    if (active?.core == ServerCore.Paper && !isRust) {
                         termux.sendCommand("tps")
                     }
                 }
@@ -529,10 +572,13 @@ class McForegroundService : Service() {
                             }.getOrNull()
                             if (config != null) {
                                 maybeAutoBackup(config)
-                                // list 命令获取在线玩家数（所有核心支持）
-                                termux.sendCommand("list")
-                                // Paper 核心额外发送 tps 命令
-                                if (config.selectedCore == com.mineserve.mobile.data.ServerCore.Paper) {
+                                val active = config.installedCores.find { it.name == config.activeCoreName }
+                                val srvDir = active?.let { termux.serverDirFor(it.dirName) }
+                                val isRust = srvDir != null && ProHostFeatures.isNativeRustServerModeEnabled(srvDir)
+                                if (active?.core != ServerCore.PocketMine) {
+                                    termux.sendCommand("list")
+                                }
+                                if (active?.core == ServerCore.Paper && !isRust) {
                                     termux.sendCommand("tps")
                                 }
                             }
@@ -578,9 +624,14 @@ class McForegroundService : Service() {
             if (now - lastThermalCleanMs > 180_000L) {
                 lastThermalCleanMs = now
                 runCatching {
-                    termux.sendCommand("kill @e[type=item]")
-                    termux.sendCommand("kill @e[type=experience_orb]")
-                    termux.sendCommand("say [MineHost Thermal Guard] Dien thoai dang nong (${String.format(java.util.Locale.US, "%.1f", thermal.tempCelsius)}C) -> Tu dong don rac giam tai!")
+                    val (active, isRust) = resolveActiveRuntimeInfo()
+                    if (active?.core != ServerCore.PocketMine && !isRust) {
+                        termux.sendCommand("kill @e[type=item]")
+                        termux.sendCommand("kill @e[type=experience_orb]")
+                    }
+                    if (!isRust) {
+                        termux.sendCommand("say [MineHost Thermal Guard] Dien thoai dang nong (${String.format(java.util.Locale.US, "%.1f", thermal.tempCelsius)}C) -> Tu dong don rac giam tai!")
+                    }
                     System.gc()
                 }
             }
@@ -605,15 +656,21 @@ class McForegroundService : Service() {
                     "🛡️ Đã tự động Lưu Map & Tắt Server lúc ${java.text.SimpleDateFormat("HH:mm dd/MM", java.util.Locale.getDefault()).format(java.util.Date())} do $reasonVi"
                 ).apply()
 
+                val (active, isRust) = resolveActiveRuntimeInfo()
                 runCatching {
-                    termux.sendCommand("""title @a title {"text":"⚠ BẢO VỆ MAP","color":"red","bold":true}""")
-                    termux.sendCommand("say [MineHost Guard] $reasonVi -> Tu dong luu Map (save-all) va tat Server sau 10 giay de chong hong Map!")
-                    termux.sendCommand("save-all")
+                    if (active?.core != ServerCore.PocketMine && !isRust) {
+                        termux.sendCommand("""title @a title {"text":"⚠ BẢO VỆ MAP","color":"red","bold":true}""")
+                    }
+                    if (!isRust) {
+                        termux.sendCommand("say [MineHost Guard] $reasonVi -> Tu dong luu Map va tat Server sau 10 giay de chong hong Map!")
+                    }
+                    sendSafeWorldSave(active, isRust)
                 }
                 kotlinx.coroutines.delay(10_000L)
                 runCatching {
-                    termux.sendCommand("save-all")
-                    kotlinx.coroutines.delay(1500L)
+                    if (sendSafeWorldSave(active, isRust)) {
+                        kotlinx.coroutines.delay(1500L)
+                    }
                     termux.stopMc()
                 }
                 val app = McApplication.get(this@McForegroundService)
@@ -658,8 +715,11 @@ class McForegroundService : Service() {
             try {
                 val typeName = config.autoBackupType.displayName
                 termux.emitLog("[backup] 正在自动$typeName: ${active.name}")
-                termux.sendCommand(active.core.consoleSaveCommand)
-                kotlinx.coroutines.delay(1_000L)
+                val srvDir = termux.serverDirFor(active.dirName)
+                val isRust = ProHostFeatures.isNativeRustServerModeEnabled(srvDir)
+                if (sendSafeWorldSave(active, isRust)) {
+                    kotlinx.coroutines.delay(1_000L)
+                }
                 val path = when (config.autoBackupType) {
                     com.mineserve.mobile.data.AutoBackupType.World -> backupManager.backupWorldToExternal(
                         active.dirName,
@@ -804,10 +864,14 @@ class McForegroundService : Service() {
         )
     }
 
-    private fun resolveCurrentShareAddress(): String {
+    private fun resolveCurrentShareAddress(config: McConfig? = cachedConfig): String {
         val playitPrefs = getSharedPreferences("playit_prefs", Context.MODE_PRIVATE)
-        val playitJava = playitPrefs.getString("last_java_address", "").orEmpty().trim()
-        if (playitJava.isNotBlank()) return playitJava
+        if (playitPrefs.getBoolean("is_session_running", false)) {
+            val playitJava = playitPrefs.getString("last_java_address", "").orEmpty().trim()
+            if (playitJava.isNotBlank()) return playitJava
+            val playitBedrock = playitPrefs.getString("last_bedrock_address", "").orEmpty().trim()
+            if (playitBedrock.isNotBlank()) return playitBedrock
+        }
 
         val lanIp = runCatching {
             java.net.NetworkInterface.getNetworkInterfaces()?.toList()
@@ -815,7 +879,25 @@ class McForegroundService : Service() {
                 ?.firstOrNull { !it.isLoopbackAddress && it is java.net.Inet4Address }
                 ?.hostAddress
         }.getOrNull().orEmpty().ifBlank { "127.0.0.1" }
-        return "$lanIp:25565"
+
+        val cfg = config ?: runCatching { McApplication.get(this).repository.currentConfig() }.getOrNull()
+        val active = cfg?.installedCores?.find { it.name == cfg.activeCoreName }
+        val srvDir = active?.let { termux.serverDirFor(it.dirName) }
+        val isRust = srvDir != null && ProHostFeatures.isNativeRustServerModeEnabled(srvDir)
+        val rawPortFromDisk = runCatching {
+            when {
+                active == null -> null
+                !isRust && active.core == ServerCore.PowerNukkitX ->
+                    PowerNukkitXConfigManager(termux).read(active.dirName)["server-port"]
+                else ->
+                    ServerPropertiesManager(termux).readProperties(active.dirName)["server-port"]
+            }
+        }.getOrNull()
+        val realPort = ServerPort.parse(rawPortFromDisk)
+            ?: cfg?.localPort?.takeIf { it in ServerPort.VALID_RANGE }
+            ?: active?.core?.let { if (isRust) ServerPort.DEFAULT_JAVA else ServerPort.defaultFor(it) }
+            ?: ServerPort.DEFAULT_JAVA
+        return "$lanIp:$realPort"
     }
 
     private fun refreshLiveNotification(
@@ -830,7 +912,7 @@ class McForegroundService : Service() {
 
         val thermal = com.mineserve.mobile.server.ProHostFeatures.readDeviceThermalInfo(this)
         val serverName = config.activeCoreName.orEmpty().ifBlank { "MineHost Server" }
-        val shareAddr = resolveCurrentShareAddress()
+        val shareAddr = resolveCurrentShareAddress(config)
         val tempStr = String.format(java.util.Locale.US, "%.1f°C", thermal.tempCelsius)
         val batStr = "${thermal.batteryPercent}%${if (thermal.isCharging) "⚡" else ""}"
 

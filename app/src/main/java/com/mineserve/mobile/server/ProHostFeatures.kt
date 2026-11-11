@@ -15,7 +15,9 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.InputStream
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
@@ -23,6 +25,7 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.net.URL
 import java.net.URLDecoder
+import java.net.URLEncoder
 import java.util.zip.ZipFile
 
 /**
@@ -755,6 +758,9 @@ object ProHostFeatures {
                     put(JSONObject().put("text", "🧟 Đợt Zombie").put("callback_data", "/zombiewave"))
                     put(JSONObject().put("text", "👥 DS Người Chơi").put("callback_data", "/list"))
                 })
+                put(JSONArray().apply {
+                    put(JSONObject().put("text", "☁️ Sao lưu Map (.zip)").put("callback_data", "/backup"))
+                })
             }
             val payload = JSONObject().apply {
                 put("chat_id", cleanChatId)
@@ -773,6 +779,12 @@ object ProHostFeatures {
             conn?.disconnect()
         }
     }
+
+    suspend fun sendTelegramControlMenu(
+        botToken: String,
+        chatId: String,
+        messageText: String
+    ): Boolean = sendTelegramBotMenuWithButtons(botToken, chatId, messageText)
 
     suspend fun answerTelegramCallbackQuery(
         botToken: String,
@@ -918,14 +930,45 @@ object ProHostFeatures {
 
     suspend fun installDatapackZip(
         context: Context,
+        serverDir: File,
+        uri: Uri,
+        worldFolderName: String = "world"
+    ): Result<String> {
+        val resolvedName = runCatching {
+            context.contentResolver.query(
+                uri,
+                arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val idx = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (idx >= 0) cursor.getString(idx) else null
+                } else null
+            }
+        }.getOrNull()
+            ?.takeIf { it.isNotBlank() }
+            ?: uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
+            ?: "datapack_${System.currentTimeMillis()}.zip"
+        return installDatapackZip(context, uri, resolvedName, serverDir, worldFolderName)
+    }
+
+    suspend fun installDatapackZip(
+        context: Context,
         uri: Uri,
         displayName: String,
-        serverDir: File
+        serverDir: File,
+        worldFolderName: String = "world"
     ): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
             val safeName = displayName.replace(Regex("""[^a-zA-Z0-9._-]"""), "_")
                 .let { if (it.endsWith(".zip", ignoreCase = true)) it else "$it.zip" }
-            val worldDir = File(serverDir, "world")
+            val cleanWorld = worldFolderName.trim().trim('/', '\\').ifBlank { "world" }
+            val worldDir = File(serverDir, cleanWorld)
+            require(worldDir.canonicalFile.toPath().startsWith(serverDir.canonicalFile.toPath())) {
+                "Tên thư mục thế giới không hợp lệ: $worldFolderName"
+            }
             val datapacksDir = File(worldDir, "datapacks").apply { mkdirs() }
             val destFile = File(datapacksDir, safeName)
 
@@ -989,25 +1032,57 @@ object ProHostFeatures {
             failedAttempts.clear()
         }
 
+        private fun escapeHtml(raw: String): String = buildString(raw.length) {
+            for (ch in raw) {
+                when (ch) {
+                    '&' -> append("&amp;")
+                    '<' -> append("&lt;")
+                    '>' -> append("&gt;")
+                    '"' -> append("&quot;")
+                    '\'' -> append("&#39;")
+                    else -> append(ch)
+                }
+            }
+        }
+
+        private fun readHttpLine(input: InputStream, maxBytes: Int = 8192): String? {
+            val buf = ByteArrayOutputStream(128)
+            var sawAny = false
+            while (buf.size() < maxBytes) {
+                val b = input.read()
+                if (b < 0) {
+                    return if (sawAny) buf.toString("UTF-8") else null
+                }
+                sawAny = true
+                if (b == '\n'.code) break
+                if (b != '\r'.code) buf.write(b)
+            }
+            return buf.toString("UTF-8")
+        }
+
         private fun handleClient(socket: Socket) {
             socket.use { s ->
                 s.soTimeout = 5000
                 val clientIp = s.inetAddress?.hostAddress ?: "unknown"
-                val reader = BufferedReader(InputStreamReader(s.getInputStream(), Charsets.UTF_8))
-                val requestLine = reader.readLine() ?: return
+                val rawIn = s.getInputStream()
+                val requestLine = readHttpLine(rawIn) ?: return
                 val parts = requestLine.split(" ")
                 val method = parts.getOrNull(0)?.uppercase() ?: "GET"
                 val pathAndQuery = parts.getOrNull(1) ?: "/"
+                val pathOnly = pathAndQuery.substringBefore("?")
                 val query = pathAndQuery.substringAfter("?", "")
 
                 var contentLength = 0
+                var contentType = ""
                 var sessionCookie = ""
                 while (true) {
-                    val hdr = reader.readLine() ?: break
+                    val hdr = readHttpLine(rawIn) ?: break
                     if (hdr.isEmpty()) break
                     val lower = hdr.lowercase()
                     if (lower.startsWith("content-length:")) {
                         contentLength = hdr.substringAfter(":").trim().toIntOrNull() ?: 0
+                    } else if (lower.startsWith("content-type:")) {
+                        contentType = hdr.substringAfter(":").trim().lowercase()
                     } else if (lower.startsWith("cookie:")) {
                         val cookieRaw = hdr.substringAfter(":").trim()
                         cookieRaw.split(";").forEach { piece ->
@@ -1019,22 +1094,27 @@ object ProHostFeatures {
                     }
                 }
 
+                if (pathOnly == "/favicon.ico") {
+                    sendRedirectOrEmptyResponse(s, statusLine = "204 No Content", location = null, setCookieHeader = null)
+                    return
+                }
+
                 var postBody = ""
-                if (method == "POST" && contentLength in 1..4096) {
-                    val buf = CharArray(contentLength)
+                if (method == "POST" && contentLength in 1..16384) {
+                    val buf = ByteArray(contentLength)
                     var readTotal = 0
                     while (readTotal < contentLength) {
-                        val r = reader.read(buf, readTotal, contentLength - readTotal)
+                        val r = rawIn.read(buf, readTotal, contentLength - readTotal)
                         if (r <= 0) break
                         readTotal += r
                     }
-                    postBody = String(buf, 0, readTotal)
+                    if (contentType.isBlank() || contentType.contains("application/x-www-form-urlencoded")) {
+                        postBody = String(buf, 0, readTotal, Charsets.UTF_8)
+                    }
                 }
 
-                val params = parseQuery(query).toMutableMap()
-                if (postBody.isNotBlank()) {
-                    params.putAll(parseQuery(postBody))
-                }
+                val queryParams = parseQuery(query)
+                val postParams = if (postBody.isNotBlank()) parseQuery(postBody) else emptyMap()
 
                 val now = System.currentTimeMillis()
                 val attemptInfo = failedAttempts[clientIp]
@@ -1048,10 +1128,16 @@ object ProHostFeatures {
                 }
 
                 val expectedPin = pinProvider().trim()
-                val providedPin = params["pin"]?.trim().orEmpty()
+                val providedPin = postParams["pin"]?.trim().orEmpty()
                 var setCookieHeader: String? = null
 
-                if (params["act"] == "logout") {
+                val requestedAct = if (method == "POST") {
+                    postParams["act"].orEmpty()
+                } else {
+                    queryParams["act"].orEmpty()
+                }
+
+                if (requestedAct == "logout") {
                     if (sessionCookie.isNotBlank()) validSessions.remove(sessionCookie)
                     setCookieHeader = "mh_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict"
                     val html = buildLoginHtml(errorMsg = "✅ Đã đăng xuất an toàn khỏi phiên điều khiển từ xa.")
@@ -1062,14 +1148,20 @@ object ProHostFeatures {
                 var isAuthenticated = sessionCookie.isNotBlank() &&
                     (validSessions[sessionCookie]?.let { exp -> now < exp } == true)
 
-                if (!isAuthenticated && providedPin.isNotBlank()) {
+                if (!isAuthenticated && method == "POST" && providedPin.isNotBlank()) {
                     if (providedPin == expectedPin && expectedPin.isNotBlank()) {
                         failedAttempts.remove(clientIp)
                         val newToken = java.util.UUID.randomUUID().toString().replace("-", "") +
                             java.util.UUID.randomUUID().toString().replace("-", "").take(16)
                         validSessions[newToken] = now + 12L * 3600_000L
                         setCookieHeader = "mh_session=$newToken; Path=/; HttpOnly; SameSite=Strict"
-                        isAuthenticated = true
+                        sendRedirectOrEmptyResponse(
+                            s = s,
+                            statusLine = "303 See Other",
+                            location = "/",
+                            setCookieHeader = setCookieHeader
+                        )
+                        return
                     } else {
                         val prevCount = (attemptInfo?.first ?: 0) + 1
                         val lockUntil = if (prevCount >= 5) now + 15L * 60_000L else 0L
@@ -1091,15 +1183,55 @@ object ProHostFeatures {
                     return
                 }
 
-                var actionMsg = ""
-                if (params.containsKey("act") && params["act"] != "login") {
-                    actionMsg = onAction(params["act"].orEmpty(), params["cmd"].orEmpty())
+                // Các thao tác thay đổi trạng thái bắt buộc gửi qua POST, sau đó redirect 303 See Other về /?msg=...
+                // để trình duyệt bấm F5 / tải lại trang không bao giờ kích hoạt lặp lại save_stop hay lệnh cũ!
+                if (method == "POST") {
+                    val act = postParams["act"].orEmpty().trim()
+                    if (act.isNotBlank() && act != "login") {
+                        val resultMsg = onAction(act, postParams["cmd"].orEmpty())
+                        val encodedMsg = URLEncoder.encode(resultMsg, "UTF-8")
+                        sendRedirectOrEmptyResponse(
+                            s = s,
+                            statusLine = "303 See Other",
+                            location = "/?msg=$encodedMsg",
+                            setCookieHeader = setCookieHeader
+                        )
+                        return
+                    }
+                    sendRedirectOrEmptyResponse(
+                        s = s,
+                        statusLine = "303 See Other",
+                        location = "/",
+                        setCookieHeader = setCookieHeader
+                    )
+                    return
                 }
 
+                val flashMsg = queryParams["msg"].orEmpty()
                 val st = statusProvider()
-                val html = buildDashboardHtml(st, actionMsg)
+                val html = buildDashboardHtml(st, flashMsg)
                 sendHtmlResponse(s, html, setCookieHeader)
             }
+        }
+
+        private fun sendRedirectOrEmptyResponse(
+            s: Socket,
+            statusLine: String,
+            location: String?,
+            setCookieHeader: String?
+        ) {
+            val writer = OutputStreamWriter(s.getOutputStream(), Charsets.UTF_8)
+            writer.write("HTTP/1.1 $statusLine\r\n")
+            if (!location.isNullOrBlank()) {
+                writer.write("Location: $location\r\n")
+            }
+            writer.write("Cache-Control: no-store, no-cache, must-revalidate\r\n")
+            if (!setCookieHeader.isNullOrBlank()) {
+                writer.write("Set-Cookie: $setCookieHeader\r\n")
+            }
+            writer.write("Content-Length: 0\r\n")
+            writer.write("Connection: close\r\n\r\n")
+            writer.flush()
         }
 
         private fun sendHtmlResponse(s: Socket, html: String, setCookieHeader: String?) {
@@ -1124,14 +1256,15 @@ object ProHostFeatures {
                 val idx = pair.indexOf('=')
                 if (idx <= 0) null
                 else {
-                    val k = URLDecoder.decode(pair.substring(0, idx), "UTF-8")
-                    val v = URLDecoder.decode(pair.substring(idx + 1), "UTF-8")
+                    val k = runCatching { URLDecoder.decode(pair.substring(0, idx), "UTF-8") }.getOrDefault(pair.substring(0, idx))
+                    val v = runCatching { URLDecoder.decode(pair.substring(idx + 1), "UTF-8") }.getOrDefault(pair.substring(idx + 1))
                     k to v
                 }
             }.toMap()
         }
 
         private fun buildLoginHtml(errorMsg: String): String {
+            val safeError = escapeHtml(errorMsg)
             return """
                 <!DOCTYPE html>
                 <html lang="vi">
@@ -1153,7 +1286,7 @@ object ProHostFeatures {
                     <div class="card">
                         <h1>🔐 Khóa Bảo Mật MineHost Remote</h1>
                         <p>Nhập mã truy cập 6 số hiển thị trong mục <b>Điều Khiển Từ Xa</b> trên ứng dụng MineHost. Tự động khóa 15 phút nếu nhập sai quá 5 lần.</p>
-                        ${if (errorMsg.isNotBlank()) """<div class="err">$errorMsg</div>""" else ""}
+                        ${if (safeError.isNotBlank()) """<div class="err">$safeError</div>""" else ""}
                         <form method="POST" action="/">
                             <input type="hidden" name="act" value="login" />
                             <input type="password" name="pin" placeholder="••••••" autocomplete="off" required />
@@ -1166,11 +1299,19 @@ object ProHostFeatures {
         }
 
         private fun buildDashboardHtml(st: Map<String, String>, actionMsg: String): String {
-            val serverName = st["serverName"] ?: "MineHost Server"
-            val running = st["running"] ?: "Đang dừng"
-            val players = st["players"] ?: "0"
-            val tps = st["tps"] ?: "20.0"
-            val temp = st["temp"] ?: "35.0°C"
+            val serverName = escapeHtml(st["serverName"] ?: "MineHost Server")
+            val running = escapeHtml(st["running"] ?: "Đang dừng")
+            val players = escapeHtml(st["players"] ?: "0")
+            val tps = escapeHtml(st["tps"] ?: "20.0")
+            val temp = escapeHtml(st["temp"] ?: "35.0°C")
+            val logs = escapeHtml(st["logs"].orEmpty())
+            val safeActionMsg = escapeHtml(actionMsg)
+
+            fun postActionForm(act: String, label: String, colorClass: String = ""): String {
+                val cls = if (colorClass.isBlank()) "btn" else "btn $colorClass"
+                return """<form method="POST" action="/" class="act-form"><input type="hidden" name="act" value="${escapeHtml(act)}" /><button type="submit" class="$cls">$label</button></form>"""
+            }
+
             return """
                 <!DOCTYPE html>
                 <html lang="vi">
@@ -1181,24 +1322,33 @@ object ProHostFeatures {
                     <style>
                         body { background:#0f172a; color:#f8fafc; font-family:system-ui,sans-serif; margin:0; padding:16px; }
                         .card { background:#1e293b; border-radius:14px; padding:16px; margin-bottom:14px; border:1px solid #334155; }
-                        .top-row { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+                        .top-row { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; }
+                        .top-actions { display:flex; gap:8px; align-items:center; }
                         h1 { font-size:20px; margin:0 0 8px 0; color:#38bdf8; }
                         .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:10px; margin-top:10px; }
                         .stat { background:#0f172a; padding:10px; border-radius:10px; font-weight:bold; font-size:13px; }
-                        a.btn, button.btn { display:inline-block; background:#2563eb; color:#fff; text-decoration:none; padding:10px 12px; border-radius:10px; font-weight:bold; font-size:13px; border:none; cursor:pointer; text-align:center; }
-                        a.btn.green { background:#16a34a; }
-                        a.btn.red { background:#dc2626; }
-                        a.btn.amber { background:#d97706; }
-                        a.btn.slate { background:#475569; font-size:12px; padding:7px 10px; }
+                        .act-form { margin:0; display:flex; }
+                        a.btn, button.btn { display:inline-block; width:100%; box-sizing:border-box; background:#2563eb; color:#fff; text-decoration:none; padding:10px 12px; border-radius:10px; font-weight:bold; font-size:13px; border:none; cursor:pointer; text-align:center; }
+                        a.btn.green, button.btn.green { background:#16a34a; }
+                        a.btn.red, button.btn.red { background:#dc2626; }
+                        a.btn.amber, button.btn.amber { background:#d97706; }
+                        a.btn.slate, button.btn.slate { background:#475569; font-size:12px; padding:7px 10px; width:auto; }
                         input { background:#0f172a; color:#fff; border:1px solid #475569; padding:10px; border-radius:8px; width:100%; box-sizing:border-box; margin-bottom:8px; }
                         .msg { background:#065f46; color:#a7f3d0; padding:10px; border-radius:10px; margin-bottom:12px; font-weight:bold; }
+                        pre.logs { background:#0f172a; color:#cbd5e1; padding:12px; border-radius:10px; font-size:12px; max-height:220px; overflow:auto; white-space:pre-wrap; word-break:break-word; margin:8px 0 0 0; }
                     </style>
                 </head>
                 <body>
                     <div class="card">
                         <div class="top-row">
                             <h1>🇻🇳 MineHost Web Panel — $serverName</h1>
-                            <a class="btn slate" href="/?act=logout">🔒 Đăng xuất</a>
+                            <div class="top-actions">
+                                <a class="btn slate" href="/">🔄 Làm mới</a>
+                                <form method="POST" action="/" style="margin:0;display:inline;">
+                                    <input type="hidden" name="act" value="logout" />
+                                    <button type="submit" class="btn slate">🔒 Đăng xuất</button>
+                                </form>
+                            </div>
                         </div>
                         <div class="grid">
                             <div class="stat">Trạng thái: $running</div>
@@ -1207,16 +1357,18 @@ object ProHostFeatures {
                             <div class="stat">Nhiệt độ máy: $temp</div>
                         </div>
                     </div>
-                    ${if (actionMsg.isNotBlank()) """<div class="msg">$actionMsg</div>""" else ""}
+                    ${if (safeActionMsg.isNotBlank()) """<div class="msg">$safeActionMsg</div>""" else ""}
                     <div class="card">
-                        <div style="font-weight:bold;margin-bottom:8px;">⚡ Điều Khiển Nhanh 1 Chạm (Phiên Cookie Bảo Mật)</div>
+                        <div style="font-weight:bold;margin-bottom:8px;">⚡ Điều Khiển Nhanh 1 Chạm (Phiên Cookie Bảo Mật • POST an toàn)</div>
                         <div class="grid">
-                            <a class="btn green" href="/?act=clear_lag">🧹 Dọn Lag & Lưu Map</a>
-                            <a class="btn" href="/?act=day_clear">☀️ Trời Sáng & Tạnh Mưa</a>
-                            <a class="btn amber" href="/?act=supply_drop">🎁 Thả Rương Tiếp Tế</a>
-                            <a class="btn amber" href="/?act=exp_rain">✨ Mưa +30 Cấp EXP</a>
-                            <a class="btn red" href="/?act=panic">🚨 Chống Phá Map (Xóa TNT)</a>
-                            <a class="btn red" href="/?act=save_stop">🛑 Lưu & Dừng Server</a>
+                            ${postActionForm("start_sv", "🚀 Bật Server", "green")}
+                            ${postActionForm("save_stop", "🛑 Lưu &amp; Dừng Server", "red")}
+                            ${postActionForm("backup_tg", "☁️ Sao Lưu Map Telegram")}
+                            ${postActionForm("clear_lag", "🧹 Dọn Lag &amp; Lưu Map", "green")}
+                            ${postActionForm("day_clear", "☀️ Trời Sáng &amp; Tạnh Mưa")}
+                            ${postActionForm("supply_drop", "🎁 Thả Rương Tiếp Tế", "amber")}
+                            ${postActionForm("exp_rain", "✨ Mưa +30 Cấp EXP", "amber")}
+                            ${postActionForm("panic", "🚨 Chống Phá Map (Xóa TNT)", "red")}
                         </div>
                     </div>
                     <div class="card">
@@ -1226,6 +1378,7 @@ object ProHostFeatures {
                             <button type="submit" class="btn" style="width:100%;">🚀 Gửi Lệnh Tới Server</button>
                         </form>
                     </div>
+                    ${if (logs.isNotBlank()) """<div class="card"><div style="font-weight:bold;">📜 Nhật ký gần đây</div><pre class="logs">$logs</pre></div>""" else ""}
                 </body>
                 </html>
             """.trimIndent()
@@ -3600,6 +3753,8 @@ object ProHostFeatures {
                 } else {
                     listOf("skinsrestorer", "fabrictailor")
                 }
+                val cleanMcVer = mcVersion.trim()
+                val majorMinorPrefix = cleanMcVer.split(".").take(2).joinToString(".")
                 for (proj in candidateProjects) {
                     val loadersJson = java.net.URLEncoder.encode("""["$modrinthLoader"]""", "UTF-8")
                     val apiUrl = "https://api.modrinth.com/v2/project/$proj/version?loaders=$loadersJson"
@@ -3610,9 +3765,8 @@ object ProHostFeatures {
                     }
                     if (conn.responseCode in 200..299) {
                         val arr = JSONArray(conn.inputStream.bufferedReader().use { it.readText() })
-                        // Ưu tiên khớp mcVersion trước, nếu không thì lấy bản mới nhất của nhánh
-                        var fallbackUrl = ""
-                        var fallbackName = ""
+                        var seriesMatchUrl = ""
+                        var seriesMatchName = ""
                         for (i in 0 until arr.length()) {
                             val verObj = arr.getJSONObject(i)
                             val gameVers = verObj.optJSONArray("game_versions")
@@ -3621,31 +3775,34 @@ object ProHostFeatures {
                             val fObj = files.getJSONObject(0)
                             val urlCandidate = fObj.optString("url", "")
                             val nameCandidate = fObj.optString("filename", "$proj.jar")
-                            if (fallbackUrl.isBlank() && urlCandidate.isNotBlank()) {
-                                fallbackUrl = urlCandidate
-                                fallbackName = nameCandidate
-                            }
-                            var matchesVer = false
-                            if (gameVers != null) {
-                                for (g in 0 until gameVers.length()) {
-                                    val gv = gameVers.optString(g, "")
-                                    if (gv.equals(mcVersion.trim(), ignoreCase = true) ||
-                                        gv.startsWith(mcVersion.trim().split(".").take(2).joinToString("."))
-                                    ) {
-                                        matchesVer = true
-                                        break
-                                    }
+                            if (urlCandidate.isBlank() || gameVers == null) continue
+                            var exactMatch = false
+                            var seriesMatch = false
+                            for (g in 0 until gameVers.length()) {
+                                val gv = gameVers.optString(g, "").trim()
+                                if (gv.equals(cleanMcVer, ignoreCase = true)) {
+                                    exactMatch = true
+                                    break
+                                }
+                                if (majorMinorPrefix.contains(".") &&
+                                    gv.equals("$majorMinorPrefix.x", ignoreCase = true)
+                                ) {
+                                    seriesMatch = true
                                 }
                             }
-                            if (matchesVer && urlCandidate.isNotBlank()) {
+                            if (exactMatch) {
                                 downloadUrl = urlCandidate
                                 targetFileName = nameCandidate
                                 break
                             }
+                            if (seriesMatch && seriesMatchUrl.isBlank()) {
+                                seriesMatchUrl = urlCandidate
+                                seriesMatchName = nameCandidate
+                            }
                         }
-                        if (downloadUrl.isBlank() && fallbackUrl.isNotBlank()) {
-                            downloadUrl = fallbackUrl
-                            targetFileName = fallbackName
+                        if (downloadUrl.isBlank() && seriesMatchUrl.isNotBlank()) {
+                            downloadUrl = seriesMatchUrl
+                            targetFileName = seriesMatchName
                         }
                     }
                     if (downloadUrl.isNotBlank()) break
@@ -3653,7 +3810,8 @@ object ProHostFeatures {
             }
 
             if (downloadUrl.isBlank()) {
-                throw IllegalStateException("Không tìm thấy gói SkinsRestorer/FabricTailor phù hợp trên Modrinth.")
+                val loader = loaderName.trim().ifBlank { "Server" }
+                throw IllegalStateException("Chưa có phiên bản Skin Mod tương thích cho MC $mcVersion ($loader)")
             }
 
             val destFolder = File(serverDir, if (isPluginLoader) "plugins" else "mods").apply { mkdirs() }
@@ -3797,6 +3955,43 @@ object ProHostFeatures {
             "-Daikar.new.flags=true"
     }
 
+    private class PumpkinTomlBlock(
+        val headerLine: String?,
+        val sectionName: String,
+        val lines: MutableList<String>
+    )
+
+    private fun upsertKeyInTomlBlock(lines: MutableList<String>, key: String, renderedValue: String) {
+        val keyRegex = Regex("""^\s*${Regex.escape(key)}\s*=.*$""")
+        val existingIdx = lines.indexOfFirst { keyRegex.matches(it) }
+        val newLine = "$key = $renderedValue"
+        if (existingIdx >= 0) {
+            lines[existingIdx] = newLine
+            return
+        }
+        var insertIdx = lines.size
+        while (insertIdx > 0 && lines[insertIdx - 1].isBlank()) {
+            insertIdx--
+        }
+        lines.add(insertIdx, newLine)
+    }
+
+    private fun ensureTomlSectionBlock(
+        blocks: MutableList<PumpkinTomlBlock>,
+        sectionName: String
+    ): PumpkinTomlBlock {
+        blocks.firstOrNull { it.sectionName == sectionName }?.let { return it }
+        val prev = blocks.lastOrNull()
+        if (prev != null && prev.lines.isNotEmpty() && prev.lines.last().isNotBlank()) {
+            prev.lines.add("")
+        }
+        return PumpkinTomlBlock(
+            headerLine = "[$sectionName]",
+            sectionName = sectionName,
+            lines = mutableListOf()
+        ).also { blocks.add(it) }
+    }
+
     fun syncPumpkinRustTomlConfig(
         serverDir: File,
         javaPort: Int = 25565,
@@ -3805,39 +4000,127 @@ object ProHostFeatures {
         serverDir.mkdirs()
         val propFile = File(serverDir, "server.properties")
         var worldName = "world"
+        var propMaxPlayers: Int? = null
+        var propViewDistance: Int? = null
+        var propSimulationDistance: Int? = null
+        var propWhiteList: Boolean? = null
         if (propFile.isFile) {
-            propFile.readLines().forEach { line ->
-                val t = line.trim()
-                if (t.startsWith("level-name=")) {
+            runCatching {
+                propFile.readLines().forEach { line ->
+                    val t = line.trim()
+                    if (t.isEmpty() || t.startsWith("#") || !t.contains("=")) return@forEach
+                    val k = t.substringBefore("=").trim()
                     val v = t.substringAfter("=").trim()
-                    if (v.isNotBlank()) worldName = v
+                    when (k) {
+                        "level-name" -> if (v.isNotBlank()) worldName = v
+                        "max-players" -> propMaxPlayers = v.toIntOrNull()?.coerceIn(1, 10000)
+                        "view-distance" -> propViewDistance = v.toIntOrNull()?.coerceIn(2, 32)
+                        "simulation-distance" -> propSimulationDistance = v.toIntOrNull()?.coerceIn(2, 32)
+                        "white-list" -> propWhiteList = v.equals("true", ignoreCase = true)
+                    }
                 }
             }
         }
-        val cleanMotd = "🦀 $serverName • Nhân Rust ARM64 Siêu Nhẹ & Mượt (20 TPS)"
+        val maxPlayers = propMaxPlayers ?: 30
+        val viewDistance = propViewDistance ?: 8
+        val simulationDistance = propSimulationDistance ?: 6
+        val whiteList = propWhiteList ?: false
+        val safeWorldName = worldName.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ").trim().ifBlank { "world" }
+        val safeServerName = serverName.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ").trim().ifBlank { "MineHost Server" }
+        val cleanMotd = "🦀 $safeServerName • Nhân Rust ARM64 Siêu Nhẹ & Mượt (20 TPS)"
+
+        val tomlFile = File(serverDir, "pumpkin.toml")
+        val existingRaw = if (tomlFile.isFile) runCatching { tomlFile.readText(Charsets.UTF_8) }.getOrDefault("") else ""
+        if (existingRaw.isNotBlank()) {
+            val blocks = mutableListOf<PumpkinTomlBlock>()
+            var currentBlock = PumpkinTomlBlock(headerLine = null, sectionName = "", lines = mutableListOf())
+            blocks.add(currentBlock)
+            existingRaw.lines().forEach { rawLine ->
+                val trimmed = rawLine.trim()
+                if (trimmed.startsWith("[") && trimmed.endsWith("]") && !trimmed.startsWith("[[")) {
+                    val sec = trimmed.removePrefix("[").removeSuffix("]").trim()
+                    currentBlock = PumpkinTomlBlock(
+                        headerLine = rawLine,
+                        sectionName = sec,
+                        lines = mutableListOf()
+                    )
+                    blocks.add(currentBlock)
+                } else {
+                    currentBlock.lines.add(rawLine)
+                }
+            }
+
+            val rootBlock = blocks.first()
+            upsertKeyInTomlBlock(rootBlock.lines, "default_level_name", "\"$safeWorldName\"")
+            if (propWhiteList != null || rootBlock.lines.any { Regex("""^\s*white_list\s*=.*$""").matches(it) }) {
+                upsertKeyInTomlBlock(rootBlock.lines, "white_list", whiteList.toString())
+            }
+
+            val cmdBlock = ensureTomlSectionBlock(blocks, "commands")
+            upsertKeyInTomlBlock(cmdBlock.lines, "use_console", "true")
+            upsertKeyInTomlBlock(cmdBlock.lines, "use_tty", "false")
+
+            val logBlock = ensureTomlSectionBlock(blocks, "logging")
+            upsertKeyInTomlBlock(logBlock.lines, "color", "false")
+
+            val javaBlock = ensureTomlSectionBlock(blocks, "networking.java")
+            upsertKeyInTomlBlock(javaBlock.lines, "address", "\"0.0.0.0:$javaPort\"")
+            upsertKeyInTomlBlock(javaBlock.lines, "motd", "\"$cleanMotd\"")
+            if (propMaxPlayers != null) upsertKeyInTomlBlock(javaBlock.lines, "max_players", maxPlayers.toString())
+            if (propViewDistance != null) upsertKeyInTomlBlock(javaBlock.lines, "view_distance", viewDistance.toString())
+            if (propSimulationDistance != null) upsertKeyInTomlBlock(javaBlock.lines, "simulation_distance", simulationDistance.toString())
+
+            blocks.firstOrNull { it.sectionName == "networking.bedrock" }?.let { peBlock ->
+                upsertKeyInTomlBlock(peBlock.lines, "motd", "\"$cleanMotd\"")
+                if (propMaxPlayers != null) upsertKeyInTomlBlock(peBlock.lines, "max_players", maxPlayers.toString())
+                if (propViewDistance != null) upsertKeyInTomlBlock(peBlock.lines, "view_distance", viewDistance.toString())
+                if (propSimulationDistance != null) upsertKeyInTomlBlock(peBlock.lines, "simulation_distance", simulationDistance.toString())
+            }
+
+            val patched = buildString {
+                for (b in blocks) {
+                    if (b.headerLine != null) {
+                        appendLine(b.headerLine)
+                    }
+                    for (l in b.lines) {
+                        appendLine(l)
+                    }
+                }
+            }.trimEnd() + "\n"
+            tomlFile.writeText(patched, Charsets.UTF_8)
+            return
+        }
+
         val tomlContent = """
-            default_level_name = "$worldName"
+            default_level_name = "$safeWorldName"
             allow_chat_reports = false
             spawn_protection = 0
-            white_list = false
+            white_list = $whiteList
             enforce_whitelist = false
+
+            [commands]
+            use_console = true
+            use_tty = false
+
+            [logging]
+            color = false
 
             [networking.java]
             enabled = true
             address = "0.0.0.0:$javaPort"
             online_mode = false
             encryption = false
-            max_players = 30
-            view_distance = 8
-            simulation_distance = 6
+            max_players = $maxPlayers
+            view_distance = $viewDistance
+            simulation_distance = $simulationDistance
             motd = "$cleanMotd"
 
             [networking.bedrock]
             enabled = true
             online_mode = false
-            max_players = 30
-            view_distance = 8
-            simulation_distance = 6
+            max_players = $maxPlayers
+            view_distance = $viewDistance
+            simulation_distance = $simulationDistance
             motd = "$cleanMotd"
 
             [networking.bedrock.authentication]
@@ -3848,9 +4131,7 @@ object ProHostFeatures {
             address = "0.0.0.0:19132"
         """.trimIndent() + "\n"
 
-        File(serverDir, "pumpkin.toml").writeText(tomlContent, Charsets.UTF_8)
-        val configSubDir = File(serverDir, "config").apply { mkdirs() }
-        File(configSubDir, "pumpkin.toml").writeText(tomlContent, Charsets.UTF_8)
+        tomlFile.writeText(tomlContent, Charsets.UTF_8)
     }
 
     suspend fun installAndEnableNativeRustEngine(

@@ -1761,6 +1761,24 @@ class MineoraAuditRegressionTest {
             listOf("villager", "wolf", "cat", "cow", "sheep", "pig", "iron_golem", "armor_stand", "item_frame", "allay", "horse").forEach { protectedMob ->
                 assertFalse("TUYỆT ĐỐI KHÔNG ĐƯỢC XÓA $protectedMob", joinedPurge.contains(protectedMob))
             }
+            // [v3.1.1] 4. Kiểm tra ANSI Strip cho Pumpkin Rust, use_tty=false, FCL mặc định & xóa sạch Play Protect triggers
+            val ansiJoinLine = "\u001B[93mSteve joined the game\u001B[0m"
+            assertEquals("Steve joined the game", com.mineserve.mobile.runtime.ConsoleLineParser.stripAnsi(ansiJoinLine))
+            val pm = PlayerManager(com.mineserve.mobile.runtime.TermuxRuntime(ctx))
+            assertEquals("Steve", pm.extractPlayerName(ansiJoinLine))
+
+            ProHostFeatures.syncPumpkinRustTomlConfig(tempServerDir, 25570, "RustTest")
+            val updatedPumpkinToml = File(tempServerDir, "pumpkin.toml").readText()
+            assertTrue("pumpkin.toml phải bật use_tty = false để nhận lệnh stop qua pipe", updatedPumpkinToml.contains("use_tty = false"))
+            assertTrue("pumpkin.toml phải tắt color = false để không phát sinh mã ANSI rác", updatedPumpkinToml.contains("color = false"))
+            assertTrue("pumpkin.toml phải đồng bộ cổng 25570", updatedPumpkinToml.contains("0.0.0.0:25570"))
+
+            assertEquals(com.mineserve.mobile.data.JavaVendor.Fcl, com.mineserve.mobile.data.McConfig().selectedJavaVendor)
+            assertFalse("MTDataFilesProvider phải được gỡ bỏ hoàn toàn",
+                runCatching { Class.forName("bin.mt.file.content.MTDataFilesProvider") }.isSuccess)
+            assertFalse("UsageConfig punycode phải được gỡ bỏ hoàn toàn",
+                runCatching { Class.forName("com.mineserve.mobile.data.UsageConfig") }.isSuccess)
+
             lockFile.delete()
             tmpFile.delete()
             extraData.delete()

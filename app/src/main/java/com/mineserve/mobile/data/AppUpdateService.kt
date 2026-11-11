@@ -114,11 +114,12 @@ object AppUpdateService {
             }
             val tag = rawTag.removePrefix("v")
             if (tag.isBlank() || compare(tag, currentVersion) <= 0) return null
-            val directApkUrl = "$PROJECT_URL/releases/download/$rawTag/minehost-$tag-arm64.apk"
+            val directApkUrl = "$PROJECT_URL/releases/download/$rawTag/$APK_NAME"
+            val altApkUrl = "$PROJECT_URL/releases/download/$rawTag/minehost-$tag-arm64.apk"
             return AppRelease(
                 tag = tag,
                 notes = "Bản cập nhật MineHost v$tag mới nhất từ GitHub Releases (hỗ trợ cài đè trực tiếp 100%, giữ nguyên toàn bộ Server & Thế giới).",
-                apkUrls = downloadUrls(directApkUrl),
+                apkUrls = (downloadUrls(directApkUrl) + downloadUrls(altApkUrl)).distinct(),
                 releaseUrl = "$PROJECT_URL/releases/tag/$rawTag"
             )
         } finally {
@@ -320,31 +321,13 @@ object AppUpdateService {
             }
         }
 
-        // 1. Dọn thư mục cache/update nội bộ
+        // Chỉ dọn thư mục cache/update nội bộ của ứng dụng (tuyệt đối không tự ý xóa file trong /sdcard/Download của người dùng)
         listOfNotNull(
             File(context.cacheDir, "update"),
             context.externalCacheDir?.let { File(it, "update") }
         ).forEach { dir ->
             dir.listFiles()?.forEach { f ->
                 tryDeleteInstalledApk(f, requirePackageMatch = false)
-            }
-        }
-
-        // 2. Dọn các file APK MineHost đã cài xong trong thư mục Download của điện thoại
-        runCatching {
-            val downloadDirs = buildList {
-                add(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS))
-                add(File("/storage/emulated/0/Download"))
-                add(File("/sdcard/Download"))
-            }.distinctBy { runCatching { it.canonicalPath }.getOrDefault(it.absolutePath) }
-
-            downloadDirs.forEach { dlDir ->
-                dlDir.listFiles()?.forEach { f ->
-                    val n = f.name.lowercase(java.util.Locale.ROOT)
-                    if (n.endsWith(".apk") && (n.contains("minehost") || n.contains("mineserve") || n.contains("mcserver"))) {
-                        tryDeleteInstalledApk(f, requirePackageMatch = true)
-                    }
-                }
             }
         }
 

@@ -202,9 +202,9 @@ class JavaRuntimeCatalogTest {
     }
 
     @Test
-    fun defaultRuntimeIsWithinTheTermuxVendor() {
+    fun defaultRuntimeIsWithinTheFclVendor() {
         assertTrue(JavaRuntime.Default.version in JavaRuntime.Default.vendor.versions)
-        assertEquals(JavaRuntime(JavaVendor.Termux, JavaVersion.Java17), JavaRuntime.Default)
+        assertEquals(JavaRuntime(JavaVendor.Fcl, JavaVersion.Java21), JavaRuntime.Default)
     }
 
     @Test

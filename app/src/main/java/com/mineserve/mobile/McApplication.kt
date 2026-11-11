@@ -10,7 +10,6 @@ import androidx.work.Configuration
 import androidx.work.WorkManager
 import com.mineserve.mobile.data.DownloadPrefs
 import com.mineserve.mobile.data.ServerRepository
-import com.mineserve.mobile.data.UsageTracker
 import com.mineserve.mobile.mcp.McpServerManager
 import com.mineserve.mobile.runtime.TermuxRuntime
 import com.mineserve.mobile.server.CrashReportAnalyzer
@@ -193,9 +192,6 @@ class McApplication : Application(), Configuration.Provider {
             }
         }
 
-        // 累计使用人数统计：设备标识上报（每天一次，失败静默）
-        UsageTracker.maybePulse(this)
-
         // 设置 bootstrap 日志回调，推送到 consoleFlow
         termuxRuntime.setBootstrapLogCallback { msg ->
             termuxRuntime.emitLog(if (msg.startsWith("[bootstrap]")) msg else "[bootstrap] $msg")
@@ -316,15 +312,28 @@ class McApplication : Application(), Configuration.Provider {
         }
     }
 
-    /** 入队 widget_refresh（用 Configuration.Provider 自动初始化的 WorkManager 实例）。 */
+    /** 入队 widget_refresh（仅当用户实际添加了桌面组件时才注册周期刷新，避免无组件时每15分钟唤醒进程耗电）。 */
     private fun enqueueWidgetRefresh(): Boolean = try {
-        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
-            "widget_refresh",
-            androidx.work.ExistingPeriodicWorkPolicy.KEEP,
-            androidx.work.PeriodicWorkRequestBuilder<com.mineserve.mobile.widget.WidgetRefreshWorker>(
-                15, java.util.concurrent.TimeUnit.MINUTES
-            ).build()
-        )
+        val awm = android.appwidget.AppWidgetManager.getInstance(this)
+        val hasAnyWidget = listOf(
+            com.mineserve.mobile.widget.OverviewWidget::class.java,
+            com.mineserve.mobile.widget.EventLogWidget::class.java,
+            com.mineserve.mobile.widget.ConsoleWidget::class.java,
+            com.mineserve.mobile.widget.ModPluginWidget::class.java
+        ).any { cls ->
+            runCatching { awm.getAppWidgetIds(android.content.ComponentName(this, cls)).isNotEmpty() }.getOrDefault(false)
+        }
+        if (hasAnyWidget) {
+            WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+                "widget_refresh",
+                androidx.work.ExistingPeriodicWorkPolicy.KEEP,
+                androidx.work.PeriodicWorkRequestBuilder<com.mineserve.mobile.widget.WidgetRefreshWorker>(
+                    15, java.util.concurrent.TimeUnit.MINUTES
+                ).build()
+            )
+        } else {
+            WorkManager.getInstance(this).cancelUniqueWork("widget_refresh")
+        }
         true
     } catch (e: Exception) {
         android.util.Log.w("McApplication", "WorkManager setup failed", e)

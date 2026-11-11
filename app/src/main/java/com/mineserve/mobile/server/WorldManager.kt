@@ -61,11 +61,27 @@ class WorldManager(private val termux: TermuxRuntime) {
     fun setLevelName(dirName: String, worldName: String): Boolean {
         val safe = Worlds.sanitize(worldName)
         if (safe.isBlank()) return false
-        return if (isBedrock(dirName)) {
+        val ok = if (isBedrock(dirName)) {
             pnxConfigManager.write(dirName, mapOf("level-name" to safe))
         } else {
             propertiesManager.setProperty(dirName, "level-name", safe)
         }
+        if (ok) {
+            runCatching {
+                val pumpkinToml = File(termux.serverDirFor(dirName), "pumpkin.toml")
+                if (pumpkinToml.isFile) {
+                    val raw = pumpkinToml.readText(Charsets.UTF_8)
+                    val levelRegex = Regex("""(?m)^default_level_name\s*=\s*".*?"$""")
+                    val updated = if (levelRegex.containsMatchIn(raw)) {
+                        levelRegex.replace(raw, """default_level_name = "$safe"""")
+                    } else {
+                        "default_level_name = \"$safe\"\n" + raw
+                    }
+                    pumpkinToml.writeText(updated, Charsets.UTF_8)
+                }
+            }
+        }
+        return ok
     }
 
     /**

@@ -72,11 +72,36 @@ fun ServerIconScreen(vm: McViewModel, onBack: () -> Unit) {
     val props by vm.serverProperties.collectAsStateWithLifecycle()
     val version by vm.serverIconVersion.collectAsState()
 
-    LaunchedEffect(config.activeCoreName) {
-        vm.loadServerProperties()
+    LaunchedEffect(config.activeCoreName, config.installedCores.size) {
+        if (config.installedCores.isNotEmpty()) {
+            vm.loadServerProperties()
+        }
     }
 
     val activeCore = config.installedCores.firstOrNull { it.name == config.activeCoreName }
+    if (config.installedCores.isEmpty() || activeCore == null) {
+        Column(Modifier.fillMaxSize()) {
+            BackBar("🎨 Đổi Tên, Mô Tả & Ảnh Đại Diện Server", onBack)
+            Spacer(Modifier.height(12.dp))
+            McCard(title = "Chưa có máy chủ — Hãy tạo một Server trước") {
+                Text(
+                    "Hiện chưa có máy chủ nào được cài đặt hoặc chọn để chỉnh sửa tên, mô tả MOTD và ảnh đại diện (server-icon.png).",
+                    color = Muted,
+                    fontSize = 13.sp,
+                    lineHeight = 19.sp
+                )
+                Spacer(Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = onBack,
+                    shape = McShape.Control,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Quay lại để tạo Server mới", color = Indigo, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+        return
+    }
     var serverDisplayName by remember(config.activeCoreName) {
         mutableStateOf(config.activeCoreName.orEmpty())
     }

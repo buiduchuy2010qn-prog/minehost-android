@@ -69,6 +69,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -288,23 +289,32 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
         vm.messageFlow.collectLatest { snackbarHostState.showInstantSnackbar(it) }
     }
 
+    val rustStatus by vm.rustEngineStatus.collectAsState()
     val activeCore = config.installedCores.find { it.name == config.activeCoreName }
     val coreType = activeCore?.core ?: config.selectedCore
     val isPowerNukkitX = coreType == com.mineserve.mobile.data.ServerCore.PowerNukkitX
-    // Cho phép hiện mục Mod & Gói Mod trên cả Vanilla (tự động nâng cấp tại chỗ lên Fabric giữ nguyên Map khi bật Gói Tối Ưu)
-    val availableTypes = buildList {
-        if (coreType.supportsPlugins) add(ResourceType.Plugin)
-        if (coreType.supportsMods || !coreType.isBedrock) {
-            add(ResourceType.Mod)
-            add(ResourceType.Modpack)
+    val availableTabs = buildList {
+        if (activeCore != null) {
+            if (coreType.supportsPlugins && !rustStatus.isNativeRustEnabled) add(ResourceType.Plugin)
+            if (coreType.supportsMods && !rustStatus.isNativeRustEnabled) {
+                add(ResourceType.Mod)
+                add(ResourceType.Modpack)
+            }
         }
-        add(ResourceType.ResourcePack)
     }
-    var resourceType by remember { mutableStateOf(ResourceType.Mod) }
+    val availableTypes = buildList {
+        addAll(availableTabs)
+        if (activeCore != null && !coreType.isBedrock && !rustStatus.isNativeRustEnabled) {
+            add(ResourceType.ResourcePack)
+        }
+    }
+    var resourceType by remember(coreType, rustStatus.isNativeRustEnabled) {
+        mutableStateOf(availableTypes.firstOrNull() ?: ResourceType.ResourcePack)
+    }
     // 核心切换时校正资源类型（默认取第一个可用类型）
-    LaunchedEffect(coreType) {
-        if (resourceType !in availableTypes) {
-            resourceType = availableTypes.firstOrNull() ?: ResourceType.ResourcePack
+    LaunchedEffect(coreType, rustStatus.isNativeRustEnabled, availableTypes) {
+        if (availableTypes.isNotEmpty() && resourceType !in availableTypes) {
+            resourceType = availableTypes.first()
         }
     }
     // 进入模组分类时刷新模组列表 + 加载 Modrinth 加载器与游戏版本
@@ -496,7 +506,7 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
             }
 
             // ── GÓI MOD TỐI ƯU SERVER CỰC MẠNH LƯU SẴN (BẬT 1 CHẠM — TỰ ĐỘNG KHỚP PHIÊN BẢN) ──
-            if (activeCore != null && !coreType.isBedrock) {
+            if (activeCore != null && !coreType.isBedrock && !rustStatus.isNativeRustEnabled && (coreType.supportsMods || coreType == ServerCore.Vanilla)) {
                 val optPackStatus by vm.serverOptPackStatus.collectAsStateWithLifecycle()
                 val isTogglingOptPack by vm.isTogglingServerOptPack.collectAsStateWithLifecycle()
                 val optPackProgress by vm.serverOptPackProgress.collectAsStateWithLifecycle()
@@ -512,7 +522,7 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                             onCheckedChange = { wantEnable ->
                                 vm.toggleServerOptimizationPack(enable = wantEnable, customMcVersion = detectedMcVer)
                             },
-                            enabled = !isTogglingOptPack
+                            enabled = !isTogglingOptPack && !isServerRunning
                         )
                     }
                 ) {
@@ -694,7 +704,7 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                                     customMcVersion = detectedMcVer
                                 )
                             },
-                            enabled = !isTogglingOptPack,
+                            enabled = !isTogglingOptPack && !isServerRunning,
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = if (optPackStatus.isPackActive) Coral else Mint
                             ),
@@ -716,8 +726,8 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                     if (isServerRunning) {
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            "💡 Server đang chạy: Khi bật/tắt Gói Mod Tối Ưu, App sẽ tự động lưu thế giới, nạp Mod và khởi động lại Server.",
-                            color = Indigo,
+                            "⚠️ Hãy dừng Server trước khi bật hoặc tắt Gói Mod Tối Ưu để tránh lỗi sập tiến trình!",
+                            color = Coral,
                             fontSize = 10.5.sp,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -735,9 +745,10 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                 vm.refreshVoiceChatAndResourcePackStatus()
             }
 
-            McCard(
-                title = "🎙️ Simple Voice Chat 1 Chạm & 🎨 Xưởng Resource Pack / Việt Hóa"
-            ) {
+            if (activeCore != null && !coreType.isBedrock && !rustStatus.isNativeRustEnabled) {
+                McCard(
+                    title = "🎙️ Simple Voice Chat 1 Chạm & 🎨 Xưởng Resource Pack / Việt Hóa"
+                ) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (liveTask.active) {
                         val pct = (liveTask.progress.coerceIn(0f, 1f) * 100).toInt()
@@ -902,18 +913,70 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                         }
                     }
                 }
+                }
+            }
+
+            // ── Empty-state card khi chưa có máy chủ hoặc nhân không hỗ trợ Mod/Plugin ──
+            if (config.installedCores.isEmpty() || activeCore == null || availableTabs.isEmpty()) {
+                Box(modifier = Modifier.padding(horizontal = McSpacing.Page, vertical = 6.dp)) {
+                    if (config.installedCores.isEmpty() || activeCore == null) {
+                        HostCard(
+                            title = "Chưa có máy chủ",
+                            badgeText = "Hãy tạo một Server trước khi quản lý Mod / Plugin"
+                        ) {
+                            Text(
+                                "Bạn chưa tải hoặc tạo máy chủ nào. Bạn có thể tạo ngay Server Rust Thuần 1 chạm (~50MB RAM, không cần Java) hoặc sang mục Phần mềm máy chủ để tải Fabric / Forge / Paper nếu muốn chơi Mod & Plugin.",
+                                fontSize = 12.sp,
+                                color = Muted,
+                                lineHeight = 18.sp
+                            )
+                            Button(
+                                onClick = { vm.createStandaloneRustServerOneTap() },
+                                enabled = !liveTask.active && !isServerRunning,
+                                shape = McShape.ControlCompact,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    "🦀 Tạo Nhanh Server Rust Thuần (~50MB RAM)",
+                                    color = Color.White,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                            }
+                        }
+                    } else {
+                        val engineLabel = if (rustStatus.isNativeRustEnabled) "Rust Thuần (Pumpkin)" else coreType.displayName
+                        HostCard(
+                            title = "Nhân $engineLabel không dùng Mod/Plugin",
+                            badgeText = "Chế độ Sinh tồn gốc không nạp .jar"
+                        ) {
+                            Text(
+                                "Nhân Vanilla / Rust Thuần không dùng Mod/Plugin — Hãy chuyển sang chế độ ☕ Java Mod (Fabric/Forge/Paper) nếu muốn cài Mod/Plugin.",
+                                fontSize = 12.sp,
+                                color = Muted,
+                                lineHeight = 18.sp
+                            )
+                            if (rustStatus.isNativeRustEnabled && activeCore.serverFile != "pumpkin") {
+                                OutlinedButton(
+                                    onClick = { vm.selectOriginalJavaEngineOneTap() },
+                                    enabled = !isServerRunning && !liveTask.active,
+                                    shape = McShape.ControlCompact,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        "☕ Chuyển về Chế Độ Java (${coreType.displayName})",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             // ── 4 Phân mục Tài nguyên: Plugin / Mod / Gói Mod & ZIP / Gói Tài Nguyên ──
-            if (availableTypes.isEmpty()) {
-                Text(
-                    stringResource(R.string.s758, coreType.displayName),
-                    color = Coral,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(horizontal = McSpacing.Page, vertical = 4.dp)
-                )
-            } else {
+            if (config.installedCores.isNotEmpty() && activeCore != null && availableTypes.isNotEmpty()) {
                 val types = availableTypes
                 SegmentedTabs(
                     options = types.map { type ->
@@ -928,135 +991,137 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                     modifier = Modifier.padding(horizontal = McSpacing.Page, vertical = 4.dp),
                     onSelect = { index -> types.getOrNull(index)?.let { resourceType = it } }
                 )
-            }
 
-            // ── 标签切换栏（仅插件分类显示） ──
-            if (resourceType == ResourceType.Plugin) {
-                val tabs = PluginTab.values()
-                SegmentedTabs(
-                    options = tabs.map { tab ->
-                        val count = if (tab == PluginTab.Installed) installedPlugins.size else 0
-                        if (count > 0) "${stringResource(tab.labelRes)} $count" else stringResource(tab.labelRes)
-                    },
-                    selectedIndex = tabs.indexOf(activeTab),
-                    modifier = Modifier.padding(horizontal = McSpacing.Page, vertical = 4.dp),
-                    onSelect = { index -> tabs.getOrNull(index)?.let { activeTab = it } }
-                )
-            }
+                // ── 标签切换栏（仅插件分类显示） ──
+                if (resourceType == ResourceType.Plugin && ResourceType.Plugin in availableTypes) {
+                    val tabs = PluginTab.values()
+                    SegmentedTabs(
+                        options = tabs.map { tab ->
+                            val count = if (tab == PluginTab.Installed) installedPlugins.size else 0
+                            if (count > 0) "${stringResource(tab.labelRes)} $count" else stringResource(tab.labelRes)
+                        },
+                        selectedIndex = tabs.indexOf(activeTab),
+                        modifier = Modifier.padding(horizontal = McSpacing.Page, vertical = 4.dp),
+                        onSelect = { index -> tabs.getOrNull(index)?.let { activeTab = it } }
+                    )
+                }
 
-            // ── 内容区（Plugin / Mod / Gói Mod & ZIP / Gói Tài Nguyên） ──
-            when (resourceType) {
-                ResourceType.Plugin -> {
-                    when (activeTab) {
-                        PluginTab.Installed -> InstalledTab(
-                            installed = installedPlugins,
-                            conflicts = pluginConflicts,
-                            activeCoreExists = activeCore != null,
-                            serverRunning = isServerRunning,
-                            onToggle = { vm.togglePluginEnabled(it.fileName) },
-                            onDelete = { pendingDelete = it },
-                            onShowDetail = { detailPlugin = it }
-                        )
+                // ── 内容区（Plugin / Mod / Gói Mod & ZIP / Gói Tài Nguyên） ──
+                if (resourceType in availableTypes) {
+                    when (resourceType) {
+                        ResourceType.Plugin -> {
+                            when (activeTab) {
+                                PluginTab.Installed -> InstalledTab(
+                                    installed = installedPlugins,
+                                    conflicts = pluginConflicts,
+                                    activeCoreExists = activeCore != null,
+                                    serverRunning = isServerRunning,
+                                    onToggle = { vm.togglePluginEnabled(it.fileName) },
+                                    onDelete = { pendingDelete = it },
+                                    onShowDetail = { detailPlugin = it }
+                                )
 
-                        PluginTab.Upload -> UploadTab(
-                            activeCoreExists = activeCore != null,
-                            customUrlProgress = vm.customUrlDownloadProgress(),
-                            onPickFile = { uri -> vm.installPluginFromUri(uri) },
-                            onInstallFromUrl = { url, name -> vm.installPluginFromUrl(url, name) },
-                            onGotoInstalled = { activeTab = PluginTab.Installed }
-                        )
+                                PluginTab.Upload -> UploadTab(
+                                    activeCoreExists = activeCore != null,
+                                    customUrlProgress = vm.customUrlDownloadProgress(),
+                                    onPickFile = { uri -> vm.installPluginFromUri(uri) },
+                                    onInstallFromUrl = { url, name -> vm.installPluginFromUrl(url, name) },
+                                    onGotoInstalled = { activeTab = PluginTab.Installed }
+                                )
+                            }
+                        }
+                        ResourceType.Mod -> {
+                            ModsTab(
+                                vm = vm,
+                                mods = mods,
+                                curatedMods = vm.curatedMods,
+                                activeCoreExists = activeCore != null,
+                                coreType = coreType,
+                                currentServerVersion = activeCore?.version ?: config.mcVersion,
+                                serverRunning = isServerRunning,
+                                modrinthResults = modrinthResults,
+                                modrinthLoaders = modrinthLoaders,
+                                modrinthGameVersions = modrinthGameVersions,
+                                selectedModVersion = selectedModVersion,
+                                onSetModVersion = { vm.setSelectedModVersion(it) },
+                                onToggle = { vm.toggleModEnabled(it) },
+                                onDelete = { pendingModDelete = it },
+                                onUpload = { uri -> vm.installModFromUri(uri) },
+                                onInstallCurated = { vm.installCuratedMod(it) },
+                                onSearchModrinth = { query, loaders, sort, version, category ->
+                                    vm.searchModrinthMods(query, loaders, sort, version, category)
+                                },
+                                onInstallModrinth = { hit, version -> vm.installModrinthMod(hit, version) },
+                                onLoadMoreModrinth = { vm.loadMoreModrinthMods() },
+                                isLoadingMore = isLoadingMoreMods
+                            )
+                        }
+                        ResourceType.Modpack -> {
+                            ModPackDecoderAndTransferCard(
+                                vm = vm,
+                                activeCoreExists = activeCore != null,
+                                serverRunning = isServerRunning,
+                                hasInstalledMods = mods.isNotEmpty(),
+                                showFull56ListByDefault = false
+                            )
+                        }
+                        ResourceType.ResourcePack -> {
+                            ResourcePackConfigCard(vm = vm, activeCoreExists = activeCore != null)
+                        }
                     }
                 }
-                ResourceType.Mod -> {
-                    ModsTab(
-                        vm = vm,
-                        mods = mods,
-                        curatedMods = vm.curatedMods,
-                        activeCoreExists = activeCore != null,
-                        coreType = coreType,
+
+                // ── 插件页 Modrinth 资源检索（与模组页布局统一） ──
+                if (resourceType == ResourceType.Plugin && ResourceType.Plugin in availableTypes) {
+                    PluginModrinthCard(
+                        results = pluginModrinthResults,
+                        installedPlugins = installedPlugins,
+                        loaders = pluginModrinthLoaders,
+                        gameVersions = modrinthGameVersions,
+                        selectedVersion = selectedPluginVersion,
                         currentServerVersion = activeCore?.version ?: config.mcVersion,
-                        serverRunning = isServerRunning,
-                        modrinthResults = modrinthResults,
-                        modrinthLoaders = modrinthLoaders,
-                        modrinthGameVersions = modrinthGameVersions,
-                        selectedModVersion = selectedModVersion,
-                        onSetModVersion = { vm.setSelectedModVersion(it) },
-                        onToggle = { vm.toggleModEnabled(it) },
-                        onDelete = { pendingModDelete = it },
-                        onUpload = { uri -> vm.installModFromUri(uri) },
-                        onInstallCurated = { vm.installCuratedMod(it) },
-                        onSearchModrinth = { query, loaders, sort, version, category ->
-                            vm.searchModrinthMods(query, loaders, sort, version, category)
+                        onSetVersion = { vm.setSelectedPluginVersion(it) },
+                        onSearch = { query, loaders, sort, version, category ->
+                            vm.searchModrinthPlugin(query, loaders, sort, version, category)
                         },
-                        onInstallModrinth = { hit, version -> vm.installModrinthMod(hit, version) },
-                        onLoadMoreModrinth = { vm.loadMoreModrinthMods() },
-                        isLoadingMore = isLoadingMoreMods
+                        onInstall = { hit, version -> vm.installModrinthPlugin(hit, version) },
+                        onLoadMore = { vm.loadMoreModrinthPlugin() },
+                        isLoadingMore = isLoadingMorePlugins
                     )
                 }
-                ResourceType.Modpack -> {
-                    ModPackDecoderAndTransferCard(
-                        vm = vm,
-                        activeCoreExists = activeCore != null,
-                        serverRunning = isServerRunning,
-                        hasInstalledMods = mods.isNotEmpty(),
-                        showFull56ListByDefault = false
-                    )
-                }
-                ResourceType.ResourcePack -> {
-                    ResourcePackConfigCard(vm = vm, activeCoreExists = activeCore != null)
-                }
-            }
 
-            // ── 插件页 Modrinth 资源检索（与模组页布局统一） ──
-            if (resourceType == ResourceType.Plugin) {
-                PluginModrinthCard(
-                    results = pluginModrinthResults,
-                    installedPlugins = installedPlugins,
-                    loaders = pluginModrinthLoaders,
-                    gameVersions = modrinthGameVersions,
-                    selectedVersion = selectedPluginVersion,
-                    currentServerVersion = activeCore?.version ?: config.mcVersion,
-                    onSetVersion = { vm.setSelectedPluginVersion(it) },
-                    onSearch = { query, loaders, sort, version, category ->
-                        vm.searchModrinthPlugin(query, loaders, sort, version, category)
-                    },
-                    onInstall = { hit, version -> vm.installModrinthPlugin(hit, version) },
-                    onLoadMore = { vm.loadMoreModrinthPlugin() },
-                    isLoadingMore = isLoadingMorePlugins
-                )
-            }
-
-            // ── 底部热重载 ──
-            McCard(title = stringResource(R.string.s759)) {
-                Text(
-                    if (isServerRunning)
-                        stringResource(R.string.s760)
-                    else
-                        stringResource(R.string.s761),
-                    color = if (isServerRunning) Muted else Coral,
-                    fontSize = 11.sp
-                )
-                Spacer(Modifier.height(10.dp))
-                Button(
-                    onClick = {
-                        vm.sendCommand("reload")
-                        scope.launch { snackbarHostState.showSnackbar(context.getString(R.string.s762)) }
-                    },
-                    enabled = isServerRunning,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Indigo,
-                        disabledContainerColor = IndigoSoft
-                    ),
-                    shape = McShape.Control,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Outlined.PowerSettingsNew, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.size(6.dp))
+                // ── 底部热重载 ──
+                McCard(title = stringResource(R.string.s759)) {
                     Text(
-                        if (isServerRunning) stringResource(R.string.s763) else stringResource(R.string.s280),
-                        color = Color.White,
-                        fontWeight = FontWeight.SemiBold
+                        if (isServerRunning)
+                            stringResource(R.string.s760)
+                        else
+                            stringResource(R.string.s761),
+                        color = if (isServerRunning) Muted else Coral,
+                        fontSize = 11.sp
                     )
+                    Spacer(Modifier.height(10.dp))
+                    Button(
+                        onClick = {
+                            vm.sendCommand("reload")
+                            scope.launch { snackbarHostState.showSnackbar(context.getString(R.string.s762)) }
+                        },
+                        enabled = isServerRunning,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Indigo,
+                            disabledContainerColor = IndigoSoft
+                        ),
+                        shape = McShape.Control,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Outlined.PowerSettingsNew, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.size(6.dp))
+                        Text(
+                            if (isServerRunning) stringResource(R.string.s763) else stringResource(R.string.s280),
+                            color = Color.White,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
                 }
             }
 

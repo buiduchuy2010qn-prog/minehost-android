@@ -1,5 +1,6 @@
 package com.mineserve.mobile.server.tunnel
 
+import com.mineserve.mobile.data.FrpLocalTarget
 import com.mineserve.mobile.data.McConfig
 import com.mineserve.mobile.data.TunnelStatus
 import com.mineserve.mobile.data.TunnelType
@@ -31,7 +32,12 @@ class SakuraFrpBackend(
             throw IllegalArgumentException("请先在隧道列表中选择要启动的隧道")
         }
 
-        val configText = SakuraFrpApi.tunnelConfig(token, tunnelId)
+        val rawConfig = SakuraFrpApi.tunnelConfig(token, tunnelId)
+        val aligned = FrpLocalTarget.align(rawConfig, config.localPort)
+        if (aligned.changed > 0) {
+            log("[sakura] 已将隧道本地转发端口从 ${aligned.from} 对齐为服务端真实端口 ${config.localPort}")
+        }
+        val configText = aligned.text
         val file = File(tunnelDir, "frpc-sakura.toml")
         file.writeText(ensureConsoleLog(configText))
 

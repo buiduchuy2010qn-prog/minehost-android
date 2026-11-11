@@ -325,11 +325,17 @@ fun JavaPropertiesScreen(vm: McViewModel, onBack: () -> Unit, showBackBar: Boole
     val propertiesExist by vm.serverPropertiesExist.collectAsState()
     val serverState by vm.serverState.collectAsState()
     val config by vm.config.collectAsState()
+    val rustStatus by vm.rustEngineStatus.collectAsState()
+
+    if (config.installedCores.isEmpty()) {
+        PropertiesEmptyScreen(onBack, showBackBar)
+        return
+    }
 
     var props by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var showRestartDialog by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) { vm.loadServerProperties() }
+    LaunchedEffect(config.activeCoreName) { vm.loadServerProperties() }
     LaunchedEffect(loaded) { props = loaded }
 
     val header: @Composable () -> Unit = {
@@ -386,6 +392,18 @@ fun JavaPropertiesScreen(vm: McViewModel, onBack: () -> Unit, showBackBar: Boole
                 modifier = Modifier.padding(horizontal = McSpacing.Page)
             )
             Spacer(Modifier.height(8.dp))
+
+            if (rustStatus.isNativeRustEnabled) {
+                McCard(title = "🦀 Đồng bộ cấu hình Nhân Rust Thuần (pumpkin.toml)", compact = true) {
+                    Text(
+                        "Tệp cấu hình pumpkin.toml được tự động đồng bộ từ các khóa chính trong server.properties gồm: server-port, level-name, max-players và view-distance. Một số khóa đặc thù Java có thể chưa áp dụng trên Nhân Rust Thuần.",
+                        color = Indigo,
+                        fontSize = 11.5.sp,
+                        lineHeight = 16.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
 
             // ── Bộ tăng Tầm nhìn nhanh (4 - 32 Chunk) ──
             ViewDistanceBoosterCard(
@@ -671,6 +689,10 @@ private val pnxGroups = listOf(
 @Composable
 fun PropertiesScreen(vm: McViewModel, onBack: () -> Unit, showBackBar: Boolean = true) {
     val config by vm.config.collectAsState()
+    if (config.installedCores.isEmpty()) {
+        PropertiesEmptyScreen(onBack, showBackBar)
+        return
+    }
     when (config.installedCores.firstOrNull { it.name == config.activeCoreName }?.core) {
         com.mineserve.mobile.data.ServerCore.PowerNukkitX -> PowerNukkitXPropertiesScreen(vm, onBack, showBackBar)
         null -> PropertiesEmptyScreen(onBack, showBackBar)
@@ -683,7 +705,25 @@ private fun PropertiesEmptyScreen(onBack: () -> Unit, showBackBar: Boolean) {
     Column(Modifier.fillMaxSize()) {
         if (showBackBar) BackBar(title = stringResource(R.string.props_back_title), onBack = onBack)
         HeaderBlock(stringResource(R.string.props_eyebrow), stringResource(R.string.props_back_title), statusBarPadding = !showBackBar)
-        Text(stringResource(R.string.props_no_core), color = Muted, modifier = Modifier.padding(16.dp))
+        Spacer(Modifier.height(8.dp))
+        McCard(title = "Chưa có máy chủ — Hãy tạo một Server trước") {
+            Text(
+                "Hiện chưa có máy chủ nào được cài đặt hoặc chọn để cấu hình server.properties.",
+                color = Muted,
+                fontSize = 12.5.sp,
+                lineHeight = 18.sp
+            )
+            if (showBackBar) {
+                Spacer(Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = onBack,
+                    shape = McShape.Control,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Quay lại để tạo Server mới", color = Indigo, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
     }
 }
 

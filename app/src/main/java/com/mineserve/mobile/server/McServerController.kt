@@ -22,6 +22,7 @@ import com.mineserve.mobile.data.StepStatus
 import com.mineserve.mobile.data.StartupPhase
 import com.mineserve.mobile.data.isProotGuestRuntime
 import com.mineserve.mobile.data.provides
+import com.mineserve.mobile.runtime.FclJrePackages
 import com.mineserve.mobile.runtime.TermuxRuntime
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.Dispatchers
@@ -250,7 +251,7 @@ class McServerController(
         var lastCode = 1
         repeat(3) { attempt ->
             if (!isProotGuestRuntime(javaVendor, javaVersion)) {
-                termux.autoRepairRuntime(javaVersion, needsFonts = false)
+                termux.autoRepairRuntime(javaVersion, needsFonts = false, vendor = javaVendor)
             }
             lastCode = if (isProotGuestRuntime(javaVendor, javaVersion)) {
                 termux.runProotInstaller(
@@ -258,10 +259,27 @@ class McServerController(
                     serverDir,
                     profile = termux.resolveProotProfile(javaVendor, javaVersion)
                 )
+            } else if (javaVendor == JavaVendor.Fcl) {
+                val fclJavaPath = termux.fclJre.javaBinary(javaVersion).absolutePath
+                termux.emitLog("[install] Sử dụng FCL JRE cho $label installer: $fclJavaPath")
+                termux.execHostJava(
+                    javaVersion,
+                    JavaVendor.Fcl,
+                    "-Djava.io.tmpdir=${tempDir.absolutePath}",
+                    "-jar",
+                    jarPath,
+                    "--installServer",
+                    serverDir.absolutePath
+                )
             } else {
-                termux.execOnce(
-                    "java", "-Djava.io.tmpdir=${tempDir.absolutePath}",
-                    "-jar", jarPath, "--installServer", serverDir.absolutePath
+                termux.execHostJava(
+                    javaVersion,
+                    javaVendor,
+                    "-Djava.io.tmpdir=${tempDir.absolutePath}",
+                    "-jar",
+                    jarPath,
+                    "--installServer",
+                    serverDir.absolutePath
                 )
             }
             if (lastCode == 0) return 0
@@ -340,11 +358,12 @@ class McServerController(
                 throw RuntimeException("Môi trường hệ thống chưa khởi tạo xong, vui lòng đợi vài giây rồi thử lại")
             }
             termux.fixRootfsPermissions()
-            if (!termux.prepareAptPackages("wget", "fontconfig", "ttf-dejavu")) {
-                return@withContext false
-            }
             val steps = InstallStep.values().filter { it != InstallStep.Jdk }
             steps.forEachIndexed { idx, step ->
+                if (termux.isDependencyInstalled(step)) {
+                    repo.markStep(step, StepStatus.Done, (idx + 1) * (100 / steps.size))
+                    return@forEachIndexed
+                }
                 repo.markStep(step, StepStatus.Active, idx * (100 / steps.size))
                 val code = when (step) {
                     InstallStep.Jdk -> 0
@@ -371,6 +390,11 @@ class McServerController(
             monitoring = false
             monitorJob.cancel()
             onSpeed?.invoke(0L)
+            runCatching {
+                aptCacheDir.listFiles()
+                    ?.filter { it.isFile && it.name.endsWith(".deb") }
+                    ?.forEach { deb -> runCatching { deb.delete() } }
+            }
             isInstalling = false
         }
     }
@@ -388,55 +412,60 @@ class McServerController(
     }
 
     suspend fun downloadCore(config: McConfig, customName: String, onProgress: (Long, Long, Long) -> Unit) = withContext(Dispatchers.IO) {
+        termux.selectedProotVendor = config.selectedJavaVendor
+        termux.selectedProotDistro = config.prootDistro
         val normalizedConfig = config.copy(
             mcVersion = MinecraftVersionNormalizer.forCore(config.selectedCore, config.mcVersion)
         )
         if (normalizedConfig.mcVersion != config.mcVersion) {
             termux.emitLog("[version] Đã chuẩn hóa phiên bản Minecraft từ ${config.mcVersion} sang ${normalizedConfig.mcVersion}")
         }
-        if (normalizedConfig.selectedCore.needsInstaller &&
-            !termux.isJavaInstalled(normalizedConfig.selectedJavaVersion, normalizedConfig.selectedJavaVendor)
+        val effectiveConfig = if (normalizedConfig.selectedCore.needsInstaller &&
+            normalizedConfig.selectedCore != ServerCore.PocketMine
         ) {
-            throw RuntimeException("Chưa cài đặt ${normalizedConfig.selectedJavaVersion.displayName}. Vui lòng bấm cài đặt Java tương thích trước khi cài ${normalizedConfig.selectedCore.displayName}.")
+            ensureAndResolveJavaRuntime(
+                config = normalizedConfig,
+                core = normalizedConfig.selectedCore,
+                mcVersion = normalizedConfig.mcVersion
+            )
+        } else {
+            normalizedConfig
         }
         val dirName = uniqueDirNameIn(sanitizeDirName(customName))
         val jarPath = termux.serverJarFileFor(dirName).absolutePath
-        downloadCoreTo(jarPath, normalizedConfig, dirName, onProgress)
+        downloadCoreTo(jarPath, effectiveConfig, dirName, onProgress)
         val serverDir = termux.serverDirFor(dirName)
-        if (normalizedConfig.selectedCore == ServerCore.PowerNukkitX) {
+        if (effectiveConfig.selectedCore == ServerCore.PowerNukkitX) {
             val properties = File(serverDir, "server.properties")
             val current = if (properties.exists()) properties.readText() else ""
-            properties.writeText(updatePowerNukkitXProperties(current, normalizedConfig.localPort, customName))
-            PowerNukkitXConfigManager(termux).updatePort(dirName, normalizedConfig.localPort)
+            properties.writeText(updatePowerNukkitXProperties(current, effectiveConfig.localPort, customName))
+            PowerNukkitXConfigManager(termux).updatePort(dirName, effectiveConfig.localPort)
         }
-        if (normalizedConfig.selectedCore.needsInstaller) {
-            termux.emitLog("[install] Đang chạy bộ cài đặt ${config.selectedCore.displayName} (lần đầu cần tải thư viện phụ thuộc, vui lòng đợi 1-3 phút)...")
+        if (effectiveConfig.selectedCore.needsInstaller) {
+            val targetJava = effectiveConfig.selectedJavaVersion
+            val targetVendor = effectiveConfig.selectedJavaVendor
+            termux.selectedProotVendor = targetVendor
+            termux.selectedProotDistro = effectiveConfig.prootDistro
+            termux.emitLog("[install] Đang chạy bộ cài đặt ${config.selectedCore.displayName} với ${targetJava.displayName} (${targetVendor.logName})...")
             val installerTempDir = File(termux.installer.rootDir, "tmp").apply { mkdirs() }
-            when (normalizedConfig.selectedCore) {
+            when (effectiveConfig.selectedCore) {
                 ServerCore.Forge -> {
                     val code = runInstallerWithRetry(
-                        jarPath, serverDir, normalizedConfig.selectedCore.displayName, installerTempDir,
-                        normalizedConfig.selectedJavaVersion
+                        jarPath, serverDir, effectiveConfig.selectedCore.displayName, installerTempDir,
+                        targetJava, targetVendor
                     )
                     if (code != 0) throw RuntimeException("Trình cài đặt Forge thất bại (mã thoát=$code)")
                 }
                 ServerCore.NeoForge -> {
                     val code = runInstallerWithRetry(
-                        jarPath, serverDir, normalizedConfig.selectedCore.displayName, installerTempDir,
-                        normalizedConfig.selectedJavaVersion
+                        jarPath, serverDir, effectiveConfig.selectedCore.displayName, installerTempDir,
+                        targetJava, targetVendor
                     )
                     if (code != 0) throw RuntimeException("Trình cài đặt NeoForge thất bại (mã thoát=$code)")
                 }
                 ServerCore.Quilt -> {
-                    val code = if (isProotGuestRuntime(
-                            normalizedConfig.selectedJavaVendor,
-                            normalizedConfig.selectedJavaVersion
-                        )
-                    ) {
-                        val profile = termux.resolveProotProfile(
-                            normalizedConfig.selectedJavaVendor,
-                            normalizedConfig.selectedJavaVersion
-                        )
+                    val code = if (isProotGuestRuntime(targetVendor, targetJava)) {
+                        val profile = termux.resolveProotProfile(targetVendor, targetJava)
                         val guestJar = "${TermuxRuntime.GUEST_SERVER_DIR}/${File(jarPath).relativeTo(serverDir).invariantSeparatorsPath}"
                         termux.runProotCommand(
                             serverDir,
@@ -445,47 +474,70 @@ class McServerController(
                                 "cd ${TermuxRuntime.GUEST_SERVER_DIR} && " +
                                 "exec ${profile.guestJavaBinaryCandidates.first()} " +
                                 "-Djava.io.tmpdir=/tmp -jar '$guestJar' " +
-                                "install server '${normalizedConfig.mcVersion}' --install-dir=${TermuxRuntime.GUEST_SERVER_DIR} --download-server",
+                                "install server '${effectiveConfig.mcVersion}' --install-dir=${TermuxRuntime.GUEST_SERVER_DIR} --download-server",
                             profile = profile
                         )
+                    } else if (targetVendor == JavaVendor.Fcl) {
+                        val fclJavaPath = termux.fclJre.javaBinary(targetJava).absolutePath
+                        termux.emitLog("[install] Sử dụng FCL JRE cho Quilt installer: $fclJavaPath")
+                        termux.execHostJava(
+                            targetJava,
+                            JavaVendor.Fcl,
+                            "-Djava.io.tmpdir=${installerTempDir.absolutePath}",
+                            "-jar",
+                            jarPath,
+                            "install",
+                            "server",
+                            effectiveConfig.mcVersion,
+                            "--install-dir=${serverDir.absolutePath}",
+                            "--download-server"
+                        )
                     } else {
-                        termux.execOnce(
-                            "java", "-jar", jarPath, "install", "server", normalizedConfig.mcVersion,
-                            "--install-dir=${serverDir.absolutePath}", "--download-server"
+                        termux.execHostJava(
+                            targetJava,
+                            targetVendor,
+                            "-Djava.io.tmpdir=${installerTempDir.absolutePath}",
+                            "-jar",
+                            jarPath,
+                            "install",
+                            "server",
+                            effectiveConfig.mcVersion,
+                            "--install-dir=${serverDir.absolutePath}",
+                            "--download-server"
                         )
                     }
                     if (code != 0) throw RuntimeException("Trình cài đặt Quilt thất bại (mã thoát=$code)")
                 }
                 else -> {}
             }
-            requireInstallerLaunchArtifacts(normalizedConfig.selectedCore, serverDir)
-            termux.emitLog("[install] Đã cài đặt hoàn tất ${normalizedConfig.selectedCore.displayName}")
+            requireInstallerLaunchArtifacts(effectiveConfig.selectedCore, serverDir)
+            termux.emitLog("[install] Đã cài đặt hoàn tất ${effectiveConfig.selectedCore.displayName}")
         }
         val eula = File(serverDir, "eula.txt")
         if (!eula.exists()) eula.writeText("eula=false\n")
         File(serverDir, "plugins").mkdirs()
-        val serverFileName = if (normalizedConfig.selectedCore == ServerCore.PocketMine) {
+        val serverFileName = if (effectiveConfig.selectedCore == ServerCore.PocketMine) {
             val phar = File(serverDir, "PocketMine-MP.phar")
             File(jarPath).renameTo(phar)
             phar.name
         } else "server.jar"
-        val cleanCoreVersion = if (normalizedConfig.selectedCore.isBedrock) {
-            normalizeBedrockCoreVersion(normalizedConfig.selectedCore, normalizedConfig.mcVersion)
+        val cleanCoreVersion = if (effectiveConfig.selectedCore.isBedrock) {
+            normalizeBedrockCoreVersion(effectiveConfig.selectedCore, effectiveConfig.mcVersion)
         } else {
-            normalizedConfig.mcVersion
+            effectiveConfig.mcVersion
         }
-        val explicitPeVersion = normalizedConfig.mcVersion
+        val explicitPeVersion = effectiveConfig.mcVersion
             .substringAfter("@", missingDelimiterValue = "")
             .trim()
             .takeIf { it.isNotBlank() }
         val newCore = InstalledCore(
             name = customName,
-            core = normalizedConfig.selectedCore,
+            core = effectiveConfig.selectedCore,
             version = cleanCoreVersion,
             dirName = dirName,
             serverFile = serverFileName,
             coreVersion = cleanCoreVersion,
-            compatibleMcVersion = when (normalizedConfig.selectedCore) {
+            compatibleMcVersion = when (effectiveConfig.selectedCore) {
                 ServerCore.PocketMine -> {
                     val pe = explicitPeVersion
                         ?: PMMP_CHANNEL_MCPE_MAP[cleanCoreVersion]
@@ -494,7 +546,7 @@ class McServerController(
                 }
                 ServerCore.PowerNukkitX -> {
                     val pe = explicitPeVersion
-                        ?: powerNukkitXVersionCache[normalizedConfig.mcVersion.lowercase(Locale.ROOT)]?.supportedGameVersion
+                        ?: powerNukkitXVersionCache[effectiveConfig.mcVersion.lowercase(Locale.ROOT)]?.supportedGameVersion
                         ?: powerNukkitXVersionCache[cleanCoreVersion.lowercase(Locale.ROOT)]?.supportedGameVersion
                         ?: KNOWN_PNX_TAG_MCPE[cleanCoreVersion]
                         ?: PNX_VERSION_PREFIX.find(cleanCoreVersion)?.groupValues?.get(1)
@@ -507,17 +559,18 @@ class McServerController(
                         ?: cleanCoreVersion
                     "Bedrock PE $pe (Allay $cleanCoreVersion)"
                 }
-                else -> normalizedConfig.mcVersion
+                else -> effectiveConfig.mcVersion
             },
-            channel = if (normalizedConfig.mcVersion.contains("snapshot", ignoreCase = true) ||
-                normalizedConfig.mcVersion.contains("pre", ignoreCase = true) ||
-                normalizedConfig.mcVersion.contains("rc", ignoreCase = true)
+            channel = if (effectiveConfig.mcVersion.contains("snapshot", ignoreCase = true) ||
+                effectiveConfig.mcVersion.contains("pre", ignoreCase = true) ||
+                effectiveConfig.mcVersion.contains("rc", ignoreCase = true)
             ) "snapshot" else "stable"
         )
+        val shouldSwitchActive = !repo.serverState.value.isRunning
         repo.updateAndSaveConfig { current ->
             current.copy(
                 installedCores = current.installedCores.filter { it.dirName != dirName } + newCore,
-                activeCoreName = customName
+                activeCoreName = if (shouldSwitchActive) customName else (current.activeCoreName ?: customName)
             )
         }
         dirName
@@ -1450,6 +1503,244 @@ class McServerController(
         throw lastError ?: RuntimeException("fetchJsonElement failed: $urlStr")
     }
 
+    private fun cleanAptArchiveCache() {
+        runCatching {
+            val aptCacheDir = File(termux.installer.rootDir, "var/cache/apt/archives")
+            aptCacheDir.listFiles()
+                ?.filter { it.isFile && it.name.endsWith(".deb") }
+                ?.forEach { deb -> runCatching { deb.delete() } }
+        }
+    }
+
+    private fun ensureProotInstalledLazily() {
+        if (termux.isDependencyInstalled(InstallStep.Proot)) return
+        termux.emitLog("[install] Đang tự động cài gói proot cho môi trường Ubuntu/Java cổ điển...")
+        try {
+            val ok = termux.prepareAptPackages("proot") && termux.installAptPackages("proot") == 0
+            if (ok) {
+                termux.repairInstalledCommands()
+            }
+            if (!ok || !termux.isDependencyInstalled(InstallStep.Proot)) {
+                throw RuntimeException("Cài đặt gói proot thất bại, vui lòng kiểm tra mạng hoặc vào Quản lý Môi trường để cài đặt")
+            }
+            repo.markStep(InstallStep.Proot, StepStatus.Done, 100)
+        } finally {
+            cleanAptArchiveCache()
+        }
+    }
+
+    private fun ensureTermuxFontsInstalledLazily() {
+        if (termux.isDependencyInstalled(InstallStep.Wget)) return
+        termux.emitLog("[install] Đang tự động bổ sung thư viện fontconfig cho Forge/NeoForge (Termux)...")
+        try {
+            val ok = termux.prepareAptPackages("wget", "fontconfig", "ttf-dejavu") &&
+                termux.installAptPackages("wget", "fontconfig", "ttf-dejavu") == 0
+            if (ok) {
+                termux.repairInstalledCommands()
+                termux.repairFontRuntime()
+                if (termux.isDependencyInstalled(InstallStep.Wget)) {
+                    repo.markStep(InstallStep.Wget, StepStatus.Done, 100)
+                }
+            }
+        } finally {
+            cleanAptArchiveCache()
+        }
+    }
+
+    private fun isRuntimeReadyForConfig(version: JavaVersion, config: McConfig): Boolean {
+        return when (config.selectedJavaVendor) {
+            JavaVendor.Proot -> termux.isJavaReadyForDistro(config.prootDistro, version)
+            else -> config.selectedJavaVendor.provides(version, config.prootDistro) &&
+                termux.isJavaInstalled(version, config.selectedJavaVendor)
+        }
+    }
+
+    private fun isLegacyJava8Preferred(core: ServerCore, mcVersion: String): Boolean {
+        if (core.isBedrock || core == ServerCore.Unknown) return false
+        val clean = mcVersion.trim().removePrefix("v").removePrefix("V")
+        val parts = clean.split('.')
+        val major = parts.getOrNull(0)?.substringBefore('-')?.toIntOrNull() ?: return false
+        val minor = parts.getOrNull(1)?.substringBefore('-')?.toIntOrNull() ?: return false
+        return major == 1 && ((core == ServerCore.Forge && minor <= 16) || minor <= 12)
+    }
+
+    private suspend fun ensureAndResolveJavaRuntime(
+        config: McConfig,
+        core: ServerCore,
+        mcVersion: String
+    ): McConfig {
+        termux.selectedProotVendor = config.selectedJavaVendor
+        termux.selectedProotDistro = config.prootDistro
+
+        if (core == ServerCore.PocketMine) return config
+
+        // 1. Ưu tiên định tuyến các bản MC cổ điển (Forge <= 1.16.5 hoặc MC <= 1.12.2) sang PRoot Focal Java 8 nếu đã cài sẵn
+        if (isLegacyJava8Preferred(core, mcVersion) &&
+            termux.isJavaReadyForDistro(ProotDistro.Focal, JavaVersion.Java8)
+        ) {
+            ensureProotInstalledLazily()
+            termux.selectedProotVendor = JavaVendor.Proot
+            termux.selectedProotDistro = ProotDistro.Focal
+            if (config.selectedJavaVendor != JavaVendor.Proot ||
+                config.prootDistro != ProotDistro.Focal ||
+                config.selectedJavaVersion != JavaVersion.Java8
+            ) {
+                termux.emitLog("[java] Tự động định tuyến MC $mcVersion (${core.displayName}) sang PRoot Ubuntu Focal (Java 8)")
+            }
+            return config.copy(
+                selectedJavaVendor = JavaVendor.Proot,
+                prootDistro = ProotDistro.Focal,
+                selectedJavaVersion = JavaVersion.Java8
+            )
+        }
+
+        val recommended = recommendedJavaForMinecraft(core, mcVersion)
+        val requiredJava = when {
+            core == ServerCore.Forge && isLegacyForgeMcVersion(mcVersion) -> {
+                when {
+                    isRuntimeReadyForConfig(JavaVersion.Java8, config) -> JavaVersion.Java8
+                    isRuntimeReadyForConfig(JavaVersion.Java11, config) -> JavaVersion.Java11
+                    else -> JavaVersion.Java8
+                }
+            }
+            recommended != null -> {
+                when {
+                    config.selectedJavaVersion.ordinal >= recommended.ordinal &&
+                        isRuntimeReadyForConfig(config.selectedJavaVersion, config) -> config.selectedJavaVersion
+                    recommended == JavaVersion.Java8 &&
+                        core != ServerCore.Forge &&
+                        !isLegacyJava8Preferred(core, mcVersion) -> {
+                        when {
+                            isRuntimeReadyForConfig(JavaVersion.Java8, config) -> JavaVersion.Java8
+                            termux.isJavaReadyForDistro(ProotDistro.Focal, JavaVersion.Java8) -> {
+                                ensureProotInstalledLazily()
+                                termux.selectedProotVendor = JavaVendor.Proot
+                                termux.selectedProotDistro = ProotDistro.Focal
+                                return config.copy(
+                                    selectedJavaVendor = JavaVendor.Proot,
+                                    prootDistro = ProotDistro.Focal,
+                                    selectedJavaVersion = JavaVersion.Java8
+                                )
+                            }
+                            else -> JavaVersion.Java17
+                        }
+                    }
+                    else -> recommended
+                }
+            }
+            else -> config.selectedJavaVersion
+        }
+
+        if (isRuntimeReadyForConfig(requiredJava, config)) {
+            if (isProotGuestRuntime(config.selectedJavaVendor, requiredJava)) {
+                ensureProotInstalledLazily()
+            }
+            termux.selectedProotVendor = config.selectedJavaVendor
+            termux.selectedProotDistro = config.prootDistro
+            return if (config.selectedJavaVersion != requiredJava) {
+                config.copy(selectedJavaVersion = requiredJava)
+            } else {
+                config
+            }
+        }
+
+        if (termux.isJavaInstalled(requiredJava, JavaVendor.Fcl)) {
+            termux.selectedProotVendor = JavaVendor.Fcl
+            termux.emitLog("[java] Tự động chọn ${requiredJava.displayName} (FCL) đã cài sẵn cho MC $mcVersion")
+            return config.copy(selectedJavaVendor = JavaVendor.Fcl, selectedJavaVersion = requiredJava)
+        }
+
+        if (!isProotGuestRuntime(JavaVendor.Termux, requiredJava) &&
+            termux.isJavaInstalled(requiredJava, JavaVendor.Termux)
+        ) {
+            termux.selectedProotVendor = JavaVendor.Termux
+            termux.emitLog("[java] Tự động chọn ${requiredJava.displayName} (Termux) đã cài sẵn cho MC $mcVersion")
+            return config.copy(selectedJavaVendor = JavaVendor.Termux, selectedJavaVersion = requiredJava)
+        }
+
+        if (FclJrePackages.forVersion(requiredJava) != null) {
+            termux.emitLog("[java] ⚡ Tự động tải nhanh gói ${requiredJava.displayName} siêu nhẹ (~40MB) cho MC $mcVersion...")
+            val installedOk = termux.installJava(requiredJava, JavaVendor.Fcl)
+            if (!installedOk || !termux.isJavaInstalled(requiredJava, JavaVendor.Fcl)) {
+                throw RuntimeException("Tự động tải ${requiredJava.displayName} (FCL) thất bại, vui lòng kiểm tra mạng hoặc cài đặt trong mục Môi trường Java")
+            }
+            termux.selectedProotVendor = JavaVendor.Fcl
+            if (termux.isJavaInstalled(requiredJava, JavaVendor.Fcl)) {
+                runCatching {
+                    repo.updateAndSaveConfig {
+                        it.copy(selectedJavaVendor = JavaVendor.Fcl, selectedJavaVersion = requiredJava)
+                    }
+                }
+            }
+            return config.copy(selectedJavaVendor = JavaVendor.Fcl, selectedJavaVersion = requiredJava)
+        }
+
+        val missingAdvice = if (requiredJava == JavaVersion.Java8) {
+            "MC $mcVersion (${core.displayName}) yêu cầu Java 8 (Ubuntu Focal). Vui lòng mở mục 'Môi trường Java' và cài đặt Java 8 trước."
+        } else {
+            "Chưa cài đặt ${requiredJava.displayName}, vui lòng bấm cài đặt trong thẻ Môi trường Java trước"
+        }
+        throw RuntimeException(missingAdvice)
+    }
+
+    private fun hasGeyserInstalledOnServer(serverDir: File, core: ServerCore): Boolean {
+        val jarDirs = listOf(File(serverDir, "plugins"), File(serverDir, "mods"))
+        val hasGeyserJar = jarDirs.any { dir ->
+            dir.isDirectory && dir.listFiles()?.any { f ->
+                f.isFile &&
+                    !f.name.startsWith("-") &&
+                    f.name.endsWith(".jar", ignoreCase = true) &&
+                    f.name.contains("geyser", ignoreCase = true)
+            } == true
+        }
+        if (hasGeyserJar) return true
+        val configCandidates = listOf(
+            File(serverDir, "plugins/Geyser-Spigot/config.yml"),
+            File(serverDir, "plugins/Geyser/config.yml"),
+            File(serverDir, "config/Geyser-Fabric/config.yml"),
+            File(serverDir, "config/Geyser-NeoForge/config.yml"),
+            File(serverDir, "config/Geyser/config.yml")
+        )
+        return configCandidates.any { it.isFile && it.length() >= 64L }
+    }
+
+    private suspend fun resolvePortConflictBeforeAdopt(
+        config: McConfig,
+        core: InstalledCore,
+        serverDir: File,
+        isNativeRust: Boolean
+    ): McConfig {
+        if (!isNativeRust && (core.core.isBedrock || core.core in setOf(ServerCore.Velocity, ServerCore.BungeeCord, ServerCore.Unknown))) {
+            return config
+        }
+        val propsFile = File(serverDir, "server.properties")
+        val text = if (propsFile.isFile) runCatching { propsFile.readText() }.getOrDefault("") else ""
+        val portMatch = Regex("""(?m)^server-port\s*=\s*(\d+)\s*$""").find(text)
+        val configuredPort = portMatch?.groupValues?.getOrNull(1)?.toIntOrNull()
+            ?.takeIf { it in 1..65535 }
+            ?: config.localPort.takeIf { it in 1..65535 }
+            ?: 25565
+        if (!isLocalTcpPortBusy(configuredPort)) {
+            return config
+        }
+        val freePort = ((configuredPort + 1)..(configuredPort + 35)).firstOrNull { !isLocalTcpPortBusy(it) }
+            ?: return config
+        runCatching {
+            serverDir.mkdirs()
+            val updatedText = when {
+                !propsFile.isFile -> "server-port=$freePort\n"
+                portMatch != null -> text.replace(Regex("""(?m)^server-port\s*=\s*\d+\s*$"""), "server-port=$freePort")
+                else -> text + (if (text.endsWith("\n") || text.isEmpty()) "" else "\n") + "server-port=$freePort\n"
+            }
+            propsFile.writeText(updatedText)
+        }
+        termux.emitLog("[MineHost] Phát hiện cổng $configuredPort đang bận -> Đã tự động chuyển sang cổng trống $freePort để mở Server không bị lỗi!")
+        runCatching {
+            repo.updateAndSaveConfig { it.copy(localPort = freePort) }
+        }
+        return config.copy(localPort = freePort)
+    }
+
     /**
      * 启动 MC 服务
      * - 从 config.activeCoreName 找到对应的已安装核心
@@ -1464,33 +1755,53 @@ class McServerController(
         // 记录本次启动的代际：准备阶段（可能数分钟）里用户若点了停止，
         // 代际会失效，launchMc 在真正 spawn 之前就会放弃，而不是照旧把服务端拉起来。
         val startGeneration = if (userInitiated) termux.beginStartRequest() else 0L
+        termux.selectedProotVendor = config.selectedJavaVendor
+        termux.selectedProotDistro = config.prootDistro
         if (!termux.isReady()) {
             throw RuntimeException("Môi trường hệ thống chưa khởi tạo xong, vui lòng đợi vài giây rồi thử lại")
         }
-        if (!repo.serverState.value.isInstallComplete) {
-            val ok = installDependencies()
-            if (!ok) {
-                throw RuntimeException("Cài đặt gói phụ thuộc thất bại, vui lòng cài đặt môi trường trước khi khởi động máy chủ")
-            }
-        } else {
-            termux.fixRootfsPermissions()
-        }
-        if (userInitiated && termux.isStartCancelled(startGeneration)) {
-            termux.emitLog("[startMc] Đã nhận yêu cầu dừng trong lúc chuẩn bị, hủy phiên khởi động này")
-            return@withContext
-        }
+        termux.fixRootfsPermissions()
         val activeCore = config.installedCores.find { it.name == config.activeCoreName }
             ?: throw RuntimeException("Chưa chọn máy chủ để khởi động, vui lòng tải hoặc chọn máy chủ trong mục Tải Core")
         val rawServerDir = File(termux.serversDir, activeCore.dirName)
         val isNativeRust = ProHostFeatures.isNativeRustServerModeEnabled(rawServerDir)
-        if (!isNativeRust && activeCore.core != ServerCore.PocketMine &&
-            !termux.isJavaInstalled(config.selectedJavaVersion, config.selectedJavaVendor)
-        ) {
-            throw RuntimeException("Chưa cài đặt ${config.selectedJavaVersion.displayName}, vui lòng bấm cài đặt trong thẻ Môi trường Java trước")
+
+        val resolvedJavaConfig = if (!isNativeRust && activeCore.core != ServerCore.PocketMine) {
+            val targetMcVersion = activeCore.version.ifBlank { config.mcVersion }
+            ensureAndResolveJavaRuntime(config, activeCore.core, targetMcVersion)
+        } else {
+            config
         }
-        val (baseConfig, launchCore) = migrateToAsciiServerDir(config, activeCore)
-        val launchConfig = adoptConfigPort(baseConfig, launchCore)
+
+        if (!isNativeRust &&
+            resolvedJavaConfig.selectedJavaVendor == JavaVendor.Termux &&
+            termux.needsFontRuntime(activeCore.core) &&
+            !termux.isDependencyInstalled(InstallStep.Wget)
+        ) {
+            ensureTermuxFontsInstalledLazily()
+        }
+        if (!isNativeRust &&
+            isProotGuestRuntime(resolvedJavaConfig.selectedJavaVendor, resolvedJavaConfig.selectedJavaVersion) &&
+            !termux.isDependencyInstalled(InstallStep.Proot)
+        ) {
+            ensureProotInstalledLazily()
+        }
+
+        if (userInitiated && termux.isStartCancelled(startGeneration)) {
+            termux.emitLog("[startMc] Đã nhận yêu cầu dừng trong lúc chuẩn bị, hủy phiên khởi động này")
+            return@withContext
+        }
+        val (baseConfig, launchCore) = migrateToAsciiServerDir(resolvedJavaConfig, activeCore)
         val serverDir = File(termux.serversDir, launchCore.dirName)
+        val portCheckedConfig = resolvePortConflictBeforeAdopt(baseConfig, launchCore, serverDir, isNativeRust)
+        val launchConfig = adoptConfigPort(portCheckedConfig, launchCore)
+        if (isNativeRust) {
+            ProHostFeatures.syncPumpkinRustTomlConfig(serverDir, launchConfig.localPort, launchCore.name)
+        } else if (!launchCore.core.isBedrock && hasGeyserInstalledOnServer(serverDir, launchCore.core)) {
+            runCatching {
+                PluginManager(termux, McApplication.get()).ensureGeyserOfflineConfig(launchCore.dirName, launchCore.core)
+            }
+        }
         val configuredEntry = launchCore.serverFile
             ?.trim()
             ?.substringAfterLast('/')
@@ -1548,25 +1859,30 @@ class McServerController(
         return migratedConfig to migratedCore
     }
 
-    private fun recommendedJavaForMinecraft(mcVersion: String, core: ServerCore): JavaVersion? {
-        if (core == ServerCore.PowerNukkitX || core == ServerCore.Unknown) return null
-        val parts = mcVersion.trim().removePrefix("v").split('.').mapNotNull { it.toIntOrNull() }
-        if (parts.isEmpty()) return null
-        val major = parts[0]
-        val minor = parts.getOrNull(1)
+    private fun recommendedJavaForMinecraft(core: ServerCore, mcVersion: String): JavaVersion? {
+        if (core == ServerCore.PowerNukkitX || core == ServerCore.Allay) return JavaVersion.Java21
+        if (core == ServerCore.Unknown || core == ServerCore.PocketMine) return null
+        val clean = mcVersion.trim().removePrefix("v").removePrefix("V")
+        val parts = clean.split('.')
+        val major = parts.getOrNull(0)?.substringBefore('-')?.toIntOrNull() ?: return null
+        val minor = parts.getOrNull(1)?.substringBefore('-')?.toIntOrNull()
+        val patch = parts.getOrNull(2)?.substringBefore('-')?.toIntOrNull() ?: 0
         return when {
             major >= 26 -> JavaVersion.Java25
-            major == 1 && minor != null && minor >= 21 -> JavaVersion.Java21
+            major == 1 && minor != null && (minor > 20 || (minor == 20 && patch >= 5)) -> JavaVersion.Java21
             major == 1 && minor != null && minor >= 17 -> JavaVersion.Java17
             major == 1 && minor != null -> JavaVersion.Java8
             else -> null
         }
     }
 
+    private fun recommendedJavaForMinecraft(mcVersion: String, core: ServerCore): JavaVersion? =
+        recommendedJavaForMinecraft(core, mcVersion)
+
     private fun isLegacyForgeMcVersion(mcVersion: String): Boolean {
-        val parts = mcVersion.trim().removePrefix("v").split('.').mapNotNull { it.toIntOrNull() }
-        val major = parts.getOrNull(0) ?: return false
-        val minor = parts.getOrNull(1) ?: return false
+        val parts = mcVersion.trim().removePrefix("v").removePrefix("V").split('.')
+        val major = parts.getOrNull(0)?.substringBefore('-')?.toIntOrNull() ?: return false
+        val minor = parts.getOrNull(1)?.substringBefore('-')?.toIntOrNull() ?: return false
         return major == 1 && minor <= 16
     }
 
@@ -1725,10 +2041,16 @@ class McServerController(
             return
         }
         val mcVersion = activeCore?.version?.takeIf { it.isNotBlank() } ?: config.mcVersion
-        val recommended = recommendedJavaForMinecraft(mcVersion, coreType)
-        val launchVendor = config.selectedJavaVendor
+        val routeLegacyToFocal = isLegacyJava8Preferred(coreType, mcVersion) &&
+            termux.isJavaReadyForDistro(ProotDistro.Focal, JavaVersion.Java8)
+        val launchVendor = if (routeLegacyToFocal) JavaVendor.Proot else config.selectedJavaVendor
+        val launchDistro = if (routeLegacyToFocal) ProotDistro.Focal else config.prootDistro
+        termux.selectedProotVendor = launchVendor
+        termux.selectedProotDistro = launchDistro
+
+        val recommended = recommendedJavaForMinecraft(coreType, mcVersion)
         fun requireVersionInVendor(version: JavaVersion, reason: String): JavaVersion {
-            val distro = config.prootDistro
+            val distro = launchDistro
             if (launchVendor.provides(version, distro)) return version
             val label = if (launchVendor == JavaVendor.Proot) {
                 "PRoot ${distro.displayName}"
@@ -1749,21 +2071,24 @@ class McServerController(
                 "$reason, nhưng nguồn '$label' hiện chỉ có ($available). $advice."
             )
         }
-        val launchJava = if (recommended != null && config.selectedJavaVersion.ordinal < recommended.ordinal) {
+        val baseSelectedJava = if (routeLegacyToFocal) JavaVersion.Java8 else config.selectedJavaVersion
+        val launchJava = if (!routeLegacyToFocal && recommended != null && baseSelectedJava.ordinal < recommended.ordinal) {
             val target = requireVersionInVendor(
                 recommended,
                 "Minecraft $mcVersion yêu cầu tối thiểu ${recommended.displayName}"
             )
-            termux.emitLog("[startMc] Minecraft $mcVersion cần ${target.displayName} trở lên (đang chọn ${config.selectedJavaVersion.displayName}), đã tự động chuyển sang ${target.displayName}")
-            runCatching {
-                repo.updateAndSaveConfig { it.copy(selectedJavaVersion = target) }
+            termux.emitLog("[startMc] Minecraft $mcVersion cần ${target.displayName} trở lên (đang chọn ${baseSelectedJava.displayName}), đã tự động chuyển sang ${target.displayName}")
+            if (termux.isJavaInstalled(target, launchVendor)) {
+                runCatching {
+                    repo.updateAndSaveConfig { it.copy(selectedJavaVersion = target) }
+                }
             }
             target
-        } else config.selectedJavaVersion
+        } else baseSelectedJava
         val effectiveLaunchJava = if (coreType == ServerCore.Forge && isLegacyForgeMcVersion(mcVersion) &&
             launchJava != JavaVersion.Java8 && launchJava != JavaVersion.Java11
         ) {
-            val distro = config.prootDistro
+            val distro = launchDistro
             val candidates = listOf(JavaVersion.Java8, JavaVersion.Java11)
                 .filter { launchVendor.provides(it, distro) && termux.isJavaInstalled(it, launchVendor) }
             val fallback = candidates.firstOrNull()
@@ -1775,8 +2100,10 @@ class McServerController(
                 termux.emitLog("[startMc] Lưu ý: Đang chạy Forge $mcVersion bằng Java 11; khuyên dùng Java 8 (Ubuntu) để ổn định nhất")
             }
             termux.emitLog("[startMc] Forge $mcVersion yêu cầu Java 8/11, đã tự động chuyển sang ${fallback.displayName}")
-            runCatching {
-                repo.updateAndSaveConfig { it.copy(selectedJavaVersion = fallback) }
+            if (termux.isJavaInstalled(fallback, launchVendor)) {
+                runCatching {
+                    repo.updateAndSaveConfig { it.copy(selectedJavaVersion = fallback) }
+                }
             }
             fallback
         } else launchJava
@@ -1786,8 +2113,10 @@ class McServerController(
                 throw RuntimeException("Allay yêu cầu Java 21 (hiện đang chọn ${effectiveLaunchJava.displayName}), vui lòng cài đặt Java 21 trước")
             }
             termux.emitLog("[startMc] Allay yêu cầu Java 21 trở lên, đã tự động chuyển sang Java 21")
-            runCatching {
-                repo.updateAndSaveConfig { it.copy(selectedJavaVersion = JavaVersion.Java21) }
+            if (termux.isJavaInstalled(JavaVersion.Java21, launchVendor)) {
+                runCatching {
+                    repo.updateAndSaveConfig { it.copy(selectedJavaVersion = JavaVersion.Java21) }
+                }
             }
             JavaVersion.Java21
         } else effectiveLaunchJava
@@ -1796,7 +2125,7 @@ class McServerController(
             needsFonts = coreType == ServerCore.Forge || coreType == ServerCore.NeoForge,
             vendor = launchVendor
         )
-        if (coreType == ServerCore.NeoForge && config.selectedJavaVersion != JavaVersion.Java8) {
+        if (coreType == ServerCore.NeoForge && finalLaunchJava != JavaVersion.Java8) {
             termux.emitLog("[startMc] NeoForge: Đã tự động cấu hình tham số OSHI/JNA tương thích Android")
         }
         optimizeCoreConfigsForFastBoot(serverDir, coreType)
@@ -1806,7 +2135,7 @@ class McServerController(
                     ?: throw RuntimeException("Thiếu tệp khởi chạy ${coreType.displayName}, vui lòng kiểm tra thư mục máy chủ")
                 bukkitLaunchArguments(serverDir, coreJar)
             }
-            ServerCore.Forge -> forgeLaunchArguments(serverDir, effectiveLaunchJava)
+            ServerCore.Forge -> forgeLaunchArguments(serverDir, finalLaunchJava, launchVendor)
             ServerCore.NeoForge -> File(serverDir, "libraries/net/neoforged/neoforge")
                 .walkTopDown().firstOrNull { it.name == "unix_args.txt" }
                 ?.let { "@${it.absolutePath}" }
@@ -1962,8 +2291,12 @@ class McServerController(
         }
     }
 
-    private suspend fun forgeLaunchArguments(serverDir: File, javaVersion: JavaVersion): String {
-        val isGuest = isProotGuestRuntime(termux.selectedProotVendor, javaVersion)
+    private suspend fun forgeLaunchArguments(
+        serverDir: File,
+        javaVersion: JavaVersion,
+        javaVendor: JavaVendor = termux.selectedProotVendor
+    ): String {
+        val isGuest = isProotGuestRuntime(javaVendor, javaVersion)
         serverDir.walkTopDown()
             .firstOrNull { it.name == "unix_args.txt" }
             ?.let {
@@ -2000,12 +2333,13 @@ class McServerController(
                 serverDir,
                 "Forge",
                 File(termux.installer.rootDir, "tmp").apply { mkdirs() },
-                javaVersion
+                javaVersion,
+                javaVendor
             )
             if (code == 0) {
                 findLegacyForgeServerJar(serverDir, javaVersion)?.let { jar ->
                     termux.emitLog("[startMc] Đã khôi phục tệp khởi chạy Forge cổ điển: ${jar.name}")
-                    return if (javaVersion == JavaVersion.Java8) {
+                    return if (isGuest) {
                         "-jar '${jar.relativeTo(serverDir).invariantSeparatorsPath}'"
                     } else {
                         "-jar ${jar.absolutePath}"
@@ -2077,7 +2411,7 @@ class McServerController(
         }
     }.getOrDefault(false)
 
-    private fun isLocalTcpPortInUse(port: Int): Boolean {
+    private fun isLocalTcpPortBusy(port: Int): Boolean {
         if (port !in 1..65535) return false
         return try {
             java.net.ServerSocket().use { ss ->
@@ -2089,6 +2423,8 @@ class McServerController(
             true
         }
     }
+
+    private fun isLocalTcpPortInUse(port: Int): Boolean = isLocalTcpPortBusy(port)
 
     private fun optimizeCoreConfigsForFastBoot(serverDir: File, coreType: ServerCore) {
         runCatching {
@@ -2123,32 +2459,18 @@ class McServerController(
                     )
                 }
             }
-            // 2. Bật ghi chunk bất đồng bộ (sync-chunk-writes=false) & tự động tránh xung đột cổng mạng nếu cổng mặc định đang bị chiếm
+            // 2. Bật ghi chunk bất đồng bộ (sync-chunk-writes=false); giải quyết xung đột cổng đã chạy sớm trước adoptConfigPort
             if (!coreType.isBedrock && coreType !in setOf(ServerCore.Velocity, ServerCore.BungeeCord, ServerCore.Unknown)) {
                 val propsFile = File(serverDir, "server.properties")
                 if (propsFile.isFile) {
                     var text = propsFile.readText()
                     if (text.contains(Regex("""(?m)^sync-chunk-writes\s*=\s*true\s*$"""))) {
                         text = text.replace(Regex("""(?m)^sync-chunk-writes\s*=\s*true\s*$"""), "sync-chunk-writes=false")
+                        propsFile.writeText(text)
                     } else if (!text.contains("sync-chunk-writes=")) {
                         text += (if (text.endsWith("\n")) "" else "\n") + "sync-chunk-writes=false\n"
+                        propsFile.writeText(text)
                     }
-
-                    // Kiểm tra nếu cổng server-port đang bị ứng dụng khác chiếm dụng -> tự động tìm cổng trống kế tiếp
-                    val portMatch = Regex("""(?m)^server-port\s*=\s*(\d+)\s*$""").find(text)
-                    val configuredPort = portMatch?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 25565
-                    if (isLocalTcpPortInUse(configuredPort)) {
-                        val freePort = ((configuredPort + 1)..(configuredPort + 35)).firstOrNull { !isLocalTcpPortInUse(it) }
-                        if (freePort != null) {
-                            text = if (portMatch != null) {
-                                text.replace(Regex("""(?m)^server-port\s*=\s*\d+\s*$"""), "server-port=$freePort")
-                            } else {
-                                text + "server-port=$freePort\n"
-                            }
-                            termux.emitLog("[MineHost] Phát hiện cổng $configuredPort đang bận -> Đã tự động chuyển sang cổng trống $freePort để mở Server không bị lỗi!")
-                        }
-                    }
-                    propsFile.writeText(text)
                 }
             }
         }
