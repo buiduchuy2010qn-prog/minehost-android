@@ -301,6 +301,7 @@ fun MineHostOverview(
     LaunchedEffect(ready, config.activeCoreName, config.installedCores.size) {
         if (ready && config.activeCoreName != null) {
             vm.ensureProMonitorsStarted()
+            vm.refreshRustEngineStatus()
             vm.refreshMods()
             vm.refreshInstalledPlugins()
             vm.refreshServerStorage()
@@ -310,6 +311,11 @@ fun MineHostOverview(
     }
 
     val otaState by vm.updateState.collectAsStateWithLifecycle()
+    val rustEngineStatus by vm.rustEngineStatus.collectAsStateWithLifecycle()
+    val tpsHistory by vm.tpsHistory.collectAsStateWithLifecycle()
+    val ramHistory by vm.ramHistory.collectAsStateWithLifecycle()
+    val heroThermal by vm.thermalInfo.collectAsStateWithLifecycle()
+    val lagHotspotReport by vm.lagHotspotReport.collectAsStateWithLifecycle()
     val missingModDeps by vm.missingModDependencies.collectAsStateWithLifecycle()
     val installingMissingDeps by vm.installingMissingDeps.collectAsStateWithLifecycle()
     val autoBatteryShutdown by vm.autoBatteryShutdownGuard.collectAsStateWithLifecycle()
@@ -584,10 +590,28 @@ fun MineHostOverview(
                             )
                             if (activeStorage != null) {
                                 Text(
-                                    "💾 Tổng: ${vm.formatStorageBytes(activeStorage.totalBytes)} • 🌍 Map: ${vm.formatStorageBytes(activeStorage.worldBytes)} • 🧩 Mod/Plugin: ${vm.formatStorageBytes(activeStorage.modsBytes + activeStorage.pluginsBytes)}",
+                                    "💾 ${vm.formatStorageBytes(activeStorage.totalBytes)} • 🌍 Map ${vm.formatStorageBytes(activeStorage.worldBytes)}",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.primary,
                                     fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                        Surface(
+                            onClick = { vm.setSoundOnServerReady(!soundOnReady) },
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.80f),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.28f))
+                        ) {
+                            IconButton(
+                                onClick = { vm.setSoundOnServerReady(!soundOnReady) },
+                                modifier = Modifier.size(40.dp)
+                            ) {
+                                Icon(
+                                    if (soundOnReady) Icons.Outlined.VolumeUp else Icons.Outlined.VolumeOff,
+                                    contentDescription = if (soundOnReady) "Đang bật chuông mở SV" else "Đang tắt chuông mở SV",
+                                    tint = if (soundOnReady) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(20.dp)
                                 )
                             }
                         }
@@ -783,15 +807,30 @@ fun MineHostOverview(
                         }
                     }
 
-                    // 3 Ô thông số nằm gọn ngay trong thẻ Server chính
-                    AdaptiveActionRow {
+                    // Bảng 4 Ô Thông Số Kèm Biểu Đồ Sóng Sống (Live Sparkline 60s)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                         Metric(
                             label = "TPS Nhịp Game",
                             value = if (state.isRunning && state.tps > 0) "%.1f".format(state.tps) else "—",
                             artKind = MinecraftArtKind.REDSTONE,
                             modifier = Modifier.weight(1f),
+                            sparklineSamples = tpsHistory,
+                            sparklineMax = 20f,
+                            sparklineColor = Color(0xFF10B981),
                             onClick = onConsole
                         )
+                        Metric(
+                            label = "RAM / ${config.maxHeapMb}MB",
+                            value = if (state.isRunning && state.usedMemoryMb > 0) "${state.usedMemoryMb}MB" else "—",
+                            artKind = MinecraftArtKind.COMMAND_BLOCK,
+                            modifier = Modifier.weight(1f),
+                            sparklineSamples = ramHistory,
+                            sparklineMax = config.maxHeapMb.toFloat().coerceAtLeast(512f),
+                            sparklineColor = Color(0xFF0EA5E9),
+                            onClick = { showRamSlider = !showRamSlider }
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                         Metric(
                             label = "Người chơi",
                             value = if (state.isRunning && state.startupPhase == StartupPhase.Ready) "${state.onlinePlayers}" else "—",
@@ -800,12 +839,86 @@ fun MineHostOverview(
                             onClick = { navigate(SubPage.PlayerList) }
                         )
                         Metric(
-                            label = "RAM / ${config.maxHeapMb}MB",
-                            value = if (state.isRunning && state.usedMemoryMb > 0) "${state.usedMemoryMb}" else "—",
-                            artKind = MinecraftArtKind.COMMAND_BLOCK,
+                            label = "Nhiệt độ & Pin",
+                            value = "${heroThermal.tempCelsius.toInt()}°C · ${heroThermal.batteryPercent}%${if (heroThermal.isCharging) "⚡" else ""}",
+                            artKind = MinecraftArtKind.GRASS,
                             modifier = Modifier.weight(1f),
-                            onClick = { showRamSlider = !showRamSlider }
+                            onClick = { navigate(SubPage.Performance) }
                         )
+                    }
+
+                    // Thanh Gạt 3 Ngăn Chọn Nhân Chạy Server Gọn Đẹp (Segmented Pill Bar)
+                    if (active != null && !active.core.isBedrock) {
+                        val isOriginalJava = !rustEngineStatus.isNativeRustEnabled && !rustEngineStatus.isRustJvmTurboEnabled
+                        val isJavaRustTurbo = !rustEngineStatus.isNativeRustEnabled && rustEngineStatus.isRustJvmTurboEnabled
+                        val isPureRust = rustEngineStatus.isNativeRustEnabled
+                        Surface(
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.82f),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(
+                                1.dp,
+                                when {
+                                    isPureRust -> Color(0xFFF97316)
+                                    isJavaRustTurbo -> Color(0xFF10B981)
+                                    else -> MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+                                }
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    listOf(
+                                        Triple("☕ Java Mod", isOriginalJava) { vm.selectOriginalJavaEngineOneTap() },
+                                        Triple("⚡ Java Turbo", isJavaRustTurbo) { vm.toggleRustJvmTurboMode(true) },
+                                        Triple("🦀 Rust", isPureRust) { if (!isPureRust) vm.enableNativeRustEngineOneTap() }
+                                    ).forEachIndexed { idx, (labelTxt, isSel, actionFn) ->
+                                        val segEnabled = !liveTask.active && (idx != 2 || !state.isRunning) && (!isPureRust || !state.isRunning || idx == 2)
+                                        val segBg = when {
+                                            isSel && idx == 2 -> Color(0xFFEA580C)
+                                            isSel && idx == 1 -> Color(0xFF059669)
+                                            isSel -> MaterialTheme.colorScheme.primary
+                                            else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                                        }
+                                        val segFg = if (isSel) Color.White else MaterialTheme.colorScheme.onSurface
+                                        Surface(
+                                            onClick = actionFn,
+                                            enabled = segEnabled,
+                                            shape = RoundedCornerShape(9.dp),
+                                            color = segBg,
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Box(
+                                                contentAlignment = Alignment.Center,
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp)
+                                            ) {
+                                                Text(
+                                                    labelTxt,
+                                                    fontSize = 13.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = segFg
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                                Text(
+                                    when {
+                                        isOriginalJava -> "☕ Chế độ Java gốc (${active.core.displayName}): Chơi 100% Mod, Plugin & Geyser PE"
+                                        isJavaRustTurbo -> "⚡ Chơi 100% Mod & Plugin hiện tại + Bộ nhớ vùng Rust giảm ~35% RAM"
+                                        else -> "🦀 Nhân Rust ARM64 siêu nhẹ (~50MB RAM, mở 0.2s • Chỉ chơi Vanilla không Mod)"
+                                    },
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 4.dp)
+                                )
+                            }
+                        }
                     }
 
                     // Nút Bật / Dừng Server + Khởi động lại / Dọn RAM
@@ -818,7 +931,7 @@ fun MineHostOverview(
                             },
                             enabled = ready && !stopping && (state.isRunning || !busy),
                             shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.weight(1f).heightIn(min = 50.dp)
+                            modifier = Modifier.weight(1f).heightIn(min = 52.dp)
                         ) {
                             Icon(if (state.isRunning) Icons.Outlined.Stop else Icons.Outlined.PlayArrow, null)
                             Spacer(Modifier.width(8.dp))
@@ -827,7 +940,7 @@ fun MineHostOverview(
                                 else if (state.isRunning) "Dừng Server An Toàn"
                                 else "BẬT SERVER NGAY",
                                 fontWeight = FontWeight.SemiBold,
-                                fontSize = 14.sp
+                                fontSize = 15.sp
                             )
                         }
                         if (state.isRunning) {
@@ -835,7 +948,7 @@ fun MineHostOverview(
                                 onClick = { confirm = "restart" },
                                 enabled = !stopping && !busy,
                                 shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.heightIn(min = 50.dp)
+                                modifier = Modifier.heightIn(min = 52.dp)
                             ) {
                                 Text("🔄 Khởi động lại", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                             }
@@ -844,7 +957,7 @@ fun MineHostOverview(
                                 onClick = { vm.cleanRamNow() },
                                 enabled = ready && !isCleaningRam,
                                 shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.heightIn(min = 50.dp)
+                                modifier = Modifier.heightIn(min = 52.dp)
                             ) {
                                 Text(
                                     if (isCleaningRam) "⏳ Đang dọn..." else "🧹 Dọn RAM",
@@ -855,10 +968,10 @@ fun MineHostOverview(
                         }
                     }
 
-                    HorizontalDivider(color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.16f))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.14f))
 
                     // Danh sách chuyển đổi nhanh giữa các Server đã tạo + 2 nút Tạo mới / Quản lý
-                    if (config.installedCores.isNotEmpty()) {
+                    if (config.installedCores.size > 1) {
                         FlowRow(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -866,8 +979,6 @@ fun MineHostOverview(
                         ) {
                             config.installedCores.forEach { srv ->
                                 val isCurrent = srv.name == config.activeCoreName
-                                val srvStorage = serverStorageMap[srv.name]
-                                val sizeTag = srvStorage?.let { " • ${vm.formatStorageBytes(it.totalBytes)}" } ?: ""
                                 FilterChip(
                                     selected = isCurrent,
                                     onClick = {
@@ -879,10 +990,10 @@ fun MineHostOverview(
                                     },
                                     label = {
                                         Text(
-                                            if (isCurrent) "✅ ${srv.name} (${srv.version}$sizeTag)"
-                                            else "🔄 ${srv.name} (${srv.version}$sizeTag)",
-                                            fontSize = 14.sp,
-                                            fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.SemiBold
+                                            if (isCurrent) "✅ ${srv.name} (${srv.version})"
+                                            else "🔄 ${srv.name} (${srv.version})",
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.SemiBold
                                         )
                                     }
                                 )
@@ -890,51 +1001,20 @@ fun MineHostOverview(
                         }
                     }
 
-                    AdaptiveActionRow {
-                        Button(
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(
                             onClick = { navigate(SubPage.Cores) },
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text("➕ Tạo Server Mới", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                            Text("➕ Tạo SV Mới", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                         }
                         OutlinedButton(
                             onClick = { navigate(SubPage.ServerList) },
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text("🗂️ Quản Lý Các SV (${config.installedCores.size})", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                        }
-                    }
-
-                    // [v2.8.7] Thanh bật/tắt Chuông báo "Minecraft Level Up" khi mở Server thành công + Nút Nghe thử
-                    Surface(
-                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                        ) {
-                            Text(
-                                if (soundOnReady) "🔊 Phát nhạc 'Level Up' khi mở SV xong" else "🔇 Đang tắt chuông báo mở SV",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.weight(1f)
-                            )
-                            TextButton(
-                                onClick = { vm.testServerReadySoundNow() },
-                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
-                            ) {
-                                Text("🎵 Nghe thử", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                            }
-                            Switch(
-                                checked = soundOnReady,
-                                onCheckedChange = { vm.setSoundOnServerReady(it) }
-                            )
+                            Text("🗂️ Danh Sách (${config.installedCores.size})", fontSize = 13.sp, fontWeight = FontWeight.Medium)
                         }
                     }
                 }
@@ -1746,158 +1826,144 @@ fun MineHostOverview(
                         )
                     }
 
-                    AdaptiveActionRow {
+                    // ── CHIA SẺ NHANH THẺ MỜI BẠN BÈ (ẢNH HD & TIN NHẮN GỌN ĐẸP) ──
+                    val buildInviteCardText: () -> String = {
+                        val pcInvite = if (playConnectionMode == PlayConnectionMode.SameNetwork) {
+                            lanAddress ?: localhostAddress
+                        } else {
+                            playitAddress ?: playitPureIpv4Address ?: lanAddress ?: localhostAddress
+                        }
+                        val peHostInvite = if (playConnectionMode == PlayConnectionMode.SameNetwork) {
+                            lanIp.takeIf { it.isNotBlank() && it != "0.0.0.0" && it != "--" } ?: "127.0.0.1"
+                        } else if (playitState.bedrockAddress.isNotBlank()) {
+                            vm.extractPlayitBedrockIpv4Host(playitState.bedrockAddress)
+                                ?: playitState.bedrockAddress.substringBeforeLast(":")
+                        } else {
+                            lanIp.takeIf { it.isNotBlank() && it != "0.0.0.0" && it != "--" } ?: "127.0.0.1"
+                        }
+                        val pePortInvite = if (playConnectionMode == PlayConnectionMode.Everywhere && playitState.bedrockAddress.isNotBlank()) {
+                            playitState.bedrockAddress.substringAfterLast(":", bedrockPort.toString())
+                        } else {
+                            bedrockPort.toString()
+                        }
+                        buildString {
+                            appendLine("🎮 MỜI VÀO SERVER MINECRAFT: ${active.name}")
+                            appendLine("• Phiên bản: ${active.core.displayName} ${active.version}")
+                            if (!active.core.isBedrock) {
+                                appendLine("💻 Máy tính PC / Pojav / Java: $pcInvite")
+                            }
+                            if (hasGeyserInstalled || active.core.isBedrock) {
+                                appendLine("📱 Điện thoại Minecraft PE (Bedrock):")
+                                appendLine("   - Địa chỉ (Server Address): $peHostInvite")
+                                appendLine("   - Cổng (Port UDP): $pePortInvite")
+                            }
+                        }.trim()
+                    }
+                    Button(
+                        onClick = {
+                            val pcInvite = if (playConnectionMode == PlayConnectionMode.SameNetwork) {
+                                lanAddress ?: localhostAddress
+                            } else {
+                                playitAddress ?: playitPureIpv4Address ?: lanAddress ?: localhostAddress
+                            }
+                            val peHostInvite = if (playConnectionMode == PlayConnectionMode.SameNetwork) {
+                                lanIp.takeIf { it.isNotBlank() && it != "0.0.0.0" && it != "--" } ?: "127.0.0.1"
+                            } else if (playitState.bedrockAddress.isNotBlank()) {
+                                vm.extractPlayitBedrockIpv4Host(playitState.bedrockAddress)
+                                    ?: playitState.bedrockAddress.substringBeforeLast(":")
+                            } else {
+                                lanIp.takeIf { it.isNotBlank() && it != "0.0.0.0" && it != "--" } ?: "127.0.0.1"
+                            }
+                            val pePortInvite = if (playConnectionMode == PlayConnectionMode.Everywhere && playitState.bedrockAddress.isNotBlank()) {
+                                playitState.bedrockAddress.substringAfterLast(":", bedrockPort.toString())
+                            } else {
+                                bedrockPort.toString()
+                            }
+                            vm.shareServerInviteCardImage(
+                                context = context,
+                                javaIpOverride = pcInvite,
+                                peHostOverride = peHostInvite,
+                                pePortOverride = pePortInvite
+                            )
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            "🖼️ Chia Sẻ Ảnh Thẻ Mời HD (Zalo / Messenger / Discord)",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                         OutlinedButton(
-                            onClick = { vm.checkConnectionReachability() },
-                            enabled = !connectionCheckRunning,
+                            onClick = {
+                                val inviteText = buildInviteCardText()
+                                clipboard.setText(AnnotatedString(inviteText))
+                                vm.notifyActionDone("📲 Đã sao chép Thẻ Mời Bạn Bè (PC + PE)!")
+                            },
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text(
-                                if (connectionCheckRunning) "⏳ Đang kiểm tra..."
-                                else "🩺 Kiểm tra cổng thực tế (Local / LAN / Playit)",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Medium
-                            )
+                            Text("📋 Chép Tin Mời", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                         }
                         OutlinedButton(
-                            onClick = { vm.copyRedactedDiagnostics(context) },
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Text("📋 Xuất chẩn đoán", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                        }
-                    }
-                    connectionCheckStatus?.let { checkReport ->
-                        Surface(
-                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            onClick = {
+                                val inviteText = buildInviteCardText()
+                                runCatching {
+                                    val sendIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(android.content.Intent.EXTRA_TEXT, inviteText)
+                                    }
+                                    context.startActivity(
+                                        android.content.Intent.createChooser(sendIntent, "Mời bạn bè vào Server")
+                                            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    )
+                                }
+                            },
                             shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.weight(1f)
                         ) {
-                            Text(
-                                checkReport,
-                                style = MaterialTheme.typography.bodySmall,
-                                modifier = Modifier.padding(10.dp)
-                            )
+                            Text("📤 Gửi Nhanh", fontSize = 13.sp, fontWeight = FontWeight.Medium)
                         }
                     }
 
-                    // ── NÂNG CẤP 6: THẺ MỜI BẠN BÈ 1 CHẠM (QUICK SHARE INVITE CARD) ──
-                    Surface(
-                        color = Color(0xFF0D9488).copy(alpha = 0.14f),
-                        shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, Color(0xFF14B8A6).copy(alpha = 0.55f)),
-                        modifier = Modifier.fillMaxWidth()
+                    HostDisclosure(
+                        "🔧 Kiểm tra cổng & Chẩn đoán mạng",
+                        "Kiểm tra kết nối thực tế (Local / LAN / Playit) và sao chép báo cáo."
                     ) {
-                        Column(
-                            modifier = Modifier.padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Text(
-                                "📲 6. THẺ MỜI BẠN BÈ 1 CHẠM (GỒM CẢ IP PC + ĐIỆN THOẠI PE):",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.secondary
-                            )
-                            val buildInviteCardText: () -> String = {
-                                val pcInvite = if (playConnectionMode == PlayConnectionMode.SameNetwork) {
-                                    lanAddress ?: localhostAddress
-                                } else {
-                                    playitAddress ?: playitPureIpv4Address ?: lanAddress ?: localhostAddress
-                                }
-                                val peHostInvite = if (playConnectionMode == PlayConnectionMode.SameNetwork) {
-                                    lanIp.takeIf { it.isNotBlank() && it != "0.0.0.0" && it != "--" } ?: "127.0.0.1"
-                                } else if (playitState.bedrockAddress.isNotBlank()) {
-                                    vm.extractPlayitBedrockIpv4Host(playitState.bedrockAddress)
-                                        ?: playitState.bedrockAddress.substringBeforeLast(":")
-                                } else {
-                                    lanIp.takeIf { it.isNotBlank() && it != "0.0.0.0" && it != "--" } ?: "127.0.0.1"
-                                }
-                                val pePortInvite = if (playConnectionMode == PlayConnectionMode.Everywhere && playitState.bedrockAddress.isNotBlank()) {
-                                    playitState.bedrockAddress.substringAfterLast(":", bedrockPort.toString())
-                                } else {
-                                    bedrockPort.toString()
-                                }
-                                buildString {
-                                    appendLine("🎮 MỜI VÀO SERVER MINECRAFT: ${active.name}")
-                                    appendLine("• Phiên bản: ${active.core.displayName} ${active.version}")
-                                    if (!active.core.isBedrock) {
-                                        appendLine("💻 Máy tính PC / Pojav / Java: $pcInvite")
-                                    }
-                                    if (hasGeyserInstalled || active.core.isBedrock) {
-                                        appendLine("📱 Điện thoại Minecraft PE (Bedrock):")
-                                        appendLine("   - Địa chỉ (Server Address): $peHostInvite")
-                                        appendLine("   - Cổng (Port UDP): $pePortInvite")
-                                    }
-                                }.trim()
-                            }
-                            AdaptiveActionRow {
-                                Button(
-                                    onClick = {
-                                        val inviteText = buildInviteCardText()
-                                        clipboard.setText(AnnotatedString(inviteText))
-                                        vm.notifyActionDone("📲 Đã sao chép Thẻ Mời Bạn Bè (PC + PE) — dán ngay vào Zalo / Discord / Messenger!")
-                                    },
-                                    shape = RoundedCornerShape(10.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D9488), contentColor = Color.White),
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Text("📋 Sao Chép Chữ", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                                }
-                                OutlinedButton(
-                                    onClick = {
-                                        val inviteText = buildInviteCardText()
-                                        runCatching {
-                                            val sendIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                                type = "text/plain"
-                                                putExtra(android.content.Intent.EXTRA_TEXT, inviteText)
-                                            }
-                                            context.startActivity(
-                                                android.content.Intent.createChooser(sendIntent, "Mời bạn bè vào Server")
-                                                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                                            )
-                                        }
-                                    },
-                                    shape = RoundedCornerShape(10.dp),
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Text("📤 Gửi Tin Nhắn", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                                }
-                            }
-                            Button(
-                                onClick = {
-                                    val pcInvite = if (playConnectionMode == PlayConnectionMode.SameNetwork) {
-                                        lanAddress ?: localhostAddress
-                                    } else {
-                                        playitAddress ?: playitPureIpv4Address ?: lanAddress ?: localhostAddress
-                                    }
-                                    val peHostInvite = if (playConnectionMode == PlayConnectionMode.SameNetwork) {
-                                        lanIp.takeIf { it.isNotBlank() && it != "0.0.0.0" && it != "--" } ?: "127.0.0.1"
-                                    } else if (playitState.bedrockAddress.isNotBlank()) {
-                                        vm.extractPlayitBedrockIpv4Host(playitState.bedrockAddress)
-                                            ?: playitState.bedrockAddress.substringBeforeLast(":")
-                                    } else {
-                                        lanIp.takeIf { it.isNotBlank() && it != "0.0.0.0" && it != "--" } ?: "127.0.0.1"
-                                    }
-                                    val pePortInvite = if (playConnectionMode == PlayConnectionMode.Everywhere && playitState.bedrockAddress.isNotBlank()) {
-                                        playitState.bedrockAddress.substringAfterLast(":", bedrockPort.toString())
-                                    } else {
-                                        bedrockPort.toString()
-                                    }
-                                    vm.shareServerInviteCardImage(
-                                        context = context,
-                                        javaIpOverride = pcInvite,
-                                        peHostOverride = peHostInvite,
-                                        pePortOverride = pePortInvite
-                                    )
-                                },
+                        AdaptiveActionRow {
+                            OutlinedButton(
+                                onClick = { vm.checkConnectionReachability() },
+                                enabled = !connectionCheckRunning,
                                 shape = RoundedCornerShape(10.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB), contentColor = Color.White),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(
+                                    if (connectionCheckRunning) "⏳ Đang kiểm tra..."
+                                    else "🩺 Kiểm tra cổng thực tế",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                            OutlinedButton(
+                                onClick = { vm.copyRedactedDiagnostics(context) },
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("📋 Xuất chẩn đoán", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                            }
+                        }
+                        connectionCheckStatus?.let { checkReport ->
+                            Surface(
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Text(
-                                    "🖼️ Tạo Ảnh Thẻ Mời Server Đẹp (Gửi Zalo / Messenger / Discord)",
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.SemiBold
+                                    checkReport,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.padding(10.dp)
                                 )
                             }
                         }
@@ -1916,6 +1982,104 @@ fun MineHostOverview(
                 val enabledModCount = installedMods.count { it.isEnabled }
                 HostDisclosure("RAM & chống lag",
                     "Đang cấp ${config.maxHeapMb} MB. Chỉnh tài nguyên và gói mod tối ưu.", initiallyExpanded = true) {
+                    // Công tắc 0: Bộ Chọn 3 Chế Độ Nhân Chạy Server (Java Nguyên Bản Chơi Mod / Java + Rust Turbo / Nhân Rust Thuần)
+                    if (!active.core.isBedrock) {
+                        val isOriginalJava = !rustEngineStatus.isNativeRustEnabled && !rustEngineStatus.isRustJvmTurboEnabled
+                        val isJavaRustTurbo = !rustEngineStatus.isNativeRustEnabled && rustEngineStatus.isRustJvmTurboEnabled
+                        val isPureRust = rustEngineStatus.isNativeRustEnabled
+                        Surface(
+                            color = when {
+                                isPureRust -> Color(0xFF9A3412).copy(alpha = 0.16f)
+                                isJavaRustTurbo -> Color(0xFF065F46).copy(alpha = 0.16f)
+                                else -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f)
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(
+                                1.2.dp,
+                                when {
+                                    isPureRust -> Color(0xFFF97316)
+                                    isJavaRustTurbo -> Color(0xFF10B981)
+                                    else -> MaterialTheme.colorScheme.primary
+                                }
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    "⚙️ Chọn Chế Độ Nhân Chạy Server (Java Chơi Mod / Rust Siêu Nhẹ)",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    when {
+                                        isOriginalJava ->
+                                            "🟢 Đang chọn: ☕ Java Nguyên Bản (${active.core.displayName}) — Chơi được 100% Mod (.jar / .mrpack), Plugin & GeyserMC!"
+                                        isJavaRustTurbo ->
+                                            "🟢 Đang chọn: ⚡ Java + Rust Turbo (${active.core.displayName}) — Vẫn chơi được 100% Mod & Plugin hiện tại nhưng nhẹ RAM hơn ~35-40% và chống khựng TPS!"
+                                        else ->
+                                            "🟢 Đang chọn: 🦀 Nhân Rust Thuần (Pumpkin ARM64 • ${rustEngineStatus.binarySizeMb}) — Không bật Java, RAM ~50MB, mở 0.2s (Chỉ dành cho Sinh tồn cơ bản không cài Mod)."
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontSize = 14.sp
+                                )
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    FilterChip(
+                                        selected = isOriginalJava,
+                                        onClick = { vm.selectOriginalJavaEngineOneTap() },
+                                        enabled = !stopping && (!isPureRust || !state.isRunning),
+                                        label = {
+                                            Text(
+                                                if (isOriginalJava) "✅ ☕ 1. Java Nguyên Bản (Chơi Full Mod)"
+                                                else "☕ 1. Java Nguyên Bản (Chơi Full Mod)",
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                        }
+                                    )
+                                    FilterChip(
+                                        selected = isJavaRustTurbo,
+                                        onClick = { vm.toggleRustJvmTurboMode(true) },
+                                        enabled = !stopping && (!isPureRust || !state.isRunning),
+                                        label = {
+                                            Text(
+                                                if (isJavaRustTurbo) "✅ ⚡ 2. Java + Rust Turbo (Chơi Mod Nhẹ Mượt)"
+                                                else "⚡ 2. Java + Rust Turbo (Chơi Mod Nhẹ Mượt)",
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                        }
+                                    )
+                                    FilterChip(
+                                        selected = isPureRust,
+                                        onClick = {
+                                            if (!isPureRust) vm.enableNativeRustEngineOneTap()
+                                        },
+                                        enabled = !state.isRunning && !stopping,
+                                        label = {
+                                            Text(
+                                                when {
+                                                    isPureRust -> "✅ 🦀 3. Nhân Rust Thuần (~50MB • Không Mod)"
+                                                    rustEngineStatus.isNativeBinaryInstalled -> "🦀 3. Nhân Rust Thuần (~50MB • Không Mod)"
+                                                    else -> "🦀 3. Tải Nhân Rust Thuần (~50MB • Không Mod)"
+                                                },
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     // Công tắc 1: Gói Mod Tối Ưu Server Lưu Sẵn (Tự khớp phiên bản)
                     if (!active.core.isBedrock) {
                         Surface(
@@ -2044,6 +2208,73 @@ fun MineHostOverview(
                                 fontWeight = FontWeight.Medium,
                                 fontSize = 14.sp
                             )
+                        }
+                    }
+
+                    // ── [v3.1.0] RADAR QUÉT TỌA ĐỘ VÙNG GÂY LAG & DỌN LAG BẢO VỆ DÂN LÀNG / THÚ CƯNG ──
+                    Surface(
+                        color = Color(0xFF0EA5E9).copy(alpha = 0.12f),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, Color(0xFF0EA5E9).copy(alpha = 0.45f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                "🔍 Radar Quét Thủ Phạm Gây Lag & Dọn Lag Bảo Vệ Dân Làng",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                lagHotspotReport.summaryVi,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            AdaptiveActionRow {
+                                OutlinedButton(
+                                    onClick = { vm.scanWorldLagHotspotsOneTap() },
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("🔍 Quét Tọa Độ Điểm Nóng", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                }
+                                if (lagHotspotReport.hotspotFound) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            val tpCmd = "/tp @s ${lagHotspotReport.hotspotCenterX} 100 ${lagHotspotReport.hotspotCenterZ}"
+                                            clipboard.setText(AnnotatedString(tpCmd))
+                                            vm.notifyActionDone("📍 Đã chép lệnh dịch chuyển tới vùng nặng nhất: $tpCmd")
+                                        },
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text("📍 Chép Lệnh TP Tới Đó", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                    }
+                                }
+                            }
+                            AdaptiveActionRow {
+                                Button(
+                                    onClick = { vm.smartPurgeLagEntitiesOneTap(includeHostileMobs = false) },
+                                    enabled = state.isRunning,
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("🧹 Chỉ Dọn Vật Phẩm & XP", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                }
+                                Button(
+                                    onClick = { vm.smartPurgeLagEntitiesOneTap(includeHostileMobs = true) },
+                                    enabled = state.isRunning,
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF059669), contentColor = Color.White),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("🛡️ Dọn Quái Lag (Giữ Dân Làng)", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
                         }
                     }
 
@@ -2379,6 +2610,126 @@ fun MineHostOverview(
                         detail = "Mở tab Map để chọn OneBlock, SkyBlock hoặc nhập thế giới.",
                         icon = Icons.Outlined.Public
                     ) { navigate(SubPage.WorldManage) }
+
+                    // [v3.1.0] Bảng Điểm Scoreboard & Thanh Thông Báo BossBar Trong Game (0 MB RAM)
+                    if (section == 2) {
+                        val activeSb by vm.activeScoreboardPreset.collectAsStateWithLifecycle()
+                        val savedBossText by vm.bossBarText.collectAsStateWithLifecycle()
+                        val savedBossColor by vm.bossBarColor.collectAsStateWithLifecycle()
+                        val savedBossOn by vm.bossBarEnabled.collectAsStateWithLifecycle()
+                        var bossInput by rememberSaveable(active.dirName, savedBossText) {
+                            mutableStateOf(savedBossText.ifBlank { "🔥 Chào mừng đến ${active.name} • Chúc chơi vui vẻ!" })
+                        }
+                        var selectedColor by rememberSaveable(active.dirName, savedBossColor) {
+                            mutableStateOf(savedBossColor.ifBlank { "yellow" })
+                        }
+                        HostDisclosure(
+                            "Bảng điểm Scoreboard & Thanh BossBar",
+                            "Hiển thị bảng xếp hạng bên phải màn hình và chữ màu trên đỉnh game (0 MB RAM).",
+                            initiallyExpanded = true
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(4.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    "🏆 1. Bảng Xếp Hạng Cạnh Phải Màn Hình Game (Scoreboard):",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                com.mineserve.mobile.server.ProHostFeatures.SCOREBOARD_PRESETS.forEach { preset ->
+                                    val isSel = activeSb == preset.id
+                                    Surface(
+                                        onClick = { vm.applyInGameScoreboardPresetOneTap(preset.id) },
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = if (isSel) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                                        border = BorderStroke(1.dp, if (isSel) MaterialTheme.colorScheme.primary else Color.Transparent),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(10.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Column(Modifier.weight(1f)) {
+                                                Text(preset.titleVi, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                                                Text(preset.subtitleVi, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            }
+                                            if (isSel) {
+                                                Text("ĐANG BẬT", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                            }
+                                        }
+                                    }
+                                }
+                                if (activeSb.isNotBlank()) {
+                                    OutlinedButton(
+                                        onClick = { vm.applyInGameScoreboardPresetOneTap("off") },
+                                        shape = RoundedCornerShape(9.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text("🧹 Ẩn Bảng Điểm Scoreboard", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                    }
+                                }
+
+                                HorizontalDivider()
+                                Text(
+                                    "📣 2. Thanh Chữ Màu Đầu Màn Hình Game (BossBar Banner):",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                OutlinedTextField(
+                                    value = bossInput,
+                                    onValueChange = { bossInput = it },
+                                    label = { Text("Nội dung thanh thông báo trên đỉnh màn hình game") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    listOf(
+                                        "yellow" to "🟡 Vàng",
+                                        "green" to "🟢 Xanh lá",
+                                        "blue" to "🔵 Xanh dương",
+                                        "red" to "🔴 Đỏ",
+                                        "purple" to "🟣 Tím",
+                                        "pink" to "🩷 Hồng"
+                                    ).forEach { (cId, cLabel) ->
+                                        FilterChip(
+                                            selected = selectedColor == cId,
+                                            onClick = { selectedColor = cId },
+                                            label = { Text(cLabel, fontSize = 12.sp, fontWeight = FontWeight.SemiBold) }
+                                        )
+                                    }
+                                }
+                                AdaptiveActionRow {
+                                    Button(
+                                        onClick = { vm.applyInGameBossBarOneTap(bossInput, selectedColor, true) },
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text(
+                                            if (savedBossOn) "🔄 Cập Nhật BossBar" else "📣 Bật Thanh BossBar",
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                    if (savedBossOn) {
+                                        OutlinedButton(
+                                            onClick = { vm.applyInGameBossBarOneTap(bossInput, selectedColor, false) },
+                                            shape = RoundedCornerShape(10.dp),
+                                            modifier = Modifier.weight(0.8f)
+                                        ) {
+                                            Text("🧹 Ẩn BossBar", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
 
                     // 1. Bảng công tắc Gamerule 1 chạm (Anti-Grief Shield 2.0)
                     HostDisclosure("Luật chơi & thời tiết", "Giữ đồ, chống nổ, lửa lan và thời tiết của server đang chọn.", visible = section == 2) {
@@ -3663,16 +4014,19 @@ private fun Metric(
     value: String,
     artKind: MinecraftArtKind,
     modifier: Modifier,
+    sparklineSamples: List<Float> = emptyList(),
+    sparklineMax: Float = 20f,
+    sparklineColor: Color = Color(0xFF10B981),
     onClick: () -> Unit = {}
 ) {
     Card(
         onClick = onClick,
         modifier = modifier,
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.28f))
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.26f))
     ) {
-        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -3681,7 +4035,56 @@ private fun Metric(
                 Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 MinecraftPixelArtIcon(kind = artKind, size = 18.dp)
             }
-            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (sparklineSamples.size >= 2) {
+                androidx.compose.foundation.Canvas(
+                    modifier = Modifier.fillMaxWidth().height(18.dp)
+                ) {
+                    val safeMax = sparklineMax.coerceAtLeast(1f)
+                    val w = size.width
+                    val h = size.height
+                    val stepX = w / (sparklineSamples.size - 1).coerceAtLeast(1).toFloat()
+                    val strokePath = androidx.compose.ui.graphics.Path()
+                    val fillPath = androidx.compose.ui.graphics.Path()
+                    sparklineSamples.forEachIndexed { i, v ->
+                        val ratio = (v / safeMax).coerceIn(0.04f, 1f)
+                        val x = i * stepX
+                        val y = h - (ratio * (h - 2f)) - 1f
+                        if (i == 0) {
+                            strokePath.moveTo(x, y)
+                            fillPath.moveTo(x, h)
+                            fillPath.lineTo(x, y)
+                        } else {
+                            strokePath.lineTo(x, y)
+                            fillPath.lineTo(x, y)
+                        }
+                        if (i == sparklineSamples.lastIndex) {
+                            fillPath.lineTo(x, h)
+                            fillPath.close()
+                        }
+                    }
+                    drawPath(
+                        path = fillPath,
+                        brush = Brush.verticalGradient(
+                            listOf(sparklineColor.copy(alpha = 0.28f), sparklineColor.copy(alpha = 0.02f))
+                        )
+                    )
+                    drawPath(
+                        path = strokePath,
+                        color = sparklineColor,
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(
+                            width = 2.dp.toPx(),
+                            cap = androidx.compose.ui.graphics.StrokeCap.Round
+                        )
+                    )
+                }
+            }
+            Text(
+                label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }
@@ -3727,6 +4130,10 @@ private fun RemoteSettingRow(
 fun MineHostRemote(vm: McViewModel, onBack: () -> Unit) {
     val savedToken by vm.telegramBotToken.collectAsStateWithLifecycle()
     val savedChatId by vm.telegramChatId.collectAsStateWithLifecycle()
+    val verifiedBotName by vm.telegramBotVerifiedName.collectAsStateWithLifecycle()
+    val strictSecurityLock by vm.telegramStrictSecurityLock.collectAsStateWithLifecycle()
+    val allowGroupMemberIp by vm.telegramAllowGroupMemberIp.collectAsStateWithLifecycle()
+    val adminSenderId by vm.telegramAdminSenderId.collectAsStateWithLifecycle()
     val savedWebhook by vm.discordWebhookUrl.collectAsStateWithLifecycle()
     val telegramEnabled by vm.telegramTwoWayBotEnabled.collectAsStateWithLifecycle()
     val lastCommand by vm.lastTelegramBotCommandLog.collectAsStateWithLifecycle()
@@ -3754,7 +4161,7 @@ fun MineHostRemote(vm: McViewModel, onBack: () -> Unit) {
 
     HostPage(
         title = "Điều khiển từ xa",
-        subtitle = "Kết nối và quản lý từng dịch vụ.",
+        subtitle = "Kết nối bảo mật Telegram Pro, Discord và Web nội bộ.",
         trailingHeader = {
             IconButton(onClick = onBack) {
                 Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Quay lại")
@@ -3763,7 +4170,7 @@ fun MineHostRemote(vm: McViewModel, onBack: () -> Unit) {
     ) {
         item(key = "remote_channels") {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("Telegram", "Discord", "Web nội bộ").forEachIndexed { index, label ->
+                listOf("Telegram Pro", "Discord", "Web nội bộ").forEachIndexed { index, label ->
                     FilterChip(
                         selected = channel == index,
                         onClick = { channel = index },
@@ -3782,12 +4189,29 @@ fun MineHostRemote(vm: McViewModel, onBack: () -> Unit) {
         }
         if (channel == 0) {
             item(key = "telegram_connection") {
-                HostCard("Telegram", badgeText = if (telegramConfigured) "Đã cấu hình" else "Chưa cấu hình") {
+                HostCard(
+                    "Bot Telegram Điều Khiển Server",
+                    badgeText = if (telegramConfigured) "Đã lưu & Bảo mật" else "Chưa cấu hình"
+                ) {
+                    if (verifiedBotName.isNotBlank()) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text(
+                                "🤖 Bot đã xác thực: $verifiedBotName\n🔒 Chỉ phản hồi duy nhất cho Chat ID: ${savedChatId.ifBlank { "Đang chờ lưu" }}",
+                                modifier = Modifier.fillMaxWidth().padding(10.dp),
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
+                    }
                     OutlinedTextField(
                         value = tokenInput,
                         onValueChange = { tokenInput = it },
-                        label = { Text("Bot token") },
-                        supportingText = { Text("Lấy token từ @BotFather trên Telegram.") },
+                        label = { Text("Bot Token (@BotFather)") },
+                        supportingText = { Text("Dán mã Token lấy từ @BotFather trên Telegram.") },
                         singleLine = true,
                         visualTransformation = if (showToken) VisualTransformation.None else PasswordVisualTransformation(),
                         trailingIcon = {
@@ -3803,8 +4227,8 @@ fun MineHostRemote(vm: McViewModel, onBack: () -> Unit) {
                     OutlinedTextField(
                         value = chatInput,
                         onValueChange = { chatInput = it },
-                        label = { Text("Chat ID") },
-                        supportingText = { Text("ID nhóm hoặc cuộc trò chuyện nhận thông báo.") },
+                        label = { Text("Chat ID được phép truy cập (Bắt buộc để khóa người lạ)") },
+                        supportingText = { Text("Có thể để trống rồi bấm Lưu sau khi bạn đã nhắn '/start' cho Bot.") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -3812,36 +4236,87 @@ fun MineHostRemote(vm: McViewModel, onBack: () -> Unit) {
                         onClick = { vm.autoDetectTelegramChatId(tokenInput) { chatInput = it } },
                         enabled = tokenInput.isNotBlank() && !task.active,
                         modifier = Modifier.heightIn(min = 48.dp)
-                    ) { Text("Lấy Chat ID từ tin nhắn gần nhất") }
+                    ) { Text("🔍 Tự động dò Chat ID từ tin nhắn gần nhất") }
                     Button(
-                        onClick = { vm.saveTelegramConfig(tokenInput, chatInput) },
+                        onClick = {
+                            vm.saveTelegramConfig(tokenInput, chatInput) { detectedChat ->
+                                if (detectedChat.isNotBlank()) chatInput = detectedChat
+                            }
+                        },
                         enabled = !task.active,
                         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                    ) { Text("Lưu cấu hình") }
-                    OutlinedButton(
-                        onClick = { vm.sendTelegramTestMessage(tokenInput, chatInput) },
-                        enabled = tokenInput.isNotBlank() && chatInput.isNotBlank() && !task.active,
+                    ) { Text("💾 Lưu Bot & Bật Khóa Bảo Mật") }
+                    AdaptiveActionRow {
+                        OutlinedButton(
+                            onClick = { vm.sendTelegramControlPanelMenu(tokenInput, chatInput) },
+                            enabled = tokenInput.isNotBlank() && (chatInput.isNotBlank() || savedChatId.isNotBlank()) && !task.active,
+                            modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+                        ) { Text("🎛️ Gửi Bảng 10 Nút Bấm") }
+                        OutlinedButton(
+                            onClick = { vm.sendTelegramTestMessage(tokenInput, chatInput) },
+                            enabled = tokenInput.isNotBlank() && (chatInput.isNotBlank() || savedChatId.isNotBlank()) && !task.active,
+                            modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+                        ) { Text("📨 Gửi ảnh trạng thái") }
+                    }
+                    Button(
+                        onClick = { vm.backupCurrentWorldToTelegramOneTap() },
+                        enabled = telegramConfigured && !task.active,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7), contentColor = Color.White),
                         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                    ) { Text("Gửi thử") }
+                    ) {
+                        Text("☁️ Sao Lưu Map Đang Chạy Lên Đám Mây Telegram (.zip)", fontWeight = FontWeight.SemiBold)
+                    }
                 }
             }
             item(key = "telegram_control") {
-                HostCard("Lệnh điều khiển") {
+                HostCard("Bảo mật & Điều khiển 2 chiều") {
                     RemoteSettingRow(
-                        title = "Nhận lệnh từ Telegram",
-                        detail = "Bật sau khi đã lưu đúng bot và Chat ID.",
+                        title = "Bật điều khiển Server qua Telegram",
+                        detail = "Nhận lệnh và nút bấm trực tiếp trên Telegram.",
                         checked = telegramEnabled,
                         enabled = telegramConfigured || telegramEnabled,
                         onCheckedChange = vm::setTelegramTwoWayBotEnabled
                     )
+                    HorizontalDivider()
+                    RemoteSettingRow(
+                        title = "🔒 Khóa bảo mật Chủ Host (Chặn người lạ 100%)",
+                        detail = "Ai biết tên Bot nhắn tin vào đều bị chặn hoàn toàn (không thể xem trộm IP hay trạng thái Server). Chỉ tài khoản Chủ Host mới bấm được nút điều khiển.",
+                        checked = strictSecurityLock,
+                        onCheckedChange = vm::setTelegramStrictSecurityLock
+                    )
+                    HorizontalDivider()
+                    RemoteSettingRow(
+                        title = "👥 Cho phép bạn bè trong nhóm gõ /ip & /list",
+                        detail = "Nếu đưa Bot vào nhóm bạn bè: thành viên nhóm chỉ xem được /ip và /list, còn lệnh Bật/Tắt/Đạo cụ vẫn khóa riêng cho Chủ Host.",
+                        checked = allowGroupMemberIp,
+                        onCheckedChange = vm::setTelegramAllowGroupMemberIp
+                    )
+                    if (adminSenderId.isNotBlank() && adminSenderId != "0") {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "👑 ID Chủ Host đã khóa: $adminSenderId",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            TextButton(onClick = { vm.resetTelegramAdminSenderId() }) {
+                                Text("Đổi Chủ Host")
+                            }
+                        }
+                    }
+                    HorizontalDivider()
                     Text(
-                        "/ip · /status · /list · /clearlag · /day · /save · /say",
+                        "Lệnh & Nút hỗ trợ: /menu (Bảng 10 nút bấm) · /ip · /status · /list · /start_sv · /stop_sv · /backup · /clearlag · /day · /supply · /boss · /zombiewave · /say · /cmd <lệnh>",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     if (lastCommand.isNotBlank()) {
                         HorizontalDivider()
-                        Text(lastCommand, style = MaterialTheme.typography.bodyMedium)
+                        Text(lastCommand, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
                     }
                 }
             }
@@ -3904,55 +4379,81 @@ fun MineHostRemote(vm: McViewModel, onBack: () -> Unit) {
             item(key = "web_connection") {
                 val host = lanIp.takeIf { it.isNotBlank() && it != "--" && it != "0.0.0.0" } ?: "127.0.0.1"
                 val address = "http://$host:8585"
-                val accessUrl = "$address/?pin=$webPin"
-                HostCard("Web nội bộ", badgeText = if (webRunning) "Đang bật" else "Đang tắt") {
+                HostCard("Web nội bộ (Bảo mật Phiên & Chống dò PIN)", badgeText = if (webRunning) "Đang bật" else "Đang tắt") {
                     RemoteSettingRow(
                         title = "Mở bảng điều khiển Web",
-                        detail = "Truy cập từ thiết bị cùng mạng Wi-Fi.",
+                        detail = "Truy cập từ trình duyệt máy tính/điện thoại cùng mạng Wi-Fi.",
                         checked = webRunning,
                         onCheckedChange = vm::toggleLanWebPanel
                     )
+                    HorizontalDivider()
+                    Text(
+                        "🛡️ Bảo mật cao cấp: Yêu cầu đăng nhập mã PIN 6 số ngẫu nhiên (phiên Cookie HttpOnly, không lộ PIN trên thanh địa chỉ). Tự động khóa IP 15 phút nếu nhập sai 5 lần.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            if (showPin) "🔑 Mã PIN 6 số: $webPin" else "🔑 Mã PIN 6 số: ••••••",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.weight(1f)
+                        )
+                        IconButton(onClick = { showPin = !showPin }) {
+                            Icon(
+                                if (showPin) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                                contentDescription = if (showPin) "Ẩn mã PIN" else "Hiện mã PIN"
+                            )
+                        }
+                    }
+                    AdaptiveActionRow {
+                        OutlinedButton(
+                            onClick = {
+                                vm.regenerateLanWebPin()
+                                showPin = true
+                            },
+                            modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+                        ) { Text("🔄 Đổi mã 6 số mới") }
+                        OutlinedButton(
+                            onClick = {
+                                clipboard.setText(AnnotatedString(webPin))
+                                vm.notifyActionDone("📋 Đã sao chép mã PIN 6 số.")
+                            },
+                            modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+                        ) { Text("📋 Chép mã PIN") }
+                    }
                     if (webRunning) {
                         HorizontalDivider()
-                        Text(address, style = MaterialTheme.typography.bodyLarge)
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                if (showPin) "Mã PIN: $webPin" else "Mã PIN: ••••••",
-                                style = MaterialTheme.typography.bodyMedium,
-                                modifier = Modifier.weight(1f)
-                            )
-                            IconButton(onClick = { showPin = !showPin }) {
-                                Icon(
-                                    if (showPin) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
-                                    contentDescription = if (showPin) "Ẩn mã PIN" else "Hiện mã PIN"
-                                )
-                            }
-                        }
-                        Button(onClick = { uri.openUri(accessUrl) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                            Text("Mở bảng điều khiển")
+                        Text("Địa chỉ truy cập: $address", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                        Button(onClick = { uri.openUri(address) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                            Text("🌐 Mở trang đăng nhập Web")
                         }
                         OutlinedButton(
                             onClick = {
-                                clipboard.setText(AnnotatedString(accessUrl))
-                                vm.notifyActionDone("Đã sao chép liên kết truy cập Web.")
+                                clipboard.setText(AnnotatedString(address))
+                                vm.notifyActionDone("Đã sao chép địa chỉ Web ($address).")
                             },
                             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                        ) { Text("Sao chép liên kết có mã truy cập") }
+                        ) { Text("Sao chép địa chỉ Web") }
                     }
                 }
             }
         }
         item(key = "remote_guide") {
-            HostCard("Hướng dẫn kết nối") {
+            HostCard("Hướng dẫn kết nối & Bảo mật") {
                 TextButton(onClick = { showGuide = !showGuide }, modifier = Modifier.heightIn(min = 48.dp)) {
                     Text(if (showGuide) "Thu gọn hướng dẫn" else "Xem các bước kết nối")
                 }
                 if (showGuide) {
                     Text(
                         when (channel) {
-                            0 -> "1. Tạo bot bằng @BotFather và dán token.\n2. Gửi /start vào bot hoặc một tin nhắn trong nhóm.\n3. Lấy Chat ID, kiểm tra đúng nhóm rồi lưu.\n4. Bấm Gửi thử để kiểm tra kết nối."
+                            0 -> "1. Mở @BotFather trên Telegram -> gõ /newbot -> copy mã Bot Token dán vào ô trên.\n" +
+                                "2. Mở Bot vừa tạo trên Telegram và bấm Start (hoặc gõ /start).\n" +
+                                "3. Quay lại MineHost bấm '💾 Lưu Bot & Bật Khóa Bảo Mật' — ứng dụng sẽ tự nhận diện bạn là Chủ Host duy nhất và gửi ngay Bảng 10 Nút Bấm Điều Khiển!\n" +
+                                "🔒 An toàn tuyệt đối: Người lạ dù biết tên Bot nhắn vào cũng bị chặn 100%, không thể xem IP hay phá Server."
                             1 -> "1. Tạo webhook trong kênh Discord.\n2. Dán URL, lưu và gửi thử."
-                            else -> "Bật Web nội bộ, sau đó sao chép liên kết sang thiết bị cùng Wi-Fi. Liên kết chứa mã truy cập; chỉ gửi cho người được phép quản trị."
+                            else -> "1. Bật Web nội bộ và mở địa chỉ http://<IP>:8585 trên trình duyệt.\n2. Nhập mã PIN 6 số hiển thị ở trên để mở khóa phiên điều khiển.\n3. Khi bấm 'Đổi mã 6 số mới', mọi thiết bị đang đăng nhập trước đó sẽ bị đăng xuất ngay lập tức."
                         },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -4000,6 +4501,9 @@ fun MineHostManage(vm: McViewModel, navigate: (SubPage) -> Unit) {
                 }
                 HostAction("Cấu hình server", "Chỉnh server.properties và các thiết lập cơ bản.", Icons.Outlined.Settings) {
                     navigate(SubPage.Properties)
+                }
+                HostAction("Dọn rác bộ nhớ tạm", "Xóa tệp tạm, APK cũ và log nén dư thừa để giải phóng bộ nhớ.", Icons.Outlined.CleaningServices) {
+                    vm.cleanAppStorageJunkOneTap()
                 }
             }
         }

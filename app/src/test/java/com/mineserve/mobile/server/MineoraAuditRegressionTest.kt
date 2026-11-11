@@ -1653,6 +1653,123 @@ class MineoraAuditRegressionTest {
         }
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // 22. Kiểm tra Full Pack Sinh Tồn (OneBlock 10 Cấp, Đại Dịch Zombie, Săn Rồng RPG),
+    //     nhận diện nhãn chế độ Map, giữ nguyên Map cũ 100% và Dọn rác bộ nhớ tạm an toàn.
+    // ─────────────────────────────────────────────────────────────────────────
+    @Test
+    fun test22_survivalPacks_worldDetection_and_safeStorageCleanup() = runBlocking {
+        val ctx = context()
+        val tempServerDir = Files.createTempDirectory("minehost-packs-test").toFile()
+        try {
+            // Tạo sẵn 1 map cũ "world_cu" chứa dữ liệu quan trọng
+            val oldWorldDir = File(tempServerDir, "world_cu").apply { mkdirs() }
+            val oldLevelDat = File(oldWorldDir, "level.dat").apply { writeText("important-world-data") }
+            File(tempServerDir, "server.properties").writeText("level-name=world_cu\n", Charsets.UTF_8)
+
+            assertEquals(7, ProHostFeatures.PLAYABLE_WORLD_MODES.size)
+            for (mode in ProHostFeatures.PLAYABLE_WORLD_MODES) {
+                val res = ProHostFeatures.createPlayableModeWorldOneTap(tempServerDir, mode.id) { _, _ -> }
+                assertTrue("Pack ${mode.id} phải tạo thành công: ${res.exceptionOrNull()}", res.isSuccess)
+                val worldDir = File(tempServerDir, mode.folderName)
+                assertTrue("Thư mục ${mode.folderName} phải tồn tại", worldDir.isDirectory)
+                val badge = ProHostFeatures.detectWorldPlayableModeLabel(worldDir)
+                assertTrue("Badge của ${mode.id} không được rỗng", badge.isNotBlank())
+            }
+
+            // Kiểm tra các file function đặc biệt của Zombie Apocalypse & Dragon RPG
+            assertTrue(File(tempServerDir, "world_zombie_apocalypse/datapacks/minehost_zombie_apocalypse/data/minehost/functions/supply_drop.mcfunction").isFile)
+            assertTrue(File(tempServerDir, "world_zombie_apocalypse/datapacks/minehost_zombie_apocalypse/data/minehost/functions/zombie_wave.mcfunction").isFile)
+            assertTrue(File(tempServerDir, "world_dragon_rpg/datapacks/minehost_dragon_rpg/data/minehost/functions/summon_dragon_boss.mcfunction").isFile)
+            assertTrue(File(tempServerDir, "world_dragon_rpg/datapacks/minehost_dragon_rpg/data/minehost/functions/dragon_kit.mcfunction").isFile)
+
+            // Map cũ "world_cu" vẫn phải còn nguyên vẹn 100%
+            assertTrue("Map cũ phải được giữ nguyên 100%", oldLevelDat.isFile)
+            assertEquals("important-world-data", oldLevelDat.readText())
+
+            // Kiểm tra dọn rác bộ nhớ tạm: xóa file .tmp trong cache nhưng giữ nguyên Map trong Server
+            val junkFile = File(ctx.cacheDir, "junk_download.tmp").apply { writeBytes(ByteArray(4096)) }
+            val cleanRes = ProHostFeatures.cleanAppTempAndJunkFiles(ctx, tempServerDir)
+            assertFalse("Tệp tạm .tmp trong cacheDir phải được dọn sạch", junkFile.exists())
+            assertTrue("Đã giải phóng dung lượng > 0", cleanRes.freedBytes >= 4096L)
+            assertTrue("Map cũ trong Server tuyệt đối không bị ảnh hưởng khi dọn rác", oldLevelDat.isFile)
+
+            // Kiểm tra Chế Độ Chạy Rust Nhẹ Mượt (Rust-JVM Turbo & Pumpkin Native ARM64 config)
+            val turboOn = ProHostFeatures.setRustJvmTurboMode(tempServerDir, true)
+            assertTrue("Phải bật được Chế Độ Rust-JVM Turbo", turboOn.isRustJvmTurboEnabled)
+            val turboFlags = ProHostFeatures.buildRustJvmTurboFlags(2048)
+            assertTrue("Cờ Rust-JVM Turbo phải chứa MaxGCPauseMillis=15", turboFlags.contains("-XX:MaxGCPauseMillis=15"))
+            assertTrue("Cờ Rust-JVM Turbo phải chứa UseStringDeduplication", turboFlags.contains("-XX:+UseStringDeduplication"))
+            ProHostFeatures.syncPumpkinRustTomlConfig(tempServerDir)
+            val pumpkinToml = File(tempServerDir, "pumpkin.toml")
+            assertTrue("pumpkin.toml phải được tạo tự động", pumpkinToml.isFile)
+            val tomlText = pumpkinToml.readText()
+            assertTrue("pumpkin.toml phải tắt chat report & online_mode để hỗ trợ Cracked", tomlText.contains("allow_chat_reports = false") && tomlText.contains("online_mode = false"))
+            assertEquals(
+                com.mineserve.mobile.data.StartupPhase.Ready,
+                com.mineserve.mobile.data.startupPhaseForLog("Server is now running. Connect using port: Java Edition: 0.0.0.0:25565")
+            )
+            // Map cũ vẫn còn nguyên 100% sau khi bật Rust-JVM Turbo & tạo cấu hình Rust
+            assertTrue("Map cũ vẫn nguyên vẹn 100% khi bật chế độ Rust", oldLevelDat.isFile)
+
+            // [v3.1.0] 1. Kiểm tra Nén Map An Toàn (bỏ qua session.lock/.tmp) & Chia nhỏ tập tin tự động cho Telegram Cloud
+            val lockFile = File(oldWorldDir, "session.lock").apply { writeText("locked") }
+            val tmpFile = File(oldWorldDir, "chunk_cache.tmp").apply { writeText("temp") }
+            val extraData = File(oldWorldDir, "region/r.2.-1.mca").apply {
+                parentFile?.mkdirs()
+                writeBytes(ByteArray(12_000) { (it % 127).toByte() })
+            }
+            val zipOut = File(tempServerDir, "test_tg_backup.zip")
+            val zippedBytes = ProHostFeatures.zipWorldFolderSafe(oldWorldDir, zipOut)
+            assertTrue("Tệp zip sao lưu phải lớn hơn 0 byte", zippedBytes > 0L && zipOut.isFile)
+            java.util.zip.ZipFile(zipOut).use { zf ->
+                val names = zf.entries().asSequence().map { it.name }.toList()
+                assertTrue("Phải chứa level.dat", names.any { it.endsWith("level.dat") })
+                assertFalse("Không được nén session.lock", names.any { it.endsWith("session.lock") })
+                assertFalse("Không được nén tệp .tmp", names.any { it.endsWith(".tmp") })
+            }
+            // Kiểm tra chia volume thông minh khi giới hạn nhỏ
+            val dummyBigZip = File(tempServerDir, "big_archive.zip").apply { writeBytes(ByteArray(25_000) { 42 }) }
+            val splitParts = ProHostFeatures.splitFileIntoVolumesIfNeeded(dummyBigZip, maxVolumeBytes = 10_000L)
+            assertEquals("25KB chia trần 10KB phải ra đúng 3 phần (.001, .002, .003)", 3, splitParts.size)
+            assertEquals(25_000L, splitParts.sumOf { it.length() })
+
+            // [v3.1.0] 2. Kiểm tra Bảng Điểm Scoreboard & Thanh BossBar (0 MB RAM)
+            val killCmds = ProHostFeatures.buildScoreboardCommands("kills")
+            assertTrue("Lệnh Scoreboard kills phải tạo mh_kills và hiển thị sidebar",
+                killCmds.any { it.contains("scoreboard objectives add mh_kills totalKillCount") } &&
+                    killCmds.any { it.contains("scoreboard objectives setdisplay sidebar mh_kills") })
+            val bossCmds = ProHostFeatures.buildBossBarCommands("Chào mừng Server Sinh Tồn", "yellow", true)
+            assertTrue("Lệnh BossBar phải tạo minehost:banner và hiển thị cho @a",
+                bossCmds.any { it.contains("bossbar add minehost:banner") } &&
+                    bossCmds.any { it.contains("bossbar set minehost:banner players @a") })
+
+            // [v3.1.0] 3. Kiểm tra Radar Quét Điểm Nóng Gây Lag & Dọn Lag Bảo Vệ Dân Làng/Thú Cưng
+            File(tempServerDir, "server.properties").writeText("level-name=world_cu\nview-distance=10\nsimulation-distance=6\n")
+            File(oldWorldDir, "entities/r.2.-1.mca").apply {
+                parentFile?.mkdirs()
+                writeBytes(ByteArray(32_768))
+            }
+            val lagReport = ProHostFeatures.inspectWorldLagHotspots(tempServerDir)
+            assertTrue("Radar Lag phải tìm thấy điểm nóng r.2.-1.mca", lagReport.hotspotFound)
+            assertEquals("Tâm X của r.2.-1.mca = 2*512 + 256 = 1280", 1280, lagReport.hotspotCenterX)
+            assertEquals("Tâm Z của r.2.-1.mca = -1*512 + 256 = -256", -256, lagReport.hotspotCenterZ)
+
+            val purgeCmds = ProHostFeatures.buildSmartSafePurgeCommands(includeHostileMobs = true)
+            val joinedPurge = purgeCmds.joinToString("\n")
+            assertTrue("Phải dọn minecraft:item và zombie", joinedPurge.contains("minecraft:item") && joinedPurge.contains("minecraft:zombie"))
+            listOf("villager", "wolf", "cat", "cow", "sheep", "pig", "iron_golem", "armor_stand", "item_frame", "allay", "horse").forEach { protectedMob ->
+                assertFalse("TUYỆT ĐỐI KHÔNG ĐƯỢC XÓA $protectedMob", joinedPurge.contains(protectedMob))
+            }
+            lockFile.delete()
+            tmpFile.delete()
+            extraData.delete()
+            Unit
+        } finally {
+            tempServerDir.deleteRecursively()
+        }
+    }
+
     private fun createValidJar(file: File, entryName: String, content: String) {
         ZipOutputStream(FileOutputStream(file)).use { zos ->
             zos.putNextEntry(ZipEntry(entryName))

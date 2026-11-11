@@ -1,65 +1,64 @@
 <div align="center">
 
 # 🇻🇳 MINEHOST PRO — ANDROID MINECRAFT SERVER ENGINE
-### **v2.9.0 (Build 57 • Official Community Edition)**
+### **v3.1.0 (Build 69 • Official Community Edition)**
 
-[![Release](https://img.shields.io/badge/RELEASE-v2.9.0%20(Build%2057)-10B981?style=for-the-badge&logo=android&logoColor=white)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
+[![Release](https://img.shields.io/badge/RELEASE-v3.1.0%20(Build%2069)-10B981?style=for-the-badge&logo=android&logoColor=white)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
+[![Engine](https://img.shields.io/badge/3--ENGINE-JAVA%20•%20RUST%20TURBO%20•%20NATIVE%20RUST-EA580C?style=for-the-badge&logo=rust&logoColor=white)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
 [![Platform](https://img.shields.io/badge/ANDROID-8.0%2B%20(ARM64)-0EA5E9?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases)
 [![Crossplay](https://img.shields.io/badge/CROSSPLAY-JAVA%20PC%20%2B%20BEDROCK%20PE-F59E0B?style=for-the-badge&logo=reverbnation&logoColor=white)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
-[![OTA](https://img.shields.io/badge/OTA%20UPDATE-ZERO%20CACHE%20•%20AUTO%20CLEAN-6366F1?style=for-the-badge)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
+[![OTA](https://img.shields.io/badge/OTA%20UPDATE-AUTO%20DETECT%20•%20AUTO%20CLEAN-6366F1?style=for-the-badge)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
 [![License](https://img.shields.io/badge/LICENSE-GPLv3-3B82F6?style=for-the-badge)](LICENSE)
 
-**Biến điện thoại Android thành máy chủ Minecraft chuyên nghiệp (Paper, Purpur, Fabric, Forge, NeoForge, Vanilla, Bedrock) — Hỗ trợ chơi chung PC & Điện thoại PE không cần thuê VPS hay mở Port Router.**
+**Biến điện thoại Android thành máy chủ Minecraft chuyên nghiệp (Paper, Purpur, Fabric, Forge, NeoForge, Vanilla, Bedrock & Nhân Rust siêu nhẹ) — Hỗ trợ chơi chung PC & Điện thoại PE không cần thuê VPS hay mở Port Router.**
 
-### 👉 [**📥 TẢI NGAY APK v2.9.0 MỚI NHẤT (`minehost-2.9.0-arm64.apk`)**](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
+### 👉 [**📥 TẢI NGAY APK v3.1.0 MỚI NHẤT (`minehost-3.1.0-arm64.apk`)**](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/download/v3.1.0/minehost-3.1.0-arm64.apk)
 
 </div>
 
 ---
 
-## 🚀 Điểm Nhấn Đột Phá Trên Bản `v2.9.0` (Build 57)
+## ✨ Đột Phá Mới Nhất Trên Bản `v3.1.0` (Build 69)
 
-| Tính năng | Công nghệ & Cơ chế hoạt động |
+| Hạng mục nâng cấp | Công nghệ & Cơ chế hoạt động |
 | :--- | :--- |
-| **🤖 Trợ Lý Discord & Telegram Pro (Kèm Ảnh Trạng Thái HD `1080×640` & Bot 2 Chiều)** | Tự động vẽ và đính kèm **Ảnh Bảng Trạng Thái Máy Chủ Trực Quan HD (`1080×640` PNG)** gồm IP PC, IP/Cổng PE, thanh TPS, danh sách người chơi online, Nhiệt độ & Pin khi gửi lên Discord Webhook & Telegram (`sendPhoto`); đồng thời hỗ trợ **gõ lệnh điều khiển 2 chiều ngay trong nhóm Telegram** (`/ip`, `/status`, `/list`, `/clearlag`, `/day`, `/save`, `/say <tin nhắn>`). |
-| **🛡️ An Toàn Cấp OP (Gỡ bỏ nút `@a` mặc định)** | Loại bỏ hoàn toàn nút chọn sẵn `👥 Tất cả (@a)` ở bảng Cấp quyền OP / Danh hiệu VIP / Dịch chuyển để tránh ấn nhầm cấp OP cho cả Server; bổ sung ô nhập tên trực tiếp để chạm chọn người chơi hoặc tự gõ tên theo ý muốn. |
-| **♻️ Self-Healing `.fabric` Core Cache & Port Guard** | Tự động phát hiện và dọn sạch bộ đệm `.fabric/remappedJars` / `libraries/` bị ghi dở dang (do ngắt tiến trình lúc đang nạp Core 62%), mở khóa `session.lock` tự động và tự chuyển sang cổng trống kế tiếp (`25566+`) nếu cổng mặc định `25565` đang bị ứng dụng khác chiếm. |
-| **🔊 Level-Up Audio & Live Running Pulse** | Tự động phát giai điệu hợp âm **"Minecraft Level Up" (PCM 16-bit 44.1kHz + Rung phản hồi)** ngay khi Server mở thành công (`StartupPhase.Ready`), kèm hiệu ứng viền nhịp thở phát sáng (`InfiniteTransition`) và thanh tiến trình trực tiếp `0% → 100%` cho mọi tác vụ tải xuống/cài đặt. |
-| **🗺️ 1-Tap Playable Worlds (`OneBlock`, `SkyBlock`, `Parkour`, `Lucky Island`)** | Tạo nhanh thế giới mới 1 chạm kèm Datapack chuẩn kép (`function` + `functions` cho MC `1.20.x–1.21+`), tự dựng đảo khởi đầu, rương sinh tồn và giữ nguyên 100% các thế giới cũ. |
-| **🎙️ Simple Voice Chat 1-Tap (`UDP 24454`)** | Tự động dò đúng phiên bản Minecraft & Loader (`Fabric` / `Forge` / `NeoForge` / `Paper`) trên Modrinth, tải trực tiếp có thanh phần trăm và tự sinh cấu hình `voicechat-server.properties`. |
-| **🎨 Resource Pack Studio & Auto SHA-1** | Kho gói tài nguyên 1 chạm (**Việt Hóa Giao Diện**, **Quặng Phát Sáng**, **Dark UI**, **Cỏ Đẹp**) hoặc dán URL `.zip` tùy chọn — tự động tải luồng để băm mã kiểm tra `resource-pack-sha1` chuẩn 100%. |
-| **🛡️ Anti-Grief Shield 2.0 & Auto-ClearLag 15m** | Lưu bền vững cấu hình Luật Thế Giới (`keepInventory`, `mobGriefing`, `doFireTick`, `playersSleepingPercentage`) để tự động áp lại mỗi lần mở Server; dọn rác định kỳ 15 phút bảo vệ tuyệt đối thú cưng đã đặt tên (`name=!`), dân làng và Boss. |
-| **⚡ Turbo Boot & Instant Stop Engine** | Tăng tốc nạp Core (62%) và mở/đóng Server gấp 2–3 lần: bộ nhớ đệm xác thực môi trường `0ms`, bỏ chạy lặp `fc-cache -f`, tắt kiểm tra phiên bản Mod trực tuyến (`fml.toml`), ghi chunk bất đồng bộ (`sync-chunk-writes=false`) và giải phóng nút **Dừng máy chủ** tức thì (`< 0.3s`). |
-| **🛠️ Smart Mod Doctor (1-Tap Auto-Fix)** | Tự động mổ xẻ `fabric.mod.json` / `mods.toml` của toàn bộ tệp `.jar` trong `mods/`: tự tải bù thư viện còn thiếu (`Fabric API`, `Cloth Config`, `Architectury`...), tự thay thế hoặc cách ly (`.disabled`) các Mod lệch phiên bản / Client-only / trùng ID. |
-| **🤖 Discord Webhook Pro & 2-Way Game Chat** | Tự động bắn IP Server + thông báo khi người chơi vào/rời Server lên kênh Discord nhóm và trò chuyện trực tiếp 2 chiều giữa Chủ Host với người chơi trong game. |
+| **🎨 Giao Diện Trung Tâm Thế Hệ Mới + Sóng Đồ Thị 60s** | Thiết kế lại bảng điều khiển gọn thoáng hiện đại: lưới **4 ô thông số trực quan** (`TPS`, `RAM`, `Người chơi`, `Nhiệt độ & Pin`) tích hợp **sóng đồ thị thời gian thực 60 giây**, viên thuốc trạng thái sống `🟢 20.0 TPS • 37°C` trên thanh đỉnh mọi màn hình và **Menu `☰` có ô tìm kiếm nhanh công cụ** + 4 phím tắt 1 chạm. |
+| **🦀 Bộ 3 Chế Độ Nhân Linh Hoạt (`Java Mod` • `Java + Rust Turbo` • `Rust Thuần`)** | Chuyển đổi tức thì trên 1 thanh gạt ngang: **① ☕ Java Nguyên Bản** (chơi Full Mod Forge/Fabric/NeoForge/Plugin), **② ⚡ Java + Rust Turbo** (chơi Mod nhẹ mượt, giảm khựng GC xuống `15ms`, khử trùng lặp chuỗi RAM), **③ 🦀 Nhân Rust Thuần** (Pumpkin ARM64 siêu nhẹ `~50MB RAM`, bật trong tích tắc cho máy yếu). |
+| **☁️ Sao Lưu Map Lên Đám Mây Telegram 1 Chạm (`0 MB RAM`)** | Tự chạy `save-all`, nén thư mục thế giới thành `.zip` sạch an toàn (bỏ qua `session.lock` & tệp tạm), tự động cắt chia phần thông minh nếu Map `> 45 MB` và truyền luồng trực tiếp lên cuộc trò chuyện Telegram cá nhân — hoặc gõ `/backup` từ xa ngay trong Telegram. |
+| **🏆 Bảng Điểm Scoreboard & Thanh BossBar Trong Game 1 Chạm** | Hiển thị bảng xếp hạng cạnh phải màn hình (*Chiến tích diệt quái, Số lần tử trận, Máu đồng đội dưới tên, Đua top đào Kim Cương*) và thanh thông báo **BossBar 6 màu** trên đỉnh màn hình cho toàn bộ người chơi mà **không tốn thêm 1 MB RAM hay cần cài Plugin/Mod**. Tự khôi phục mỗi lần mở Server. |
+| **🔍 Radar Quét Điểm Nóng Gây Lag & Dọn Lag Bảo Vệ Dân Làng** | Quét trực tiếp tệp vùng `.mca` để chỉ đích danh tọa độ `(X, Z)` khu vực tập trung nhiều thực thể/máy farm gây tụt TPS nhất (kèm nút chép lệnh `/tp` 1 chạm). Tích hợp 2 chế độ dọn lag thông minh **cam kết bảo vệ 100% Dân làng, Thú cưng, Gia súc, Người sắt & Giá để giáp**. |
+| **🗺️ 7 Pack Sinh Tồn Dựng Sẵn & Hộp Thoại Đổi Map An Toàn** | Dựng nhanh **OneBlock 10 Cấp, SkyBlock, Đại Dịch Zombie, Săn Rồng RPG, Parkour, Đảo Kho Báu, Lucky Island** thành thư mục thế giới riêng biệt — giữ nguyên 100% mọi Map cũ và tích hợp trình **Dọn Rác Bộ Nhớ 1 Chạm** giải phóng dung lượng đệm. |
+| **🌐 Web Remote `:8585` Bảo Mật PIN & Bot Telegram 2 Chiều** | Bảng điều khiển từ xa qua trình duyệt LAN/Wi-Fi có khóa mã PIN an toàn + Bot Telegram 2 chiều hỗ trợ `/status`, `/ip`, `/list`, `/backup`, `/clearlag`, `/day`, `/save`, `/say` kèm **Ảnh Thẻ Trạng Thái & Thẻ Mời HD (`1080×640` PNG)**. |
 
 ---
 
 ## ⚡ Hệ Sinh Thái Tính Năng Toàn Diện
 
-### 🌐 1. Kết Nối Đa Nền Tảng (PC + Điện Thoại PE)
+### 🌐 1. Kết Nối Đa Nền Tảng (PC Java + Điện Thoại Bedrock/PE)
 - **Đường hầm mạng tích hợp sẵn:** Hỗ trợ **Playit.gg**, **FRP** và **Bore** giúp bạn bè ở khác mạng Wi-Fi / 4G vào chơi ngay mà không cần mở Port modem.
-- **Crossplay GeyserMC + Floodgate + ViaVersion 1 chạm:** Tự động cấu hình đồng thời cổng TCP (cho PC Java) và cổng UDP (cho Điện thoại Bedrock/PE).
-- **Trình tạo Thẻ Mời Server HD (`1080×640`):** Xuất ảnh Banner mời vào Server hiển thị rõ IP PC & IP/Port PE để chia sẻ qua Discord, Zalo, Messenger.
+- **Crossplay GeyserMC + Floodgate + ViaVersion 1 chạm:** Tự động cấu hình đồng thời cổng TCP (cho PC Java) và cổng UDP (cho Điện thoại Bedrock/PE), hỗ trợ đồng bộ Skin cho cả tài khoản Cracked.
+- **Trình tạo Thẻ Mời Server HD (`1080×640`):** Xuất ảnh Banner mời vào Server hiển thị rõ IP PC & IP/Port PE để chia sẻ nhanh qua Discord, Telegram, Zalo, Messenger.
 
-### 🔋 2. Tối Ưu Hóa Phần Cứng & Bảo Vệ Dữ Liệu Thế Giới
-- **Thermal & Battery Guard:** Tự động phát cảnh báo trong game, thực thi `save-all` kép và tắt máy chủ an toàn khi pin xuống `≤ 10%` hoặc nhiệt độ máy chạm ngưỡng `≥ 45.0°C`.
-- **Auto-Sleep Idle Mode:** Tự động lưu thế giới và đưa máy chủ về chế độ nghỉ khi không có người chơi trực tuyến sau `15 / 30 / 60 phút`.
-- **1-Tap Low-RAM Optimizer:** Tự động tinh chỉnh `view-distance`, `simulation-distance`, Aikar's Flags và dọn rác bộ nhớ RAM trước khi khởi chạy JVM.
+### 🔋 2. Tối Ưu Hóa Phần Cứng & Tự Động Bảo Vệ Thế Giới
+- **Self-Healing Core & Port Guard:** Tự động sửa lỗi bộ đệm `.fabric/remappedJars` bị ngắt dở, mở khóa `session.lock` và tự chuyển sang cổng trống nếu cổng `25565` bị chiếm.
+- **Thermal & Battery Guard:** Tự động cảnh báo trong game, thực thi `save-all` kép và tắt máy chủ an toàn khi pin xuống `≤ 10%` hoặc nhiệt độ chạm ngưỡng `≥ 45.0°C`.
+- **Smart Mod Doctor (1-Tap Auto-Fix):** Tự động quét `mods/`, tải bù thư viện phụ thuộc còn thiếu (`Fabric API`, `Cloth Config`, `Architectury`...) và cách ly Mod Client-only / lệch phiên bản.
+- **Turbo Boot & Instant Stop Engine:** Tăng tốc nạp Core và mở/đóng Server gấp 2–3 lần kèm âm báo **"Minecraft Level Up"** khi máy chủ sẵn sàng vào game.
 
-### 👑 3. Quản Trị Máy Chủ & Sự Kiện In-Game (0 MB RAM Overhead)
-- **Quản lý người chơi 1 chạm:** Cấp/gỡ OP, đổi chế độ chơi (`Survival` / `Creative` / `Spectator`), tặng Starter Kit, quản lý túi đồ NBT trực quan, Whitelist & Ban.
-- **OP Guard cho Server Cracked:** Tự động khóa quyền Admin khi tài khoản chưa được chủ máy xác thực trên ứng dụng.
-- **Xưởng Danh Hiệu VIP & Sự Kiện Mini:** Gắn prefix màu sắc (`[👑 Chủ Server]`, `[⚔️ Chiến Thần]`, `[💎 Đại Gia]`), thả Rương Tiếp Tế, Mưa Kinh Nghiệm, Siêu Tốc Độ Đào và Radar tìm công trình (`/locate` + dịch chuyển cả nhóm).
+### 👑 3. Quản Trị Máy Chủ & Sự Kiện In-Game (`0 MB RAM Overhead`)
+- **Quản lý người chơi & Túi đồ NBT trực quan:** Cấp/gỡ OP (đã gỡ bỏ nút `@a` mặc định để chống cấp nhầm), đổi chế độ chơi, xem/chỉnh sửa trực tiếp 41 ô túi đồ NBT, tặng Starter Kit, Whitelist & Ban.
+- **OP Guard cho Server Cracked:** Khóa bảo vệ quyền Admin trước nguy cơ giả mạo tên chủ Server.
+- **Xưởng Danh Hiệu VIP & Sự Kiện Mini:** Gắn prefix màu sắc (`[👑 Chủ Server]`, `[⚔️ Chiến Thần]`, `[💎 Đại Gia]`), thả Rương Tiếp Tế, Mưa Kinh Nghiệm, Siêu Tốc Độ Đào và Radar tìm công trình (`/locate`).
 
 ---
 
-## 📦 Thông Số Kỹ Thuật & Cài Đặt
+## 📦 Thông Số Kỹ Thuật & Cập Nhật OTA
 
 - **Định danh gói (`applicationId`):** `vn.minehost.pro`
+- **Phiên bản mới nhất:** `v3.1.0` (`versionCode = 69`)
 - **Kiến trúc hỗ trợ:** `arm64-v8a` (Android 8.0 / API 26 trở lên)
-- **Môi trường Java hỗ trợ:** OpenJDK `8`, `17`, `21`, `25` (Termux glibc/proot & FCL Native Runtime)
-- **Cơ chế cập nhật OTA:** Kiểm tra trực tiếp từ GitHub API + Manifest Raw chống lưu đệm (`no-cache`), hỗ trợ cài đè giữ nguyên 100% dữ liệu Thế giới/Mod và tự động dọn sạch tệp `.apk` sau khi nâng cấp.
+- **Môi trường Runtime:** OpenJDK `8`, `17`, `21`, `25` (Termux glibc/proot & FCL Native Runtime) + Native ARM64 Rust Engine
+- **Cập nhật OTA Tự Động:** Tự phát hiện bản mới ngay khi mở ứng dụng, xác thực chữ ký số gốc (`CN=MineHost Android`), cài đè trực tiếp **giữ nguyên 100% Thế giới, Mod, Plugin & Cài đặt**, và tự động dọn sạch tệp `.apk` cũ sau khi nâng cấp.
 
 ---
 

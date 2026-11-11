@@ -102,6 +102,7 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {},
     var confirmBatchDelete by remember(config.activeCoreName) { mutableStateOf(false) }
     var pendingPlayableMode by remember(config.activeCoreName) { mutableStateOf<Pair<String, String>?>(null) }
     var pendingPresetWorld by remember(config.activeCoreName) { mutableStateOf<PresetWorldRequest?>(null) }
+    var backupBeforeSwitch by rememberSaveable { mutableStateOf(true) }
     val liveTask by vm.liveTaskProgress.collectAsState()
 
     val refreshAllData: () -> Unit = {
@@ -208,15 +209,37 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {},
         }
 
         if (sectionTab == 0 && selectedWorldName == null) item(key = "current_world_summary") {
-            HostCard("Map đang chọn") {
+            val activeWorldObj = worlds.firstOrNull { it.name == active }
+            val activeModeBadge = activeWorldObj?.let { ProHostFeatures.detectWorldPlayableModeLabel(it.dir) } ?: "🌲 Sinh Tồn"
+            HostCard("🌍 Map Đang Dùng Trong Server") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        active.ifBlank { "world" },
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        shape = McShape.Chip
+                    ) {
+                        Text(
+                            activeModeBadge,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                        )
+                    }
+                }
                 Text(
-                    active.ifBlank { "Chưa có map được chọn" },
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Text(
-                    if (running) "Máy chủ đang chạy. Dừng máy chủ trước khi xuất hoặc chuyển map."
-                    else "Máy chủ đã dừng. Có thể xuất, chuyển hoặc quản lý map.",
+                    if (running) "🟢 Máy chủ đang mở. Nếu muốn chuyển sang Map khác hoặc đổi Pack Sinh Tồn, hãy dừng Server trước để bảo vệ Map 100%."
+                    else "⚪ Máy chủ đang dừng — Bạn có thể bấm '🔄 Dùng Map này' ở danh sách bên dưới hoặc chọn Pack Sinh Tồn (Map cũ luôn được giữ nguyên an toàn!).",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -228,7 +251,12 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {},
                         onClick = { vm.backupWorldToExternal(shareToDrive = false) },
                         enabled = canManageWorlds && activeWorldExists,
                         shape = McShape.ControlCompact
-                    ) { Text("Sao lưu ngay") }
+                    ) { Text("💾 Sao lưu ngay") }
+                    OutlinedButton(
+                        onClick = { vm.backupCurrentWorldToTelegramOneTap(active) },
+                        enabled = !liveTask.active && activeWorldExists,
+                        shape = McShape.ControlCompact
+                    ) { Text("☁️ Lưu Map Lên Telegram") }
                     OutlinedButton(
                         onClick = {
                             val worldName = active
@@ -238,7 +266,12 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {},
                         },
                         enabled = canManageWorlds && activeWorldExists,
                         shape = McShape.ControlCompact
-                    ) { Text("Xuất ZIP") }
+                    ) { Text("📤 Xuất ZIP") }
+                    OutlinedButton(
+                        onClick = { vm.cleanAppStorageJunkOneTap() },
+                        enabled = !liveTask.active,
+                        shape = McShape.ControlCompact
+                    ) { Text("🧹 Dọn rác bộ nhớ") }
                 }
                 if (importing) {
                     LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -276,6 +309,21 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {},
                                 fontSize = 14.sp,
                                 lineHeight = 20.sp
                             )
+                            FlowRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Button(
+                                    onClick = { vm.cleanAppStorageJunkOneTap() },
+                                    enabled = !liveTask.active,
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                                    shape = McShape.ControlCompact,
+                                    modifier = Modifier.heightIn(min = 48.dp)
+                                ) {
+                                    Text("🧹 Dọn Rác & Cache Ứng Dụng 1 Chạm", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
                             if (autoBackupItems.isNotEmpty()) {
                                 HorizontalDivider()
                                 Text(
@@ -395,16 +443,17 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {},
                 }
             }
 
-            // NÂNG CẤP PRO MAX: CHẾ ĐỘ CHƠI & BẢN ĐỒ DỰNG SẴN 1 CHẠM (ONEBLOCK, SKYBLOCK, PARKOUR, LUCKY ISLAND)
-            if (sectionTab == 4 && selectedWorldName == null) item(key = "playable_mode_worlds_pro_card") {
+            // NÂNG CẤP PRO MAX: KHO FULL PACK SINH TỒN 1 CHẠM (ONEBLOCK, ĐẠI DỊCH ZOMBIE, SĂN RỒNG RPG, SKYBLOCK, RLCRAFT, PARKOUR, LUCKY ISLAND)
+            if ((sectionTab == 0 || sectionTab == 4) && selectedWorldName == null) item(key = "playable_mode_worlds_pro_card") {
                 WorldToolsSection(
-                    "Tạo map chế độ chơi",
-                    if (supportsJavaWorldCreation) "Java · OneBlock, SkyBlock, Parkour và Đảo kho báu"
+                    "🎮 Kho Full Pack Sinh Tồn 1 Chạm",
+                    if (supportsJavaWorldCreation) "OneBlock 10 Cấp • Đại Dịch Zombie • Săn Rồng RPG • SkyBlock • RLCraft"
                     else "PowerNukkitX không hỗ trợ datapack Java",
-                    expandForTask = liveTask.active
+                    expandForTask = liveTask.active,
+                    initiallyExpanded = sectionTab == 4
                 ) {
                     Text(
-                        if (supportsJavaWorldCreation) "Tạo map mới kèm datapack, điểm hồi sinh và rương khởi đầu. Bạn sẽ xác nhận trước khi tạo và chuyển map."
+                        if (supportsJavaWorldCreation) "Chạm vào bất kỳ Pack Sinh Tồn nào bên dưới để hiện bảng Xác Nhận Chuyển Map. Map cũ của bạn luôn được giữ nguyên 100%, không tốn thêm RAM (Chơi chung được cả PC Java & Điện thoại PE)!"
                         else "Các chế độ này chỉ hỗ trợ máy chủ Java. Với PowerNukkitX, hãy nhập map Bedrock hoặc chuyển map đã có trong danh sách.",
                         fontSize = 14.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -436,40 +485,123 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {},
                         }
                         Spacer(Modifier.height(6.dp))
                     }
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        Button(
-                            onClick = { selectPlayableMode("oneblock", "OneBlock") },
-                            enabled = supportsJavaWorldCreation && ready && !running && !importing && !liveTask.active,
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                            shape = McShape.ControlCompact,
-                            modifier = Modifier.heightIn(min = 48.dp)
-                        ) { Text("OneBlock", fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
-                        Button(
-                            onClick = { selectPlayableMode("skyblock", "SkyBlock") },
-                            enabled = supportsJavaWorldCreation && ready && !running && !importing && !liveTask.active,
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                            shape = McShape.ControlCompact,
-                            modifier = Modifier.heightIn(min = 48.dp)
-                        ) { Text("SkyBlock", fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
+
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                        ProHostFeatures.PLAYABLE_WORLD_MODES.forEach { preset ->
+                            val existingPackWorld = worlds.firstOrNull { it.name == preset.folderName }
+                            val isCurrentlyActivePack = active == preset.folderName
+                            OutlinedCard(
+                                modifier = Modifier.fillMaxWidth(),
+                                border = BorderStroke(
+                                    if (isCurrentlyActivePack) 2.dp else 1.dp,
+                                    if (isCurrentlyActivePack) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+                                )
+                            ) {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth().padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            preset.titleVi,
+                                            fontSize = 15.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.weight(1f).padding(end = 6.dp)
+                                        )
+                                        Surface(
+                                            color = if (isCurrentlyActivePack) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondaryContainer,
+                                            shape = McShape.Chip
+                                        ) {
+                                            Text(
+                                                if (isCurrentlyActivePack) "🟢 ĐANG DÙNG" else preset.badgeVi,
+                                                color = if (isCurrentlyActivePack) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSecondaryContainer,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                            )
+                                        }
+                                    }
+                                    Text(
+                                        preset.descVi,
+                                        fontSize = 13.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        lineHeight = 18.sp
+                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            if (existingPackWorld != null) "📁 Đã tạo (${preset.folderName} • ${existingPackWorld.sizeText})"
+                                            else "📁 Thư mục: ${preset.folderName}",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Button(
+                                            onClick = { selectPlayableMode(preset.id, preset.titleVi) },
+                                            enabled = supportsJavaWorldCreation && ready && !running && !importing && !liveTask.active && !isCurrentlyActivePack,
+                                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                                            shape = McShape.ControlCompact
+                                        ) {
+                                            Text(
+                                                when {
+                                                    isCurrentlyActivePack -> "Đang dùng Pack này"
+                                                    existingPackWorld != null -> "🔄 Chuyển sang dùng"
+                                                    else -> "✨ Tạo & Dùng Pack này"
+                                                },
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
+
                     Spacer(Modifier.height(6.dp))
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        Button(
-                            onClick = { selectPlayableMode("parkour", "Parkour") },
-                            enabled = supportsJavaWorldCreation && ready && !running && !importing && !liveTask.active,
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                            shape = McShape.ControlCompact,
-                            modifier = Modifier.heightIn(min = 48.dp)
-                        ) { Text("Parkour", fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
-                        Button(
-                            onClick = { selectPlayableMode("lucky_island", "Đảo kho báu") },
-                            enabled = supportsJavaWorldCreation && ready && !running && !importing && !liveTask.active,
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                            shape = McShape.ControlCompact,
-                            modifier = Modifier.heightIn(min = 48.dp)
-                        ) { Text("Đảo kho báu", fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
+                    Text(
+                        "⚡ Đạo Cụ Pack Sinh Tồn 1 Chạm (Kích hoạt trực tiếp khi Server đang mở):",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        OutlinedButton(
+                            onClick = { vm.triggerSurvivalPackAction("supply_drop") },
+                            enabled = running,
+                            shape = McShape.ControlCompact
+                        ) { Text("🪂 Thả Tiếp Tế Quân Sự", fontSize = 13.sp) }
+                        OutlinedButton(
+                            onClick = { vm.triggerSurvivalPackAction("zombie_wave") },
+                            enabled = running,
+                            shape = McShape.ControlCompact
+                        ) { Text("🧟 Gọi Đợt Zombie", fontSize = 13.sp) }
+                        OutlinedButton(
+                            onClick = { vm.triggerSurvivalPackAction("dragon_boss") },
+                            enabled = running,
+                            shape = McShape.ControlCompact
+                        ) { Text("🐉 Triệu Hồi Boss Rồng", fontSize = 13.sp) }
+                        OutlinedButton(
+                            onClick = { vm.triggerSurvivalPackAction("dragon_kit") },
+                            enabled = running,
+                            shape = McShape.ControlCompact
+                        ) { Text("⚔️ Phát Bộ Đồ Săn Rồng", fontSize = 13.sp) }
                     }
-                    Spacer(Modifier.height(8.dp))
+
+                    Spacer(Modifier.height(4.dp))
                     Button(
                         onClick = { vm.enableFullAntiGriefShieldOneTap() },
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
@@ -477,7 +609,7 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {},
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
-                            "Bật bảo vệ map",
+                            "🛡️ Bật Bảo Vệ Map Toàn Diện (Giữ đồ + Chống nổ Creeper)",
                             fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -634,7 +766,12 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {},
 
         if (selectedWorldName == null) item(key = "world_sections") {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                listOf(0 to "Map (${worlds.size})", 4 to "Tạo mới", 2 to "Nhập map", 1 to "Sao lưu").forEach { (id, label) ->
+                listOf(
+                    0 to "🌍 Danh sách Map (${worlds.size})",
+                    4 to "🎮 Pack Sinh Tồn & Tạo Map",
+                    2 to "📥 Nhập Map & Dọn Rác",
+                    1 to "💾 Sao Lưu (${backupItems.size})"
+                ).forEach { (id, label) ->
                     FilterChip(selected = sectionTab == id || (id == 1 && sectionTab == 3),
                         onClick = { sectionTab = id; selectedPaths = emptySet() }, label = { Text(label) })
                 }
@@ -650,10 +787,12 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {},
             }
         }
 
-        additionalWorldTools()
+        if (sectionTab != 0) {
+            additionalWorldTools()
+        }
 
         if (sectionTab == 0) {
-            // ── TAB 0: THẾ GIỚI BÊN TRONG SERVER ĐANG CHỌN & CÁC SERVER KHÁC ──
+            // ── TAB 0: ƯU TIÊN SỐ 1 — DANH SÁCH THẾ GIỚI BÊN TRONG SERVER ĐANG CHỌN ──
             if (running) {
                 item {
                     Surface(
@@ -679,7 +818,7 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {},
                 item {
                     HostCard("Chưa có thế giới trong Server đang chọn") {
                         Text(
-                            "Chọn Nhập map để thêm map có sẵn, hoặc Tạo mới để chọn seed và chế độ chơi. Máy chủ cũng có thể tự sinh thế giới khi khởi động.",
+                            "Chọn Pack Sinh Tồn bên dưới (OneBlock, Đại Dịch Zombie, Săn Rồng RPG...) để dựng ngay 1 chạm, hoặc chọn Nhập map để thêm map có sẵn.",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 14.sp
                         )
@@ -692,11 +831,95 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {},
                 val isJava = world.kind == Worlds.Kind.Java
                 val isBedrockServer = vm.isPowerNukkitXActive()
                 val compatible = (isJava && !isBedrockServer) || (!isJava && isBedrockServer)
+                val modeBadge = remember(world.dir, world.name) {
+                    ProHostFeatures.detectWorldPlayableModeLabel(world.dir)
+                }
 
                 if (selectedWorldName == null) {
-                    HostAction(world.name,
-                        "${if (world.isActive) "Đang dùng" else "Đang cất giữ"} · ${if (isJava) "Java" else "Bedrock"} · ${world.sizeText}${if (world.sizeTruncated) "+" else ""}",
-                        Icons.Outlined.Public) { selectedWorldName = world.name }
+                    OutlinedCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        border = BorderStroke(
+                            if (world.isActive) 2.dp else 1.dp,
+                            if (world.isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+                        )
+                    ) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                                    Text(
+                                        world.name,
+                                        fontSize = 16.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (world.isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        "$modeBadge • ${if (isJava) "Java" else "Bedrock"} • ${world.sizeText}${if (world.sizeTruncated) "+" else ""}",
+                                        fontSize = 13.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Surface(
+                                    color = if (world.isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                    shape = McShape.Chip
+                                ) {
+                                    Text(
+                                        if (world.isActive) "🟢 ĐANG DÙNG" else "📦 CẤT GIỮ",
+                                        color = if (world.isActive) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                if (!world.isActive) {
+                                    Button(
+                                        onClick = { activate = world },
+                                        enabled = canManageWorlds && compatible,
+                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                                        shape = McShape.ControlCompact
+                                    ) {
+                                        Text("🔄 Chuyển sang dùng Map này", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                    }
+                                }
+                                OutlinedButton(
+                                    onClick = { vm.backupCurrentWorldToTelegramOneTap(world.name) },
+                                    enabled = !liveTask.active,
+                                    shape = McShape.ControlCompact
+                                ) {
+                                    Text("☁️ Lưu Telegram", fontSize = 13.sp)
+                                }
+                                OutlinedButton(
+                                    onClick = {
+                                        pendingExport = world.name
+                                        exportServer = config.activeCoreName
+                                        exporter.launch("World_${world.name}.zip")
+                                    },
+                                    enabled = !running && !importing,
+                                    shape = McShape.ControlCompact
+                                ) {
+                                    Text("📤 Xuất ZIP", fontSize = 13.sp)
+                                }
+                                OutlinedButton(
+                                    onClick = { selectedWorldName = world.name },
+                                    shape = McShape.ControlCompact
+                                ) {
+                                    Text("⚙️ Quản lý / Đổi tên / Xóa", fontSize = 13.sp)
+                                }
+                            }
+                        }
+                    }
                 } else HostCard(world.name) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -823,6 +1046,10 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {},
                         }
                     }
                 }
+            }
+
+            if (selectedWorldName == null) {
+                additionalWorldTools()
             }
 
             if (selectedWorldName == null && otherServerWorlds.isNotEmpty()) {
@@ -1157,26 +1384,56 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {},
     }
 
     pendingPlayableMode?.takeIf { supportsJavaWorldCreation }?.let { (modeId, title) ->
-        val folder = ProHostFeatures.PLAYABLE_WORLD_MODES.firstOrNull { it.id == modeId }?.folderName.orEmpty()
+        val modeSpec = ProHostFeatures.PLAYABLE_WORLD_MODES.firstOrNull { it.id == modeId }
+        val folder = modeSpec?.folderName.orEmpty()
         AlertDialog(
             onDismissRequest = { pendingPlayableMode = null },
-            title = { Text("Tạo và chuyển sang $title?") },
+            title = { Text("Xác nhận dùng Pack: $title?", fontWeight = FontWeight.Bold) },
             text = {
-                Text(
-                    "Ứng dụng sẽ cài datapack vào '$folder' và chọn map này cho lần khởi động tiếp theo. " +
-                        "Nếu thư mục này đã tồn tại, datapack sẽ được cập nhật và có thể dựng lại khu vực khởi đầu. " +
-                        "Muốn tiếp tục map cũ, hãy chọn map trong danh sách. Máy chủ phải dừng; thao tác này không tự tạo bản sao lưu."
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
+                        shape = McShape.ControlCompact
+                    ) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text("📌 Map đang chọn hiện tại: '${active.ifBlank { "world" }}'", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                            Text("➡️ Sẽ chuyển sang Pack: '$folder'", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            Text("✅ Map cũ '${active.ifBlank { "world" }}' được giữ nguyên 100% trong danh sách, bạn có thể chuyển lại bất cứ lúc nào!", fontSize = 13.sp, color = MaterialTheme.colorScheme.secondary)
+                        }
+                    }
+                    modeSpec?.let { spec ->
+                        Text(spec.descVi, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = backupBeforeSwitch,
+                            onCheckedChange = { backupBeforeSwitch = it }
+                        )
+                        Text(
+                            "Tự động sao lưu ZIP Map '${active.ifBlank { "world" }}' trước khi chuyển (An toàn tuyệt đối)",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
             },
             confirmButton = {
-                TextButton(
+                Button(
                     onClick = {
+                        val doBackup = backupBeforeSwitch
                         pendingPlayableMode = null
-                        if (vm.isPowerNukkitXActive()) return@TextButton
-                        vm.createPlayableModeWorldOneTap(modeId)
+                        if (vm.isPowerNukkitXActive()) return@Button
+                        vm.createPlayableModeWorldOneTap(modeId, backupCurrentFirst = doBackup)
                     },
-                    enabled = supportsJavaWorldCreation && ready && !running && !importing && !liveTask.active
-                ) { Text("Tạo và chuyển map") }
+                    enabled = supportsJavaWorldCreation && ready && !running && !importing && !liveTask.active,
+                    shape = McShape.ControlCompact
+                ) { Text("✅ Xác nhận dùng Pack này", fontWeight = FontWeight.Bold) }
             },
             dismissButton = {
                 TextButton(onClick = { pendingPlayableMode = null }) { Text("Hủy") }
@@ -1538,18 +1795,48 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {},
     activate?.let { world ->
         AlertDialog(
             onDismissRequest = { activate = null },
-            title = { Text("Chuyển sang dùng '${world.name}'?") },
+            title = { Text("Xác nhận chuyển sang Map '${world.name}'?", fontWeight = FontWeight.Bold) },
             text = {
-                Text("Máy chủ phải dừng trước khi chuyển map. Lần khởi động tiếp theo sẽ mở '${world.name}'. Thao tác này đổi map được chọn và không xóa thư mục map hiện tại '${active.ifBlank { "world" }}'. Hãy sao lưu trước nếu cần bản dự phòng.")
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
+                        shape = McShape.ControlCompact
+                    ) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text("📌 Map đang dùng: '${active.ifBlank { "world" }}'", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                            Text("➡️ Sẽ chuyển sang: '${world.name}' (${world.sizeText})", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            Text("✅ Map cũ '${active.ifBlank { "world" }}' vẫn nằm nguyên trong danh sách, KHÔNG bị xóa hay mất đồ!", fontSize = 13.sp, color = MaterialTheme.colorScheme.secondary)
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = backupBeforeSwitch,
+                            onCheckedChange = { backupBeforeSwitch = it }
+                        )
+                        Text(
+                            "Tự động sao lưu ZIP Map '${active.ifBlank { "world" }}' trước khi chuyển (Khuyên dùng)",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
             },
             confirmButton = {
-                TextButton(
+                Button(
                     onClick = {
+                        val doBackup = backupBeforeSwitch
                         activate = null
-                        vm.setActiveWorld(world.name)
+                        vm.setActiveWorld(world.name, backupCurrentFirst = doBackup)
                     },
-                    enabled = !running && !importing
-                ) { Text("Kích hoạt ngay", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium) }
+                    enabled = !running && !importing,
+                    shape = McShape.ControlCompact
+                ) { Text("✅ Xác nhận chuyển sang '${world.name}'", fontWeight = FontWeight.Bold) }
             },
             dismissButton = {
                 TextButton(onClick = { activate = null }) { Text("Hủy") }

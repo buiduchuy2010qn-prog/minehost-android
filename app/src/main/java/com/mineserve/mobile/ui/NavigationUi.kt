@@ -139,11 +139,22 @@ internal fun MineHostNavigation(
     page: SubPage?,
     onTab: (McTab) -> Unit,
     onNavigate: (SubPage) -> Unit,
+    onCleanStorage: (() -> Unit)? = null,
+    liveStatusPillText: String? = null,
+    liveStatusState: Int = 0, // 0 = offline, 1 = starting, 2 = online, 3 = warning
+    onLiveStatusClick: (() -> Unit)? = null,
+    drawerStatusSummary: String? = null,
+    onQuickTelegramBackup: (() -> Unit)? = null,
+    enableQuickSearch: Boolean = false,
     content: @Composable () -> Unit
 ) {
     var menuOpen by rememberSaveable { mutableStateOf(false) }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
     val menuVisibility = remember { MutableTransitionState(false) }
-    LaunchedEffect(menuOpen) { menuVisibility.targetState = menuOpen }
+    LaunchedEffect(menuOpen) {
+        menuVisibility.targetState = menuOpen
+        if (!menuOpen) searchQuery = ""
+    }
     fun choose(action: () -> Unit) {
         menuOpen = false
         action()
@@ -151,12 +162,56 @@ internal fun MineHostNavigation(
     CompositionLocalProvider(LocalMineHostChrome provides true) {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
             Surface(color = MaterialTheme.colorScheme.surface) {
-                Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(start = 20.dp, end = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Medium,
-                        modifier = Modifier.weight(1f).padding(vertical = 12.dp))
-                    IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(48.dp)) {
-                        Icon(Icons.Outlined.Menu, contentDescription = "Mở danh mục")
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(start = 18.dp, end = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        title,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f).padding(vertical = 10.dp)
+                    )
+                    if (!liveStatusPillText.isNullOrBlank()) {
+                        val pillBg = when (liveStatusState) {
+                            2 -> androidx.compose.ui.graphics.Color(0xFF10B981).copy(alpha = 0.16f)
+                            1 -> androidx.compose.ui.graphics.Color(0xFF0EA5E9).copy(alpha = 0.16f)
+                            3 -> androidx.compose.ui.graphics.Color(0xFFF59E0B).copy(alpha = 0.18f)
+                            else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
+                        }
+                        val pillFg = when (liveStatusState) {
+                            2 -> androidx.compose.ui.graphics.Color(0xFF059669)
+                            1 -> androidx.compose.ui.graphics.Color(0xFF0284C7)
+                            3 -> androidx.compose.ui.graphics.Color(0xFFD97706)
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                        Surface(
+                            onClick = { onLiveStatusClick?.invoke() },
+                            enabled = onLiveStatusClick != null,
+                            shape = RoundedCornerShape(20.dp),
+                            color = pillBg,
+                            border = androidx.compose.foundation.BorderStroke(
+                                1.dp,
+                                pillFg.copy(alpha = if (liveStatusState == 0) 0.25f else 0.55f)
+                            )
+                        ) {
+                            Text(
+                                liveStatusPillText,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = pillFg,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                            )
+                        }
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(24.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
+                    ) {
+                        IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(48.dp)) {
+                            Icon(Icons.Outlined.Menu, contentDescription = "Mở danh mục")
+                        }
                     }
                 }
             }
@@ -191,53 +246,174 @@ internal fun MineHostNavigation(
                         shape = RoundedCornerShape(topStart = 24.dp, bottomStart = 24.dp)
                     ) {
                         Box(Modifier.safeDrawingPadding()) {
+                        val q = searchQuery.trim().lowercase()
+                        fun matchesSearch(label: String, detail: String): Boolean =
+                            q.isBlank() || label.lowercase().contains(q) || detail.lowercase().contains(q)
+
                         Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
                             Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text("Danh mục", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                                Text("Danh mục", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                                 IconButton(onClick = { menuOpen = false }, modifier = Modifier.size(48.dp)) {
                                     Icon(Icons.Outlined.Close, contentDescription = "Đóng danh mục")
                                 }
                             }
-                            Text(serverName ?: "Chưa chọn máy chủ", style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
-                            DrawerGroup("Truy cập nhanh")
-                            mineHostMainTabs.forEach { (destination, label) ->
-                                DrawerLink(label, when (destination) {
+                            if (drawerStatusSummary != null) {
+                                Surface(
+                                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
+                                    shape = RoundedCornerShape(14.dp),
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth()
+                                ) {
+                                    Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                        Text(
+                                            serverName ?: "Chưa chọn máy chủ",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text(
+                                            drawerStatusSummary,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+                            } else {
+                                Text(serverName ?: "Chưa chọn máy chủ", style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+                            }
+
+                            if (enableQuickSearch) {
+                                OutlinedTextField(
+                                    value = searchQuery,
+                                    onValueChange = { searchQuery = it },
+                                    singleLine = true,
+                                    placeholder = { Text("🔍 Tìm nhanh công cụ (skin, lag, tele...)") },
+                                    trailingIcon = {
+                                        if (searchQuery.isNotEmpty()) {
+                                            IconButton(onClick = { searchQuery = "" }) {
+                                                Icon(Icons.Outlined.Clear, contentDescription = "Xóa tìm kiếm")
+                                            }
+                                        }
+                                    },
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)
+                                )
+                            }
+
+                            if (q.isBlank() && (onQuickTelegramBackup != null || onCleanStorage != null)) {
+                                Column(
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                        if (onQuickTelegramBackup != null) {
+                                            OutlinedButton(
+                                                onClick = { choose { onQuickTelegramBackup() } },
+                                                shape = RoundedCornerShape(10.dp),
+                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                                                modifier = Modifier.weight(1f)
+                                            ) { Text("☁️ Lưu Map Tele", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold) }
+                                        }
+                                        if (onCleanStorage != null) {
+                                            OutlinedButton(
+                                                onClick = { choose { onCleanStorage() } },
+                                                shape = RoundedCornerShape(10.dp),
+                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                                                modifier = Modifier.weight(1f)
+                                            ) { Text("🧹 Dọn Rác", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold) }
+                                        }
+                                    }
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                        OutlinedButton(
+                                            onClick = { choose { onTab(McTab.Worlds) } },
+                                            shape = RoundedCornerShape(10.dp),
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                                            modifier = Modifier.weight(1f)
+                                        ) { Text("🗺️ Đổi Map", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold) }
+                                        OutlinedButton(
+                                            onClick = { choose { onNavigate(SubPage.Remote) } },
+                                            shape = RoundedCornerShape(10.dp),
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                                            modifier = Modifier.weight(1f)
+                                        ) { Text("✈️ Bot Telegram", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold) }
+                                    }
+                                }
+                            }
+
+                            val quickTabsFiltered = mineHostMainTabs.map { (destination, label) ->
+                                val detail = when (destination) {
                                     McTab.Dashboard -> "Bật / dừng, IP và trò chuyện"
                                     McTab.Terminal -> "Lệnh và nhật ký trực tiếp"
-                                    McTab.Worlds -> "Map, nhập và bản sao lưu"
+                                    McTab.Worlds -> "Map, pack sinh tồn và sao lưu"
                                     McTab.Players -> "Online, OP và túi đồ"
                                     else -> "Kho tải và các gói đã cài"
-                                }, destination.icon, page == null && tab == destination) { choose { onTab(destination) } }
+                                }
+                                Triple(destination, label, detail)
+                            }.filter { (_, label, detail) -> matchesSearch(label, detail) }
+
+                            if (quickTabsFiltered.isNotEmpty()) {
+                                DrawerGroup("Truy cập nhanh")
+                                quickTabsFiltered.forEach { (destination, label, detail) ->
+                                    DrawerLink(label, detail, destination.icon, page == null && tab == destination) { choose { onTab(destination) } }
+                                }
                             }
-                            DrawerGroup("Vận hành & quản lý")
-                            listOf(
+
+                            val manageItems = listOf(
                                 Triple(SubPage.ServerList, "Danh sách máy chủ", "Chọn, tạo và quản lý server"),
-                                Triple(SubPage.Files, "Tệp & thư mục", "World, mod, plugin và cấu hình"),
-                                Triple(SubPage.Properties, "Cấu hình server", "server.properties và thiết lập chơi"),
-                                Triple(SubPage.Performance, "Tối ưu & chạy nền", "RAM, chống lag, pin và nhiệt độ"),
-                                Triple(SubPage.WorldRules, "Luật chơi & tọa độ", "Giữ đồ, thời tiết, biên giới và warp"),
+                                Triple(SubPage.Crossplay, "Chơi chung PC & PE", "Cài GeyserMC cho điện thoại"),
+                                Triple(SubPage.WorldRules, "Luật chơi & tọa độ", "Giữ đồ, Scoreboard, BossBar và warp"),
                                 Triple(SubPage.PlayerTools, "Tiện ích người chơi", "Skin, danh hiệu và bảo vệ OP"),
                                 Triple(SubPage.AddonTools, "Gói mở rộng", "Addon, voice chat và datapack"),
+                                Triple(SubPage.Files, "Tệp & thư mục", "World, mod, plugin và cấu hình"),
+                                Triple(SubPage.Properties, "Cấu hình server", "server.properties và thiết lập chơi"),
+                                Triple(SubPage.Performance, "Tối ưu & chạy nền", "RAM, Radar dọn lag, pin và nhiệt độ"),
                                 Triple(SubPage.Automation, "Lịch tự động", "Sao lưu và khởi động theo lịch")
-                            ).forEach { (target, label, detail) ->
-                                DrawerLink(label, detail, when (target) {
-                                    SubPage.Files -> Icons.Outlined.Folder
-                                    SubPage.ServerList -> Icons.Outlined.Dns
-                                    SubPage.Performance -> Icons.Outlined.Tune
-                                    SubPage.WorldRules -> Icons.Outlined.Public
-                                    SubPage.PlayerTools -> Icons.Outlined.People
-                                    SubPage.AddonTools -> Icons.Outlined.Extension
-                                    SubPage.Automation -> Icons.Outlined.Schedule
-                                    else -> Icons.Outlined.Settings
-                                }, page == target) { choose { onNavigate(target) } }
+                            ).filter { (_, label, detail) -> matchesSearch(label, detail) }
+
+                            if (manageItems.isNotEmpty()) {
+                                DrawerGroup("Vận hành & quản lý")
+                                manageItems.forEach { (target, label, detail) ->
+                                    DrawerLink(label, detail, when (target) {
+                                        SubPage.Files -> Icons.Outlined.Folder
+                                        SubPage.ServerList -> Icons.Outlined.Dns
+                                        SubPage.Crossplay -> Icons.Outlined.Devices
+                                        SubPage.Performance -> Icons.Outlined.Tune
+                                        SubPage.WorldRules -> Icons.Outlined.Public
+                                        SubPage.PlayerTools -> Icons.Outlined.People
+                                        SubPage.AddonTools -> Icons.Outlined.Extension
+                                        SubPage.Automation -> Icons.Outlined.Schedule
+                                        else -> Icons.Outlined.Settings
+                                    }, page == target) { choose { onNavigate(target) } }
+                                }
                             }
-                            DrawerGroup("Kết nối & ứng dụng")
-                            DrawerLink("Điều khiển từ xa", "Telegram, Discord và Web nội bộ", Icons.Outlined.Cloud, page == SubPage.Remote) { choose { onNavigate(SubPage.Remote) } }
-                            DrawerLink("Mạng nâng cao", "FRP, Bore và cấu hình đường hầm", Icons.Outlined.Public, page == SubPage.Network) { choose { onNavigate(SubPage.Network) } }
-                            DrawerLink("Môi trường Java", "Phiên bản Java và môi trường chạy", Icons.Outlined.Memory, page == SubPage.EnvManager) { choose { onNavigate(SubPage.EnvManager) } }
-                            DrawerLink("Chẩn đoán", "Kiểm tra và hướng dẫn sửa lỗi", Icons.Outlined.Build, page == SubPage.Diagnostics) { choose { onNavigate(SubPage.Diagnostics) } }
-                            DrawerLink("Công cụ & ứng dụng", "Giao diện, Google Drive và cập nhật", Icons.Outlined.Settings, page == null && tab == McTab.Settings) { choose { onTab(McTab.Settings) } }
+
+                            val appItems = listOf(
+                                Triple(SubPage.Remote, "Điều khiển từ xa", "Telegram Cloud, Discord và Web PIN"),
+                                Triple(SubPage.Network, "Mạng nâng cao", "FRP, Bore và cấu hình đường hầm"),
+                                Triple(SubPage.EnvManager, "Môi trường Java", "Phiên bản Java và môi trường chạy"),
+                                Triple(SubPage.Diagnostics, "Chẩn đoán", "Kiểm tra và hướng dẫn sửa lỗi")
+                            ).filter { (_, label, detail) -> matchesSearch(label, detail) }
+
+                            val showClean = onCleanStorage != null && matchesSearch("Dọn rác bộ nhớ", "Xóa tệp tạm, log cũ và cache")
+                            val showAppSettings = matchesSearch("Công cụ & ứng dụng", "Giao diện, Google Drive và cập nhật")
+
+                            if (appItems.isNotEmpty() || showClean || showAppSettings) {
+                                DrawerGroup("Kết nối & ứng dụng")
+                                appItems.forEach { (target, label, detail) ->
+                                    DrawerLink(label, detail, when (target) {
+                                        SubPage.Remote -> Icons.Outlined.Cloud
+                                        SubPage.Network -> Icons.Outlined.Public
+                                        SubPage.EnvManager -> Icons.Outlined.Memory
+                                        else -> Icons.Outlined.Build
+                                    }, page == target) { choose { onNavigate(target) } }
+                                }
+                                if (showClean) {
+                                    DrawerLink("Dọn rác bộ nhớ", "Xóa tệp tạm, log cũ và cache", Icons.Outlined.DeleteSweep, false) { choose { onCleanStorage?.invoke() } }
+                                }
+                                if (showAppSettings) {
+                                    DrawerLink("Công cụ & ứng dụng", "Giao diện, Google Drive và cập nhật", Icons.Outlined.Settings, page == null && tab == McTab.Settings) { choose { onTab(McTab.Settings) } }
+                                }
+                            }
                         }
                         }
                     }

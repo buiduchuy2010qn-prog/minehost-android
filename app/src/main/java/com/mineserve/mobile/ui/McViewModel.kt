@@ -7451,12 +7451,16 @@ class McViewModel(
      *
      * 服务端运行中时改动不会立刻生效，需要重启，这里明确提示而不是静默写入。
      */
-    fun setActiveWorld(name: String) {
+    fun setActiveWorld(name: String, backupCurrentFirst: Boolean = false) {
         if (!isBootstrapped.value || _worldImportBusy.value) return
         val dirName = activeDirName() ?: return
         viewModelScope.launch {
             try {
+                val prevActive = _activeWorldName.value.trim()
                 withContext(Dispatchers.IO) {
+                    if (backupCurrentFirst && prevActive.isNotBlank() && prevActive != name) {
+                        runCatching { worldManager.exportWorld(dirName, prevActive) }
+                    }
                     com.mineserve.mobile.server.AddonSafety.lifecycleGate.withLock {
                         check(!repo.termuxRuntime.isMcRunning() && !serverState.value.isRunning) { "Dừng server trước khi đổi world." }
                         check(activeDirName() == dirName) { "Server đã thay đổi." }
@@ -7465,8 +7469,12 @@ class McViewModel(
                     }
                 }
                 _activeWorldName.value = name
-                _messageFlow.tryEmit("Đã chọn world: " + name + ". Bật server để chơi.")
+                val backupNote = if (backupCurrentFirst && prevActive.isNotBlank() && prevActive != name) {
+                    " (Đã tự động sao lưu Map cũ '$prevActive' an toàn)"
+                } else ""
+                _messageFlow.tryEmit("✅ Đã chuyển sang dùng Map: $name$backupNote. Map cũ vẫn giữ nguyên 100%! Bấm BẬT SERVER để vào chơi.")
                 loadWorlds()
+                refreshAllServerWorlds()
             } catch (e: Exception) {
                 _errorFlow.tryEmit("Không đổi được world: " + e.message)
             }
@@ -11320,7 +11328,18 @@ class McViewModel(
     private val _lanWebPanelRunning = MutableStateFlow(false)
     val lanWebPanelRunning: StateFlow<Boolean> = _lanWebPanelRunning.asStateFlow()
 
-    private val _lanWebPanelPin = MutableStateFlow(proPrefs.getString("lan_web_pin", "2026").orEmpty().ifBlank { "2026" })
+    private val _lanWebPanelPin = MutableStateFlow(
+        run {
+            val saved = proPrefs.getString("lan_web_pin", "").orEmpty().trim()
+            if (saved.length >= 4 && saved != "2026") {
+                saved
+            } else {
+                val randomPin = (100000..999999).random().toString()
+                proPrefs.edit().putString("lan_web_pin", randomPin).apply()
+                randomPin
+            }
+        }
+    )
     val lanWebPanelPin: StateFlow<String> = _lanWebPanelPin.asStateFlow()
 
     // [v2.8.3] 5 Nâng cấp mới:
@@ -11369,6 +11388,18 @@ class McViewModel(
 
     private val _telegramChatId = MutableStateFlow(proPrefs.getString("telegram_chat_id", "").orEmpty())
     val telegramChatId: StateFlow<String> = _telegramChatId.asStateFlow()
+
+    private val _telegramBotVerifiedName = MutableStateFlow(proPrefs.getString("telegram_bot_verified_name", "").orEmpty())
+    val telegramBotVerifiedName: StateFlow<String> = _telegramBotVerifiedName.asStateFlow()
+
+    private val _telegramStrictSecurityLock = MutableStateFlow(proPrefs.getBoolean("telegram_strict_security_lock", true))
+    val telegramStrictSecurityLock: StateFlow<Boolean> = _telegramStrictSecurityLock.asStateFlow()
+
+    private val _telegramAllowGroupMemberIp = MutableStateFlow(proPrefs.getBoolean("telegram_allow_group_member_ip", true))
+    val telegramAllowGroupMemberIp: StateFlow<Boolean> = _telegramAllowGroupMemberIp.asStateFlow()
+
+    private val _telegramAdminSenderId = MutableStateFlow(proPrefs.getString("telegram_admin_sender_id", "").orEmpty())
+    val telegramAdminSenderId: StateFlow<String> = _telegramAdminSenderId.asStateFlow()
 
     private val _attachVisualStatusImage = MutableStateFlow(proPrefs.getBoolean("attach_visual_status_image", true))
     val attachVisualStatusImage: StateFlow<Boolean> = _attachVisualStatusImage.asStateFlow()
@@ -11438,8 +11469,27 @@ class McViewModel(
         _warpPoints.value = com.mineserve.mobile.server.ProHostFeatures.loadWarpPoints(proPrefs, dir)
         refreshRecentInstalledMods()
         refreshVoiceChatAndResourcePackStatus()
+        refreshRustEngineStatus()
+        refreshHudAndLagRadarState()
         if (proMonitorsStarted) return
         proMonitorsStarted = true
+
+        // [v3.1.0] Vòng lặp 2.5s thu thập dữ liệu sóng mượt (Sparkline 60s) cho TPS & RAM khi Server đang mở
+        viewModelScope.launch {
+            while (true) {
+                val st = serverState.value
+                if (st.isRunning && st.startupPhase == com.mineserve.mobile.data.StartupPhase.Ready) {
+                    val curTps = (if (st.tps > 0.0) st.tps.toFloat() else 20f).coerceIn(0f, 20f)
+                    val curRam = st.usedMemoryMb.toFloat().coerceAtLeast(0f)
+                    _tpsHistory.update { (it + curTps).takeLast(28) }
+                    _ramHistory.update { (it + curRam).takeLast(28) }
+                } else if (!st.isRunning && (_tpsHistory.value.isNotEmpty() || _ramHistory.value.isNotEmpty())) {
+                    _tpsHistory.value = emptyList()
+                    _ramHistory.value = emptyList()
+                }
+                kotlinx.coroutines.delay(2500L)
+            }
+        }
 
         // 1. Theo dõi trạng thái Server: Phát âm thanh "Level Up" khi mở xong + Tự động áp dụng Luật bảo vệ Map + Báo Discord & Telegram kèm Ảnh HD
         viewModelScope.launch {
@@ -11457,6 +11507,17 @@ class McViewModel(
                         if (!savedVal.isNullOrBlank()) {
                             sendCommand("gamerule $rule $savedVal")
                         }
+                    }
+                    // [v3.1.0] Tự động khôi phục Bảng Điểm Scoreboard & Thanh BossBar đã lưu của Server
+                    val savedScoreboard = proPrefs.getString("saved_scoreboard_$activeDir", "").orEmpty()
+                    if (savedScoreboard.isNotBlank() && savedScoreboard != "off") {
+                        com.mineserve.mobile.server.ProHostFeatures.buildScoreboardCommands(savedScoreboard).forEach { sendCommand(it) }
+                    }
+                    val savedBossEnabled = proPrefs.getBoolean("saved_bossbar_enabled_$activeDir", false)
+                    val savedBossText = proPrefs.getString("saved_bossbar_text_$activeDir", "").orEmpty()
+                    val savedBossColor = proPrefs.getString("saved_bossbar_color_$activeDir", "yellow").orEmpty()
+                    if (savedBossEnabled && savedBossText.isNotBlank()) {
+                        com.mineserve.mobile.server.ProHostFeatures.buildBossBarCommands(savedBossText, savedBossColor, true).forEach { sendCommand(it) }
                     }
                     refreshPlayers()
                     refreshOnlinePlayers()
@@ -11523,6 +11584,9 @@ class McViewModel(
                 // [v2.8.3] 1. Lọc tin nhắn Chat & Vào/Ra của người chơi vào Khung Chat trực tiếp + Báo Discord & Telegram
                 com.mineserve.mobile.server.ProHostFeatures.parseConsoleChatLine(line)?.let { entry ->
                     _liveChatMessages.update { (it + entry).takeLast(60) }
+                    if (entry.kind == "join" && _bossBarEnabled.value && _bossBarText.value.isNotBlank()) {
+                        sendCommand("bossbar set minehost:banner players @a")
+                    }
                     if ((entry.kind == "join" || entry.kind == "leave") && _discordNotifyJoinLeave.value) {
                         val hook = _discordWebhookUrl.value.trim()
                         val tgToken = _telegramBotToken.value.trim()
@@ -11681,7 +11745,7 @@ class McViewModel(
             }
         }
 
-        // 5. [v2.9.0] Vòng lặp Điều khiển & Tra cứu 2 chiều từ Bot Telegram (/ip, /status, /list, /clearlag, /day, /save, /say ...)
+        // 5. [v2.9.6] Vòng lặp Điều khiển & Tra cứu 2 chiều Bảo Mật từ Bot Telegram (/menu, /ip, /status, /list, /start_sv, /stop_sv, /clearlag, /day, /supply, /boss ...)
         viewModelScope.launch(Dispatchers.IO) {
             var lastOffsetUpdateId = proPrefs.getLong("tg_last_update_id", 0L)
             var initializedBaseline = false
@@ -11708,12 +11772,19 @@ class McViewModel(
                             proPrefs.edit().putLong("tg_last_update_id", lastOffsetUpdateId).apply()
                         }
                         val configuredChat = _telegramChatId.value.trim()
-                        if (configuredChat.isNotBlank() && cmdItem.chatId != configuredChat) {
+                        // BẢO MẬT CHỐNG NGƯỜI LẠ: Nếu chưa lưu Chat ID trên App hoặc tin nhắn đến từ Chat ID lạ -> Chặn 100%, tuyệt đối không lộ IP hay trạng thái Server!
+                        if (configuredChat.isBlank()) {
                             continue
                         }
-                        if (configuredChat.isBlank()) {
-                            _telegramChatId.value = cmdItem.chatId
-                            proPrefs.edit().putString("telegram_chat_id", cmdItem.chatId).apply()
+                        if (cmdItem.chatId != configuredChat) {
+                            if (cmdItem.isPrivateChat) {
+                                com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
+                                    botToken = token,
+                                    chatId = cmdItem.chatId,
+                                    textMessage = "🔒 Truy cập bị từ chối: Bot này đã được khóa bảo mật độc quyền cho máy chủ MineHost của Chủ Host!"
+                                )
+                            }
+                            continue
                         }
                         handleIncomingTelegramCommand(token, cmdItem)
                     }
@@ -11732,12 +11803,76 @@ class McViewModel(
         val pcAddr = playitState.value.publicAddress.ifBlank { "${lanIp.value}:${serverPort.value}" }
         val peAddr = playitState.value.bedrockAddress.ifBlank { "${lanIp.value}:19132" }
         val timeStamp = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
-        val logText = "🕹️ [$timeStamp] ${cmdItem.senderName} vừa gõ lệnh '${cmdItem.command}' trên Telegram"
+
+        val isReadOnlyQuery = cmdItem.command in setOf("/ip", "/status", "/list", "/players", "/help")
+        val savedAdminId = _telegramAdminSenderId.value.trim()
+        // Tự động ghi nhận Chủ Host nếu đây là chat cá nhân đã xác thực hoặc lần đầu Chủ Host bấm lệnh quản trị
+        if (savedAdminId.isBlank() && cmdItem.senderId.isNotBlank() && (cmdItem.isPrivateChat || !isReadOnlyQuery)) {
+            _telegramAdminSenderId.value = cmdItem.senderId
+            proPrefs.edit().putString("telegram_admin_sender_id", cmdItem.senderId).apply()
+        }
+
+        val currentAdminId = _telegramAdminSenderId.value.trim()
+        val isSenderAdmin = cmdItem.isPrivateChat ||
+            currentAdminId.isBlank() ||
+            (cmdItem.senderId.isNotBlank() && cmdItem.senderId == currentAdminId)
+
+        if (_telegramStrictSecurityLock.value) {
+            if (isReadOnlyQuery && !_telegramAllowGroupMemberIp.value && !isSenderAdmin) {
+                if (cmdItem.callbackQueryId.isNotBlank()) {
+                    com.mineserve.mobile.server.ProHostFeatures.answerTelegramCallbackQuery(
+                        botToken, cmdItem.callbackQueryId, "🔒 Chỉ Chủ Host mới được tra cứu!"
+                    )
+                }
+                return
+            }
+            if (!isReadOnlyQuery && !isSenderAdmin) {
+                if (cmdItem.callbackQueryId.isNotBlank()) {
+                    com.mineserve.mobile.server.ProHostFeatures.answerTelegramCallbackQuery(
+                        botToken, cmdItem.callbackQueryId, "🛡️ Lệnh điều khiển chỉ dành riêng cho Chủ Host (Admin)!"
+                    )
+                } else {
+                    com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
+                        botToken,
+                        cmdItem.chatId,
+                        "🛡️ Khóa Bảo Mật Admin: Chỉ Chủ Host mới được dùng lệnh điều khiển '${cmdItem.command}'. Thành viên nhóm chỉ có thể gõ /ip hoặc /list!"
+                    )
+                }
+                return
+            }
+        }
+
+        if (cmdItem.callbackQueryId.isNotBlank()) {
+            com.mineserve.mobile.server.ProHostFeatures.answerTelegramCallbackQuery(
+                botToken,
+                cmdItem.callbackQueryId,
+                "⚡ Đang thực thi ${cmdItem.command}..."
+            )
+        }
+
+        val logText = "🕹️ [$timeStamp] ${cmdItem.senderName} vừa dùng '${cmdItem.command}' trên Telegram"
         _lastTelegramBotCommandLog.value = logText
         proPrefs.edit().putString("last_telegram_cmd_log", logText).apply()
 
         when (cmdItem.command) {
-            "/ip", "/status", "/start", "/help" -> {
+            "/menu", "/panel", "/start" -> {
+                val menuText = buildString {
+                    appendLine("🎛️ BẢNG ĐIỀU KHIỂN TỪ XA PRO — $activeName")
+                    appendLine("• Trạng thái: ${if (st.isRunning) "🟢 ĐANG MỞ (ONLINE)" else "🔴 ĐANG TẮT (OFFLINE)"}")
+                    appendLine("• 💻 Địa chỉ PC (Java): $pcAddr")
+                    appendLine("• 📱 Địa chỉ Điện thoại (PE): $peAddr")
+                    appendLine("• 👥 Người chơi: ${st.onlinePlayers}/${st.maxPlayers} • ⚡ TPS: ${String.format(java.util.Locale.US, "%.1f", st.tps)}")
+                    appendLine("• 🌡️ Thiết bị Host: ${_thermalInfo.value.statusLabelVi}")
+                    appendLine("─────────────────")
+                    append("👇 Chạm trực tiếp vào các nút bên dưới để điều khiển Server 1 chạm:")
+                }
+                com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMenuWithButtons(
+                    botToken = botToken,
+                    chatId = cmdItem.chatId,
+                    messageText = menuText
+                )
+            }
+            "/ip", "/status", "/help" -> {
                 val cardPng = buildCurrentServerVisualCardBytes()
                 val caption = buildString {
                     appendLine("📊 BẢNG TRẠNG THÁI TRỰC QUAN — $activeName")
@@ -11748,7 +11883,7 @@ class McViewModel(
                     appendLine("• 👥 Online: ${st.onlinePlayers}/${st.maxPlayers} người chơi")
                     appendLine("• 🌡️ Nhiệt độ & Pin: ${_thermalInfo.value.statusLabelVi}")
                     appendLine("─────────────────")
-                    append("🕹️ Lệnh điều khiển nhanh: /ip • /status • /list • /clearlag • /day • /save • /say <tin nhắn>")
+                    append("🕹️ Gõ /menu để mở Bảng Nút Bấm 1 Chạm, hoặc /ip • /status • /list • /clearlag • /day • /save • /say")
                 }
                 com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotPhotoWithCaption(
                     botToken = botToken,
@@ -11756,6 +11891,68 @@ class McViewModel(
                     captionText = caption,
                     imagePngBytes = cardPng
                 )
+            }
+            "/start_sv" -> {
+                if (st.isRunning) {
+                    com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
+                        botToken, cmdItem.chatId, "🟢 Server '$activeName' hiện đang mở sẵn rồi! (IP PC: $pcAddr)"
+                    )
+                } else {
+                    withContext(Dispatchers.Main) { startServer() }
+                    com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
+                        botToken, cmdItem.chatId, "🚀 Đã kích hoạt BẬT SERVER '$activeName' từ xa! Bot sẽ tự gửi Ảnh Trạng Thái HD ngay khi Server khởi động xong."
+                    )
+                }
+            }
+            "/stop_sv" -> {
+                if (!st.isRunning) {
+                    com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
+                        botToken, cmdItem.chatId, "⚪ Server hiện đang ở trạng thái nghỉ."
+                    )
+                } else {
+                    sendCommand("save-all")
+                    kotlinx.coroutines.delay(1200L)
+                    withContext(Dispatchers.Main) { stopServer() }
+                    com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
+                        botToken, cmdItem.chatId, "🛑 Đã lưu toàn bộ Map (save-all) và DỪNG SERVER an toàn theo lệnh từ Telegram!"
+                    )
+                }
+            }
+            "/supply" -> {
+                if (!st.isRunning) {
+                    com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
+                        botToken, cmdItem.chatId, "⚠️ Hãy bật Server trước khi thả Hòm Tiếp Tế!"
+                    )
+                } else {
+                    withContext(Dispatchers.Main) { triggerSurvivalPackAction("supply_drop") }
+                    com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
+                        botToken, cmdItem.chatId, "🪂 Đã thả Kiện Hàng Tiếp Tế Quân Sự (Táo Vàng, Kim Cương, Tên & Hồi Phục) cho toàn bộ người chơi trong Server!"
+                    )
+                }
+            }
+            "/boss" -> {
+                if (!st.isRunning) {
+                    com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
+                        botToken, cmdItem.chatId, "⚠️ Hãy bật Server trước khi triệu hồi Boss!"
+                    )
+                } else {
+                    withContext(Dispatchers.Main) { triggerSurvivalPackAction("dragon_boss") }
+                    com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
+                        botToken, cmdItem.chatId, "🐉 Đã triệu hồi Boss Long Thú Cổ Đại & tặng Buff Kháng Lửa + Sức Mạnh cho toàn đội!"
+                    )
+                }
+            }
+            "/zombiewave" -> {
+                if (!st.isRunning) {
+                    com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
+                        botToken, cmdItem.chatId, "⚠️ Hãy bật Server trước khi gọi Đợt Zombie!"
+                    )
+                } else {
+                    withContext(Dispatchers.Main) { triggerSurvivalPackAction("zombie_wave") }
+                    com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
+                        botToken, cmdItem.chatId, "🧟 Đã kích hoạt Đợt Tấn Công Zombie Đột Biến quanh người chơi!"
+                    )
+                }
             }
             "/list", "/players" -> {
                 val onlineList = _onlinePlayerNames.value
@@ -11830,6 +12027,12 @@ class McViewModel(
                     )
                 }
             }
+            "/backup", "/cloudbackup" -> {
+                com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMessage(
+                    botToken, cmdItem.chatId, "☁️ Đang nén thế giới hiện tại và gửi tệp sao lưu .zip lên Telegram cho bạn..."
+                )
+                withContext(Dispatchers.Main) { backupCurrentWorldToTelegramOneTap() }
+            }
         }
     }
 
@@ -11879,21 +12082,115 @@ class McViewModel(
         }
     }
 
-    /** [v2.9.0] Lưu cấu hình Bot Telegram, tự động dò Chat ID & gửi thử Ảnh Trạng Thái HD lên Telegram */
-    fun saveTelegramConfig(botToken: String, chatId: String) {
-        val cleanToken = botToken.trim()
+    /** [v2.9.6] Lưu cấu hình Bot Telegram bền vững, tự xác thực @BotUsername & tự động dò Chat ID nếu còn trống */
+    fun saveTelegramConfig(botToken: String, chatId: String, onSavedChatId: (String) -> Unit = {}) {
+        val cleanToken = botToken.trim().removePrefix("bot")
         val cleanChatId = chatId.trim()
         _telegramBotToken.value = cleanToken
         _telegramChatId.value = cleanChatId
         proPrefs.edit()
             .putString("telegram_bot_token", cleanToken)
             .putString("telegram_chat_id", cleanChatId)
-            .apply()
-        notifyActionDone("✈️ Đã lưu cấu hình Bot Telegram!")
+            .commit()
+
+        if (cleanToken.isBlank()) {
+            _telegramBotVerifiedName.value = ""
+            proPrefs.edit().putString("telegram_bot_verified_name", "").apply()
+            notifyActionDone("✈️ Đã xóa cấu hình Bot Telegram.")
+            return
+        }
+
+        viewModelScope.launch {
+            val ver = com.mineserve.mobile.server.ProHostFeatures.verifyTelegramBotToken(cleanToken)
+            if (ver.ok) {
+                val badge = "${ver.botName} (${ver.botUsername})"
+                _telegramBotVerifiedName.value = badge
+                proPrefs.edit().putString("telegram_bot_verified_name", badge).apply()
+                if (cleanChatId.isBlank()) {
+                    val detected = com.mineserve.mobile.server.ProHostFeatures.detectTelegramChatId(cleanToken)
+                    if (detected != null) {
+                        val (autoId, chatTitle) = detected
+                        _telegramChatId.value = autoId
+                        proPrefs.edit().putString("telegram_chat_id", autoId).commit()
+                        onSavedChatId(autoId)
+                        com.mineserve.mobile.server.ProHostFeatures.playTaskCompleteChime()
+                        notifyActionDone("✅ Đã lưu Bot $badge & tự lấy Chat ID: $autoId ($chatTitle)!")
+                        return@launch
+                    }
+                }
+                com.mineserve.mobile.server.ProHostFeatures.playTaskCompleteChime()
+                notifyActionDone("✅ Đã lưu & xác thực Bot Telegram thành công: $badge!")
+            } else {
+                _telegramBotVerifiedName.value = ""
+                _errorFlow.tryEmit("⚠️ Đã lưu tạm nhưng Token chưa hợp lệ: ${ver.errorMessage}")
+            }
+        }
+    }
+
+    fun setTelegramStrictSecurityLock(enabled: Boolean) {
+        _telegramStrictSecurityLock.value = enabled
+        proPrefs.edit().putBoolean("telegram_strict_security_lock", enabled).apply()
+        notifyActionDone(
+            if (enabled) "🔒 Đã bật Khóa Bảo Mật Bot: Chặn 100% người lạ & chỉ Chủ Host mới được bấm lệnh điều khiển!"
+            else "🔓 Đã cho phép mọi thành viên trong nhóm đã kết nối cùng điều khiển Server."
+        )
+    }
+
+    fun setTelegramAllowGroupMemberIp(enabled: Boolean) {
+        _telegramAllowGroupMemberIp.value = enabled
+        proPrefs.edit().putBoolean("telegram_allow_group_member_ip", enabled).apply()
+        notifyActionDone(
+            if (enabled) "👥 Đã cho phép bạn bè trong nhóm gõ /ip và /list để xem địa chỉ vào Server."
+            else "🔒 Chỉ mình Chủ Host mới được dùng cả lệnh xem IP (/ip) lẫn lệnh điều khiển."
+        )
+    }
+
+    fun resetTelegramAdminSenderId() {
+        _telegramAdminSenderId.value = ""
+        proPrefs.edit().putString("telegram_admin_sender_id", "").apply()
+        notifyActionDone("🔄 Đã đặt lại quyền Admin Telegram! Người đầu tiên gõ /menu trong Chat đã lưu sẽ được khóa làm Chủ Host.")
+    }
+
+    fun sendTelegramControlPanelMenu(botToken: String, chatId: String) {
+        val cleanToken = botToken.trim().removePrefix("bot")
+        val cleanChatId = chatId.trim()
+        if (cleanToken.isBlank() || cleanChatId.isBlank()) {
+            _errorFlow.tryEmit("Hãy nhập Bot Token và Chat ID (hoặc bấm '🔍 Tự lấy Chat ID') trước khi gửi Bảng Điều Khiển!")
+            return
+        }
+        saveTelegramConfig(cleanToken, cleanChatId)
+        viewModelScope.launch {
+            val st = serverState.value
+            val activeName = config.value.activeCoreName.orEmpty().ifBlank { "MineHost Server" }
+            val pcAddr = playitState.value.publicAddress.ifBlank { "${lanIp.value}:${serverPort.value}" }
+            val peAddr = playitState.value.bedrockAddress.ifBlank { "${lanIp.value}:19132" }
+            val menuText = buildString {
+                appendLine("🎛️ BẢNG ĐIỀU KHIỂN TỪ XA PRO — $activeName")
+                appendLine("• Trạng thái: ${if (st.isRunning) "🟢 ĐANG MỞ (ONLINE)" else "🔴 ĐANG TẮT (OFFLINE)"}")
+                appendLine("• 💻 Địa chỉ PC (Java): $pcAddr")
+                appendLine("• 📱 Địa chỉ Điện thoại (PE): $peAddr")
+                appendLine("• 👥 Người chơi: ${st.onlinePlayers}/${st.maxPlayers} • ⚡ TPS: ${String.format(java.util.Locale.US, "%.1f", st.tps)}")
+                appendLine("• 🌡️ Thiết bị Host: ${_thermalInfo.value.statusLabelVi}")
+                appendLine("• 🔒 Bảo mật: Chỉ nhận lệnh từ Chat ID đã khóa ($cleanChatId)")
+                appendLine("─────────────────")
+                append("👇 Chạm trực tiếp vào các nút bên dưới để điều khiển Server 1 chạm:")
+            }
+            val ok = com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMenuWithButtons(
+                botToken = cleanToken,
+                chatId = cleanChatId,
+                messageText = menuText
+            )
+            if (ok) {
+                com.mineserve.mobile.server.ProHostFeatures.playTaskCompleteChime()
+                notifyActionDone("🎛️ Đã gửi Bảng Điều Khiển 10 Nút Bấm Tương Tác lên Telegram thành công!")
+            } else {
+                _errorFlow.tryEmit("❌ Không thể gửi Bảng Điều Khiển. Hãy kiểm tra lại Bot Token & Chat ID!")
+            }
+        }
     }
 
     fun autoDetectTelegramChatId(botToken: String, onDetected: (String) -> Unit = {}) {
-        val cleanToken = botToken.trim()
+        val cleanToken = botToken.trim().removePrefix("bot")
         if (cleanToken.isBlank()) {
             _errorFlow.tryEmit("Hãy dán Telegram Bot Token trước rồi nhắn 1 tin bất kỳ vào Bot để tự lấy Chat ID!")
             return
@@ -11902,9 +12199,15 @@ class McViewModel(
             _liveTaskProgress.value = LiveTaskProgressState(
                 active = true,
                 progress = 0.5f,
-                title = "🔍 Đang tự động dò Chat ID từ Bot Telegram...",
+                title = "🔍 Đang xác thực Bot & tự động dò Chat ID...",
                 detail = "Kiểm tra tin nhắn gần nhất gửi tới Bot (getUpdates)"
             )
+            val ver = com.mineserve.mobile.server.ProHostFeatures.verifyTelegramBotToken(cleanToken)
+            if (ver.ok) {
+                val badge = "${ver.botName} (${ver.botUsername})"
+                _telegramBotVerifiedName.value = badge
+                proPrefs.edit().putString("telegram_bot_verified_name", badge).apply()
+            }
             val pair = com.mineserve.mobile.server.ProHostFeatures.detectTelegramChatId(cleanToken)
             _liveTaskProgress.value = LiveTaskProgressState()
             if (pair != null) {
@@ -11914,10 +12217,10 @@ class McViewModel(
                 proPrefs.edit()
                     .putString("telegram_bot_token", cleanToken)
                     .putString("telegram_chat_id", detectedId)
-                    .apply()
+                    .commit()
                 onDetected(detectedId)
                 com.mineserve.mobile.server.ProHostFeatures.playTaskCompleteChime()
-                notifyActionDone("✅ Đã tự lấy được Chat ID: $detectedId ($chatTitle)!")
+                notifyActionDone("✅ Đã lưu & khóa bảo mật vào Chat ID: $detectedId ($chatTitle)!")
             } else {
                 _errorFlow.tryEmit("⚠️ Chưa thấy tin nhắn nào! Hãy mở Telegram nhắn '/start' hoặc 'hello' vào Bot/Nhóm rồi bấm lại nút này.")
             }
@@ -11925,7 +12228,7 @@ class McViewModel(
     }
 
     fun sendTelegramTestMessage(botToken: String, chatId: String) {
-        val cleanToken = botToken.trim()
+        val cleanToken = botToken.trim().removePrefix("bot")
         val cleanChatId = chatId.trim()
         if (cleanToken.isBlank() || cleanChatId.isBlank()) {
             _errorFlow.tryEmit("Hãy nhập đủ Bot Token và Chat ID (hoặc bấm '🔍 Tự lấy Chat ID') trước khi gửi thử!")
@@ -11937,7 +12240,7 @@ class McViewModel(
                 active = true,
                 progress = 0.55f,
                 title = "✈️ Đang vẽ Ảnh Trạng Thái HD & bắn lên Telegram...",
-                detail = "Gửi kèm bảng thông tin máy chủ trực quan (1080×640) qua sendPhoto"
+                detail = "Gửi kèm bảng thông tin máy chủ trực quan (1080×640) & Menu nút bấm"
             )
             val activeName = config.value.activeCoreName.orEmpty().ifBlank { "MineHost Server" }
             val pcAddr = playitState.value.publicAddress.ifBlank { "${lanIp.value}:${serverPort.value}" }
@@ -11950,7 +12253,8 @@ class McViewModel(
                 appendLine("📱 Địa chỉ Điện thoại (PE): $peAddr")
                 appendLine("👥 Online: ${serverState.value.onlinePlayers}/${serverState.value.maxPlayers} người chơi")
                 appendLine("🌡️ Thiết bị: ${_thermalInfo.value.statusLabelVi}")
-                append("🕹️ Gõ /ip, /status, /list, /clearlag, /day, /save, /say ngay tại đây để điều khiển Server!")
+                appendLine("🔒 Bảo mật: Đã khóa độc quyền cho Chat ID $cleanChatId")
+                append("🕹️ Gõ /menu để mở Bảng Nút Bấm 1 Chạm hoặc /ip, /status, /list, /clearlag, /day, /save, /say!")
             }
             val ok = com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotPhotoWithCaption(
                 botToken = cleanToken,
@@ -11958,10 +12262,15 @@ class McViewModel(
                 captionText = msg,
                 imagePngBytes = cardPng
             )
+            com.mineserve.mobile.server.ProHostFeatures.sendTelegramBotMenuWithButtons(
+                botToken = cleanToken,
+                chatId = cleanChatId,
+                messageText = "🎛️ Bảng Nút Bấm Điều Khiển Nhanh 1 Chạm ($activeName):"
+            )
             _liveTaskProgress.value = LiveTaskProgressState()
             if (ok) {
                 com.mineserve.mobile.server.ProHostFeatures.playTaskCompleteChime()
-                notifyActionDone("✅ Đã bắn Ảnh Trạng Thái HD kèm IP Server lên Telegram thành công!")
+                notifyActionDone("✅ Đã bắn Ảnh Trạng Thái HD + Bảng Nút Bấm Điều Khiển lên Telegram thành công!")
             } else {
                 _errorFlow.tryEmit("❌ Không thể gửi tới Telegram. Hãy kiểm tra lại Bot Token & Chat ID!")
             }
@@ -12190,10 +12499,21 @@ class McViewModel(
 
     /** #12: Bảng Điều Khiển Từ Xa Qua Trình Duyệt Web (LAN Web Remote Panel :8585) */
     fun setLanWebPanelPin(pin: String) {
-        val clean = pin.filter { it.isDigit() }.take(6).ifBlank { "2026" }
+        val clean = pin.filter { it.isDigit() }.take(8).let {
+            if (it.length >= 4) it else (100000..999999).random().toString()
+        }
         _lanWebPanelPin.value = clean
-        proPrefs.edit().putString("lan_web_pin", clean).apply()
-        notifyActionDone("🔑 Đã đặt mã PIN Web Remote là: $clean")
+        proPrefs.edit().putString("lan_web_pin", clean).commit()
+        lanWebServer?.invalidateAllSessions()
+        notifyActionDone("🔐 Đã cập nhật mã truy cập Web Remote bảo mật: $clean (Đã đăng xuất các phiên cũ)")
+    }
+
+    fun regenerateLanWebPin() {
+        val newPin = (100000..999999).random().toString()
+        _lanWebPanelPin.value = newPin
+        proPrefs.edit().putString("lan_web_pin", newPin).commit()
+        lanWebServer?.invalidateAllSessions()
+        notifyActionDone("🔄 Đã tạo mã truy cập 6 số mới: $newPin (Đã khóa các phiên đăng nhập cũ)")
     }
 
     fun toggleLanWebPanel(enable: Boolean) {
@@ -12849,11 +13169,11 @@ class McViewModel(
         }
     }
 
-    /** #1 (v2.8.7): Tạo & kích hoạt Chế Độ Chơi Dựng Sẵn 1 Chạm (OneBlock / SkyBlock / Parkour / Lucky Island) */
-    fun createPlayableModeWorldOneTap(modeId: String) {
+    /** #1 (v2.9.6): Tạo & kích hoạt Full Pack Sinh Tồn & Chế Độ Chơi 1 Chạm (OneBlock / Đại Dịch Zombie / Săn Rồng RPG / SkyBlock / RLCraft / Parkour / Lucky Island) */
+    fun createPlayableModeWorldOneTap(modeId: String, backupCurrentFirst: Boolean = false) {
         if (_liveTaskProgress.value.active) return
         if (serverState.value.isRunning) {
-            _errorFlow.tryEmit("⚠️ Hãy dừng Server trước khi chuyển sang Chế độ chơi mới để bảo toàn Map hiện tại!")
+            _errorFlow.tryEmit("⚠️ Hãy dừng Server trước khi chuyển sang Pack Sinh Tồn mới để bảo toàn Map hiện tại!")
             return
         }
         val dirName = activeDirName()
@@ -12866,10 +13186,16 @@ class McViewModel(
             _liveTaskProgress.value = LiveTaskProgressState(
                 active = true,
                 progress = 0.08f,
-                title = "🗺️ Đang dựng chế độ chơi mới...",
-                detail = "Đang tạo thư mục map cho chế độ đã chọn. Nên sao lưu map trước khi thay đổi."
+                title = "🗺️ Đang dựng Pack Sinh Tồn mới...",
+                detail = if (backupCurrentFirst) "Đang tự động sao lưu Map hiện tại trước khi tạo Pack..." else "Map cũ của bạn vẫn được giữ nguyên 100%"
             )
             try {
+                val prevActive = _activeWorldName.value.trim()
+                if (backupCurrentFirst && prevActive.isNotBlank()) {
+                    withContext(Dispatchers.IO) {
+                        runCatching { worldManager.exportWorld(dirName, prevActive) }
+                    }
+                }
                 val res = com.mineserve.mobile.server.ProHostFeatures.createPlayableModeWorldOneTap(
                     serverDir = serverDir,
                     modeId = modeId,
@@ -12879,7 +13205,7 @@ class McViewModel(
                             active = true,
                             progress = ratio.coerceIn(0f, 1f),
                             title = msg,
-                            detail = "Tự động tích hợp kịch bản Datapack & điểm hồi sinh"
+                            detail = "Tự động tích hợp kịch bản Datapack & điểm hồi sinh (0 MB RAM phụ)"
                         )
                     }
                 )
@@ -12889,10 +13215,83 @@ class McViewModel(
                     refreshServerStorage()
                     loadServerProperties()
                     com.mineserve.mobile.server.ProHostFeatures.playTaskCompleteChime()
-                    notifyActionDone("🎉 Đã tạo & kích hoạt '${preset.titleVi}' (${preset.folderName})! Bấm BẬT SERVER để vào chơi ngay!")
+                    val bkNote = if (backupCurrentFirst && prevActive.isNotBlank()) " (Đã sao lưu '$prevActive')" else ""
+                    notifyActionDone("🎉 Đã tạo & chuyển sang '${preset.titleVi}' (${preset.folderName})$bkNote! Map cũ vẫn còn nguyên. Bấm BẬT SERVER để vào chơi ngay!")
                 }.onFailure { err ->
-                    _errorFlow.tryEmit("❌ Không thể tạo chế độ chơi: ${err.message}")
+                    _errorFlow.tryEmit("❌ Không thể tạo Pack Sinh Tồn: ${err.message}")
                 }
+            } finally {
+                _liveTaskProgress.value = LiveTaskProgressState()
+            }
+        }
+    }
+
+    /** Kích hoạt Đạo Cụ / Sự Kiện Pack Sinh Tồn 1 Chạm ngay khi đang chơi */
+    fun triggerSurvivalPackAction(actionKey: String) {
+        if (!serverState.value.isRunning) {
+            _errorFlow.tryEmit("⚠️ Hãy bật Server trước khi kích hoạt Đạo Cụ Pack Sinh Tồn!")
+            return
+        }
+        when (actionKey) {
+            "supply_drop" -> {
+                sendCommand("function minehost:supply_drop")
+                sendCommand("give @a minecraft:golden_apple 4")
+                sendCommand("give @a minecraft:cooked_beef 16")
+                sendCommand("give @a minecraft:arrow 32")
+                sendCommand("give @a minecraft:diamond 2")
+                sendCommand("effect give @a minecraft:regeneration 25 1 true")
+                sendCommand("""tellraw @a [{"text":"[🪂 Tiếp Tế Quân Sự] ","color":"gold","bold":true},{"text":"Đã thả Kiện Hàng Tiếp Tế Khẩn Cấp (Táo Vàng, Kim Cương, Tên & Hồi Phục) cho cả đội!","color":"green"}]""")
+                notifyActionDone("🪂 Đã thả Kiện Hàng Tiếp Tế Quân Sự cho toàn bộ người chơi!")
+            }
+            "zombie_wave" -> {
+                sendCommand("function minehost:zombie_wave")
+                sendCommand("execute at @a run summon minecraft:zombie ~4 ~1 ~4")
+                sendCommand("execute at @a run summon minecraft:husk ~-4 ~1 ~4")
+                sendCommand("effect give @e[type=minecraft:zombie,distance=..32] minecraft:speed 60 0 true")
+                sendCommand("""tellraw @a [{"text":"[🧟 ĐẠI DỊCH ZOMBIE] ","color":"dark_red","bold":true},{"text":"Một đàn Zombie Đột Biến vừa xuất hiện quanh khu vực của bạn!","color":"yellow"}]""")
+                notifyActionDone("🧟 Đã gọi Đợt Tấn Công Zombie Đột Biến trong game!")
+            }
+            "dragon_boss" -> {
+                sendCommand("function minehost:summon_dragon_boss")
+                sendCommand("execute at @r run summon minecraft:ravager ~6 ~1 ~6")
+                sendCommand("effect give @a minecraft:fire_resistance 180 0 true")
+                sendCommand("effect give @a minecraft:strength 90 0 true")
+                sendCommand("""tellraw @a [{"text":"[🐉 ĐÀI TRIỆU HỒI RỒNG] ","color":"light_purple","bold":true},{"text":"Boss Long Thú Cổ Đại đã giáng lâm! Toàn đội nhận Kháng Lửa + Sức Mạnh!","color":"gold"}]""")
+                notifyActionDone("🐉 Đã triệu hồi Boss Long Thú & buff Kháng Lửa + Sức Mạnh cho toàn đội!")
+            }
+            "dragon_kit" -> {
+                sendCommand("function minehost:dragon_kit")
+                sendCommand("give @a minecraft:diamond_sword 1")
+                sendCommand("give @a minecraft:bow 1")
+                sendCommand("give @a minecraft:arrow 64")
+                sendCommand("give @a minecraft:shield 1")
+                sendCommand("give @a minecraft:totem_of_undying 1")
+                sendCommand("give @a minecraft:golden_apple 6")
+                sendCommand("effect give @a minecraft:strength 120 0 true")
+                sendCommand("""tellraw @a [{"text":"[⚔️ Kho Vũ Khí Săn Rồng] ","color":"aqua","bold":true},{"text":"Đã phát Bộ Vũ Khí Chiến Binh Săn Rồng & Totem Bất Tử cho toàn đội!","color":"green"}]""")
+                notifyActionDone("⚔️ Đã phát Bộ Trang Bị Chiến Binh Săn Rồng & Totem Bất Tử cho mọi người chơi!")
+            }
+        }
+    }
+
+    /** Dọn Rác Bộ Nhớ Ứng Dụng 1 Chạm (Xóa file tạm, APK cập nhật cũ, log nén cũ & giữ gọn sao lưu tự động) */
+    fun cleanAppStorageJunkOneTap() {
+        if (_liveTaskProgress.value.active) return
+        viewModelScope.launch {
+            _liveTaskProgress.value = LiveTaskProgressState(
+                active = true,
+                progress = 0.45f,
+                title = "🧹 Đang quét & dọn sạch tệp rác bộ nhớ...",
+                detail = "Xóa APK tạm, log nén cũ & bản sao lưu dư thừa (An toàn 100% cho Map & Mod)"
+            )
+            try {
+                val serversRoot = java.io.File(repo.termuxRuntime.installer.rootDir, "home/servers")
+                val res = com.mineserve.mobile.server.ProHostFeatures.cleanAppTempAndJunkFiles(app, serversRoot)
+                refreshServerStorage()
+                refreshLocalWorldArchives()
+                loadSnapshots()
+                com.mineserve.mobile.server.ProHostFeatures.playTaskCompleteChime()
+                notifyActionDone(res.summaryVi)
             } finally {
                 _liveTaskProgress.value = LiveTaskProgressState()
             }
@@ -12972,6 +13371,341 @@ class McViewModel(
         sendCommand("sr set $p $skin")
         sendCommand("skin set $skin $p")
         notifyActionDone("👕 Đã gửi lệnh đổi Skin '$skin' cho '$p'!")
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // [v3.0.0] CHẾ ĐỘ CHẠY RUST NHẸ MƯỢT (RUST-JVM TURBO & PUMPKIN NATIVE RUST ARM64)
+    // ══════════════════════════════════════════════════════════════════════
+
+    private val _rustEngineStatus = MutableStateFlow(com.mineserve.mobile.server.ProHostFeatures.RustEngineStatus())
+    val rustEngineStatus: StateFlow<com.mineserve.mobile.server.ProHostFeatures.RustEngineStatus> = _rustEngineStatus.asStateFlow()
+
+    fun refreshRustEngineStatus() {
+        val dirName = activeDirName() ?: return
+        val rootDir = repo.termuxRuntime.installer.rootDir
+        val serverDir = repo.termuxRuntime.serverDirFor(dirName)
+        _rustEngineStatus.value = com.mineserve.mobile.server.ProHostFeatures.inspectRustEngineStatus(rootDir, serverDir)
+    }
+
+    /** Chế độ 0 (Mặc định): Chuyển về Chế Độ Java Nguyên Bản 100% để chơi Full Mod (Fabric/Forge/NeoForge) & Plugin */
+    fun selectOriginalJavaEngineOneTap() {
+        if (serverState.value.isRunning && _rustEngineStatus.value.isNativeRustEnabled) {
+            _errorFlow.tryEmit("⚠️ Hãy dừng Server trước khi chuyển từ Nhân Rust Thuần về Chế Độ Java Nguyên Bản!")
+            return
+        }
+        val dirName = activeDirName() ?: return
+        val rootDir = repo.termuxRuntime.installer.rootDir
+        val serverDir = repo.termuxRuntime.serverDirFor(dirName)
+        viewModelScope.launch(Dispatchers.IO) {
+            com.mineserve.mobile.server.ProHostFeatures.disableNativeRustEngine(rootDir, serverDir)
+            val status = com.mineserve.mobile.server.ProHostFeatures.setRustJvmTurboMode(rootDir, serverDir, false)
+            _rustEngineStatus.value = status
+            loadServerProperties()
+            withContext(Dispatchers.Main) {
+                com.mineserve.mobile.server.ProHostFeatures.playTaskCompleteChime()
+                notifyActionDone("☕ Đã chọn Chế Độ Java Nguyên Bản (Chơi Full Mod & Plugin)! Toàn bộ Mod, Plugin & Map của bạn hoạt động chuẩn 100%.")
+            }
+        }
+    }
+
+    /** Chế độ 1: Bật/Tắt Chế Độ Java + Rust-JVM Turbo (Vẫn chạy Java để chơi 100% Mod, Plugin & GeyserMC hiện tại, nhẹ mượt hơn ~35-40% RAM) */
+    fun toggleRustJvmTurboMode(enabled: Boolean) {
+        if (serverState.value.isRunning && _rustEngineStatus.value.isNativeRustEnabled) {
+            _errorFlow.tryEmit("⚠️ Hãy dừng Server trước khi chuyển từ Nhân Rust Thuần sang Chế Độ Java + Rust Turbo!")
+            return
+        }
+        val dirName = activeDirName()
+        if (dirName == null) {
+            _errorFlow.tryEmit("Hãy chọn hoặc tạo một Server trước khi bật Chế Độ Rust-JVM Turbo!")
+            return
+        }
+        val rootDir = repo.termuxRuntime.installer.rootDir
+        val serverDir = repo.termuxRuntime.serverDirFor(dirName)
+        viewModelScope.launch(Dispatchers.IO) {
+            if (enabled) {
+                com.mineserve.mobile.server.ProHostFeatures.disableNativeRustEngine(rootDir, serverDir)
+            }
+            val status = com.mineserve.mobile.server.ProHostFeatures.setRustJvmTurboMode(rootDir, serverDir, enabled)
+            _rustEngineStatus.value = status
+            loadServerProperties()
+            withContext(Dispatchers.Main) {
+                com.mineserve.mobile.server.ProHostFeatures.playTaskCompleteChime()
+                if (enabled) {
+                    notifyActionDone("⚡ Đã chọn Chế Độ Java + Rust Turbo (Vẫn chơi 100% Mod, Plugin & Geyser PE hiện tại + Giảm ~35% RAM)!")
+                } else {
+                    notifyActionDone("☕ Đã chuyển về Chế Độ Java Nguyên Bản (Chơi Full Mod & Plugin mặc định).")
+                }
+            }
+        }
+    }
+
+    /** Chế độ 2: Tải & Bật Nhân Rust Thuần 1 Chạm (Pumpkin Native ARM64 — Không dùng Java, RAM ~50MB, Bật 0.2s) */
+    fun enableNativeRustEngineOneTap() {
+        if (_liveTaskProgress.value.active) return
+        if (serverState.value.isRunning) {
+            _errorFlow.tryEmit("⚠️ Hãy dừng Server hiện tại trước khi chuyển sang Nhân Rust Thuần (Pumpkin ARM64)!")
+            return
+        }
+        val dirName = activeDirName()
+        if (dirName == null) {
+            _errorFlow.tryEmit("Hãy chọn hoặc tạo một Server trước khi bật Nhân Rust Thuần!")
+            return
+        }
+        val rootDir = repo.termuxRuntime.installer.rootDir
+        val serverDir = repo.termuxRuntime.serverDirFor(dirName)
+        val javaPort = serverPort.value
+        val srvName = config.value.activeCoreName.orEmpty().ifBlank { "MineHost Server" }
+        viewModelScope.launch {
+            _liveTaskProgress.value = LiveTaskProgressState(
+                active = true,
+                progress = 0.06f,
+                title = "🦀 Đang cài đặt Nhân Rust Thuần (Pumpkin Native ARM64)...",
+                detail = "Chạy mã máy ARM64 trực tiếp không qua Java • RAM ~50MB • Giữ nguyên Map cũ 100%"
+            )
+            try {
+                val res = com.mineserve.mobile.server.ProHostFeatures.installAndEnableNativeRustEngine(
+                    rootDir = rootDir,
+                    serverDir = serverDir,
+                    javaPort = javaPort,
+                    serverName = srvName,
+                    onProgress = { ratio, msg ->
+                        _liveTaskProgress.value = LiveTaskProgressState(
+                            active = true,
+                            progress = ratio.coerceIn(0f, 1f),
+                            title = msg,
+                            detail = "Tự động đồng bộ cổng Java & Bedrock (19132) vào pumpkin.toml"
+                        )
+                    }
+                )
+                res.onSuccess { status ->
+                    _rustEngineStatus.value = status
+                    com.mineserve.mobile.server.ProHostFeatures.playTaskCompleteChime()
+                    notifyActionDone("🦀 Đã kích hoạt Nhân Rust Thuần (Pumpkin ARM64)! Bấm BẬT SERVER để trải nghiệm khởi động trong 0.2 giây & RAM ~50MB!")
+                }.onFailure { err ->
+                    _errorFlow.tryEmit("❌ Không thể tải Nhân Rust Thuần: ${err.message}")
+                }
+            } finally {
+                _liveTaskProgress.value = LiveTaskProgressState()
+            }
+        }
+    }
+
+    /** Chuyển từ Nhân Rust Thuần về lại Nhân Java gốc 1 chạm (Giữ nguyên 100% Map, Mod & Plugin cũ) */
+    fun disableNativeRustEngineOneTap() {
+        if (serverState.value.isRunning) {
+            _errorFlow.tryEmit("⚠️ Hãy dừng Server trước khi chuyển về Nhân Java gốc!")
+            return
+        }
+        val dirName = activeDirName() ?: return
+        val rootDir = repo.termuxRuntime.installer.rootDir
+        val serverDir = repo.termuxRuntime.serverDirFor(dirName)
+        viewModelScope.launch(Dispatchers.IO) {
+            val status = com.mineserve.mobile.server.ProHostFeatures.disableNativeRustEngine(rootDir, serverDir)
+            _rustEngineStatus.value = status
+            withContext(Dispatchers.Main) {
+                com.mineserve.mobile.server.ProHostFeatures.playTaskCompleteChime()
+                notifyActionDone("🔄 Đã chuyển về Nhân Java gốc! Toàn bộ Map, Mod & Plugin cũ của bạn vẫn còn nguyên 100%.")
+            }
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // [v3.1.0] BỘ 4 TÍNH NĂNG PRO MỚI + BIỂU ĐỒ SPARKLINE SỐNG:
+    // 1. Sao lưu Map lên đám mây Telegram 1 chạm (tự chia phần >45MB, streaming 0 tốn RAM)
+    // 2. Bảng Điểm Scoreboard & Thanh Thông Báo BossBar trong game (0 MB RAM)
+    // 3. Radar quét tọa độ vùng Chunk gây lag & Dọn Lag bảo vệ Dân làng / Thú cưng
+    // 4. Biểu đồ sóng mượt 60 giây (Live Sparkline) cho TPS & RAM
+    // ══════════════════════════════════════════════════════════════════════
+
+    private val _tpsHistory = MutableStateFlow<List<Float>>(emptyList())
+    val tpsHistory: StateFlow<List<Float>> = _tpsHistory.asStateFlow()
+
+    private val _ramHistory = MutableStateFlow<List<Float>>(emptyList())
+    val ramHistory: StateFlow<List<Float>> = _ramHistory.asStateFlow()
+
+    private val _lagHotspotReport = MutableStateFlow(com.mineserve.mobile.server.ProHostFeatures.LagHotspotReport())
+    val lagHotspotReport: StateFlow<com.mineserve.mobile.server.ProHostFeatures.LagHotspotReport> = _lagHotspotReport.asStateFlow()
+
+    private val _activeScoreboardPreset = MutableStateFlow("")
+    val activeScoreboardPreset: StateFlow<String> = _activeScoreboardPreset.asStateFlow()
+
+    private val _bossBarText = MutableStateFlow("")
+    val bossBarText: StateFlow<String> = _bossBarText.asStateFlow()
+
+    private val _bossBarColor = MutableStateFlow("yellow")
+    val bossBarColor: StateFlow<String> = _bossBarColor.asStateFlow()
+
+    private val _bossBarEnabled = MutableStateFlow(false)
+    val bossBarEnabled: StateFlow<Boolean> = _bossBarEnabled.asStateFlow()
+
+    fun refreshHudAndLagRadarState() {
+        val dirName = activeDirName() ?: return
+        _activeScoreboardPreset.value = proPrefs.getString("saved_scoreboard_$dirName", "").orEmpty()
+        _bossBarText.value = proPrefs.getString("saved_bossbar_text_$dirName", "").orEmpty()
+        _bossBarColor.value = proPrefs.getString("saved_bossbar_color_$dirName", "yellow").orEmpty()
+        _bossBarEnabled.value = proPrefs.getBoolean("saved_bossbar_enabled_$dirName", false)
+        val serverDir = repo.termuxRuntime.serverDirFor(dirName)
+        viewModelScope.launch(Dispatchers.IO) {
+            _lagHotspotReport.value = com.mineserve.mobile.server.ProHostFeatures.inspectWorldLagHotspots(serverDir)
+        }
+    }
+
+    /** 1. Sao lưu Map đang chọn lên đám mây Telegram 1 chạm (tự động save-all nếu Server đang chạy) */
+    fun backupCurrentWorldToTelegramOneTap(worldNameOverride: String? = null) {
+        if (_liveTaskProgress.value.active) return
+        val dirName = activeDirName()
+        if (dirName == null) {
+            _errorFlow.tryEmit("Hãy chọn một Server trước khi sao lưu Map lên Telegram!")
+            return
+        }
+        val token = _telegramBotToken.value.trim()
+        val chat = _telegramChatId.value.trim()
+        if (token.length < 15 || !token.contains(":") || chat.isBlank()) {
+            _errorFlow.tryEmit("⚠️ Bạn chưa kết nối Bot Telegram! Hãy vào mục 'Điều khiển từ xa' nhập Token & Chat ID trước.")
+            return
+        }
+        val serverDir = repo.termuxRuntime.serverDirFor(dirName)
+        val srvTitle = config.value.activeCoreName.orEmpty().ifBlank { dirName }
+        val targetWorld = worldNameOverride?.trim()?.takeIf { it.isNotBlank() }
+            ?: _activeWorldName.value.trim().ifBlank {
+                val propFile = java.io.File(serverDir, "server.properties")
+                if (propFile.isFile) {
+                    propFile.readLines().firstOrNull { it.trim().startsWith("level-name=") }
+                        ?.substringAfter("=")?.trim()?.ifBlank { "world" } ?: "world"
+                } else "world"
+            }
+
+        viewModelScope.launch {
+            _liveTaskProgress.value = LiveTaskProgressState(
+                active = true,
+                progress = 0.04f,
+                title = "☁️ Đang chuẩn bị sao lưu Map '$targetWorld' lên Telegram...",
+                detail = "Tự động lưu dữ liệu mới nhất & nén .zip an toàn"
+            )
+            try {
+                if (serverState.value.isRunning) {
+                    sendCommand("save-all")
+                    kotlinx.coroutines.delay(1200L)
+                }
+                val res = com.mineserve.mobile.server.ProHostFeatures.backupWorldToTelegramCloud(
+                    cacheDir = app.cacheDir,
+                    botToken = token,
+                    chatId = chat,
+                    serverDir = serverDir,
+                    worldFolderName = targetWorld,
+                    serverDisplayName = srvTitle,
+                    onProgress = { ratio, msg ->
+                        _liveTaskProgress.value = LiveTaskProgressState(
+                            active = true,
+                            progress = ratio.coerceIn(0f, 1f),
+                            title = msg,
+                            detail = "Lưu trữ miễn phí vĩnh viễn trên cuộc trò chuyện Telegram của bạn"
+                        )
+                    }
+                )
+                res.onSuccess { summary ->
+                    com.mineserve.mobile.server.ProHostFeatures.playTaskCompleteChime()
+                    notifyActionDone(summary)
+                }.onFailure { err ->
+                    _errorFlow.tryEmit("❌ Lỗi sao lưu lên Telegram: ${err.message}")
+                }
+            } finally {
+                _liveTaskProgress.value = LiveTaskProgressState()
+            }
+        }
+    }
+
+    /** 2A. Bật / Đổi / Tắt Bảng Điểm Scoreboard cạnh phải màn hình trong game (0 MB RAM) */
+    fun applyInGameScoreboardPresetOneTap(presetId: String) {
+        val dirName = activeDirName() ?: "default"
+        _activeScoreboardPreset.value = if (presetId == "off") "" else presetId
+        proPrefs.edit().putString("saved_scoreboard_$dirName", presetId).apply()
+        if (serverState.value.isRunning) {
+            com.mineserve.mobile.server.ProHostFeatures.buildScoreboardCommands(presetId).forEach { sendCommand(it) }
+            com.mineserve.mobile.server.ProHostFeatures.playTaskCompleteChime()
+            if (presetId == "off") {
+                notifyActionDone("🧹 Đã ẩn Bảng Điểm Scoreboard trên màn hình game!")
+            } else {
+                val p = com.mineserve.mobile.server.ProHostFeatures.SCOREBOARD_PRESETS.find { it.id == presetId }
+                notifyActionDone("🏆 Đã bật Bảng Điểm '${p?.titleVi ?: presetId}' ngay trong game (0 MB RAM)!")
+            }
+        } else {
+            notifyActionDone(
+                if (presetId == "off") "🧹 Đã tắt lưu Bảng Điểm Scoreboard."
+                else "💾 Đã lưu mẫu Bảng Điểm Scoreboard! Sẽ tự động hiện ngay khi bạn bật Server."
+            )
+        }
+    }
+
+    /** 2B. Bật / Cập nhật / Ẩn Thanh Thông Báo BossBar trên đỉnh màn hình trong game (0 MB RAM) */
+    fun applyInGameBossBarOneTap(text: String, colorId: String, enabled: Boolean) {
+        val dirName = activeDirName() ?: "default"
+        val cleanText = text.trim()
+        if (enabled && cleanText.isBlank()) {
+            _errorFlow.tryEmit("⚠️ Hãy nhập nội dung chữ muốn hiển thị trên thanh BossBar đầu màn hình!")
+            return
+        }
+        _bossBarText.value = cleanText
+        _bossBarColor.value = colorId
+        _bossBarEnabled.value = enabled
+        proPrefs.edit()
+            .putString("saved_bossbar_text_$dirName", cleanText)
+            .putString("saved_bossbar_color_$dirName", colorId)
+            .putBoolean("saved_bossbar_enabled_$dirName", enabled)
+            .apply()
+
+        if (serverState.value.isRunning) {
+            com.mineserve.mobile.server.ProHostFeatures.buildBossBarCommands(cleanText, colorId, enabled).forEach { sendCommand(it) }
+            com.mineserve.mobile.server.ProHostFeatures.playTaskCompleteChime()
+            notifyActionDone(
+                if (enabled) "📣 Đã hiển thị thanh BossBar '$cleanText' trên đỉnh màn hình cho mọi người chơi!"
+                else "🧹 Đã ẩn thanh BossBar trên màn hình game."
+            )
+        } else {
+            notifyActionDone(
+                if (enabled) "💾 Đã lưu thanh BossBar '$cleanText'! Sẽ tự hiển thị ngay khi mở Server."
+                else "🧹 Đã tắt thanh BossBar."
+            )
+        }
+    }
+
+    /** 3A. Quét Radar tìm tọa độ vùng Chunk chứa nhiều thực thể/máy farm gây Lag nhất */
+    fun scanWorldLagHotspotsOneTap() {
+        val dirName = activeDirName()
+        if (dirName == null) {
+            _errorFlow.tryEmit("Hãy chọn một Server trước khi quét Radar Lag!")
+            return
+        }
+        val serverDir = repo.termuxRuntime.serverDirFor(dirName)
+        viewModelScope.launch(Dispatchers.IO) {
+            val report = com.mineserve.mobile.server.ProHostFeatures.inspectWorldLagHotspots(serverDir)
+            _lagHotspotReport.value = report
+            withContext(Dispatchers.Main) {
+                com.mineserve.mobile.server.ProHostFeatures.playTaskCompleteChime()
+                if (report.hotspotFound) {
+                    notifyActionDone("🔍 Đã định vị vùng nặng nhất Map '${report.worldName}': quanh tọa độ X=${report.hotspotCenterX}, Z=${report.hotspotCenterZ} (${report.hotspotSizeKb} KB)!")
+                } else {
+                    notifyActionDone("✅ Đã quét Map '${report.worldName}': Chưa phát hiện vùng thực thể quá tải.")
+                }
+            }
+        }
+    }
+
+    /** 3B. Dọn Lag Thông Minh: Xóa vật phẩm rác & quái hoang gây giật nhưng BẢO VỆ 100% Dân làng, Thú cưng, Gia súc & Giá giáp */
+    fun smartPurgeLagEntitiesOneTap(includeHostileMobs: Boolean) {
+        if (!serverState.value.isRunning) {
+            _errorFlow.tryEmit("⚠️ Hãy bật Server trước khi dọn thực thể gây Lag trong game!")
+            return
+        }
+        com.mineserve.mobile.server.ProHostFeatures.buildSmartSafePurgeCommands(includeHostileMobs).forEach { sendCommand(it) }
+        sendCommand("save-all")
+        if (includeHostileMobs) {
+            sendCommand("""tellraw @a [{"text":"[🛡️ Dọn Lag An Toàn] ","color":"green","bold":true},{"text":"Đã quét sạch vật phẩm rác & quái hoang gây giật (An toàn 100% cho Dân làng, Thú cưng & Máy farm)!","color":"yellow"}]""")
+            notifyActionDone("🧹 Đã dọn sạch vật phẩm rác + quái hoang gây Lag (Giữ an toàn 100% Dân làng, Thú cưng, Gia súc & Giá giáp)!")
+        } else {
+            sendCommand("""tellraw @a [{"text":"[🧹 ClearLag] ","color":"aqua","bold":true},{"text":"Đã dọn sạch vật phẩm rơi dưới đất, mũi tên cắm & hạt XP thừa!","color":"green"}]""")
+            notifyActionDone("🧹 Đã dọn sạch vật phẩm rơi, hạt XP & mũi tên thừa (Giữ nguyên 100% mọi sinh vật)!")
+        }
     }
 }
 

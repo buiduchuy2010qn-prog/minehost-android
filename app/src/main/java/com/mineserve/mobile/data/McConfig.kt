@@ -913,7 +913,10 @@ fun startupPhaseForLog(line: String): StartupPhase? {
             text.contains("enabled bungeecord") || text.contains("velocity has started") ||
             // Allay：网络接口启动完成即为就绪（空闲期不再输出日志）
             text.contains("network interface started at") ||
-            text.contains("网络接口已启动于") -> StartupPhase.Ready
+            text.contains("网络接口已启动于") ||
+            // Pumpkin Rust Native Server:
+            text.contains("server is now running") ||
+            text.contains("started server; took") -> StartupPhase.Ready
 
         // ── 创建世界 ──────────────────────────────────
         // 排在网络之前：进度 0.82 > 0.72，`when` 短路要求高进度在前。

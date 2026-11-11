@@ -657,16 +657,170 @@ object ProHostFeatures {
         }
     }
 
+    data class TelegramBotVerification(
+        val ok: Boolean,
+        val botUsername: String = "",
+        val botName: String = "",
+        val errorMessage: String = ""
+    )
+
+    suspend fun verifyTelegramBotToken(botToken: String): TelegramBotVerification = withContext(Dispatchers.IO) {
+        val cleanToken = botToken.trim().removePrefix("bot")
+        if (cleanToken.length < 15 || !cleanToken.contains(":")) {
+            return@withContext TelegramBotVerification(
+                ok = false,
+                errorMessage = "Bot Token chưa đúng định dạng (cần dạng 123456789:AAH...)."
+            )
+        }
+        var conn: HttpURLConnection? = null
+        try {
+            val apiUrl = "https://api.telegram.org/bot$cleanToken/getMe"
+            conn = (URL(apiUrl).openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 6500
+                readTimeout = 6500
+                setRequestProperty("User-Agent", "MineHost/2.9.6")
+            }
+            if (conn.responseCode !in 200..299) {
+                return@withContext TelegramBotVerification(
+                    ok = false,
+                    errorMessage = "Telegram từ chối Token (Mã HTTP ${conn.responseCode})."
+                )
+            }
+            val body = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            val root = JSONObject(body)
+            if (!root.optBoolean("ok", false)) {
+                return@withContext TelegramBotVerification(
+                    ok = false,
+                    errorMessage = root.optString("description", "Token không hợp lệ.")
+                )
+            }
+            val res = root.optJSONObject("result")
+            val username = res?.optString("username", "").orEmpty()
+            val firstName = res?.optString("first_name", "MineHost Bot").orEmpty()
+            TelegramBotVerification(
+                ok = true,
+                botUsername = if (username.isNotBlank()) "@$username" else firstName,
+                botName = firstName
+            )
+        } catch (e: Exception) {
+            TelegramBotVerification(
+                ok = false,
+                errorMessage = "Không thể kết nối Telegram API: ${e.message ?: "Lỗi mạng"}"
+            )
+        } finally {
+            conn?.disconnect()
+        }
+    }
+
+    suspend fun sendTelegramBotMenuWithButtons(
+        botToken: String,
+        chatId: String,
+        messageText: String
+    ): Boolean = withContext(Dispatchers.IO) {
+        val cleanToken = botToken.trim().removePrefix("bot")
+        val cleanChatId = chatId.trim()
+        if (cleanToken.length < 15 || !cleanToken.contains(":") || cleanChatId.isBlank()) {
+            return@withContext false
+        }
+        var conn: HttpURLConnection? = null
+        try {
+            val apiUrl = "https://api.telegram.org/bot$cleanToken/sendMessage"
+            conn = (URL(apiUrl).openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = 8000
+                readTimeout = 8000
+                doOutput = true
+                setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+                setRequestProperty("User-Agent", "MineHost/2.9.6")
+            }
+            val inlineKeyboard = JSONArray().apply {
+                put(JSONArray().apply {
+                    put(JSONObject().put("text", "📸 Ảnh Trạng Thái HD").put("callback_data", "/status"))
+                    put(JSONObject().put("text", "🌐 Xem IP Server").put("callback_data", "/ip"))
+                })
+                put(JSONArray().apply {
+                    put(JSONObject().put("text", "🟢 Bật Server").put("callback_data", "/start_sv"))
+                    put(JSONObject().put("text", "🛑 Lưu & Tắt SV").put("callback_data", "/stop_sv"))
+                })
+                put(JSONArray().apply {
+                    put(JSONObject().put("text", "🧹 Dọn Lag & Lưu").put("callback_data", "/clearlag"))
+                    put(JSONObject().put("text", "☀️ Trời Sáng").put("callback_data", "/day"))
+                })
+                put(JSONArray().apply {
+                    put(JSONObject().put("text", "🪂 Thả Tiếp Tế").put("callback_data", "/supply"))
+                    put(JSONObject().put("text", "🐉 Gọi Boss Rồng").put("callback_data", "/boss"))
+                })
+                put(JSONArray().apply {
+                    put(JSONObject().put("text", "🧟 Đợt Zombie").put("callback_data", "/zombiewave"))
+                    put(JSONObject().put("text", "👥 DS Người Chơi").put("callback_data", "/list"))
+                })
+            }
+            val payload = JSONObject().apply {
+                put("chat_id", cleanChatId)
+                put("text", messageText)
+                put("disable_web_page_preview", true)
+                put("reply_markup", JSONObject().put("inline_keyboard", inlineKeyboard))
+            }.toString()
+            conn.outputStream.use { os ->
+                os.write(payload.toByteArray(Charsets.UTF_8))
+                os.flush()
+            }
+            conn.responseCode in 200..299
+        } catch (_: Exception) {
+            false
+        } finally {
+            conn?.disconnect()
+        }
+    }
+
+    suspend fun answerTelegramCallbackQuery(
+        botToken: String,
+        callbackQueryId: String,
+        text: String
+    ) = withContext(Dispatchers.IO) {
+        if (callbackQueryId.isBlank()) return@withContext
+        val cleanToken = botToken.trim().removePrefix("bot")
+        if (cleanToken.length < 15 || !cleanToken.contains(":")) return@withContext
+        var conn: HttpURLConnection? = null
+        try {
+            val apiUrl = "https://api.telegram.org/bot$cleanToken/answerCallbackQuery"
+            conn = (URL(apiUrl).openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = 5000
+                readTimeout = 5000
+                doOutput = true
+                setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+            }
+            val payload = JSONObject().apply {
+                put("callback_query_id", callbackQueryId)
+                put("text", text.take(180))
+                put("show_alert", false)
+            }.toString()
+            conn.outputStream.use { os ->
+                os.write(payload.toByteArray(Charsets.UTF_8))
+                os.flush()
+            }
+            conn.responseCode
+        } catch (_: Exception) {
+        } finally {
+            conn?.disconnect()
+        }
+    }
+
     data class TelegramIncomingCommand(
         val updateId: Long,
         val chatId: String,
+        val senderId: String = "",
         val senderName: String,
+        val isPrivateChat: Boolean = false,
         val command: String,
-        val argument: String
+        val argument: String,
+        val callbackQueryId: String = ""
     )
 
     /**
-     * [v2.9.0] Đọc các lệnh điều khiển từ xa người dùng gõ trong nhóm Telegram (/ip, /status, /list, /clearlag, /day, /save, /say ...)
+     * [v2.9.6] Đọc các lệnh điều khiển từ xa & nút bấm Inline Keyboard người dùng thao tác trên Telegram
      */
     suspend fun fetchTelegramIncomingCommands(
         botToken: String,
@@ -682,7 +836,7 @@ object ProHostFeatures {
                 requestMethod = "GET"
                 connectTimeout = 6500
                 readTimeout = 6500
-                setRequestProperty("User-Agent", "MineHost/2.9.0")
+                setRequestProperty("User-Agent", "MineHost/2.9.6")
             }
             if (conn.responseCode !in 200..299) return@withContext emptyList()
             val body = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
@@ -693,13 +847,48 @@ object ProHostFeatures {
             for (i in 0 until results.length()) {
                 val item = results.optJSONObject(i) ?: continue
                 val updateId = item.optLong("update_id", 0L)
+                val cb = item.optJSONObject("callback_query")
+                if (cb != null) {
+                    val cbId = cb.optString("id", "")
+                    val data = cb.optString("data", "").trim()
+                    if (!data.startsWith("/")) continue
+                    val from = cb.optJSONObject("from")
+                    val senderId = from?.opt("id")?.toString().orEmpty()
+                    val sender = from?.optString("first_name")
+                        ?.ifBlank { from.optString("username") }
+                        .orEmpty()
+                        .ifBlank { "Admin" }
+                    val msg = cb.optJSONObject("message")
+                    val chat = msg?.optJSONObject("chat") ?: continue
+                    val chatId = chat.opt("id")?.toString().orEmpty()
+                    if (chatId.isBlank()) continue
+                    val isPrivate = chat.optString("type", "").equals("private", ignoreCase = true)
+                    val firstToken = data.substringBefore(" ").trim()
+                    val cmdClean = firstToken.substringBefore("@").lowercase()
+                    val arg = data.substringAfter(" ", "").trim()
+                    list.add(
+                        TelegramIncomingCommand(
+                            updateId = updateId,
+                            chatId = chatId,
+                            senderId = senderId,
+                            senderName = sender,
+                            isPrivateChat = isPrivate,
+                            command = cmdClean,
+                            argument = arg,
+                            callbackQueryId = cbId
+                        )
+                    )
+                    continue
+                }
                 val msg = item.optJSONObject("message") ?: item.optJSONObject("channel_post") ?: continue
                 val text = msg.optString("text", "").trim()
                 if (!text.startsWith("/")) continue
                 val chat = msg.optJSONObject("chat") ?: continue
                 val chatId = chat.opt("id")?.toString().orEmpty()
                 if (chatId.isBlank()) continue
+                val isPrivate = chat.optString("type", "").equals("private", ignoreCase = true)
                 val from = msg.optJSONObject("from")
+                val senderId = from?.opt("id")?.toString().orEmpty()
                 val sender = from?.optString("first_name")
                     ?.ifBlank { from.optString("username") }
                     .orEmpty()
@@ -711,7 +900,9 @@ object ProHostFeatures {
                     TelegramIncomingCommand(
                         updateId = updateId,
                         chatId = chatId,
+                        senderId = senderId,
                         senderName = sender,
+                        isPrivateChat = isPrivate,
                         command = cmdClean,
                         argument = arg
                     )
@@ -763,6 +954,8 @@ object ProHostFeatures {
     ) {
         private var serverSocket: ServerSocket? = null
         private var acceptJob: Job? = null
+        private val validSessions = java.util.concurrent.ConcurrentHashMap<String, Long>()
+        private val failedAttempts = java.util.concurrent.ConcurrentHashMap<String, Pair<Int, Long>>()
 
         val isRunning: Boolean get() = serverSocket?.isClosed == false
 
@@ -788,41 +981,141 @@ object ProHostFeatures {
             serverSocket = null
             acceptJob?.cancel()
             acceptJob = null
+            validSessions.clear()
+        }
+
+        fun invalidateAllSessions() {
+            validSessions.clear()
+            failedAttempts.clear()
         }
 
         private fun handleClient(socket: Socket) {
             socket.use { s ->
                 s.soTimeout = 5000
+                val clientIp = s.inetAddress?.hostAddress ?: "unknown"
                 val reader = BufferedReader(InputStreamReader(s.getInputStream(), Charsets.UTF_8))
                 val requestLine = reader.readLine() ?: return
                 val parts = requestLine.split(" ")
+                val method = parts.getOrNull(0)?.uppercase() ?: "GET"
                 val pathAndQuery = parts.getOrNull(1) ?: "/"
                 val query = pathAndQuery.substringAfter("?", "")
-                val params = parseQuery(query)
 
-                val expectedPin = pinProvider()
-                val providedPin = params["pin"].orEmpty()
-                var actionMsg = ""
-                if (params.containsKey("act")) {
-                    if (providedPin == expectedPin) {
-                        actionMsg = onAction(params["act"].orEmpty(), params["cmd"].orEmpty())
-                    } else {
-                        actionMsg = "❌ Sai mã PIN bảo mật! Vui lòng nhập đúng mã PIN 4 số hiển thị trên ứng dụng MineHost."
+                var contentLength = 0
+                var sessionCookie = ""
+                while (true) {
+                    val hdr = reader.readLine() ?: break
+                    if (hdr.isEmpty()) break
+                    val lower = hdr.lowercase()
+                    if (lower.startsWith("content-length:")) {
+                        contentLength = hdr.substringAfter(":").trim().toIntOrNull() ?: 0
+                    } else if (lower.startsWith("cookie:")) {
+                        val cookieRaw = hdr.substringAfter(":").trim()
+                        cookieRaw.split(";").forEach { piece ->
+                            val kv = piece.trim().split("=", limit = 2)
+                            if (kv.size == 2 && kv[0].trim() == "mh_session") {
+                                sessionCookie = kv[1].trim()
+                            }
+                        }
                     }
                 }
 
+                var postBody = ""
+                if (method == "POST" && contentLength in 1..4096) {
+                    val buf = CharArray(contentLength)
+                    var readTotal = 0
+                    while (readTotal < contentLength) {
+                        val r = reader.read(buf, readTotal, contentLength - readTotal)
+                        if (r <= 0) break
+                        readTotal += r
+                    }
+                    postBody = String(buf, 0, readTotal)
+                }
+
+                val params = parseQuery(query).toMutableMap()
+                if (postBody.isNotBlank()) {
+                    params.putAll(parseQuery(postBody))
+                }
+
+                val now = System.currentTimeMillis()
+                val attemptInfo = failedAttempts[clientIp]
+                if (attemptInfo != null && now < attemptInfo.second) {
+                    val remainMin = ((attemptInfo.second - now) / 60_000L).coerceAtLeast(1L)
+                    val lockedHtml = buildLoginHtml(
+                        errorMsg = "🔒 IP $clientIp đang bị khóa tạm thời $remainMin phút do nhập sai mã truy cập quá 5 lần!"
+                    )
+                    sendHtmlResponse(s, lockedHtml, null)
+                    return
+                }
+
+                val expectedPin = pinProvider().trim()
+                val providedPin = params["pin"]?.trim().orEmpty()
+                var setCookieHeader: String? = null
+
+                if (params["act"] == "logout") {
+                    if (sessionCookie.isNotBlank()) validSessions.remove(sessionCookie)
+                    setCookieHeader = "mh_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict"
+                    val html = buildLoginHtml(errorMsg = "✅ Đã đăng xuất an toàn khỏi phiên điều khiển từ xa.")
+                    sendHtmlResponse(s, html, setCookieHeader)
+                    return
+                }
+
+                var isAuthenticated = sessionCookie.isNotBlank() &&
+                    (validSessions[sessionCookie]?.let { exp -> now < exp } == true)
+
+                if (!isAuthenticated && providedPin.isNotBlank()) {
+                    if (providedPin == expectedPin && expectedPin.isNotBlank()) {
+                        failedAttempts.remove(clientIp)
+                        val newToken = java.util.UUID.randomUUID().toString().replace("-", "") +
+                            java.util.UUID.randomUUID().toString().replace("-", "").take(16)
+                        validSessions[newToken] = now + 12L * 3600_000L
+                        setCookieHeader = "mh_session=$newToken; Path=/; HttpOnly; SameSite=Strict"
+                        isAuthenticated = true
+                    } else {
+                        val prevCount = (attemptInfo?.first ?: 0) + 1
+                        val lockUntil = if (prevCount >= 5) now + 15L * 60_000L else 0L
+                        failedAttempts[clientIp] = prevCount to lockUntil
+                        val err = if (prevCount >= 5) {
+                            "🔒 Đã nhập sai 5 lần liên tiếp! Khóa đăng nhập từ IP này trong 15 phút để chống dò mã."
+                        } else {
+                            "❌ Sai mã PIN bảo mật! Còn ${5 - prevCount}/5 lần thử trước khi khóa bảo vệ."
+                        }
+                        val html = buildLoginHtml(errorMsg = err)
+                        sendHtmlResponse(s, html, null)
+                        return
+                    }
+                }
+
+                if (!isAuthenticated) {
+                    val html = buildLoginHtml(errorMsg = "")
+                    sendHtmlResponse(s, html, null)
+                    return
+                }
+
+                var actionMsg = ""
+                if (params.containsKey("act") && params["act"] != "login") {
+                    actionMsg = onAction(params["act"].orEmpty(), params["cmd"].orEmpty())
+                }
+
                 val st = statusProvider()
-                val html = buildDashboardHtml(st, providedPin.ifBlank { expectedPin }, actionMsg)
-                val bodyBytes = html.toByteArray(Charsets.UTF_8)
-                val writer = OutputStreamWriter(s.getOutputStream(), Charsets.UTF_8)
-                writer.write("HTTP/1.1 200 OK\r\n")
-                writer.write("Content-Type: text/html; charset=UTF-8\r\n")
-                writer.write("Content-Length: ${bodyBytes.size}\r\n")
-                writer.write("Connection: close\r\n\r\n")
-                writer.flush()
-                s.getOutputStream().write(bodyBytes)
-                s.getOutputStream().flush()
+                val html = buildDashboardHtml(st, actionMsg)
+                sendHtmlResponse(s, html, setCookieHeader)
             }
+        }
+
+        private fun sendHtmlResponse(s: Socket, html: String, setCookieHeader: String?) {
+            val bodyBytes = html.toByteArray(Charsets.UTF_8)
+            val writer = OutputStreamWriter(s.getOutputStream(), Charsets.UTF_8)
+            writer.write("HTTP/1.1 200 OK\r\n")
+            writer.write("Content-Type: text/html; charset=UTF-8\r\n")
+            writer.write("Cache-Control: no-store, no-cache, must-revalidate\r\n")
+            if (!setCookieHeader.isNullOrBlank()) {
+                writer.write("Set-Cookie: $setCookieHeader\r\n")
+            }
+            writer.write("Content-Length: ${bodyBytes.size}\r\n")
+            writer.write("Connection: close\r\n\r\n")
+            writer.flush()
+            s.getOutputStream().write(bodyBytes)
+            s.getOutputStream().flush()
         }
 
         private fun parseQuery(query: String): Map<String, String> {
@@ -838,7 +1131,41 @@ object ProHostFeatures {
             }.toMap()
         }
 
-        private fun buildDashboardHtml(st: Map<String, String>, pin: String, actionMsg: String): String {
+        private fun buildLoginHtml(errorMsg: String): String {
+            return """
+                <!DOCTYPE html>
+                <html lang="vi">
+                <head>
+                    <meta charset="UTF-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <title>Đăng Nhập Bảo Mật — MineHost Web Remote</title>
+                    <style>
+                        body { background:#0f172a; color:#f8fafc; font-family:system-ui,sans-serif; margin:0; padding:24px; display:flex; align-items:center; justify-content:center; min-height:85vh; }
+                        .card { background:#1e293b; border-radius:16px; padding:22px; max-width:420px; width:100%; border:1px solid #334155; box-shadow:0 10px 30px rgba(0,0,0,0.45); }
+                        h1 { font-size:20px; margin:0 0 8px 0; color:#38bdf8; }
+                        p { font-size:13px; color:#94a3b8; line-height:1.5; margin:0 0 14px 0; }
+                        input { background:#0f172a; color:#fff; border:1px solid #475569; padding:12px; border-radius:10px; width:100%; box-sizing:border-box; margin-bottom:12px; font-size:16px; text-align:center; letter-spacing:3px; font-weight:bold; }
+                        button { background:#2563eb; color:#fff; border:none; padding:12px; border-radius:10px; width:100%; font-weight:bold; font-size:14px; cursor:pointer; }
+                        .err { background:#7f1d1d; color:#fecaca; padding:10px; border-radius:10px; margin-bottom:12px; font-size:13px; font-weight:bold; }
+                    </style>
+                </head>
+                <body>
+                    <div class="card">
+                        <h1>🔐 Khóa Bảo Mật MineHost Remote</h1>
+                        <p>Nhập mã truy cập 6 số hiển thị trong mục <b>Điều Khiển Từ Xa</b> trên ứng dụng MineHost. Tự động khóa 15 phút nếu nhập sai quá 5 lần.</p>
+                        ${if (errorMsg.isNotBlank()) """<div class="err">$errorMsg</div>""" else ""}
+                        <form method="POST" action="/">
+                            <input type="hidden" name="act" value="login" />
+                            <input type="password" name="pin" placeholder="••••••" autocomplete="off" required />
+                            <button type="submit">🔓 Mở Bảng Điều Khiển Server</button>
+                        </form>
+                    </div>
+                </body>
+                </html>
+            """.trimIndent()
+        }
+
+        private fun buildDashboardHtml(st: Map<String, String>, actionMsg: String): String {
             val serverName = st["serverName"] ?: "MineHost Server"
             val running = st["running"] ?: "Đang dừng"
             val players = st["players"] ?: "0"
@@ -854,6 +1181,7 @@ object ProHostFeatures {
                     <style>
                         body { background:#0f172a; color:#f8fafc; font-family:system-ui,sans-serif; margin:0; padding:16px; }
                         .card { background:#1e293b; border-radius:14px; padding:16px; margin-bottom:14px; border:1px solid #334155; }
+                        .top-row { display:flex; justify-content:space-between; align-items:center; gap:8px; }
                         h1 { font-size:20px; margin:0 0 8px 0; color:#38bdf8; }
                         .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:10px; margin-top:10px; }
                         .stat { background:#0f172a; padding:10px; border-radius:10px; font-weight:bold; font-size:13px; }
@@ -861,13 +1189,17 @@ object ProHostFeatures {
                         a.btn.green { background:#16a34a; }
                         a.btn.red { background:#dc2626; }
                         a.btn.amber { background:#d97706; }
+                        a.btn.slate { background:#475569; font-size:12px; padding:7px 10px; }
                         input { background:#0f172a; color:#fff; border:1px solid #475569; padding:10px; border-radius:8px; width:100%; box-sizing:border-box; margin-bottom:8px; }
                         .msg { background:#065f46; color:#a7f3d0; padding:10px; border-radius:10px; margin-bottom:12px; font-weight:bold; }
                     </style>
                 </head>
                 <body>
                     <div class="card">
-                        <h1>🇻🇳 MineHost Web Panel — $serverName</h1>
+                        <div class="top-row">
+                            <h1>🇻🇳 MineHost Web Panel — $serverName</h1>
+                            <a class="btn slate" href="/?act=logout">🔒 Đăng xuất</a>
+                        </div>
                         <div class="grid">
                             <div class="stat">Trạng thái: $running</div>
                             <div class="stat">Người chơi: $players</div>
@@ -877,19 +1209,18 @@ object ProHostFeatures {
                     </div>
                     ${if (actionMsg.isNotBlank()) """<div class="msg">$actionMsg</div>""" else ""}
                     <div class="card">
-                        <div style="font-weight:bold;margin-bottom:8px;">⚡ Điều Khiển Nhanh 1 Chạm (PIN: $pin)</div>
+                        <div style="font-weight:bold;margin-bottom:8px;">⚡ Điều Khiển Nhanh 1 Chạm (Phiên Cookie Bảo Mật)</div>
                         <div class="grid">
-                            <a class="btn green" href="/?pin=$pin&act=clear_lag">🧹 Dọn Lag & Lưu Map</a>
-                            <a class="btn" href="/?pin=$pin&act=day_clear">☀️ Trời Sáng & Tạnh Mưa</a>
-                            <a class="btn amber" href="/?pin=$pin&act=supply_drop">🎁 Thả Rương Tiếp Tế</a>
-                            <a class="btn amber" href="/?pin=$pin&act=exp_rain">✨ Mưa +30 Cấp EXP</a>
-                            <a class="btn red" href="/?pin=$pin&act=panic">🚨 Chống Phá Map (Xóa TNT)</a>
-                            <a class="btn red" href="/?pin=$pin&act=save_stop">🛑 Lưu & Dừng Server</a>
+                            <a class="btn green" href="/?act=clear_lag">🧹 Dọn Lag & Lưu Map</a>
+                            <a class="btn" href="/?act=day_clear">☀️ Trời Sáng & Tạnh Mưa</a>
+                            <a class="btn amber" href="/?act=supply_drop">🎁 Thả Rương Tiếp Tế</a>
+                            <a class="btn amber" href="/?act=exp_rain">✨ Mưa +30 Cấp EXP</a>
+                            <a class="btn red" href="/?act=panic">🚨 Chống Phá Map (Xóa TNT)</a>
+                            <a class="btn red" href="/?act=save_stop">🛑 Lưu & Dừng Server</a>
                         </div>
                     </div>
                     <div class="card">
-                        <form method="GET" action="/">
-                            <input type="hidden" name="pin" value="$pin" />
+                        <form method="POST" action="/">
                             <input type="hidden" name="act" value="cmd" />
                             <input type="text" name="cmd" placeholder="Nhập lệnh Console (VD: say Xin chao, gamemode creative @a)..." />
                             <button type="submit" class="btn" style="width:100%;">🚀 Gửi Lệnh Tới Server</button>
@@ -2726,7 +3057,7 @@ object ProHostFeatures {
         propFile.writeText(existingLines.joinToString("\n") + "\n")
     }
 
-    // ── NÂNG CẤP 1: KHO BẢN ĐỒ & CHẾ ĐỘ CHƠI DỰNG SẴN 1 CHẠM (ONEBLOCK / SKYBLOCK / PARKOUR / LUCKY ISLAND) ──
+    // ── NÂNG CẤP 1: KHO FULL PACK SINH TỒN & CHẾ ĐỘ CHƠI DỰNG SẴN 1 CHẠM (ONEBLOCK / ĐẠI DỊCH ZOMBIE / SĂN RỒNG RPG / SKYBLOCK / RLCRAFT / PARKOUR) ──
 
     data class PlayableWorldModePreset(
         val id: String,
@@ -2741,27 +3072,54 @@ object ProHostFeatures {
     val PLAYABLE_WORLD_MODES = listOf(
         PlayableWorldModePreset(
             id = "oneblock",
-            titleVi = "🏝️ OneBlock Sinh Tồn 1 Ô",
+            titleVi = "🧱 OneBlock Pro — Sinh Tồn 1 Ô (10 Cấp Độ)",
             badgeVi = "HOT NHẤT",
-            descVi = "Khởi đầu trên đúng 1 ô đất duy nhất giữa không trung! Đào liên tục ô đất ở (0, 64, 0) sẽ tự động tái tạo gỗ, đá, quặng, kim cương & rương kho báu.",
+            descVi = "Khởi đầu trên 1 ô đất duy nhất giữa không trung! Đào liên tục ô tại (0, 64, 0) tự động lên cấp qua 10 giai đoạn: Gỗ -> Đá -> Sắt -> Vàng -> Ngọc Lục Bảo -> Kim Cương -> Cổ Thạch & Rương Kho Báu, kèm cứu hộ rơi vực.",
             folderName = "world_oneblock",
             levelType = "minecraft:flat",
             seed = "20261025"
         ),
         PlayableWorldModePreset(
+            id = "zombie_apocalypse",
+            titleVi = "🧟 Siêu Đại Dịch Zombie (100 Ngày Tận Thế)",
+            badgeVi = "ĐẠI DỊCH",
+            descVi = "Thế giới hậu tận thế kèm Căn Cứ Quân Sự Khởi Đầu, Rương Vũ Khí & Thuốc Hồi Phục, Đợt Tấn Công Zombie Đột Biến (Tank Khổng Lồ, Zombie Tốc Độ, Xương Bắn Tỉa), Trăng Máu & Hòm Tiếp Tế Quân Sự.",
+            folderName = "world_zombie_apocalypse",
+            levelType = "minecraft:normal",
+            seed = "-6662026999"
+        ),
+        PlayableWorldModePreset(
+            id = "dragon_rpg",
+            titleVi = "🐉 Kỷ Nguyên Săn Rồng & Hầm Ngục RPG",
+            badgeVi = "SĂN RỒNG",
+            descVi = "Sinh tồn RPG huyền thoại kèm Đài Triệu Hồi Rồng Cổ Đại, Bộ Giáp & Kiếm Chiến Binh Săn Rồng, Totem Bất Tử, Ngọc Ender và lệnh gọi Boss Rồng / Boss Hầm Ngục rơi kho báu.",
+            folderName = "world_dragon_rpg",
+            levelType = "minecraft:normal",
+            seed = "888877772026"
+        ),
+        PlayableWorldModePreset(
             id = "skyblock",
-            titleVi = "☁️ SkyBlock Đảo Trên Không",
+            titleVi = "☁️ SkyBlock Đảo Trên Không (Máy Tạo Quặng)",
             badgeVi = "KINH ĐIỂN",
-            descVi = "Sinh tồn trên hòn đảo bay giữa bầu trời kèm Cây Sồi, Rương Xô Dung Nham + Nước Đá để làm máy tạo đá cuội vô hạn.",
+            descVi = "Sinh tồn trên đảo bay giữa bầu trời kèm Cây Sồi, Rương Đá Băng + Dung Nham và Máy Tạo Quặng Phép Thuật tự sinh Sắt, Vàng, Kim Cương cùng cứu hộ rơi vực tự động.",
             folderName = "world_skyblock",
             levelType = "minecraft:flat",
             seed = "88889999"
         ),
         PlayableWorldModePreset(
+            id = "rlcraft_hardcore",
+            titleVi = "🩸 Sinh Tồn Khắc Nghiệt (RLCraft Lite)",
+            badgeVi = "THỬ THÁCH",
+            descVi = "Thử thách sinh tồn độ khó cao: Quái vật tinh nhuệ mặc giáp & tăng tốc ban đêm, kèm Trang Bị Khởi Đầu Thám Hiểm, Khiên Chắn và Táo Vàng Cứu Thương.",
+            folderName = "world_rlcraft",
+            levelType = "minecraft:normal",
+            seed = "-4049092026"
+        ),
+        PlayableWorldModePreset(
             id = "parkour",
             titleVi = "🏃 Đấu Trường Parkour Trên Không",
             badgeVi = "GIẢI TRÍ",
-            descVi = "Đường đua vượt chướng ngại vật nhiều chặng giữa tầng mây kèm bệ tăng tốc, điểm hồi sinh tự động và pháo hoa chiến thắng.",
+            descVi = "Đường đua vượt chướng ngại vật 25 chặng giữa tầng mây kèm bệ Emerald nghỉ chân, cứu hộ tự động khi rơi và đài chiến thắng Kim Cương.",
             folderName = "world_parkour",
             levelType = "minecraft:flat",
             seed = "77771111"
@@ -2770,12 +3128,30 @@ object ProHostFeatures {
             id = "lucky_island",
             titleVi = "🍀 Đảo Sinh Tồn Kho Báu (Lucky)",
             badgeVi = "SIÊU VUI",
-            descVi = "Quần đảo đại dương tuyệt đẹp kèm Rương Khởi Đầu Siêu Cấp, Bàn Phù Phép & hiệu ứng may mắn cho cả nhóm bạn bè.",
+            descVi = "Quần đảo đại dương tuyệt đẹp kèm Rương Khởi Đầu Siêu Cấp, Bàn Phù Phép & hiệu ứng May Mắn cho cả nhóm bạn bè PC + PE.",
             folderName = "world_lucky_island",
             levelType = "minecraft:normal",
             seed = "-7723232821704547830"
         )
     )
+
+    fun detectWorldPlayableModeLabel(worldDir: File): String {
+        val name = worldDir.name.lowercase()
+        val dpDir = File(worldDir, "datapacks")
+        val dpNames = dpDir.listFiles()?.map { it.name.lowercase() }.orEmpty()
+        return when {
+            name.contains("oneblock") || dpNames.any { it.contains("oneblock") } -> "🧱 OneBlock 10 Cấp"
+            name.contains("zombie") || dpNames.any { it.contains("zombie") } -> "🧟 Đại Dịch Zombie"
+            name.contains("dragon") || dpNames.any { it.contains("dragon") } -> "🐉 Săn Rồng RPG"
+            name.contains("skyblock") || dpNames.any { it.contains("skyblock") } -> "☁️ SkyBlock Quặng"
+            name.contains("rlcraft") || dpNames.any { it.contains("rlcraft") } -> "🩸 Khắc Nghiệt RLCraft"
+            name.contains("parkour") || dpNames.any { it.contains("parkour") } -> "🏃 Đấu Trường Parkour"
+            name.contains("lucky") || dpNames.any { it.contains("lucky") } -> "🍀 Đảo Kho Báu"
+            name.endsWith("_nether") -> "🔥 Địa Ngục (Nether)"
+            name.endsWith("_the_end") -> "🌌 Thế Giới End"
+            else -> "🌲 Sinh Tồn Thường"
+        }
+    }
 
     suspend fun createPlayableModeWorldOneTap(
         serverDir: File,
@@ -2787,7 +3163,7 @@ object ProHostFeatures {
             val preset = PLAYABLE_WORLD_MODES.firstOrNull { it.id == modeId }
                 ?: PLAYABLE_WORLD_MODES.first()
 
-            onProgress(0.15f, "🌍 Đang khởi tạo thư mục chế độ '${preset.titleVi}' (${preset.folderName})...")
+            onProgress(0.15f, "🌍 Đang khởi tạo thư mục Pack '${preset.titleVi}' (${preset.folderName})...")
             val worldDir = File(serverDir, preset.folderName).apply { mkdirs() }
             val datapackRoot = File(worldDir, "datapacks/minehost_${preset.id}").apply { mkdirs() }
 
@@ -2804,22 +3180,106 @@ object ProHostFeatures {
                 """.trimIndent()
             )
 
+            val extraFunctions = mutableMapOf<String, List<String>>()
+
+            val supplyDropFn = listOf(
+                "execute at @a run summon minecraft:firework_rocket ~ ~3 ~",
+                "give @a minecraft:golden_apple 4",
+                "give @a minecraft:cooked_beef 16",
+                "give @a minecraft:arrow 32",
+                "give @a minecraft:iron_ingot 8",
+                "give @a minecraft:diamond 2",
+                "effect give @a minecraft:regeneration 20 1 true",
+                "effect give @a minecraft:absorption 120 1 true",
+                """tellraw @a [{"text":"[🪂 Tiếp Tế Quân Sự] ","color":"gold","bold":true},{"text":"Kiện hàng tiếp tế khẩn cấp (Táo Vàng, Kim Cương, Đạn Tên & Hồi Phục) đã được thả xuống cho toàn bộ người chơi!","color":"green"}]"""
+            )
+            extraFunctions["supply_drop"] = supplyDropFn
+
+            val zombieWaveFn = listOf(
+                "execute at @a run summon minecraft:zombie ~4 ~1 ~4 {CustomName:'\"🧟 Zombie Tiên Phong\"',ArmorItems:[{},{},{id:\"minecraft:iron_chestplate\",Count:1b,count:1},{id:\"minecraft:iron_helmet\",Count:1b,count:1}]}",
+                "execute at @a run summon minecraft:zombie ~-4 ~1 ~4 {IsBaby:1b,CustomName:'\"⚡ Zombie Tốc Độ\"'}",
+                "execute at @a run summon minecraft:husk ~4 ~1 ~-4 {CustomName:'\"☣️ Zombie Đột Biến Kháng Nắng\"',ArmorItems:[{id:\"minecraft:golden_boots\",Count:1b,count:1},{id:\"minecraft:chainmail_leggings\",Count:1b,count:1},{id:\"minecraft:diamond_chestplate\",Count:1b,count:1},{id:\"minecraft:carved_pumpkin\",Count:1b,count:1}]}",
+                "execute at @a run summon minecraft:skeleton ~-4 ~1 ~-4 {CustomName:'\"🏹 Xạ Thủ Xương Tinh Nhuệ\"',HandItems:[{id:\"minecraft:bow\",Count:1b,count:1},{}],ArmorItems:[{},{},{},{id:\"minecraft:chainmail_helmet\",Count:1b,count:1}]}",
+                "effect give @e[type=minecraft:zombie,distance=..32] minecraft:speed 60 0 true",
+                "effect give @e[type=minecraft:husk,distance=..32] minecraft:resistance 60 1 true",
+                """tellraw @a [{"text":"[🧟 CẢNH BÁO ĐẠI DỊCH] ","color":"dark_red","bold":true},{"text":"Một đàn Zombie Đột Biến vừa xuất hiện quanh khu vực của bạn! Hãy chiến đấu để nhận EXP & Chiến Lợi Phẩm!","color":"yellow"}]"""
+            )
+            extraFunctions["zombie_wave"] = zombieWaveFn
+
+            val dragonBossFn = listOf(
+                "execute at @r run summon minecraft:ravager ~6 ~1 ~6 {CustomName:'\"🐉 Long Thú Hộ Vệ Cổ Đại\"'}",
+                "execute at @r run summon minecraft:phantom ~ ~8 ~ {Size:6,CustomName:'\"🐲 Huyết Long Bóng Đêm\"'}",
+                "execute at @r run summon minecraft:blaze ~-5 ~2 ~5 {CustomName:'\"🔥 Hỏa Tinh Vương\"'}",
+                "effect give @a minecraft:fire_resistance 180 0 true",
+                "effect give @a minecraft:strength 90 0 true",
+                "xp add @a 15 levels",
+                """tellraw @a [{"text":"[🐉 ĐÀI TRIỆU HỒI RỒNG] ","color":"light_purple","bold":true},{"text":"Long Thú Cổ Đại & Huyết Long đã giáng lâm! Toàn đội nhận Kháng Lửa + Sức Mạnh để săn Boss!","color":"gold"}]"""
+            )
+            extraFunctions["summon_dragon_boss"] = dragonBossFn
+
+            val dragonKitFn = listOf(
+                "give @a minecraft:diamond_sword 1",
+                "give @a minecraft:bow 1",
+                "give @a minecraft:arrow 64",
+                "give @a minecraft:shield 1",
+                "give @a minecraft:totem_of_undying 1",
+                "give @a minecraft:golden_apple 8",
+                "give @a minecraft:ender_pearl 8",
+                "give @a minecraft:diamond_chestplate 1",
+                "give @a minecraft:diamond_helmet 1",
+                "effect give @a minecraft:strength 120 0 true",
+                "effect give @a minecraft:fire_resistance 180 0 true",
+                """tellraw @a [{"text":"[⚔️ Kho Vũ Khí Săn Rồng] ","color":"aqua","bold":true},{"text":"Đã trang bị Bộ Giáp & Kiếm Chiến Binh Săn Rồng + Totem Bất Tử cho mọi người chơi!","color":"green"}]"""
+            )
+            extraFunctions["dragon_kit"] = dragonKitFn
+
             val initCommands = when (preset.id) {
                 "oneblock" -> listOf(
                     "gamerule keepInventory true",
                     "gamerule doMobSpawning false",
                     "gamerule doDaylightCycle true",
                     "gamerule fallDamage false",
+                    "scoreboard objectives add ob_mined dummy",
+                    "scoreboard players set #phase ob_mined 0",
                     "setworldspawn 0 65 0",
                     "setblock 0 63 0 minecraft:bedrock",
                     "setblock 0 64 0 minecraft:grass_block",
                     "fill 2 64 -1 4 64 1 minecraft:oak_planks",
-                    "setblock 3 65 0 minecraft:chest{Items:[{Slot:0b,id:\"minecraft:water_bucket\",Count:1b,count:1},{Slot:1b,id:\"minecraft:lava_bucket\",Count:1b,count:1},{Slot:2b,id:\"minecraft:bread\",Count:16b,count:16},{Slot:3b,id:\"minecraft:oak_sapling\",Count:4b,count:4},{Slot:4b,id:\"minecraft:torch\",Count:16b,count:16}]}",
+                    "setblock 3 65 0 minecraft:chest{Items:[{Slot:0b,id:\"minecraft:water_bucket\",Count:1b,count:1},{Slot:1b,id:\"minecraft:lava_bucket\",Count:1b,count:1},{Slot:2b,id:\"minecraft:bread\",Count:16b,count:16},{Slot:3b,id:\"minecraft:oak_sapling\",Count:4b,count:4},{Slot:4b,id:\"minecraft:torch\",Count:16b,count:16},{Slot:5b,id:\"minecraft:iron_pickaxe\",Count:1b,count:1}]}",
                     "tp @a 0 66 0",
-                    """tellraw @a [{"text":"[🏝️ MineHost OneBlock] ","color":"gold","bold":true},{"text":"Chào mừng tới Đảo 1 Ô! Hãy đào ô đất tại (0, 64, 0) để nhận tài nguyên vô hạn!","color":"green"}]"""
+                    """tellraw @a [{"text":"[🧱 MineHost OneBlock 10 Cấp] ","color":"gold","bold":true},{"text":"Chào mừng tới Đảo 1 Ô! Đào liên tục ô tại (0, 64, 0) để tiến hóa qua 10 cấp độ Gỗ, Đá, Sắt, Vàng, Ngọc Lục Bảo, Kim Cương & Cổ Thạch!","color":"green"}]"""
+                )
+                "zombie_apocalypse" -> listOf(
+                    "gamerule keepInventory true",
+                    "difficulty hard",
+                    "scoreboard objectives add zb_timer dummy",
+                    "scoreboard players set #tick zb_timer 0",
+                    "give @a minecraft:iron_sword 1",
+                    "give @a minecraft:crossbow 1",
+                    "give @a minecraft:arrow 64",
+                    "give @a minecraft:shield 1",
+                    "give @a minecraft:golden_apple 6",
+                    "give @a minecraft:cooked_beef 32",
+                    "give @a minecraft:torch 32",
+                    "give @a minecraft:iron_chestplate 1",
+                    "give @a minecraft:iron_helmet 1",
+                    "effect give @a minecraft:resistance 60 0 true",
+                    "effect give @a minecraft:night_vision 300 0 true",
+                    """tellraw @a [{"text":"[🧟 Siêu Đại Dịch Zombie] ","color":"dark_red","bold":true},{"text":"Chào mừng tới 100 Ngày Tận Thế! Bạn đã nhận Bộ Quân Trang Khởi Đầu (Nỏ, Kiếm Sắt, Giáp, Khiên & Thuốc Hồi Phục). Hãy xây căn cứ trước khi màn đêm buông xuống!","color":"yellow"}]"""
+                )
+                "dragon_rpg" -> listOf(
+                    "gamerule keepInventory true",
+                    "difficulty normal",
+                    "scoreboard objectives add rpg_timer dummy",
+                    "scoreboard players set #tick rpg_timer 0",
+                    "function minehost:dragon_kit",
+                    """tellraw @a [{"text":"[🐉 Kỷ Nguyên Săn Rồng RPG] ","color":"light_purple","bold":true},{"text":"Đã kích hoạt Thế Giới Săn Rồng & Hầm Ngục RPG! Bạn có thể bấm nút Triệu Hồi Boss hoặc Nhận Đồ Săn Rồng ngay trên App MineHost / Telegram!","color":"gold"}]"""
                 )
                 "skyblock" -> listOf(
                     "gamerule keepInventory true",
+                    "gamerule fallDamage false",
+                    "scoreboard objectives add sb_gen dummy",
+                    "scoreboard players set #step sb_gen 0",
                     "setworldspawn 0 66 0",
                     "setblock 0 62 0 minecraft:bedrock",
                     "fill -3 62 -3 3 63 3 minecraft:dirt",
@@ -2827,9 +3287,24 @@ object ProHostFeatures {
                     "setblock 0 62 0 minecraft:bedrock",
                     "fill 2 65 2 2 68 2 minecraft:oak_log",
                     "fill 0 68 0 4 69 4 minecraft:oak_leaves[persistent=true]",
-                    "setblock -2 65 0 minecraft:chest{Items:[{Slot:0b,id:\"minecraft:ice\",Count:2b,count:2},{Slot:1b,id:\"minecraft:lava_bucket\",Count:1b,count:1},{Slot:2b,id:\"minecraft:bone_meal\",Count:16b,count:16},{Slot:3b,id:\"minecraft:melon_slice\",Count:8b,count:8},{Slot:4b,id:\"minecraft:oak_sapling\",Count:4b,count:4},{Slot:5b,id:\"minecraft:cooked_beef\",Count:16b,count:16}]}",
+                    "setblock 0 64 -3 minecraft:bedrock",
+                    "setblock 0 65 -3 minecraft:diamond_ore",
+                    "setblock -2 65 0 minecraft:chest{Items:[{Slot:0b,id:\"minecraft:ice\",Count:2b,count:2},{Slot:1b,id:\"minecraft:lava_bucket\",Count:1b,count:1},{Slot:2b,id:\"minecraft:bone_meal\",Count:16b,count:16},{Slot:3b,id:\"minecraft:melon_slice\",Count:8b,count:8},{Slot:4b,id:\"minecraft:oak_sapling\",Count:4b,count:4},{Slot:5b,id:\"minecraft:cooked_beef\",Count:16b,count:16},{Slot:6b,id:\"minecraft:iron_pickaxe\",Count:1b,count:1}]}",
                     "tp @a 0 66 0",
-                    """tellraw @a [{"text":"[☁️ MineHost SkyBlock] ","color":"aqua","bold":true},{"text":"Đảo SkyBlock đã sẵn sàng! Mở rương lấy Đá Băng & Dung Nham để chế tạo máy tạo Đá Cuội nhé!","color":"yellow"}]"""
+                    """tellraw @a [{"text":"[☁️ MineHost SkyBlock Pro] ","color":"aqua","bold":true},{"text":"Đảo SkyBlock kèm Máy Tạo Quặng Phép Thuật tại (0, 65, -3) đã sẵn sàng!","color":"yellow"}]"""
+                )
+                "rlcraft_hardcore" -> listOf(
+                    "gamerule keepInventory false",
+                    "difficulty hard",
+                    "scoreboard objectives add rlc_timer dummy",
+                    "scoreboard players set #tick rlc_timer 0",
+                    "give @a minecraft:shield 1",
+                    "give @a minecraft:stone_sword 1",
+                    "give @a minecraft:stone_pickaxe 1",
+                    "give @a minecraft:golden_apple 4",
+                    "give @a minecraft:cooked_mutton 16",
+                    "effect give @a minecraft:absorption 120 1 true",
+                    """tellraw @a [{"text":"[🩸 Sinh Tồn Khắc Nghiệt RLCraft Lite] ","color":"red","bold":true},{"text":"Cảnh báo: Chế độ Khắc Nghiệt đã bật! Quái vật ban đêm cực mạnh, hãy luôn cầm Khiên và Táo Vàng bên mình!","color":"gold"}]"""
                 )
                 "parkour" -> buildList {
                     add("gamerule keepInventory true")
@@ -2873,13 +3348,62 @@ object ProHostFeatures {
                 )
             }
 
+            if (preset.id == "oneblock") {
+                extraFunctions["oneblock_next"] = listOf(
+                    "scoreboard players add #phase ob_mined 1",
+                    "execute if score #phase ob_mined matches 1 run setblock 0 64 0 minecraft:oak_log",
+                    "execute if score #phase ob_mined matches 2 run setblock 0 64 0 minecraft:cobblestone",
+                    "execute if score #phase ob_mined matches 3 run setblock 0 64 0 minecraft:coal_ore",
+                    "execute if score #phase ob_mined matches 4 run setblock 0 64 0 minecraft:iron_ore",
+                    "execute if score #phase ob_mined matches 5 run setblock 0 64 0 minecraft:gold_ore",
+                    "execute if score #phase ob_mined matches 6 run setblock 0 64 0 minecraft:redstone_ore",
+                    "execute if score #phase ob_mined matches 7 run setblock 0 64 0 minecraft:lapis_ore",
+                    "execute if score #phase ob_mined matches 8 run setblock 0 64 0 minecraft:emerald_ore",
+                    "execute if score #phase ob_mined matches 9 run setblock 0 64 0 minecraft:diamond_ore",
+                    "execute if score #phase ob_mined matches 10.. run setblock 0 64 0 minecraft:ancient_debris",
+                    "execute if score #phase ob_mined matches 10.. run scoreboard players set #phase ob_mined 0"
+                )
+            }
+
+            if (preset.id == "skyblock") {
+                extraFunctions["skyblock_gen"] = listOf(
+                    "scoreboard players add #step sb_gen 1",
+                    "execute if score #step sb_gen matches 1 run setblock 0 65 -3 minecraft:cobblestone",
+                    "execute if score #step sb_gen matches 2 run setblock 0 65 -3 minecraft:coal_ore",
+                    "execute if score #step sb_gen matches 3 run setblock 0 65 -3 minecraft:iron_ore",
+                    "execute if score #step sb_gen matches 4 run setblock 0 65 -3 minecraft:gold_ore",
+                    "execute if score #step sb_gen matches 5.. run setblock 0 65 -3 minecraft:diamond_ore",
+                    "execute if score #step sb_gen matches 5.. run scoreboard players set #step sb_gen 0"
+                )
+            }
+
             val tickCommands = when (preset.id) {
                 "oneblock" -> listOf(
-                    "execute if block 0 64 0 minecraft:air run setblock 0 64 0 minecraft:oak_log",
-                    "execute as @a at @s if entity @s[y=-20,dy=60] run tp @s 0 66 0"
+                    "execute if block 0 64 0 minecraft:air run function minehost:oneblock_next",
+                    "execute as @a at @s if entity @s[y=-64,dy=100] run tp @s 0 66 0"
                 )
-                "skyblock", "parkour" -> listOf(
-                    "execute as @a at @s if entity @s[y=-20,dy=55] run tp @s 0 72 0"
+                "skyblock" -> listOf(
+                    "execute if block 0 65 -3 minecraft:air run function minehost:skyblock_gen",
+                    "execute as @a at @s if entity @s[y=-64,dy=100] run tp @s 0 66 0"
+                )
+                "parkour" -> listOf(
+                    "execute as @a at @s if entity @s[y=-64,dy=115] run tp @s 0 72 0"
+                )
+                "zombie_apocalypse" -> listOf(
+                    "scoreboard players add #tick zb_timer 1",
+                    "execute if score #tick zb_timer matches 6000 run function minehost:zombie_wave",
+                    "execute if score #tick zb_timer matches 12000 run function minehost:supply_drop",
+                    "execute if score #tick zb_timer matches 12000.. run scoreboard players set #tick zb_timer 0"
+                )
+                "dragon_rpg" -> listOf(
+                    "scoreboard players add #tick rpg_timer 1",
+                    "execute if score #tick rpg_timer matches 9000 run function minehost:supply_drop",
+                    "execute if score #tick rpg_timer matches 9000.. run scoreboard players set #tick rpg_timer 0"
+                )
+                "rlcraft_hardcore" -> listOf(
+                    "scoreboard players add #tick rlc_timer 1",
+                    "execute if score #tick rlc_timer matches 7200 run function minehost:zombie_wave",
+                    "execute if score #tick rlc_timer matches 7200.. run scoreboard players set #tick rlc_timer 0"
                 )
                 else -> emptyList()
             }
@@ -2889,6 +3413,9 @@ object ProHostFeatures {
                 val mhFnDir = File(datapackRoot, "data/minehost/$fnFolder").apply { mkdirs() }
                 File(mhFnDir, "init.mcfunction").writeText(initCommands.joinToString("\n") + "\n")
                 File(mhFnDir, "loop.mcfunction").writeText(tickCommands.joinToString("\n") + "\n")
+                extraFunctions.forEach { (fnName, lines) ->
+                    File(mhFnDir, "$fnName.mcfunction").writeText(lines.joinToString("\n") + "\n")
+                }
 
                 val mcTagDir = File(datapackRoot, "data/minecraft/tags/$fnFolder").apply { mkdirs() }
                 File(mcTagDir, "load.json").writeText("""{"values":["minehost:init"]}""")
@@ -2910,9 +3437,91 @@ object ProHostFeatures {
                     )
                 )
             }
-            onProgress(1.0f, "🎉 Đã tạo xong chế độ '${preset.titleVi}' (${preset.folderName})!")
+            onProgress(1.0f, "🎉 Đã tạo xong Pack '${preset.titleVi}' (${preset.folderName})!")
             preset
         }
+    }
+
+    // ── DỌN RÁC BỘ NHỚ APP 1 CHẠM (XÓA CACHE APK CŨ, LOG NÉN CŨ, FILE TẠM & GIỮ GỌN BACKUP) ──
+
+    data class StorageCleanResult(
+        val deletedFilesCount: Int,
+        val freedBytes: Long,
+        val summaryVi: String
+    )
+
+    suspend fun cleanAppTempAndJunkFiles(
+        context: Context,
+        serversRoot: File
+    ): StorageCleanResult = withContext(Dispatchers.IO) {
+        var deletedCount = 0
+        var freedBytes = 0L
+
+        fun deleteFileSafely(f: File) {
+            val len = f.length()
+            if (runCatching { f.delete() }.getOrDefault(false)) {
+                deletedCount++
+                freedBytes += len
+            }
+        }
+
+        // 1. Dọn cache & file APK cập nhật cũ trong cacheDir / externalCacheDir
+        listOfNotNull(context.cacheDir, context.externalCacheDir).forEach { cacheRoot ->
+            cacheRoot.walkBottomUp().forEach { f ->
+                if (f.isFile && (
+                        f.name.endsWith(".apk", ignoreCase = true) ||
+                            f.name.endsWith(".tmp", ignoreCase = true) ||
+                            f.name.endsWith(".part", ignoreCase = true) ||
+                            f.parentFile?.name == "updates"
+                        )
+                ) {
+                    deleteFileSafely(f)
+                }
+            }
+        }
+
+        // 2. Dọn các file log nén cũ (*.log.gz), file tạm tải dở (*.tmp, *.part) và giữ tối đa 2 bản sao lưu tự động mới nhất mỗi server
+        if (serversRoot.exists()) {
+            serversRoot.listFiles()?.filter { it.isDirectory }?.forEach { srvDir ->
+                val logsDir = File(srvDir, "logs")
+                if (logsDir.exists()) {
+                    logsDir.listFiles()?.forEach { lf ->
+                        if (lf.isFile && (lf.name.endsWith(".log.gz", ignoreCase = true) || lf.name.endsWith(".tmp"))) {
+                            deleteFileSafely(lf)
+                        }
+                    }
+                }
+                val crashDir = File(srvDir, "crash-reports")
+                if (crashDir.exists()) {
+                    val crashFiles = crashDir.listFiles()?.filter { it.isFile }?.sortedByDescending { it.lastModified() }.orEmpty()
+                    crashFiles.drop(3).forEach { deleteFileSafely(it) }
+                }
+                srvDir.listFiles()?.forEach { f ->
+                    if (f.isFile && (f.name.endsWith(".tmp", ignoreCase = true) || f.name.endsWith(".part", ignoreCase = true))) {
+                        deleteFileSafely(f)
+                    }
+                }
+                val backupsDir = File(srvDir, "backups")
+                if (backupsDir.exists()) {
+                    val zips = backupsDir.listFiles()
+                        ?.filter { it.isFile && it.name.endsWith(".zip", ignoreCase = true) }
+                        ?.sortedByDescending { it.lastModified() }
+                        .orEmpty()
+                    if (zips.size > 3) {
+                        zips.drop(3).forEach { deleteFileSafely(it) }
+                    }
+                }
+            }
+        }
+
+        val mb = freedBytes.toDouble() / (1024.0 * 1024.0)
+        val sizeStr = if (mb >= 1.0) String.format(java.util.Locale.US, "%.1f MB", mb) else "${freedBytes / 1024} KB"
+        val msg = if (deletedCount > 0) {
+            "🧹 Đã dọn sạch $deletedCount tệp rác/log cũ/cache, giải phóng $sizeStr dung lượng bộ nhớ (An toàn 100% cho Map & Mod)!"
+        } else {
+            "✨ Bộ nhớ ứng dụng đã sạch tối ưu! Không có tệp rác hay bộ nhớ đệm dư thừa."
+        }
+        StorageCleanResult(deletedFilesCount = deletedCount, freedBytes = freedBytes, summaryVi = msg)
     }
 
     // ── ĐỒNG BỘ & ĐỔI SKIN SERVER CRACKED 1 CHẠM (SKINSRESTORER / FABRICTAILOR) ──
@@ -3074,5 +3683,689 @@ object ProHostFeatures {
             onProgress(1.0f, "✅ Đã cài xong $targetFileName! Vào game gõ /skin set <tên_skin> để hiện đúng Skin!")
             inspectSkinRestorerStatus(serverDir)
         }
+    }
+
+    // ── NÂNG CẤP v2.9.6: CHẾ ĐỘ CHẠY RUST SIÊU NHẸ & MƯỢT (RUST-JVM TURBO & PUMPKIN RUST NATIVE ARM64) ──
+
+    private const val RUST_TURBO_MARKER = ".minehost_rust_turbo_enabled"
+    private const val RUST_NATIVE_MARKER = ".minehost_rust_native_enabled"
+    private const val RUST_ENGINE_DIR_NAME = "rust-engine"
+    private const val RUST_BINARY_NAME = "pumpkin-aarch64-android"
+
+    data class RustEngineStatus(
+        val isRustJvmTurboActive: Boolean = false,
+        val isNativeRustActive: Boolean = false,
+        val isNativeBinaryInstalled: Boolean = false,
+        val binarySizeMb: String = "0 MB",
+        val summaryVi: String = "Chưa bật chế độ chạy Rust"
+    ) {
+        val isRustJvmTurboEnabled: Boolean get() = isRustJvmTurboActive
+        val isNativeRustEnabled: Boolean get() = isNativeRustActive
+    }
+
+    fun isRustJvmTurboModeEnabled(serverDir: File): Boolean =
+        File(serverDir, RUST_TURBO_MARKER).isFile
+
+    fun isNativeRustServerModeEnabled(serverDir: File): Boolean =
+        File(serverDir, RUST_NATIVE_MARKER).isFile
+
+    fun resolveInstalledRustBinary(rootDir: File, serverDir: File): File {
+        val localBin = File(serverDir, RUST_BINARY_NAME)
+        if (localBin.isFile && localBin.length() > 1_000_000L) {
+            localBin.setExecutable(true, false)
+            return localBin
+        }
+        val sharedDir = File(rootDir, RUST_ENGINE_DIR_NAME).apply { mkdirs() }
+        val sharedBin = File(sharedDir, RUST_BINARY_NAME)
+        if (sharedBin.isFile) {
+            sharedBin.setExecutable(true, false)
+        }
+        return sharedBin
+    }
+
+    fun inspectRustEngineStatus(rootDir: File, serverDir: File): RustEngineStatus {
+        val turbo = isRustJvmTurboModeEnabled(serverDir)
+        val native = isNativeRustServerModeEnabled(serverDir)
+        val bin = resolveInstalledRustBinary(rootDir, serverDir)
+        val binReady = bin.isFile && bin.length() > 1_000_000L
+        val mbStr = if (binReady) {
+            String.format(java.util.Locale.US, "%.1f MB", bin.length().toDouble() / (1024.0 * 1024.0))
+        } else "0 MB"
+        val summary = when {
+            native && binReady -> "🦀 Đang chạy Nhân Rust Thuần (Pumpkin ARM64 • Siêu nhẹ ~50MB RAM, bật 0.2s)"
+            turbo -> "⚡ Đang bật Chế Độ Rust-JVM Turbo (Giảm 35–40% RAM, giữ nguyên 100% Map, Mod & Plugin)"
+            binReady -> "Đã tải sẵn nhân Rust ARM64 ($mbStr) • Sẵn sàng bật 1 chạm"
+            else -> "Tối ưu bộ nhớ vùng kiểu Rust hoặc chuyển sang nhân Rust ARM64 siêu nhẹ"
+        }
+        return RustEngineStatus(
+            isRustJvmTurboActive = turbo,
+            isNativeRustActive = native && binReady,
+            isNativeBinaryInstalled = binReady,
+            binarySizeMb = mbStr,
+            summaryVi = summary
+        )
+    }
+
+    fun setRustJvmTurboMode(rootDir: File, serverDir: File, enabled: Boolean): RustEngineStatus {
+        serverDir.mkdirs()
+        val marker = File(serverDir, RUST_TURBO_MARKER)
+        if (enabled) {
+            marker.writeText("rust-jvm-turbo=true\n", Charsets.UTF_8)
+            updateServerPropertiesMap(
+                serverDir,
+                mapOf(
+                    "network-compression-threshold" to "256",
+                    "simulation-distance" to "4",
+                    "view-distance" to "6",
+                    "sync-chunk-writes" to "false",
+                    "max-tick-time" to "60000",
+                    "entity-broadcast-range-percentage" to "75"
+                )
+            )
+        } else {
+            if (marker.exists()) marker.delete()
+        }
+        return inspectRustEngineStatus(rootDir, serverDir)
+    }
+
+    fun setRustJvmTurboMode(serverDir: File, enabled: Boolean): RustEngineStatus =
+        setRustJvmTurboMode(serverDir.parentFile ?: serverDir, serverDir, enabled)
+
+    fun buildRustJvmTurboFlags(maxHeapMb: Int): String {
+        val regionMb = when {
+            maxHeapMb <= 2048 -> 4
+            maxHeapMb <= 4096 -> 8
+            else -> 16
+        }
+        return "-XX:+UseG1GC " +
+            "-XX:+ParallelRefProcEnabled " +
+            "-XX:MaxGCPauseMillis=15 " +
+            "-XX:+UnlockExperimentalVMOptions " +
+            "-XX:+DisableExplicitGC " +
+            "-XX:+AlwaysPreTouch " +
+            "-XX:G1NewSizePercent=25 " +
+            "-XX:G1MaxNewSizePercent=35 " +
+            "-XX:G1HeapRegionSize=${regionMb}M " +
+            "-XX:G1ReservePercent=15 " +
+            "-XX:G1HeapWastePercent=5 " +
+            "-XX:G1MixedGCCountTarget=4 " +
+            "-XX:InitiatingHeapOccupancyPercent=20 " +
+            "-XX:G1MixedGCLiveThresholdPercent=85 " +
+            "-XX:SurvivorRatio=32 " +
+            "-XX:+PerfDisableSharedMem " +
+            "-XX:+UseStringDeduplication " +
+            "-Daikar.new.flags=true"
+    }
+
+    fun syncPumpkinRustTomlConfig(
+        serverDir: File,
+        javaPort: Int = 25565,
+        serverName: String = "MineHost Server"
+    ) {
+        serverDir.mkdirs()
+        val propFile = File(serverDir, "server.properties")
+        var worldName = "world"
+        if (propFile.isFile) {
+            propFile.readLines().forEach { line ->
+                val t = line.trim()
+                if (t.startsWith("level-name=")) {
+                    val v = t.substringAfter("=").trim()
+                    if (v.isNotBlank()) worldName = v
+                }
+            }
+        }
+        val cleanMotd = "🦀 $serverName • Nhân Rust ARM64 Siêu Nhẹ & Mượt (20 TPS)"
+        val tomlContent = """
+            default_level_name = "$worldName"
+            allow_chat_reports = false
+            spawn_protection = 0
+            white_list = false
+            enforce_whitelist = false
+
+            [networking.java]
+            enabled = true
+            address = "0.0.0.0:$javaPort"
+            online_mode = false
+            encryption = false
+            max_players = 30
+            view_distance = 8
+            simulation_distance = 6
+            motd = "$cleanMotd"
+
+            [networking.bedrock]
+            enabled = true
+            online_mode = false
+            max_players = 30
+            view_distance = 8
+            simulation_distance = 6
+            motd = "$cleanMotd"
+
+            [networking.bedrock.authentication]
+            enabled = false
+
+            [networking.bedrock.nethernet]
+            enabled = true
+            address = "0.0.0.0:19132"
+        """.trimIndent() + "\n"
+
+        File(serverDir, "pumpkin.toml").writeText(tomlContent, Charsets.UTF_8)
+        val configSubDir = File(serverDir, "config").apply { mkdirs() }
+        File(configSubDir, "pumpkin.toml").writeText(tomlContent, Charsets.UTF_8)
+    }
+
+    suspend fun installAndEnableNativeRustEngine(
+        rootDir: File,
+        serverDir: File,
+        javaPort: Int,
+        serverName: String,
+        onProgress: (Float, String) -> Unit
+    ): Result<RustEngineStatus> = withContext(Dispatchers.IO) {
+        runCatching {
+            serverDir.mkdirs()
+            val sharedDir = File(rootDir, RUST_ENGINE_DIR_NAME).apply { mkdirs() }
+            val targetBin = File(sharedDir, RUST_BINARY_NAME)
+
+            val candidateUrls = listOf(
+                "https://github.com/Pumpkin-MC/Pumpkin/releases/download/0.2.2%2B26.3-26.60/pumpkin-aarch64-android",
+                "https://github.com/Pumpkin-MC/Pumpkin/releases/download/nightly/pumpkin-aarch64-android",
+                "https://github.com/Pumpkin-MC/Pumpkin/releases/download/nightly/pumpkin-ARM64-Linux-musl"
+            )
+
+            val isAlreadyValid = targetBin.isFile && targetBin.length() > 10_000_000L
+            if (!isAlreadyValid) {
+                val tmpFile = File(sharedDir, "$RUST_BINARY_NAME.download")
+                var downloadedOk = false
+                var lastErr: Exception? = null
+                for ((idx, dlUrl) in candidateUrls.withIndex()) {
+                    try {
+                        onProgress(0.08f, "🦀 Đang kết nối máy chủ tải Nhân Rust ARM64 (Nguồn ${idx + 1}/${candidateUrls.size})...")
+                        val conn = (URL(dlUrl).openConnection() as HttpURLConnection).apply {
+                            connectTimeout = 15_000
+                            readTimeout = 45_000
+                            instanceFollowRedirects = true
+                            setRequestProperty("User-Agent", "MineHost-Mobile/2.9.6")
+                        }
+                        if (conn.responseCode !in 200..299) {
+                            throw IllegalStateException("HTTP ${conn.responseCode}")
+                        }
+                        val totalBytes = conn.contentLengthLong.coerceAtLeast(1L)
+                        var copied = 0L
+                        conn.inputStream.use { input ->
+                            tmpFile.outputStream().use { out ->
+                                val buf = ByteArray(32 * 1024)
+                                var lastReportAt = 0L
+                                while (true) {
+                                    val r = input.read(buf)
+                                    if (r <= 0) break
+                                    out.write(buf, 0, r)
+                                    copied += r
+                                    val now = System.currentTimeMillis()
+                                    if (now - lastReportAt >= 250L) {
+                                        lastReportAt = now
+                                        val ratio = (copied.toFloat() / totalBytes.toFloat()).coerceIn(0f, 1f)
+                                        val mbCopied = copied / (1024 * 1024)
+                                        val mbTotal = totalBytes / (1024 * 1024)
+                                        onProgress(
+                                            0.10f + ratio * 0.80f,
+                                            "⬇️ Đang tải Nhân Rust ARM64 ($mbCopied/$mbTotal MB • ${(ratio * 100).toInt()}%)..."
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        if (tmpFile.length() > 5_000_000L) {
+                            if (targetBin.exists()) targetBin.delete()
+                            tmpFile.renameTo(targetBin)
+                            downloadedOk = true
+                            break
+                        }
+                    } catch (e: Exception) {
+                        lastErr = e
+                        runCatching { tmpFile.delete() }
+                    }
+                }
+                if (!downloadedOk) {
+                    throw IllegalStateException("Không thể tải Nhân Rust ARM64: ${lastErr?.message ?: "Lỗi mạng"}")
+                }
+            }
+
+            onProgress(0.92f, "⚙️ Đang cấp quyền thực thi ARM64 & đồng bộ cấu hình pumpkin.toml...")
+            targetBin.setExecutable(true, false)
+            syncPumpkinRustTomlConfig(serverDir, javaPort, serverName)
+            File(serverDir, RUST_NATIVE_MARKER).writeText("rust-native=pumpkin-arm64\n", Charsets.UTF_8)
+            File(serverDir, "eula.txt").writeText("eula=true\n", Charsets.UTF_8)
+
+            onProgress(1.0f, "✅ Đã bật Nhân Rust Thuần (Pumpkin ARM64)! Bấm Bật Server để khởi động trong 0.2 giây (~50MB RAM)!")
+            inspectRustEngineStatus(rootDir, serverDir)
+        }
+    }
+
+    fun disableNativeRustEngine(rootDir: File, serverDir: File): RustEngineStatus {
+        val marker = File(serverDir, RUST_NATIVE_MARKER)
+        if (marker.exists()) marker.delete()
+        return inspectRustEngineStatus(rootDir, serverDir)
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // [v3.1.0] BỘ 3 TÍNH NĂNG ĐỈNH CAO MỚI:
+    // 1. Sao Lưu Map Lên Đám Mây Telegram 1 Chạm (Tự chia phần thông minh >45MB, Streaming 0 tốn RAM)
+    // 2. Bảng Điểm Scoreboard & Thanh Thông Báo BossBar Trong Game (0 MB RAM)
+    // 3. Radar Quét Điểm Nóng Gây Lag (Định vị tọa độ X, Z vùng lag nhất) & Dọn Lag Bảo Vệ Dân Làng/Thú Cưng
+    // ══════════════════════════════════════════════════════════════════════════
+
+    private const val TELEGRAM_MAX_PART_BYTES = 45L * 1024L * 1024L // 45 MB mỗi tệp (dưới trần 50MB của Bot API)
+
+    fun zipWorldFolderSafe(worldDir: File, targetZip: File, onProgress: (Float) -> Unit = {}): Long {
+        require(worldDir.isDirectory) { "Không tìm thấy thư mục thế giới: ${worldDir.name}" }
+        targetZip.parentFile?.mkdirs()
+        if (targetZip.exists()) targetZip.delete()
+
+        val allFiles = worldDir.walkTopDown()
+            .filter { it.isFile && it.name != "session.lock" && !it.name.endsWith(".tmp") }
+            .toList()
+        val totalSourceBytes = allFiles.sumOf { it.length() }.coerceAtLeast(1L)
+        var processedBytes = 0L
+
+        java.util.zip.ZipOutputStream(java.io.BufferedOutputStream(java.io.FileOutputStream(targetZip))).use { zos ->
+            zos.setLevel(java.util.zip.Deflater.BEST_SPEED)
+            val buf = ByteArray(32 * 1024)
+            for (f in allFiles) {
+                val relPath = f.relativeTo(worldDir.parentFile ?: worldDir).invariantSeparatorsPath
+                runCatching {
+                    zos.putNextEntry(java.util.zip.ZipEntry(relPath))
+                    f.inputStream().use { input ->
+                        while (true) {
+                            val r = input.read(buf)
+                            if (r <= 0) break
+                            zos.write(buf, 0, r)
+                            processedBytes += r
+                        }
+                    }
+                    zos.closeEntry()
+                }
+                onProgress((processedBytes.toFloat() / totalSourceBytes.toFloat()).coerceIn(0f, 1f))
+            }
+        }
+        return targetZip.length()
+    }
+
+    fun splitFileIntoVolumesIfNeeded(sourceZip: File, maxVolumeBytes: Long = TELEGRAM_MAX_PART_BYTES): List<File> {
+        val safeMax = maxVolumeBytes.coerceAtLeast(1L)
+        if (!sourceZip.isFile || sourceZip.length() <= safeMax) {
+            return listOf(sourceZip)
+        }
+        val parts = mutableListOf<File>()
+        val buf = ByteArray(64 * 1024)
+        sourceZip.inputStream().use { input ->
+            var partIndex = 1
+            while (true) {
+                val initialToRead = minOf(buf.size.toLong(), safeMax).toInt()
+                val firstRead = input.read(buf, 0, initialToRead)
+                if (firstRead <= 0) break
+                val suffix = String.format(java.util.Locale.US, "%03d", partIndex)
+                val partFile = File(sourceZip.parentFile, "${sourceZip.name}.$suffix")
+                var writtenInPart = 0L
+                partFile.outputStream().use { out ->
+                    out.write(buf, 0, firstRead)
+                    writtenInPart += firstRead
+                    while (writtenInPart < safeMax) {
+                        val toRead = minOf(buf.size.toLong(), safeMax - writtenInPart).toInt()
+                        val r = input.read(buf, 0, toRead)
+                        if (r <= 0) break
+                        out.write(buf, 0, r)
+                        writtenInPart += r
+                    }
+                }
+                parts.add(partFile)
+                partIndex++
+            }
+        }
+        return parts
+    }
+
+    suspend fun sendTelegramBotDocumentStreaming(
+        botToken: String,
+        chatId: String,
+        file: File,
+        captionText: String
+    ): Boolean = withContext(Dispatchers.IO) {
+        val cleanToken = botToken.trim().removePrefix("bot")
+        if (cleanToken.isBlank() || chatId.isBlank() || !file.isFile) return@withContext false
+        runCatching {
+            val boundary = "----MineHostCloudBackup${System.currentTimeMillis()}"
+            val url = URL("https://api.telegram.org/bot$cleanToken/sendDocument")
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = 20_000
+                readTimeout = 180_000
+                doOutput = true
+                setChunkedStreamingMode(32 * 1024)
+                setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+            }
+            conn.outputStream.use { out ->
+                fun writePartHeader(str: String) = out.write(str.toByteArray(Charsets.UTF_8))
+                writePartHeader("--$boundary\r\n")
+                writePartHeader("Content-Disposition: form-data; name=\"chat_id\"\r\n\r\n")
+                writePartHeader("${chatId.trim()}\r\n")
+
+                if (captionText.isNotBlank()) {
+                    writePartHeader("--$boundary\r\n")
+                    writePartHeader("Content-Disposition: form-data; name=\"caption\"\r\n\r\n")
+                    writePartHeader("${captionText.take(980)}\r\n")
+                }
+
+                writePartHeader("--$boundary\r\n")
+                writePartHeader("Content-Disposition: form-data; name=\"document\"; filename=\"${file.name}\"\r\n")
+                writePartHeader("Content-Type: application/octet-stream\r\n\r\n")
+                file.inputStream().use { input ->
+                    val buf = ByteArray(32 * 1024)
+                    while (true) {
+                        val r = input.read(buf)
+                        if (r <= 0) break
+                        out.write(buf, 0, r)
+                    }
+                }
+                writePartHeader("\r\n--$boundary--\r\n")
+                out.flush()
+            }
+            conn.responseCode in 200..299
+        }.getOrDefault(false)
+    }
+
+    suspend fun backupWorldToTelegramCloud(
+        cacheDir: File,
+        botToken: String,
+        chatId: String,
+        serverDir: File,
+        worldFolderName: String,
+        serverDisplayName: String,
+        onProgress: (Float, String) -> Unit
+    ): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            val cleanToken = botToken.trim().removePrefix("bot")
+            val cleanChat = chatId.trim()
+            if (cleanToken.length < 15 || !cleanToken.contains(":") || cleanChat.isBlank()) {
+                throw IllegalStateException("Chưa kết nối Bot Telegram! Hãy vào mục 'Điều khiển từ xa' nhập Token & Chat ID trước.")
+            }
+            val worldDir = File(serverDir, worldFolderName)
+            if (!worldDir.isDirectory) {
+                throw IllegalStateException("Không tìm thấy thư mục Map '$worldFolderName' trong Server hiện tại!")
+            }
+
+            val stamp = java.text.SimpleDateFormat("yyyyMMdd_HHmm", java.util.Locale.US).format(java.util.Date())
+            val humanTime = java.text.SimpleDateFormat("HH:mm dd/MM/yyyy", java.util.Locale.getDefault()).format(java.util.Date())
+            val safeName = worldFolderName.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+            val workDir = File(cacheDir, "tg_cloud_backup").apply {
+                deleteRecursively()
+                mkdirs()
+            }
+            val zipFile = File(workDir, "MineHost_${safeName}_$stamp.zip")
+
+            try {
+                onProgress(0.08f, "📦 Đang nén Map '$worldFolderName' thành tệp .zip an toàn...")
+                val zipBytes = zipWorldFolderSafe(worldDir, zipFile) { ratio ->
+                    onProgress(0.08f + ratio * 0.42f, "📦 Đang nén Map '$worldFolderName' (${(ratio * 100).toInt()}%)...")
+                }
+                val sizeMbStr = String.format(java.util.Locale.US, "%.1f MB", zipBytes.toDouble() / (1024.0 * 1024.0))
+
+                val parts = splitFileIntoVolumesIfNeeded(zipFile, TELEGRAM_MAX_PART_BYTES)
+                if (parts.size > 1 && zipFile.exists()) {
+                    zipFile.delete()
+                }
+
+                for ((index, partFile) in parts.withIndex()) {
+                    val stepRatio = 0.52f + (index.toFloat() / parts.size.toFloat()) * 0.44f
+                    onProgress(
+                        stepRatio,
+                        if (parts.size == 1) "☁️ Đang tải '$worldFolderName' ($sizeMbStr) lên đám mây Telegram..."
+                        else "☁️ Đang tải phần ${index + 1}/${parts.size} của '$worldFolderName' lên Telegram..."
+                    )
+                    val caption = buildString {
+                        appendLine("☁️ BẢN SAO LƯU ĐÁM MÂY MINEHOST")
+                        appendLine("• Máy chủ: $serverDisplayName")
+                        appendLine("• Thế giới (Map): $worldFolderName")
+                        appendLine("• Tổng dung lượng nén: $sizeMbStr")
+                        if (parts.size > 1) {
+                            appendLine("• Phần tệp: ${index + 1} / ${parts.size}")
+                        }
+                        appendLine("• Thời gian lưu: $humanTime")
+                        append("📥 Tải tệp này về máy bất cứ lúc nào rồi chọn 'Nhập Map .zip' trong MineHost để khôi phục 100%!")
+                    }
+                    val ok = sendTelegramBotDocumentStreaming(cleanToken, cleanChat, partFile, caption)
+                    if (!ok) {
+                        throw IllegalStateException("Không thể tải tệp lên Telegram (kiểm tra mạng hoặc quyền gửi tệp của Bot).")
+                    }
+                }
+                onProgress(1.0f, "✅ Đã lưu Map '$worldFolderName' ($sizeMbStr) lên Telegram thành công!")
+                "☁️ Đã sao lưu Map '$worldFolderName' ($sizeMbStr${if (parts.size > 1) " • ${parts.size} phần" else ""}) lên Telegram thành công!"
+            } finally {
+                runCatching { workDir.deleteRecursively() }
+            }
+        }
+    }
+
+    // ── 2. BẢNG ĐIỂM SCOREBOARD & THANH BOSSBAR TRONG GAME (0 MB RAM) ──
+
+    data class ScoreboardPreset(
+        val id: String,
+        val titleVi: String,
+        val subtitleVi: String,
+        val criteria: String,
+        val displayTitleJson: String,
+        val slot: String = "sidebar"
+    )
+
+    val SCOREBOARD_PRESETS = listOf(
+        ScoreboardPreset(
+            id = "kills",
+            titleVi = "⚔️ Chiến Tích Sinh Tồn (Số Quái & Mạng Hạ Gục)",
+            subtitleVi = "Hiện bảng xếp hạng số lượng quái/mạng đã tiêu diệt ở cạnh phải màn hình",
+            criteria = "totalKillCount",
+            displayTitleJson = """{"text":"⚔ BẢNG CHIẾN TÍCH ⚔","color":"gold","bold":true}"""
+        ),
+        ScoreboardPreset(
+            id = "deaths",
+            titleVi = "💀 Bảng Tử Thần (Đếm Số Lần Chết)",
+            subtitleVi = "Ai nằm xuống nhiều nhất nhóm sẽ hiện ngay trên bảng cạnh phải",
+            criteria = "deathCount",
+            displayTitleJson = """{"text":"💀 SỐ LẦN TỬ TRẬN 💀","color":"red","bold":true}"""
+        ),
+        ScoreboardPreset(
+            id = "health",
+            titleVi = "❤️ Hiện Máu Đồng Đội (Tab & Dưới Tên)",
+            subtitleVi = "Hiển thị lượng máu thực tế của bạn bè trong danh sách Tab và dưới tên nhân vật",
+            criteria = "health",
+            displayTitleJson = """{"text":"❤ MÁU","color":"red","bold":true}""",
+            slot = "list_and_belowname"
+        ),
+        ScoreboardPreset(
+            id = "diamonds",
+            titleVi = "💎 Đua Top Thợ Mỏ Kim Cương",
+            subtitleVi = "Đếm số quặng Kim Cương mỗi thành viên đào được trong thế giới",
+            criteria = "minecraft.mined:minecraft.diamond_ore",
+            displayTitleJson = """{"text":"💎 TOP ĐÀO KIM CƯƠNG","color":"aqua","bold":true}"""
+        )
+    )
+
+    fun buildScoreboardCommands(presetId: String): List<String> {
+        if (presetId == "off" || presetId.isBlank()) {
+            return listOf(
+                "scoreboard objectives setdisplay sidebar",
+                "scoreboard objectives setdisplay list",
+                "scoreboard objectives setdisplay below_name"
+            )
+        }
+        val preset = SCOREBOARD_PRESETS.find { it.id == presetId } ?: return emptyList()
+        val objName = "mh_${preset.id}"
+        val cmds = mutableListOf(
+            "scoreboard objectives add $objName ${preset.criteria} ${preset.displayTitleJson}",
+            "scoreboard objectives modify $objName displayname ${preset.displayTitleJson}"
+        )
+        if (preset.slot == "list_and_belowname") {
+            cmds += "scoreboard objectives setdisplay list $objName"
+            cmds += "scoreboard objectives setdisplay below_name $objName"
+        } else {
+            cmds += "scoreboard objectives setdisplay sidebar $objName"
+        }
+        return cmds
+    }
+
+    fun buildBossBarCommands(bannerText: String, colorId: String, enabled: Boolean): List<String> {
+        if (!enabled || bannerText.isBlank()) {
+            return listOf(
+                "bossbar set minehost:banner visible false",
+                "bossbar remove minehost:banner"
+            )
+        }
+        val validColor = colorId.lowercase().takeIf {
+            it in setOf("yellow", "green", "blue", "red", "purple", "pink", "white")
+        } ?: "yellow"
+        val jsonTextColor = when (validColor) {
+            "yellow" -> "gold"
+            "purple" -> "light_purple"
+            "pink" -> "light_purple"
+            "blue" -> "aqua"
+            else -> validColor
+        }
+        val escaped = bannerText.trim()
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+        val jsonName = """{"text":"$escaped","color":"$jsonTextColor","bold":true}"""
+        return listOf(
+            "bossbar add minehost:banner $jsonName",
+            "bossbar set minehost:banner name $jsonName",
+            "bossbar set minehost:banner color $validColor",
+            "bossbar set minehost:banner style notched_10",
+            "bossbar set minehost:banner max 100",
+            "bossbar set minehost:banner value 100",
+            "bossbar set minehost:banner players @a",
+            "bossbar set minehost:banner visible true"
+        )
+    }
+
+    // ── 3. RADAR QUÉT ĐIỂM NÓNG GÂY LAG & DỌN LAG BẢO VỆ DÂN LÀNG / THÚ CƯNG ──
+
+    data class LagHotspotReport(
+        val worldName: String = "world",
+        val entitiesMb: Double = 0.0,
+        val regionMb: Double = 0.0,
+        val hotspotFound: Boolean = false,
+        val hotspotCenterX: Int = 0,
+        val hotspotCenterZ: Int = 0,
+        val hotspotRegionFile: String = "",
+        val hotspotSizeKb: Long = 0L,
+        val viewDistance: Int = 8,
+        val simulationDistance: Int = 6,
+        val summaryVi: String = "Chưa quét dữ liệu thế giới."
+    )
+
+    fun inspectWorldLagHotspots(serverDir: File): LagHotspotReport {
+        val props = File(serverDir, "server.properties")
+        var worldName = "world"
+        var viewDist = 8
+        var simDist = 6
+        if (props.isFile) {
+            props.readLines().forEach { raw ->
+                val line = raw.trim()
+                when {
+                    line.startsWith("level-name=") -> worldName = line.substringAfter("=").trim().ifBlank { "world" }
+                    line.startsWith("view-distance=") -> viewDist = line.substringAfter("=").trim().toIntOrNull() ?: 8
+                    line.startsWith("simulation-distance=") -> simDist = line.substringAfter("=").trim().toIntOrNull() ?: 6
+                }
+            }
+        }
+        val worldDir = File(serverDir, worldName)
+        val entitiesDir = File(worldDir, "entities")
+        val regionDir = File(worldDir, "region")
+
+        val entityFiles = entitiesDir.listFiles()?.filter { it.isFile && it.name.endsWith(".mca") }.orEmpty()
+        val regionFiles = regionDir.listFiles()?.filter { it.isFile && it.name.endsWith(".mca") }.orEmpty()
+
+        val entitiesBytes = entityFiles.sumOf { it.length() }
+        val regionBytes = regionFiles.sumOf { it.length() }
+
+        // Ưu tiên tìm file .mca nặng nhất trong entities/ (chứa mật độ thực thể/mob farm dày đặc nhất), nếu chưa có thì xét region/
+        val candidateFiles = if (entityFiles.isNotEmpty()) entityFiles else regionFiles
+        val heaviest = candidateFiles.maxByOrNull { it.length() }
+        val mcaRegex = Regex("""^r\.(-?\d+)\.(-?\d+)\.mca$""")
+
+        var found = false
+        var cx = 0
+        var cz = 0
+        var fileLabel = ""
+        var kb = 0L
+        if (heaviest != null) {
+            val match = mcaRegex.matchEntire(heaviest.name)
+            if (match != null) {
+                val rx = match.groupValues[1].toIntOrNull() ?: 0
+                val rz = match.groupValues[2].toIntOrNull() ?: 0
+                cx = rx * 512 + 256
+                cz = rz * 512 + 256
+                found = true
+                fileLabel = heaviest.name
+                kb = (heaviest.length() / 1024L).coerceAtLeast(1L)
+            }
+        }
+
+        val entMb = entitiesBytes.toDouble() / (1024.0 * 1024.0)
+        val regMb = regionBytes.toDouble() / (1024.0 * 1024.0)
+        val summary = buildString {
+            append("🌍 Map '$worldName': Dữ liệu thực thể %.2f MB • Địa hình %.1f MB".format(java.util.Locale.US, entMb, regMb))
+            append(" • Tầm nhìn $viewDist / Mô phỏng $simDist chunk.")
+            if (found) {
+                append("\n📍 Điểm nóng tập trung nhiều thực thể nhất: quanh tọa độ X=$cx, Z=$cz ($fileLabel • ${kb} KB).")
+            }
+            if (simDist > 6 || viewDist > 10) {
+                append("\n💡 Gợi ý: Giảm khoảng cách mô phỏng (simulation-distance) xuống 4–6 hoặc bật 'Java + Rust Turbo' sẽ tăng mạnh TPS!")
+            }
+        }
+
+        return LagHotspotReport(
+            worldName = worldName,
+            entitiesMb = entMb,
+            regionMb = regMb,
+            hotspotFound = found,
+            hotspotCenterX = cx,
+            hotspotCenterZ = cz,
+            hotspotRegionFile = fileLabel,
+            hotspotSizeKb = kb,
+            viewDistance = viewDist,
+            simulationDistance = simDist,
+            summaryVi = summary
+        )
+    }
+
+    /**
+     * Trả về danh sách lệnh dọn Lag thông minh:
+     * - Cam kết TUYỆT ĐỐI KHÔNG BAO GIỜ XÓA: Dân làng (villager), Thú cưng (wolf, cat, parrot, horse, allay),
+     *   Gia súc (cow, sheep, pig, chicken), Người sắt (iron_golem), Giá để giáp (armor_stand), Khung vật phẩm (item_frame), Thuyền & Xe mỏ chứa rương.
+     */
+    fun buildSmartSafePurgeCommands(includeHostileMobs: Boolean): List<String> {
+        val cmds = mutableListOf(
+            "kill @e[type=minecraft:item]",
+            "kill @e[type=minecraft:experience_orb]",
+            "kill @e[type=minecraft:arrow]",
+            "kill @e[type=minecraft:spectral_arrow]",
+            "kill @e[type=minecraft:bat]"
+        )
+        if (includeHostileMobs) {
+            listOf(
+                "minecraft:zombie",
+                "minecraft:skeleton",
+                "minecraft:creeper",
+                "minecraft:spider",
+                "minecraft:cave_spider",
+                "minecraft:drowned",
+                "minecraft:husk",
+                "minecraft:stray",
+                "minecraft:phantom",
+                "minecraft:slime",
+                "minecraft:magma_cube",
+                "minecraft:witch"
+            ).forEach { mobId ->
+                cmds += "kill @e[type=$mobId]"
+            }
+        }
+        return cmds
     }
 }

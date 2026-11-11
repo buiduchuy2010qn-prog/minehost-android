@@ -85,6 +85,9 @@ enum class SubPage { Properties, Network, Backup, WorldManage, WorldImport, Down
 fun McApp() {
     val vm: McViewModel = viewModel(factory = McViewModel.Factory)
     val config by vm.config.collectAsState()
+    val serverState by vm.serverState.collectAsState()
+    val thermalInfo by vm.thermalInfo.collectAsState()
+    val rustEngineStatus by vm.rustEngineStatus.collectAsState()
     val currentCrashContent by vm.currentCrashContent.collectAsState()
     val currentCrashAnalysis by vm.currentCrashAnalysis.collectAsState()
     val lastRunLog by vm.lastRunLog.collectAsState()
@@ -170,13 +173,50 @@ fun McApp() {
         }
     }
 
+    val tempInt = thermalInfo.tempCelsius.toInt()
+    val livePillText = when {
+        serverState.isRunning && serverState.startupPhase == com.mineserve.mobile.data.StartupPhase.Ready -> {
+            val tpsLabel = if (serverState.tps > 0.0) String.format(java.util.Locale.US, "%.1f", serverState.tps) else "20.0"
+            "🟢 ${tpsLabel} TPS • ${tempInt}°C"
+        }
+        serverState.isRunning -> "⚡ Đang mở..."
+        config.activeCoreName != null -> "⚪ Tắt • ${tempInt}°C"
+        else -> null
+    }
+    val livePillState = when {
+        serverState.isRunning && serverState.startupPhase == com.mineserve.mobile.data.StartupPhase.Ready ->
+            if ((serverState.tps in 0.1..15.5) || thermalInfo.tempCelsius >= 42.5f) 3 else 2
+        serverState.isRunning -> 1
+        else -> 0
+    }
+    val engineBadge = when {
+        rustEngineStatus.isNativeRustEnabled -> "🦀 Nhân Rust Thuần"
+        rustEngineStatus.isRustJvmTurboEnabled -> "⚡ Java + Rust Turbo"
+        else -> "☕ Java Nguyên Bản"
+    }
+    val drawerSummary = if (config.activeCoreName != null) {
+        val runBadge = if (serverState.isRunning) "🟢 Online (${serverState.onlinePlayers}/${serverState.maxPlayers})" else "⚪ Đang dừng"
+        "$runBadge • $engineBadge • Pin ${thermalInfo.batteryPercent}%"
+    } else null
+
     MineHostNavigation(
         title = mineHostPageTitle(tab, subPage, showLogs),
         serverName = config.activeCoreName,
         tab = tab,
         page = subPage,
         onTab = { tab = it; showLogs = false; subPage = null },
-        onNavigate = ::navigateTo
+        onNavigate = ::navigateTo,
+        onCleanStorage = { vm.cleanAppStorageJunkOneTap() },
+        liveStatusPillText = livePillText,
+        liveStatusState = livePillState,
+        onLiveStatusClick = {
+            showLogs = false
+            subPage = null
+            tab = if (tab == McTab.Dashboard && serverState.isRunning) McTab.Terminal else McTab.Dashboard
+        },
+        drawerStatusSummary = drawerSummary,
+        onQuickTelegramBackup = { vm.backupCurrentWorldToTelegramOneTap() },
+        enableQuickSearch = true
     ) {
     Scaffold(
         // 全屏展示：内容延伸到状态栏，顶部状态栏区域由各页面首个组件（HeaderBlock/返回栏）

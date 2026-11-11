@@ -1481,7 +1481,9 @@ class McServerController(
         }
         val activeCore = config.installedCores.find { it.name == config.activeCoreName }
             ?: throw RuntimeException("Chưa chọn máy chủ để khởi động, vui lòng tải hoặc chọn máy chủ trong mục Tải Core")
-        if (activeCore.core != ServerCore.PocketMine &&
+        val rawServerDir = File(termux.serversDir, activeCore.dirName)
+        val isNativeRust = ProHostFeatures.isNativeRustServerModeEnabled(rawServerDir)
+        if (!isNativeRust && activeCore.core != ServerCore.PocketMine &&
             !termux.isJavaInstalled(config.selectedJavaVersion, config.selectedJavaVendor)
         ) {
             throw RuntimeException("Chưa cài đặt ${config.selectedJavaVersion.displayName}, vui lòng bấm cài đặt trong thẻ Môi trường Java trước")
@@ -1498,7 +1500,7 @@ class McServerController(
             ?.let { File(serverDir, it).takeIf(File::isFile) }
             ?: ServerCoreDetector.detect(serverDir).serverFile
                 ?.let { File(serverDir, it).takeIf(File::isFile) }
-        if (jarFile == null && launchCore.core !in setOf(ServerCore.Forge, ServerCore.NeoForge)) {
+        if (!isNativeRust && jarFile == null && launchCore.core !in setOf(ServerCore.Forge, ServerCore.NeoForge)) {
             throw RuntimeException("Máy chủ ${launchCore.name} không tìm thấy tệp JAR khởi chạy; vui lòng kiểm tra lại thư mục máy chủ")
         }
         if (launchCore.core == ServerCore.PowerNukkitX && isLegacyPowerNukkitXVersion(launchCore.version)) {
@@ -1595,6 +1597,27 @@ class McServerController(
         val activeCore = config.installedCores.find { it.name == config.activeCoreName }
         val coreType = activeCore?.core ?: config.selectedCore
         check(!termux.isMcRunning()) { "Đã có server đang chạy." }
+        if (ProHostFeatures.isNativeRustServerModeEnabled(serverDir)) {
+            if (abortIfStartCancelled(startGeneration)) return
+            val rustBin = ProHostFeatures.resolveInstalledRustBinary(termux.installer.rootDir, serverDir)
+            if (!rustBin.isFile || rustBin.length() < 1_000_000L) {
+                throw RuntimeException("Chưa tải xong tệp Nhân Rust ARM64 (Pumpkin MC). Vui lòng bấm nút '🦀 Tải & Bật Nhân Rust Thuần' trước khi khởi động.")
+            }
+            rustBin.setExecutable(true, false)
+            ProHostFeatures.syncPumpkinRustTomlConfig(serverDir, config.localPort, activeCore?.name ?: dirName)
+            termux.emitLog("[startMc] 🦀 Đang khởi chạy Nhân Rust Thuần ARM64 (Pumpkin MC • Cổng TCP ${config.localPort} & UDP 19132 • RAM ~50MB)")
+            startupDeadlineMs = System.currentTimeMillis() + 20_000L
+            processStartedAtMs = System.currentTimeMillis()
+            termux.startMcCustom(
+                command = "export RUST_BACKTRACE=1; chmod 755 '${rustBin.absolutePath}' 2>/dev/null || true; exec '${rustBin.absolutePath}'",
+                dirName = dirName,
+                jvmFlavor = config.jvmFlavor,
+                javaVendor = config.selectedJavaVendor,
+                onExit = createExitHandler(config, dirName, jarPath)
+            )
+            repo.updateServerState { markRunningIfAlive(it) }
+            return
+        }
         if (!coreType.isBedrock) EulaConsent.requireAccepted(serverDir)
 
         if (config.advancedCustomCommandEnabled && config.advancedCustomCommand.isNotBlank()) {
@@ -1817,6 +1840,9 @@ class McServerController(
             termux.emitLog("[MineHost] RAM tự động: " + device.launchHeapMb + " MB; RAM hệ thống: " + device.totalMb + " MB.")
             device.launchHeapMb
         } else config.maxHeapMb
+        if (ProHostFeatures.isRustJvmTurboModeEnabled(serverDir) && !coreType.isBedrock) {
+            termux.emitLog("[startMc] ⚡ Đang kích hoạt Chế Độ Rust-JVM Turbo (Quản lý vùng nhớ kiểu Rust & Zero-Pause GC)")
+        }
         termux.startMc(
             jarPath = jarPath.orEmpty(),
             maxHeapMb = effectiveHeap,

@@ -3447,7 +3447,7 @@ class TermuxRuntime(context: Context) {
             "export TMPDIR=/tmp; export HOME=/root; export FONTCONFIG_PATH=/etc/fonts; " +
             "cd '$guestDir' && $forgeLibraryRepair$forgeServerClasspath exec $javaBin " +
             "-Djava.io.tmpdir=/tmp " +
-            baseJvmProperties() +
+            baseJvmProperties(serverDir, maxHeapMb) +
             "-Xmx${maxHeapMb}m $javaArguments" + if (appendNogui) " nogui" else ""
         val rootfs = containerRootfs(profile)
         // PRoot creates glue files outside the guest rootfs. Keep this path in
@@ -3666,7 +3666,7 @@ class TermuxRuntime(context: Context) {
      * 因 `libc.so.6` 缺失而崩服的问题。该组属性原由「模组兼容模式」开关控制，现改为
      * **无条件注入**：Android 本就没有 udev/systemd，关掉这些探测只有好处，无需用户判断。
      */
-    private fun baseJvmProperties(): String = buildString {
+    private fun baseJvmProperties(serverDir: File? = null, maxHeapMb: Int = 2048): String = buildString {
         append("-Djava.awt.headless=true ")
         // Android 没有 /etc/localtime，且未设 TZ 时 JVM 默认时区会回退成 UTC，
         // 导致服务端日志时间戳比本地时间慢 8 小时（东八区）。
@@ -3710,6 +3710,9 @@ class TermuxRuntime(context: Context) {
         append("-Dpaper.disableStartupVersionCheck=true ")
         append("-DIKnowWhatIAmDoingISwear=true ")
         append(memoryFootprintArgs())
+        if (serverDir != null && com.mineserve.mobile.server.ProHostFeatures.isRustJvmTurboModeEnabled(serverDir)) {
+            append(com.mineserve.mobile.server.ProHostFeatures.buildRustJvmTurboFlags(maxHeapMb)).append(" ")
+        }
         // 不加载 udev：Android 无 systemd/udev，探测只会白白触发原生库加载
         append("-Doshi.os.linux.allowudev=false ")
         // 不探测 systemd 会话：Android 没有
@@ -3939,7 +3942,7 @@ class TermuxRuntime(context: Context) {
             (systemTimeZoneId()?.let { "export TZ='$it'; " } ?: "") +
             "cd '$serverDir' && " +
             "exec '$javaPath' $nativeAccessArg-Djava.io.tmpdir='$jvmTmpDir' -Djna.tmpdir='$jvmTmpDir' " +
-            baseJvmProperties() +
+            baseJvmProperties(serverDir, maxHeapMb) +
             "-Xmx${maxHeapMb}m " + (launchArgs ?: "-jar $jarPath") + if (appendNogui) " nogui" else ""
 
         Log.i(TAG, "startMc command: $javaCmd")
