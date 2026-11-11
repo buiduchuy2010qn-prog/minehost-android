@@ -289,8 +289,8 @@ class TermuxRuntime(context: Context) {
 
     /** 需要落盘的日志特征（其余高频噪声不入队，避免日志膨胀） */
     private val APP_LOG_KEEP_MARKERS = listOf(
-        "[startMc]", "[bootstrap]", "[java]", "[crash]", "[restart]", "[core]",
-        "[repair]", "[jvm]", "[proot]", "错误", "失败", "警告", "异常"
+        "[startMc]", "[RUST NATIVE]", "[rust-seccomp]", "[bootstrap]", "[java]", "[crash]", "[restart]", "[core]",
+        "[repair]", "[jvm]", "[proot]", "panicked at", "Lỗi", "Thất bại", "Cảnh báo", "错误", "失败", "警告", "异常"
     )
 
     private fun persistAppLog(line: String) {
@@ -3689,6 +3689,12 @@ class TermuxRuntime(context: Context) {
         bundledLibDir?.let { File(it, NativeLibraryBundler.IPV6_FIX_LIB) }
             ?.takeIf { it.isFile }
             ?.absolutePath
+
+    /** Đường dẫn tuyệt đối của `librustseccomp.so` trong `nativeLibraryDir` (khiên chống Exit 159 cho Rust ARM64). */
+    private fun rustSeccompLibPath(): String? =
+        bundledLibDir?.let { File(it, NativeLibraryBundler.RUST_SECCOMP_FIX_LIB) }
+            ?.takeIf { it.isFile && it.length() > 0L }
+            ?.absolutePath
     /**
      * 启动命令完整性自检：确认拼出来的 shell 命令里**真的有一个要执行的程序**。
      *
@@ -4274,15 +4280,26 @@ class TermuxRuntime(context: Context) {
         killOrphanMcProcess(serverDir)
         rustBinary.setExecutable(true, false)
 
+        val seccompLib = rustSeccompLibPath()
+        val rustPreload = preloadExportFragment(listOfNotNull(seccompLib))
+        val tzExport = systemTimeZoneId()?.let { "export TZ='$it'; " } ?: ""
+
         val fullCmd = "export PATH='/system/bin:/system/xbin'; " +
             "export HOME='${serverDir.absolutePath}'; " +
             "export TMPDIR='${tmpDir.absolutePath}'; " +
             "export RUST_BACKTRACE=1; " +
+            tzExport +
             "chmod 755 '${rustBinary.absolutePath}' 2>/dev/null || true; " +
+            rustPreload +
             "cd '${serverDir.absolutePath}' && exec '${rustBinary.absolutePath}'"
 
-        Log.i(TAG, "startNativeRustServer: binary=${rustBinary.absolutePath} dirName=$dirName")
+        Log.i(TAG, "startNativeRustServer: binary=${rustBinary.absolutePath} seccompShim=$seccompLib dirName=$dirName")
         emitLog("[RUST NATIVE] 🦀 Khởi chạy trực tiếp tệp máy ARM64: ${rustBinary.name} (0% Java • Không dùng máy ảo JVM)")
+        if (seccompLib != null) {
+            emitLog("[RUST NATIVE] 🛡️ Đã nạp khiên tương thích Android Seccomp ARM64 (${NativeLibraryBundler.RUST_SECCOMP_FIX_LIB} • Chống lỗi Exit 159)")
+        } else {
+            emitLog("[RUST NATIVE] Cảnh báo: Không tìm thấy ${NativeLibraryBundler.RUST_SECCOMP_FIX_LIB} trong nativeLibraryDir")
+        }
 
         val pb = ProcessBuilder("/system/bin/sh", "-c", fullCmd).apply {
             redirectErrorStream(true)
@@ -4359,6 +4376,7 @@ class TermuxRuntime(context: Context) {
             line.contains("Closing Server", ignoreCase = true) ||
             line.contains("Thread RCON Listener stopped", ignoreCase = true) ||
             line.contains("Allay server stopped", ignoreCase = true) ||
+            line.contains("Stopping server", ignoreCase = true) ||
             line.contains("Stopped server", ignoreCase = true)
         ) {
             lastWorldSaveCompletedAtMs = System.currentTimeMillis()

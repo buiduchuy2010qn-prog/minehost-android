@@ -37,7 +37,8 @@ class BundledLibrariesTest {
      */
     private val extraJniLibs = setOf(
         NativeLibraryBundler.HEAP_TAG_FIX_LIB,
-        NativeLibraryBundler.IPV6_FIX_LIB
+        NativeLibraryBundler.IPV6_FIX_LIB,
+        NativeLibraryBundler.RUST_SECCOMP_FIX_LIB
     )
 
     /** 单元测试的工作目录是模块目录（app/），但兼容从仓库根目录运行的情况。 */

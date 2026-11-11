@@ -246,6 +246,48 @@
       "suggest": "Hãy dọn RAM trước khi bật Server, hạ mức RAM cấp cho Server xuống mức an toàn (để chừa RAM cho Android), và tắt tối ưu hóa pin cho MineHost."
     },
     {
+      "id": "android-seccomp-sigsys",
+      "level": "Identified",
+      "exitCodes": [159],
+      "contains": [
+        "SIGSYS",
+        "Bad system call",
+        "SYS_SECCOMP"
+      ],
+      "label": "Bộ lọc bảo mật Android Seccomp chặn lệnh hệ thống (Exit 159 / SIGSYS)",
+      "detail": "Mã thoát 159 (128 + 31 = SIGSYS) xảy ra khi nhân Android (seccomp-bpf) chặn một lệnh hệ thống nhân Linux mới (như openat2, membarrier, statx) từ tệp thực thi ARM64 gốc hoặc Wasmtime JIT.",
+      "evidence": "Phát hiện mã thoát exit=159 (SIGSYS / Android Seccomp)",
+      "suggest": "Hãy cập nhật MineHost lên bản v3.1.3+ (đã tích hợp sẵn khiên tương thích librustseccomp.so 0% Java) rồi bấm Bật lại Server."
+    },
+    {
+      "id": "rust-panic",
+      "level": "Identified",
+      "contains": [
+        "panicked at",
+        "thread 'main' panicked"
+      ],
+      "label": "Lỗi nội bộ tiến trình Rust (Rust Panic)",
+      "detail": "Nhân máy chủ Rust hoặc Plugin .wasm gặp lỗi logic/cấu hình trong lúc khởi chạy hoặc xử lý dữ liệu.",
+      "evidence": "Phát hiện thông báo panicked at từ tiến trình Rust",
+      "suggest": "Hãy mở tab「Nhật ký đầy đủ」để xem dòng thông báo ngay sau 'panicked at', kiểm tra lại cấu hình pumpkin.toml hoặc tạm tắt Plugin .wasm vừa thêm."
+    },
+    {
+      "id": "native-crash-signal",
+      "level": "Identified",
+      "exitCodes": [132, 134, 135, 139],
+      "contains": [
+        "SIGSEGV",
+        "SIGABRT",
+        "SIGILL",
+        "SIGBUS",
+        "Segmentation fault"
+      ],
+      "label": "Lỗi tín hiệu mã máy gốc ARM64 (SIGSEGV / SIGABRT / SIGILL)",
+      "detail": "Tiến trình máy chủ dừng do tín hiệu phần cứng/bộ nhớ gốc (Exit 132/134/135/139), thường gặp khi tệp thực thi tải dở dang, thiếu RAM hệ thống hoặc xung đột thư viện gốc.",
+      "evidence": "Phát hiện mã thoát tín hiệu gốc ARM64 (132/134/135/139)",
+      "suggest": "Hãy dọn RAM thiết bị, thử tải lại nhân máy chủ khi mạng ổn định hoặc kiểm tra Plugin/Mod gốc vừa cài."
+    },
+    {
       "id": "fontconfig-missing",
       "level": "Possible",
       "contains": [

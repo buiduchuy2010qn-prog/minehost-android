@@ -1779,6 +1779,21 @@ class MineoraAuditRegressionTest {
             assertFalse("UsageConfig punycode phải được gỡ bỏ hoàn toàn",
                 runCatching { Class.forName("com.mineserve.mobile.data.UsageConfig") }.isSuccess)
 
+            // [v3.1.3] 5. Kiểm tra khiên librustseccomp.so và phân tích lỗi Exit code 159 (SIGSYS / Android Seccomp)
+            assertEquals("librustseccomp.so", com.mineserve.mobile.runtime.NativeLibraryBundler.RUST_SECCOMP_FIX_LIB)
+            CrashReportAnalyzer.initialize(ctx)
+            val seccompAnalysis = CrashReportAnalyzer.analyze("Mã thoát tiến trình (Exit code): 159\n[RUST NATIVE] pumpkin")
+            assertEquals(159, seccompAnalysis.exitCode)
+            assertTrue(
+                "Phải nhận diện chính xác Exit 159 là Android Seccomp / SIGSYS, không được báo chưa rõ nguyên nhân",
+                seccompAnalysis.primaryLabel.contains("Seccomp", ignoreCase = true) ||
+                    seccompAnalysis.primaryLabel.contains("159")
+            )
+            assertFalse(
+                "Không được khuyên kiểm tra phiên bản Java trên lỗi Seccomp 159",
+                seccompAnalysis.findings.first().suggestion.contains("phiên bản Java", ignoreCase = true)
+            )
+
             lockFile.delete()
             tmpFile.delete()
             extraData.delete()

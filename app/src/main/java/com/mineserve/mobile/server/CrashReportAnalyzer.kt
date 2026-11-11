@@ -29,8 +29,9 @@ object CrashReportAnalyzer {
     ) { val primaryLabel: String get() = findings.firstOrNull()?.label ?: "Chưa xác định rõ nguyên nhân" }
 
     private val exception = Regex("""(?:[A-Za-z0-9_.]+)?(?:Exception|Error|Throwable)(?::[^\n]*)?""")
+    private val rustPanic = Regex("""thread\s+'[^']+'\s+panicked\s+at\s+[^\n]+""")
     private val causedBy = Regex("""Caused by: ([^\n]+)""")
-    private val exitCode = Regex("""(?:exit(?: code)?|退出码|Mã thoát|mã thoát)\s*[:=]\s*(-?\d+)""", RegexOption.IGNORE_CASE)
+    private val exitCode = Regex("""(?:exit(?:\s*code)?|退出码|Mã thoát(?:\s*tiến trình)?)\s*(?:\([^)]*\))?\s*\)?\s*[:=]\s*(-?\d+)""", RegexOption.IGNORE_CASE)
     private val component = Regex("""([A-Za-z0-9_.-]+\.(?:jar|zip|class))""")
     private val classVersion = Regex("""(?:class file version|major\.minor version)\s+(\d+)""", RegexOption.IGNORE_CASE)
     private val requiresJava = Regex("""(?:requires|need)\s+Java\s+(\d+)""", RegexOption.IGNORE_CASE)
@@ -286,6 +287,10 @@ object CrashReportAnalyzer {
     fun analyze(text: String): Analysis {
         val sanitizedText = CrashReportManager.localizeLegacyChineseText(text)
         val rawFirst = exception.find(sanitizedText)?.value?.trim()
+            ?: rustPanic.find(sanitizedText)?.value?.trim()
+        val isRustContext = sanitizedText.contains("[RUST NATIVE]", ignoreCase = true) ||
+            sanitizedText.contains("pumpkin", ignoreCase = true) ||
+            sanitizedText.contains("rust-seccomp", ignoreCase = true)
         val first = rawFirst?.replace(
             "Some of your mods are incompatible with the game or each other!",
             "Một số Mod không tương thích với phiên bản Minecraft hiện tại hoặc thiếu thư viện phụ trợ!"
@@ -340,8 +345,12 @@ object CrashReportAnalyzer {
                 level = Level.Reminder,
                 label = "Chưa xác định rõ nguyên nhân",
                 detail = "Không tìm thấy mẫu lỗi quen thuộc nào khớp với nội dung báo cáo này.",
-                evidence = first ?: "Không tìm thấy ngoại lệ (Exception) rõ ràng",
-                suggestion = "Hãy chuyển sang tab「Báo cáo gốc」hoặc「Nhật ký đầy đủ」để xem ngoại lệ đầu tiên và chuỗi Caused by, hoặc kiểm tra phiên bản Java / Mod vừa cài."
+                evidence = first ?: if (code != null) "Mã thoát tiến trình: $code" else "Không tìm thấy ngoại lệ rõ ràng",
+                suggestion = if (isRustContext) {
+                    "Hãy chuyển sang tab「Nhật ký đầy đủ」để xem thông báo từ Nhân Rust (Pumpkin ARM64), kiểm tra tệp cấu hình pumpkin.toml hoặc tạm tắt Plugin .wasm vừa thêm."
+                } else {
+                    "Hãy chuyển sang tab「Báo cáo gốc」hoặc「Nhật ký đầy đủ」để xem ngoại lệ đầu tiên và chuỗi Caused by, hoặc kiểm tra phiên bản Java / Mod vừa cài."
+                }
             )
         }
         return Analysis(first ?: "Không tìm thấy ngoại lệ đầu tiên", first, causes, code, components, findings, modConflictDetails)

@@ -74,6 +74,16 @@ object NativeLibraryBundler {
     const val IPV6_FIX_LIB = "libipv6fix.so"
 
     /**
+     * Khiên tương thích Android Seccomp-BPF & Bionic (`app/src/main/cpp/rustseccomp.c`)
+     * dành riêng cho máy chủ Rust thuần ARM64 (`pumpkin-aarch64-android` + `wasmtime` JIT).
+     *
+     * Được nạp trực tiếp từ `nativeLibraryDir` qua `LD_PRELOAD` trong `TermuxRuntime.startNativeRustServer`
+     * để đón và mô phỏng các syscall bị bộ lọc `untrusted_app` seccomp của Android chặn bằng `SIGSYS`
+     * (Exit code 159: `openat2`, `membarrier`, `copy_file_range`, `kcmp`, `statx`, `rseq`, `clone3`...).
+     */
+    const val RUST_SECCOMP_FIX_LIB = "librustseccomp.so"
+
+    /**
      * 打包进 APK 的库清单：**打包文件名 → 运行时的真实文件名（SONAME）**。
      *
      * 键是 `jniLibs/arm64-v8a/` 下的文件名；值是它落到 Termux 库目录后应该叫什么。
