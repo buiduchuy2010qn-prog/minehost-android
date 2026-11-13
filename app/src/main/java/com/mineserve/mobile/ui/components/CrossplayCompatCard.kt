@@ -5,9 +5,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -17,14 +19,24 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.material.icons.outlined.PhoneAndroid
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -43,10 +55,10 @@ import androidx.compose.ui.unit.sp
 import com.mineserve.mobile.data.ServerCore
 import com.mineserve.mobile.server.CrossplayCompat
 import com.mineserve.mobile.server.McServerController
-import com.mineserve.mobile.ui.theme.Coral
-import com.mineserve.mobile.ui.theme.Indigo
-import com.mineserve.mobile.ui.theme.Mint
-import com.mineserve.mobile.ui.theme.Muted
+import com.mineserve.mobile.ui.theme.HorizonGlass
+import com.mineserve.mobile.ui.theme.HorizonTabularStyle
+import com.mineserve.mobile.ui.theme.McShape
+import com.mineserve.mobile.ui.theme.horizonGlassPlate
 
 /**
  * Trạng thái kiểm tra chơi chung PC + PE cho một cặp core + phiên bản.
@@ -88,6 +100,11 @@ fun PeVersionPicker(
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val glass = HorizonGlass
+    val accentInk = if (glass.isLight) MaterialTheme.colorScheme.primary else glass.accent
+    val greenInk = if (glass.isLight) Color(0xFF047857) else glass.liveGreen
+    val coralInk = if (glass.isLight) Color(0xFFB91C1C) else glass.dangerCoral
+
     val current = CrossplayCompat.normalizeTargetPe(selected)
     var showPickerModal by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
@@ -122,68 +139,146 @@ fun PeVersionPicker(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(Indigo.copy(alpha = 0.08f))
-            .padding(horizontal = 10.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+            .horizonGlassPlate(
+                shape = McShape.Row,
+                containerColor = glass.glassRow,
+                borderColor = glass.hairline
+            )
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Text(
-            "📱 Điện thoại bạn đang dùng Minecraft PE bản nào?",
-            fontSize = 11.5.sp,
-            fontWeight = FontWeight.Bold
-        )
-        Text(
-            "Ấn vào khung bên dưới để lướt chọn trong ${allPeVersions.size} phiên bản PE, hoặc gõ số phiên bản vào ô tìm kiếm để ấn chọn ngay:",
-            fontSize = 10.sp,
-            color = Muted,
-            lineHeight = 13.5.sp
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(30.dp)
+                    .clip(RoundedCornerShape(9.dp))
+                    .background(glass.accentSoft)
+                    .border(1.dp, glass.accent.copy(alpha = 0.30f), RoundedCornerShape(9.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.PhoneAndroid,
+                    contentDescription = null,
+                    tint = accentInk,
+                    modifier = Modifier.size(17.dp)
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Phiên bản Minecraft PE trên điện thoại",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "Chọn từ danh sách hoặc nhập số phiên bản để khớp GeyserMC",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 17.sp
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .background(glass.accentSoft)
+                    .border(1.dp, glass.accent.copy(alpha = 0.32f), CircleShape)
+                    .padding(horizontal = 8.dp, vertical = 3.dp)
+            ) {
+                Text(
+                    text = "${allPeVersions.size} bản",
+                    style = MaterialTheme.typography.labelSmall.merge(HorizonTabularStyle),
+                    fontWeight = FontWeight.SemiBold,
+                    color = accentInk
+                )
+            }
+        }
 
         // Hộp bấm mở danh sách lướt chọn
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(10.dp))
-                .background(Indigo.copy(alpha = 0.16f))
-                .border(1.dp, Indigo.copy(alpha = 0.45f), RoundedCornerShape(10.dp))
+                .horizonGlassPlate(
+                    shape = RoundedCornerShape(12.dp),
+                    containerColor = glass.accentSoft,
+                    borderColor = glass.accent.copy(alpha = 0.45f),
+                    highlighted = current != null
+                )
                 .clickable { showPickerModal = true }
-                .padding(horizontal = 12.dp, vertical = 9.dp),
+                .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Column(modifier = Modifier.weight(1f)) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
-                    if (current == null) "🔄 Tự động: Bản PE mới nhất ($latestFirst+)"
-                    else "📱 Đang chọn: Minecraft PE $current",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = Indigo
+                    text = if (current == null) {
+                        "Tự động mới nhất (PE $latestFirst+)"
+                    } else {
+                        "Đang chọn: Minecraft PE $current"
+                    },
+                    style = MaterialTheme.typography.bodyMedium.merge(HorizonTabularStyle),
+                    fontWeight = FontWeight.SemiBold,
+                    color = accentInk
                 )
                 Text(
-                    "Ấn vào đây để mở danh sách lướt chọn (${allPeVersions.size} bản PE)",
-                    fontSize = 10.sp,
-                    color = Muted
+                    text = "Chạm để mở bảng chọn phân nhánh PE",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            Text(
-                "📋 Lướt chọn ▾",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.ExtraBold,
-                color = Indigo
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = "Chọn",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = accentInk
+                )
+                Icon(
+                    imageVector = Icons.Outlined.ExpandMore,
+                    contentDescription = null,
+                    tint = accentInk,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
         }
 
         // Ô nhập tay tìm nhanh ngay tại chỗ
         OutlinedTextField(
             value = searchQuery,
             onValueChange = { searchQuery = it.take(16) },
-            placeholder = { Text("🔍 Hoặc nhập tay bản PE (VD: 1.21.132, 1.21.51, 1.20.81)...", fontSize = 11.sp) },
+            placeholder = {
+                Text(
+                    text = "Nhập nhanh số bản PE (VD: 1.21.132, 1.21.51)…",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            },
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Outlined.Search,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp)
+                )
+            },
             singleLine = true,
-            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp),
+            textStyle = MaterialTheme.typography.bodyMedium.merge(HorizonTabularStyle),
+            shape = RoundedCornerShape(12.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedContainerColor = glass.glassInput,
+                unfocusedContainerColor = glass.glassInput,
+                focusedBorderColor = glass.accent,
+                unfocusedBorderColor = glass.hairline
+            ),
             trailingIcon = {
                 if (searchQuery.isNotBlank()) {
                     TextButton(onClick = { searchQuery = "" }) {
-                        Text("Xóa", fontSize = 10.5.sp, color = Coral)
+                        Text("Xóa", style = MaterialTheme.typography.labelMedium, color = coralInk)
                     }
                 }
             },
@@ -194,42 +289,48 @@ fun PeVersionPicker(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f))
-                    .padding(8.dp),
-                verticalArrangement = Arrangement.spacedBy(5.dp)
+                    .horizonGlassPlate(
+                        shape = RoundedCornerShape(12.dp),
+                        containerColor = glass.glassCard,
+                        borderColor = glass.hairline
+                    )
+                    .padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Text(
-                    "👇 Ấn vào phiên bản bên dưới để áp dụng ngay:",
-                    fontSize = 10.5.sp,
-                    color = Mint,
-                    fontWeight = FontWeight.Bold
+                    text = "Chạm vào phiên bản để áp dụng:",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = greenInk,
+                    fontWeight = FontWeight.SemiBold
                 )
                 if (normalizedCustom != null && normalizedCustom !in inlineMatches) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Indigo.copy(alpha = 0.16f))
+                            .horizonGlassPlate(
+                                shape = RoundedCornerShape(10.dp),
+                                containerColor = glass.accentSoft,
+                                borderColor = glass.accent.copy(alpha = 0.42f)
+                            )
                             .clickable {
                                 onSelect(normalizedCustom)
                                 searchQuery = ""
                             }
-                            .padding(horizontal = 10.dp, vertical = 7.dp),
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            "✨ Dùng bản nhập tay: PE $normalizedCustom",
-                            fontSize = 11.5.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = Indigo
+                            text = "Dùng bản nhập tay: PE $normalizedCustom",
+                            style = MaterialTheme.typography.bodySmall.merge(HorizonTabularStyle),
+                            fontWeight = FontWeight.SemiBold,
+                            color = accentInk
                         )
                         Text(
-                            "✅ Ấn để chọn",
-                            fontSize = 10.5.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Mint
+                            text = "Áp dụng",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = greenInk
                         )
                     }
                 }
@@ -237,34 +338,37 @@ fun PeVersionPicker(
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(max = 180.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                    verticalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
                     items(inlineMatches, key = { it }) { ver ->
                         val isSel = current == ver
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(if (isSel) Mint.copy(alpha = 0.18f) else Indigo.copy(alpha = 0.08f))
+                                .horizonGlassPlate(
+                                    shape = RoundedCornerShape(10.dp),
+                                    containerColor = if (isSel) glass.liveGreenSoft else glass.glassRow,
+                                    borderColor = if (isSel) glass.liveGreen.copy(alpha = 0.48f) else glass.hairline
+                                )
                                 .clickable {
                                     onSelect(ver)
                                     searchQuery = ""
                                 }
-                                .padding(horizontal = 10.dp, vertical = 7.dp),
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text(
-                                "📱 Minecraft PE $ver",
-                                fontSize = 11.5.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = if (isSel) Mint else MaterialTheme.colorScheme.onSurface
+                                text = "Minecraft PE $ver",
+                                style = MaterialTheme.typography.bodySmall.merge(HorizonTabularStyle),
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (isSel) greenInk else MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                if (isSel) "✅ Đang chọn" else "👉 Ấn để chọn",
-                                fontSize = 10.5.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isSel) Mint else Indigo
+                                text = if (isSel) "Đang chọn ✓" else "Chọn",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (isSel) greenInk else accentInk
                             )
                         }
                     }
@@ -293,32 +397,52 @@ fun PeVersionPicker(
 
         AlertDialog(
             onDismissRequest = { showPickerModal = false },
+            modifier = Modifier.border(1.dp, glass.specularTop, McShape.Dialog),
+            shape = McShape.Dialog,
+            containerColor = glass.glassChrome,
+            tonalElevation = 0.dp,
             title = {
                 Text(
-                    "📱 Lướt chọn / Nhập tìm phiên bản PE",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.ExtraBold
+                    text = "Chọn phiên bản Minecraft PE",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
                 )
             },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedTextField(
                         value = modalQuery,
                         onValueChange = { modalQuery = it.take(16) },
-                        placeholder = { Text("🔍 Nhập số phiên bản PE (VD: 1.21.132, 1.21.51)...", fontSize = 11.5.sp) },
+                        placeholder = {
+                            Text(
+                                text = "Tìm phiên bản PE (VD: 1.21.132, 1.21.51)…",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Outlined.Search, contentDescription = null, modifier = Modifier.size(18.dp))
+                        },
                         singleLine = true,
+                        textStyle = MaterialTheme.typography.bodyMedium.merge(HorizonTabularStyle),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = glass.glassInput,
+                            unfocusedContainerColor = glass.glassInput,
+                            focusedBorderColor = glass.accent,
+                            unfocusedBorderColor = glass.hairline
+                        ),
                         modifier = Modifier.fillMaxWidth()
                     )
                     FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(5.dp),
-                        verticalArrangement = Arrangement.spacedBy(5.dp)
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         listOf(
                             "all" to "Tất cả (${allPeVersions.size})",
-                            "1.21" to "🌟 1.21.x",
-                            "1.20" to "⚡ 1.20.x",
-                            "1.19" to "🛡️ 1.19.x",
-                            "26" to "🚀 1.26 / 26.x"
+                            "1.21" to "1.21.x",
+                            "1.20" to "1.20.x",
+                            "1.19" to "1.19.x",
+                            "26" to "1.26 / 26.x"
                         ).forEach { (key, label) ->
                             SegPill(
                                 text = label,
@@ -332,8 +456,8 @@ fun PeVersionPicker(
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(340.dp),
-                        verticalArrangement = Arrangement.spacedBy(5.dp)
+                            .height(330.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         if (modalQuery.isBlank() && modalBranch == "all") {
                             item(key = "__auto_latest__") {
@@ -341,34 +465,37 @@ fun PeVersionPicker(
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clip(RoundedCornerShape(9.dp))
-                                        .background(if (isAuto) Mint.copy(alpha = 0.18f) else Indigo.copy(alpha = 0.10f))
+                                        .horizonGlassPlate(
+                                            shape = RoundedCornerShape(11.dp),
+                                            containerColor = if (isAuto) glass.liveGreenSoft else glass.accentSoft,
+                                            borderColor = if (isAuto) glass.liveGreen.copy(alpha = 0.5f) else glass.accent.copy(alpha = 0.35f)
+                                        )
                                         .clickable {
                                             onSelect("")
                                             showPickerModal = false
                                         }
-                                        .padding(horizontal = 11.dp, vertical = 9.dp),
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Column(modifier = Modifier.weight(1f)) {
+                                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                         Text(
-                                            "🔄 Tự động mới nhất ($latestFirst+)",
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.ExtraBold,
-                                            color = if (isAuto) Mint else Indigo
+                                            text = "Tự động mới nhất ($latestFirst+)",
+                                            style = MaterialTheme.typography.bodyMedium.merge(HorizonTabularStyle),
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = if (isAuto) greenInk else accentInk
                                         )
                                         Text(
-                                            "Tự dùng GeyserMC mới nhất cho Minecraft PE hiện hành",
-                                            fontSize = 10.sp,
-                                            color = Muted
+                                            text = "Tự dùng GeyserMC mới nhất cho bản PE hiện hành",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
                                     Text(
-                                        if (isAuto) "✅ Đang chọn" else "Chọn",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (isAuto) Mint else Indigo
+                                        text = if (isAuto) "Đang chọn ✓" else "Chọn",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (isAuto) greenInk else accentInk
                                     )
                                 }
                             }
@@ -379,27 +506,30 @@ fun PeVersionPicker(
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clip(RoundedCornerShape(9.dp))
-                                        .background(Indigo.copy(alpha = 0.16f))
+                                        .horizonGlassPlate(
+                                            shape = RoundedCornerShape(11.dp),
+                                            containerColor = glass.accentSoft,
+                                            borderColor = glass.accent.copy(alpha = 0.45f)
+                                        )
                                         .clickable {
                                             onSelect(modalCustom)
                                             showPickerModal = false
                                         }
-                                        .padding(horizontal = 11.dp, vertical = 9.dp),
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     Text(
-                                        "✨ Dùng phiên bản nhập tay: PE $modalCustom",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.ExtraBold,
-                                        color = Indigo
+                                        text = "Dùng bản nhập tay: PE $modalCustom",
+                                        style = MaterialTheme.typography.bodyMedium.merge(HorizonTabularStyle),
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = accentInk
                                     )
                                     Text(
-                                        "✅ Ấn chọn",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Mint
+                                        text = "Chọn",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = greenInk
                                     )
                                 }
                             }
@@ -410,30 +540,30 @@ fun PeVersionPicker(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(9.dp))
-                                    .background(
-                                        if (isSel) Mint.copy(alpha = 0.18f)
-                                        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                                    .horizonGlassPlate(
+                                        shape = RoundedCornerShape(11.dp),
+                                        containerColor = if (isSel) glass.liveGreenSoft else glass.glassRow,
+                                        borderColor = if (isSel) glass.liveGreen.copy(alpha = 0.5f) else glass.hairline
                                     )
                                     .clickable {
                                         onSelect(ver)
                                         showPickerModal = false
                                     }
-                                    .padding(horizontal = 11.dp, vertical = 9.dp),
+                                    .padding(horizontal = 12.dp, vertical = 9.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(
-                                    "📱 Minecraft PE $ver",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    color = if (isSel) Mint else MaterialTheme.colorScheme.onSurface
+                                    text = "Minecraft PE $ver",
+                                    style = MaterialTheme.typography.bodyMedium.merge(HorizonTabularStyle),
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (isSel) greenInk else MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
-                                    if (isSel) "✅ Đang chọn" else "👉 Ấn chọn",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isSel) Mint else Indigo
+                                    text = if (isSel) "Đang chọn ✓" else "Chọn",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (isSel) greenInk else accentInk
                                 )
                             }
                         }
@@ -441,8 +571,12 @@ fun PeVersionPicker(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showPickerModal = false }) {
-                    Text("Đóng", color = Indigo, fontWeight = FontWeight.Bold)
+                OutlinedButton(
+                    onClick = { showPickerModal = false },
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, glass.hairline)
+                ) {
+                    Text("Đóng", fontWeight = FontWeight.Medium)
                 }
             }
         )
@@ -463,93 +597,207 @@ fun CrossplayCompatCard(
     onApplySuggestion: ((ServerCore, String) -> Unit)? = null,
     onRetry: (() -> Unit)? = null
 ) {
+    val glass = HorizonGlass
+    val accentInk = if (glass.isLight) MaterialTheme.colorScheme.primary else glass.accent
+    val greenInk = if (glass.isLight) Color(0xFF047857) else glass.liveGreen
+    val coralInk = if (glass.isLight) Color(0xFFB91C1C) else glass.dangerCoral
+
     val ok = result?.supported == true
-    val bg = when {
-        result == null -> Indigo.copy(alpha = 0.10f)
-        ok -> Mint.copy(alpha = 0.14f)
-        else -> Coral.copy(alpha = 0.14f)
+    val containerTint = when {
+        result == null -> glass.glassRow
+        ok -> glass.liveGreenSoft
+        else -> glass.dangerCoralSoft
     }
+    val borderTint = when {
+        result == null -> glass.hairline
+        ok -> glass.liveGreen.copy(alpha = 0.45f)
+        else -> glass.dangerCoral.copy(alpha = 0.48f)
+    }
+
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(bg)
-            .padding(horizontal = 11.dp, vertical = 9.dp),
-        verticalArrangement = Arrangement.spacedBy(5.dp)
+            .horizonGlassPlate(
+                shape = McShape.Row,
+                containerColor = containerTint,
+                borderColor = borderTint
+            )
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Text(
-            "🔎 Kiểm tra chơi chung: ${core.displayName} Java $mcVersion ↔ Minecraft PE" +
-                (CrossplayCompat.normalizeTargetPe(result?.targetPe)?.let { " $it" } ?: ""),
-            fontSize = 11.5.sp,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            if (result != null) {
+                Icon(
+                    imageVector = if (ok) Icons.Outlined.CheckCircle else Icons.Outlined.WarningAmber,
+                    contentDescription = null,
+                    tint = if (ok) greenInk else coralInk,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+            Text(
+                text = "Tương thích Crossplay: ${core.displayName} $mcVersion" +
+                    (CrossplayCompat.normalizeTargetPe(result?.targetPe)?.let { " ↔ PE $it" } ?: " ↔ Bedrock PE"),
+                style = MaterialTheme.typography.labelLarge.merge(HorizonTabularStyle),
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f)
+            )
+        }
+
         if (result == null) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = Indigo)
-                Spacer(Modifier.size(8.dp))
-                Text("Đang hỏi GeyserMC + Modrinth xem PE bản nào vào được...", fontSize = 11.sp, color = Indigo)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.padding(vertical = 2.dp)
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 2.dp,
+                    color = glass.accent
+                )
+                Text(
+                    text = "Đang kiểm tra dải phiên bản GeyserMC & Modrinth…",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
             return@Column
         }
 
         Text(
-            result.headline,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.ExtraBold,
-            color = if (ok) Mint else Coral,
-            lineHeight = 17.sp
-        )
-        Text(result.pcLine, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold, lineHeight = 15.sp)
-        Text(
-            result.peLine,
-            fontSize = 11.5.sp,
+            text = result.headline,
+            style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.SemiBold,
-            color = if (ok) Mint else Coral,
-            lineHeight = 15.sp
+            color = if (ok) greenInk else coralInk,
+            lineHeight = 20.sp
         )
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .background(glass.glassRow.copy(alpha = if (glass.isLight) 0.65f else 0.45f))
+                .border(1.dp, glass.hairline, RoundedCornerShape(10.dp))
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = result.pcLine,
+                style = MaterialTheme.typography.bodySmall.merge(HorizonTabularStyle),
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface,
+                lineHeight = 18.sp
+            )
+            Text(
+                text = result.peLine,
+                style = MaterialTheme.typography.bodySmall.merge(HorizonTabularStyle),
+                fontWeight = FontWeight.SemiBold,
+                color = if (ok) greenInk else coralInk,
+                lineHeight = 18.sp
+            )
+        }
+
         if (ok && result.bedrockVersions.isNotEmpty()) {
-            Text("Các bản Minecraft PE vào được:", fontSize = 10.5.sp, color = Muted)
+            Text(
+                text = "Các bản Minecraft PE vào được:",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 result.bedrockVersions.forEach { v ->
-                    Text(
-                        "📱 $v",
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Mint,
+                    Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(Mint.copy(alpha = 0.16f))
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                            .clip(CircleShape)
+                            .background(glass.glassRow)
+                            .border(1.dp, glass.liveGreen.copy(alpha = 0.42f), CircleShape)
+                            .padding(horizontal = 9.dp, vertical = 3.dp)
+                    ) {
+                        Text(
+                            text = "PE $v",
+                            style = MaterialTheme.typography.labelSmall.merge(HorizonTabularStyle),
+                            fontWeight = FontWeight.SemiBold,
+                            color = greenInk
+                        )
+                    }
+                }
+            }
+        }
+
+        if (result.details.isNotEmpty()) {
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                result.details.forEach { line ->
+                    Text(
+                        text = "• $line",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 18.sp
                     )
                 }
             }
         }
-        result.details.forEach { line ->
-            Text("• $line", fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, lineHeight = 14.sp)
-        }
+
         result.suggestion?.let { s ->
-            Text("👉 $s", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Indigo, lineHeight = 15.sp)
+            Text(
+                text = "Gợi ý: $s",
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.SemiBold,
+                color = accentInk,
+                lineHeight = 18.sp
+            )
         }
+
         val sugCore = result.suggestedCore
         val sugMc = result.suggestedMcVersion
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (!ok && onApplySuggestion != null && sugCore != null && !sugMc.isNullOrBlank() &&
-                (sugCore != core || sugMc != mcVersion)
+        val hasAction = (!ok && onApplySuggestion != null && sugCore != null && !sugMc.isNullOrBlank() &&
+            (sugCore != core || sugMc != mcVersion)) || onRetry != null
+
+        if (hasAction) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Button(
-                    onClick = { onApplySuggestion(sugCore, sugMc) },
-                    colors = ButtonDefaults.buttonColors(containerColor = Indigo),
-                    shape = RoundedCornerShape(10.dp)
+                if (!ok && onApplySuggestion != null && sugCore != null && !sugMc.isNullOrBlank() &&
+                    (sugCore != core || sugMc != mcVersion)
                 ) {
-                    Text("Đổi sang ${sugCore.displayName} $sugMc", fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                    Button(
+                        onClick = { onApplySuggestion(sugCore, sugMc) },
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                    ) {
+                        Text(
+                            text = "Đổi sang ${sugCore.displayName} $sugMc",
+                            style = MaterialTheme.typography.labelMedium.merge(HorizonTabularStyle),
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
                 }
-            }
-            if (onRetry != null) {
-                TextButton(onClick = onRetry) { Text("🔄 Kiểm tra lại", fontSize = 11.sp, color = Indigo) }
+                if (onRetry != null) {
+                    OutlinedButton(
+                        onClick = onRetry,
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                        border = BorderStroke(1.dp, glass.hairline)
+                    ) {
+                        Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.size(5.dp))
+                        Text(
+                            text = "Kiểm tra lại",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
             }
         }
     }

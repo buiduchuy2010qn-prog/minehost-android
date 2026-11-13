@@ -2,47 +2,47 @@
 
 package com.mineserve.mobile.ui.screens
 
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.graphics.asImageBitmap
-import com.mineserve.mobile.R
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.VideogameAsset
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
@@ -51,10 +51,11 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -68,33 +69,41 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.DialogProperties
+import com.mineserve.mobile.R
 import com.mineserve.mobile.server.PlayerManager
-import com.mineserve.mobile.ui.HeaderBlock
 import com.mineserve.mobile.ui.EmptyHint
+import com.mineserve.mobile.ui.HeaderBlock
 import com.mineserve.mobile.ui.McCard
 import com.mineserve.mobile.ui.McViewModel
 import com.mineserve.mobile.ui.SegmentedTabs
 import com.mineserve.mobile.ui.SwipeableInstantSnackbarHost
 import com.mineserve.mobile.ui.showInstantSnackbar
-import com.mineserve.mobile.ui.theme.Coral
-import com.mineserve.mobile.ui.theme.CoralSoft
-import com.mineserve.mobile.ui.theme.Indigo
-import com.mineserve.mobile.ui.theme.IndigoSoft
+import com.mineserve.mobile.ui.theme.HorizonGlass
+import com.mineserve.mobile.ui.theme.HorizonTabularStyle
 import com.mineserve.mobile.ui.theme.McIcon
 import com.mineserve.mobile.ui.theme.McShape
 import com.mineserve.mobile.ui.theme.McSpacing
-import com.mineserve.mobile.ui.theme.Mint
-import com.mineserve.mobile.ui.theme.MintSoft
 import com.mineserve.mobile.ui.theme.Muted
+import com.mineserve.mobile.ui.theme.horizonGlassPlate
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import java.util.Locale
+import kotlin.math.abs
 
 private enum class PlayerListTab(val labelRes: Int) {
     Online(R.string.s657),
@@ -145,18 +154,6 @@ private fun matchesPlayerQuery(name: String, query: String): Boolean {
     return cursor == normalizedQuery.length
 }
 
-/**
- * 玩家管理页（重构版）
- *
- * 优化点：
- *  - 命令发送前校验服务器运行状态，未运行给明确错误反馈
- *  - 命令后延迟 600ms 再刷新列表，避免读到旧 JSON
- *  - 新增限时封禁（tempban）、白名单开关、OP 等级选择
- *  - 每个列表加搜索框
- *  - 点击列表项弹出玩家详情对话框
- *  - 移除冗余的快捷操作卡片（操作整合到列表行）
- *  - 服务器未运行时显示醒目状态横幅
- */
 @Composable
 fun PlayersScreen(
     vm: McViewModel,
@@ -164,6 +161,7 @@ fun PlayersScreen(
     onNavigateOpGuide: () -> Unit = {},
     onPlayerTools: () -> Unit = {}
 ) {
+    val glass = HorizonGlass
     val serverState by vm.serverState.collectAsState()
     val ops by vm.ops.collectAsState()
     val whitelist by vm.whitelist.collectAsState()
@@ -187,42 +185,38 @@ fun PlayersScreen(
     var detailPlayer by remember { mutableStateOf<DetailInfo?>(null) }
     var detailInitialTab by remember { mutableStateOf(0) }
     var showHistory by remember { mutableStateOf(false) }
-    val historyExportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri -> uri?.let(vm::exportPlayerHistory) }
+    val historyExportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
+        uri?.let(vm::exportPlayerHistory)
+    }
 
-    // 进入页面/切换核心/服务器启动状态变化时刷新 OP/白名单/封禁列表
-    // （服务器启动完成后 ops.json 等才会生成，故监听 isRunning）
     LaunchedEffect(isBootstrapped, config.activeCoreName, serverState.isRunning) {
         if (isBootstrapped && config.activeCoreName != null) {
             vm.refreshPlayers()
         }
     }
-    // 进入在线玩家 tab 时发送 list 命令，全量校正在线名单
     LaunchedEffect(activeTab) {
         if (activeTab == PlayerListTab.Online) vm.refreshOnlinePlayers()
     }
     LaunchedEffect(Unit) { vm.errorFlow.collectLatest { snackbarHostState.showInstantSnackbar(it) } }
     LaunchedEffect(Unit) { vm.messageFlow.collectLatest { snackbarHostState.showInstantSnackbar(it) } }
 
-            val isRunning = serverState.isRunning
-            val activeCore = config.installedCores.find { it.name == config.activeCoreName }
+    val isRunning = serverState.isRunning
+    val activeCore = config.installedCores.find { it.name == config.activeCoreName }
 
     Scaffold(
+        containerColor = Color.Transparent,
         snackbarHost = { SwipeableInstantSnackbarHost(snackbarHostState) },
         contentWindowInsets = WindowInsets(0.dp)
     ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .background(Color.Transparent)
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
         ) {
-            TextButton(onClick = onPlayerTools, modifier = Modifier.padding(horizontal = 16.dp)) {
-                Text("Skin, danh hiệu & bảo vệ OP →")
-            }
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surface),
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 HeaderBlock(
@@ -239,13 +233,32 @@ fun PlayersScreen(
                     Icon(
                         Icons.Outlined.History,
                         contentDescription = stringResource(R.string.s673),
-                        tint = Indigo,
+                        tint = glass.accent,
                         modifier = Modifier.size(McIcon.Item)
                     )
                 }
             }
 
-            // ── 服务器状态横幅 ──
+            // Lối tắt công cụ Skin, danh hiệu & bảo vệ OP dạng viên thuốc mặt kính mờ
+            Box(
+                modifier = Modifier
+                    .padding(horizontal = McSpacing.Page, vertical = 2.dp)
+                    .clip(CircleShape)
+                    .background(glass.glassRow)
+                    .border(1.dp, glass.hairline, CircleShape)
+                    .clickable { onPlayerTools() }
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    "✨ Skin, danh hiệu & bảo vệ OP →",
+                    color = glass.accent,
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+
+            Spacer(Modifier.height(4.dp))
+
             ServerStatusBanner(
                 isRunning = isRunning,
                 isBootstrapped = isBootstrapped,
@@ -255,7 +268,6 @@ fun PlayersScreen(
                 onRefresh = { vm.refreshPlayers(); vm.refreshOnlinePlayers() }
             )
 
-            // ── 标签切换 (Ngắn gọn, không bao giờ bị cắt chữ "...") ──
             val playerTabs = PlayerListTab.values()
             SegmentedTabs(
                 options = playerTabs.map { tab ->
@@ -299,7 +311,6 @@ fun PlayersScreen(
                         onKick = { name -> vm.kickPlayer(name) },
                         onSetGameMode = { name, mode -> vm.setGameMode(name, mode) }
                     )
-                    // Hiển thị luôn Phần B — Lịch sử người chơi đã từng tham gia ngay bên dưới Phần A
                     PersistentPlayerHistorySection(
                         summaries = activitySummaries,
                         history = playerHistory,
@@ -378,7 +389,6 @@ fun PlayersScreen(
         }
     }
 
-    // 详情对话框
     detailPlayer?.let { info ->
         PlayerDetailDialog(
             vm = vm,
@@ -406,7 +416,6 @@ fun PlayersScreen(
         )
     }
 
-    // 玩家进服/离服历史记录对话框
     if (showHistory) {
         PlayerHistoryDialog(
             history = playerHistory,
@@ -419,7 +428,73 @@ fun PlayersScreen(
     }
 }
 
-// ── 玩家历史记录对话框 ──────────────────────────────────────────────
+@Composable
+private fun PlayerGlassSearchField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholderText: String,
+    modifier: Modifier = Modifier
+) {
+    val glass = HorizonGlass
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        placeholder = {
+            Text(
+                placeholderText,
+                fontSize = 11.5.sp,
+                color = Muted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        },
+        leadingIcon = {
+            Icon(
+                Icons.Outlined.Search,
+                contentDescription = null,
+                tint = glass.accent,
+                modifier = Modifier.size(16.dp)
+            )
+        },
+        singleLine = true,
+        shape = CircleShape,
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedContainerColor = glass.glassInput,
+            unfocusedContainerColor = glass.glassInput,
+            focusedBorderColor = glass.accent,
+            unfocusedBorderColor = glass.hairline
+        ),
+        modifier = modifier.fillMaxWidth()
+    )
+}
+
+@Composable
+private fun PlayerQuickActionPill(
+    text: String,
+    textColor: Color,
+    containerColor: Color,
+    borderColor: Color,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .clip(CircleShape)
+            .background(containerColor)
+            .border(1.dp, borderColor, CircleShape)
+            .clickable { onClick() }
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            color = textColor,
+            fontSize = 10.5.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            softWrap = false
+        )
+    }
+}
 
 @Composable
 private fun PlayerHistoryDialog(
@@ -430,14 +505,18 @@ private fun PlayerHistoryDialog(
     onClear: () -> Unit,
     onShowPlayer: (String) -> Unit
 ) {
+    val glass = HorizonGlass
     var search by remember { mutableStateOf("") }
     var clearConfirm by remember { mutableStateOf(false) }
     val filtered = remember(history, search) { history.filter { matchesPlayerQuery(it.player, search) } }
+
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = glass.glassChrome,
+        shape = McShape.Dialog,
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.History, contentDescription = null, tint = Indigo, modifier = Modifier.size(20.dp))
+                Icon(Icons.Outlined.History, contentDescription = null, tint = glass.accent, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.size(8.dp))
                 Text(stringResource(R.string.s677), fontWeight = FontWeight.Bold)
             }
@@ -456,29 +535,54 @@ private fun PlayerHistoryDialog(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .verticalScroll(rememberScrollState())
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Text(stringResource(R.string.player_history_summary, summaries.size, formatActivitySeconds(summaries.sumOf { it.totalSeconds })), color = Muted, fontSize = 11.sp)
-                    OutlinedTextField(value = search, onValueChange = { search = it }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), singleLine = true, label = { Text(stringResource(R.string.player_search)) })
+                    Text(
+                        stringResource(
+                            R.string.player_history_summary,
+                            summaries.size,
+                            formatActivitySeconds(summaries.sumOf { it.totalSeconds })
+                        ),
+                        style = HorizonTabularStyle,
+                        color = Muted,
+                        fontSize = 11.sp
+                    )
+                    PlayerGlassSearchField(
+                        value = search,
+                        onValueChange = { search = it },
+                        placeholderText = stringResource(R.string.player_search)
+                    )
+                    Spacer(Modifier.height(2.dp))
                     filtered.forEach { h ->
+                        val isJoin = h.event == stringResource(R.string.s189)
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .horizonGlassPlate(
+                                    shape = McShape.Row,
+                                    containerColor = glass.glassRow,
+                                    borderColor = glass.hairline
+                                )
                                 .clickable { onShowPlayer(h.player) }
-                                .padding(vertical = 6.dp),
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            val isJoin = h.event == stringResource(R.string.s189)
                             Box(
                                 modifier = Modifier
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .background(if (isJoin) MintSoft else CoralSoft)
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isJoin) glass.liveGreenSoft else glass.dangerCoralSoft)
+                                    .border(
+                                        1.dp,
+                                        if (isJoin) glass.liveGreen.copy(alpha = 0.45f) else glass.dangerCoral.copy(alpha = 0.45f),
+                                        CircleShape
+                                    )
+                                    .padding(horizontal = 7.dp, vertical = 2.dp)
                             ) {
                                 Text(
                                     h.event,
-                                    color = if (isJoin) Mint else Coral,
-                                    fontSize = 10.sp,
+                                    color = if (isJoin) glass.liveGreen else glass.dangerCoral,
+                                    fontSize = 9.5.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
@@ -491,7 +595,18 @@ private fun PlayerHistoryDialog(
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                                Text(buildString { append(h.time); if (h.sessionStart != null && h.sessionEnd != null) append("  |  ${formatActivitySeconds(((h.sessionEnd - h.sessionStart) / 1000).coerceAtLeast(0))}"); if (h.interrupted) append("  |  Gián đoạn") }, color = Muted, fontSize = 10.sp)
+                                Text(
+                                    buildString {
+                                        append(h.time)
+                                        if (h.sessionStart != null && h.sessionEnd != null) {
+                                            append("  •  ${formatActivitySeconds(((h.sessionEnd - h.sessionStart) / 1000).coerceAtLeast(0))}")
+                                        }
+                                        if (h.interrupted) append("  •  Gián đoạn")
+                                    },
+                                    style = HorizonTabularStyle,
+                                    color = Muted,
+                                    fontSize = 10.sp
+                                )
                             }
                         }
                     }
@@ -500,13 +615,37 @@ private fun PlayerHistoryDialog(
         },
         confirmButton = {
             Row {
-                TextButton(onClick = onExport) { Text(stringResource(R.string.player_export_csv)) }
-                TextButton(onClick = { clearConfirm = true }) { Text(stringResource(R.string.player_clear), color = Coral) }
-                TextButton(onClick = onDismiss) { Text(stringResource(R.string.s620)) }
+                TextButton(onClick = onExport) {
+                    Text(stringResource(R.string.player_export_csv), color = glass.accent, fontWeight = FontWeight.SemiBold)
+                }
+                TextButton(onClick = { clearConfirm = true }) {
+                    Text(stringResource(R.string.player_clear), color = glass.dangerCoral, fontWeight = FontWeight.SemiBold)
+                }
+                TextButton(onClick = onDismiss) {
+                    Text(stringResource(R.string.s620), fontWeight = FontWeight.Bold)
+                }
             }
         }
     )
-    if (clearConfirm) AlertDialog(onDismissRequest = { clearConfirm = false }, title = { Text(stringResource(R.string.player_clear_title)) }, text = { Text(stringResource(R.string.player_clear_hint)) }, confirmButton = { TextButton(onClick = { onClear(); clearConfirm = false }) { Text(stringResource(R.string.player_clear), color = Coral) } }, dismissButton = { TextButton(onClick = { clearConfirm = false }) { Text(stringResource(R.string.props_cancel)) } })
+    if (clearConfirm) {
+        AlertDialog(
+            onDismissRequest = { clearConfirm = false },
+            containerColor = glass.glassChrome,
+            shape = McShape.Dialog,
+            title = { Text(stringResource(R.string.player_clear_title), fontWeight = FontWeight.Bold) },
+            text = { Text(stringResource(R.string.player_clear_hint), fontSize = 12.5.sp) },
+            confirmButton = {
+                TextButton(onClick = { onClear(); clearConfirm = false }) {
+                    Text(stringResource(R.string.player_clear), color = glass.dangerCoral, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { clearConfirm = false }) {
+                    Text(stringResource(R.string.props_cancel), color = Muted)
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -515,8 +654,6 @@ private fun formatActivitySeconds(seconds: Long): String = when {
     seconds >= 60 -> stringResource(R.string.fmt_minutes, seconds / 60)
     else -> stringResource(R.string.fmt_seconds, seconds)
 }
-
-// ── 服务器状态横幅 ──────────────────────────────────────────────────
 
 @Composable
 private fun ServerStatusBanner(
@@ -527,6 +664,7 @@ private fun ServerStatusBanner(
     maxPlayers: Int,
     onRefresh: () -> Unit
 ) {
+    val glass = HorizonGlass
     McCard(
         title = stringResource(R.string.s679),
         trailing = {
@@ -534,32 +672,33 @@ private fun ServerStatusBanner(
                 Icon(
                     Icons.Outlined.Refresh,
                     contentDescription = stringResource(R.string.s333),
-                    tint = Indigo,
-                    modifier = Modifier.size(14.dp).clickable { onRefresh() }
+                    tint = glass.accent,
+                    modifier = Modifier.size(16.dp).clickable { onRefresh() }
                 )
             }
         }
     ) {
         if (!isBootstrapped) {
-            StatusRow(color = Coral, text = stringResource(R.string.s680))
+            StatusRow(color = glass.dangerCoral, text = stringResource(R.string.s680))
         } else if (!hasActiveCore) {
-            StatusRow(color = Coral, text = stringResource(R.string.s681))
+            StatusRow(color = glass.dangerCoral, text = stringResource(R.string.s681))
         } else if (!isRunning) {
-            StatusRow(color = Coral, text = stringResource(R.string.s682))
+            StatusRow(color = glass.dangerCoral, text = stringResource(R.string.s682))
         } else {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
                         .size(8.dp)
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(Mint)
+                        .clip(CircleShape)
+                        .background(glass.liveGreen)
                 )
-                Spacer(Modifier.size(6.dp))
+                Spacer(Modifier.size(8.dp))
                 Text(
                     stringResource(R.string.s683, onlineCount, maxPlayers),
-                    color = Mint,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold
+                    style = HorizonTabularStyle,
+                    color = glass.liveGreen,
+                    fontSize = 12.5.sp,
+                    fontWeight = FontWeight.Bold
                 )
             }
         }
@@ -569,13 +708,11 @@ private fun ServerStatusBanner(
 @Composable
 private fun StatusRow(color: Color, text: String) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(modifier = Modifier.size(8.dp).clip(RoundedCornerShape(4.dp)).background(color))
-        Spacer(Modifier.size(6.dp))
-        Text(text, color = color, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(color))
+        Spacer(Modifier.size(8.dp))
+        Text(text, color = color, fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.SemiBold)
     }
 }
-
-// ── 在线玩家标签 ────────────────────────────────────────────────────
 
 @Composable
 private fun OnlineTab(
@@ -591,25 +728,27 @@ private fun OnlineTab(
     onKick: (String) -> Unit,
     onSetGameMode: (String, Int) -> Unit
 ) {
+    val glass = HorizonGlass
     var search by remember { mutableStateOf("") }
     val filteredPlayers = remember(players, search) { players.filter { matchesPlayerQuery(it, search) } }
     McCard(title = "🟢 Phần A — Người chơi đang trực tuyến (${if (isRunning) players.size else 0})") {
         if (isRunning) {
-            OutlinedTextField(
+            PlayerGlassSearchField(
                 value = search,
                 onValueChange = { search = it },
-                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                singleLine = true,
-                leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
-                label = { Text(stringResource(R.string.player_search), fontSize = 11.sp) }
+                placeholderText = stringResource(R.string.player_search),
+                modifier = Modifier.padding(bottom = 10.dp)
             )
         }
         if (!isRunning) {
-            StatusRow(color = Coral, text = "Server đang dừng — hiện không có ai trực tuyến. Xem danh sách người chơi đã từng tham gia ở Phần B bên dưới.")
+            StatusRow(
+                color = glass.dangerCoral,
+                text = "Server đang dừng — hiện không có ai trực tuyến. Xem danh sách người chơi đã từng tham gia ở Phần B bên dưới."
+            )
         } else if (filteredPlayers.isEmpty()) {
             EmptyHint(icon = Icons.Outlined.Person, text = stringResource(R.string.s685))
         } else {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 filteredPlayers.forEach { name ->
                     val summary = summaries.firstOrNull { it.player.equals(name, ignoreCase = true) }
                     val isPlayerOp = ops.any { it.name.equals(name, ignoreCase = true) }
@@ -633,9 +772,9 @@ private fun OnlineTab(
             horizontalArrangement = Arrangement.End
         ) {
             TextButton(onClick = onRefresh) {
-                Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(14.dp), tint = Indigo)
+                Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(14.dp), tint = glass.accent)
                 Spacer(Modifier.size(4.dp))
-                Text(stringResource(R.string.s686), color = Indigo, fontSize = 11.sp)
+                Text(stringResource(R.string.s686), color = glass.accent, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
             }
         }
     }
@@ -653,20 +792,26 @@ private fun OnlinePlayerRow(
     onKick: () -> Unit,
     onSetGameMode: (Int) -> Unit
 ) {
+    val glass = HorizonGlass
     var modeMenuOpen by remember { mutableStateOf(false) }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(IndigoSoft)
+            .horizonGlassPlate(
+                shape = McShape.Row,
+                containerColor = glass.glassRow,
+                borderColor = glass.liveGreen.copy(alpha = 0.48f),
+                highlighted = true
+            )
             .clickable(onClick = onShowDetail)
-            .padding(10.dp)
+            .padding(12.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            MinecraftPlayerAvatar(name = name, isOnline = true, size = 38.dp)
+            MinecraftPlayerAvatar(name = name, isOnline = true, size = 40.dp)
             Spacer(Modifier.size(10.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Row(
@@ -674,22 +819,41 @@ private fun OnlinePlayerRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Text(
-                        if (isOp) "👑 $name" else name,
-                        fontSize = 13.sp,
+                        name,
+                        fontSize = 13.5.sp,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false)
                     )
+                    if (isOp) {
+                        Box(
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .background(glass.warnAmberSoft)
+                                .border(1.dp, glass.warnAmber.copy(alpha = 0.55f), CircleShape)
+                                .padding(horizontal = 7.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                "👑 OP",
+                                color = glass.warnAmber,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
+                    }
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(Mint.copy(alpha = 0.18f))
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                            .clip(CircleShape)
+                            .background(glass.liveGreenSoft)
+                            .border(1.dp, glass.liveGreen.copy(alpha = 0.45f), CircleShape)
+                            .padding(horizontal = 7.dp, vertical = 2.dp)
                     ) {
                         Text(
                             "🟢 Trực tuyến",
-                            color = Mint,
+                            color = glass.liveGreen,
                             fontSize = 9.sp,
                             fontWeight = FontWeight.Bold,
                             maxLines = 1,
@@ -697,32 +861,27 @@ private fun OnlinePlayerRow(
                         )
                     }
                 }
+                Spacer(Modifier.height(2.dp))
                 val joinText = summary?.currentSessionJoinTime ?: summary?.lastJoinTime
                 val sessionSec = summary?.currentSessionSeconds ?: 0L
                 Text(
                     buildString {
-                        if (isOp) append("Đang là OP • ")
                         if (!joinText.isNullOrBlank()) append("Vào lúc: $joinText")
                         if (sessionSec > 0L) append(" • Phiên này: ${formatActivitySeconds(sessionSec)}")
                     }.ifBlank { stringResource(R.string.s318) },
-                    color = Mint,
-                    fontSize = 10.sp,
+                    style = HorizonTabularStyle,
+                    color = glass.liveGreen,
+                    fontSize = 10.5.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            // Sao chép tên người chơi
             IconButton(onClick = onCopy, modifier = Modifier.size(McIcon.TouchCompact)) {
-                Icon(Icons.Outlined.ContentCopy, contentDescription = stringResource(R.string.s687), tint = Indigo, modifier = Modifier.size(16.dp))
+                Icon(Icons.Outlined.ContentCopy, contentDescription = stringResource(R.string.s687), tint = glass.accent, modifier = Modifier.size(16.dp))
             }
-            // Đuổi (Kick) người chơi
-            IconButton(onClick = onKick, modifier = Modifier.size(McIcon.TouchCompact)) {
-                Icon(Icons.AutoMirrored.Outlined.Logout, contentDescription = stringResource(R.string.s688), tint = Coral, modifier = Modifier.size(16.dp))
-            }
-            // Chuyển chế độ chơi
             Box {
                 IconButton(onClick = { modeMenuOpen = true }, modifier = Modifier.size(McIcon.TouchCompact)) {
-                    Icon(Icons.Outlined.VideogameAsset, contentDescription = stringResource(R.string.s689), tint = Indigo, modifier = Modifier.size(16.dp))
+                    Icon(Icons.Outlined.VideogameAsset, contentDescription = stringResource(R.string.s689), tint = glass.accent, modifier = Modifier.size(16.dp))
                 }
                 DropdownMenu(expanded = modeMenuOpen, onDismissRequest = { modeMenuOpen = false }) {
                     listOf(R.string.s281 to 0, R.string.s282 to 1, R.string.s283 to 2, R.string.s284 to 3).forEach { (labelRes, mode) ->
@@ -734,33 +893,46 @@ private fun OnlinePlayerRow(
                 }
             }
         }
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(8.dp))
         FlowRow(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-            AssistChip(
-                onClick = onOpenInventory,
-                label = {
-                    Text(
-                        "🎒 Mở Túi đồ",
-                        color = Indigo,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.ExtraBold
-                    )
-                }
+            PlayerQuickActionPill(
+                text = "🎒 Xem túi đồ",
+                textColor = glass.accent,
+                containerColor = glass.accentSoft,
+                borderColor = glass.accent.copy(alpha = 0.5f),
+                onClick = onOpenInventory
             )
-            AssistChip(
-                onClick = onToggleOp,
-                label = {
-                    Text(
-                        if (isOp) "👑 Đang là OP (Bấm gỡ)" else "👑 Cấp OP (1 chạm)",
-                        color = if (isOp) Coral else Color(0xFFD97706),
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.ExtraBold
-                    )
-                }
+            PlayerQuickActionPill(
+                text = if (isOp) "👑 Gỡ OP" else "👑 Cấp OP",
+                textColor = if (isOp) glass.dangerCoral else glass.warnAmber,
+                containerColor = if (isOp) glass.dangerCoralSoft else glass.warnAmberSoft,
+                borderColor = (if (isOp) glass.dangerCoral else glass.warnAmber).copy(alpha = 0.5f),
+                onClick = onToggleOp
+            )
+            PlayerQuickActionPill(
+                text = "🧱 Sáng tạo",
+                textColor = MaterialTheme.colorScheme.onSurface,
+                containerColor = glass.glassInput,
+                borderColor = glass.hairline,
+                onClick = { onSetGameMode(1) }
+            )
+            PlayerQuickActionPill(
+                text = "🗡️ Sinh tồn",
+                textColor = MaterialTheme.colorScheme.onSurface,
+                containerColor = glass.glassInput,
+                borderColor = glass.hairline,
+                onClick = { onSetGameMode(0) }
+            )
+            PlayerQuickActionPill(
+                text = "👢 Kick",
+                textColor = glass.dangerCoral,
+                containerColor = glass.dangerCoralSoft,
+                borderColor = glass.dangerCoral.copy(alpha = 0.45f),
+                onClick = onKick
             )
         }
     }
@@ -783,6 +955,7 @@ private fun PersistentPlayerHistorySection(
     onClearAll: () -> Unit,
     onExportCsv: () -> Unit
 ) {
+    val glass = HorizonGlass
     var search by remember { mutableStateOf("") }
     var filterMode by remember { mutableStateOf(HistoryFilterMode.ALL) }
     var sortMode by remember { mutableStateOf(HistorySortMode.RECENT) }
@@ -808,7 +981,7 @@ private fun PersistentPlayerHistorySection(
                         compareByDescending<McViewModel.PlayerActivitySummary> { it.active }
                             .thenByDescending { it.lastJoinMs }
                     )
-                    HistorySortMode.NAME -> list.sortedBy { it.player.lowercase(java.util.Locale.ROOT) }
+                    HistorySortMode.NAME -> list.sortedBy { it.player.lowercase(Locale.ROOT) }
                     HistorySortMode.PLAYTIME -> list.sortedWith(
                         compareByDescending<McViewModel.PlayerActivitySummary> { it.totalSeconds }
                             .thenByDescending { it.lastJoinMs }
@@ -823,33 +996,37 @@ private fun PersistentPlayerHistorySection(
         Text(
             "Danh sách được lưu bền vững theo từng server trên thiết bị — giữ nguyên ngay cả sau khi dừng server, đóng ứng dụng hoặc khởi động lại điện thoại.",
             color = Muted,
-            fontSize = 10.sp,
-            lineHeight = 14.sp
+            fontSize = 10.5.sp,
+            lineHeight = 15.sp
         )
         Spacer(Modifier.height(8.dp))
 
-        // Thống kê nhanh
         val onlineCount = summaries.count { it.active }
         val offlineCount = summaries.size - onlineCount
         val totalPlaySec = summaries.sumOf { it.totalSeconds }
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(8.dp))
-                .background(IndigoSoft)
-                .padding(horizontal = 10.dp, vertical = 8.dp),
+                .horizonGlassPlate(
+                    shape = McShape.Row,
+                    containerColor = glass.glassRow,
+                    borderColor = glass.hairline
+                )
+                .padding(horizontal = 11.dp, vertical = 9.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
                 "Tổng: ${summaries.size} người (🟢 $onlineCount online • ⚪ $offlineCount ngoại tuyến)",
-                color = Indigo,
+                style = HorizonTabularStyle,
+                color = glass.accent,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.weight(1f)
             )
             Text(
                 "Tích lũy: ${formatActivitySeconds(totalPlaySec)}",
+                style = HorizonTabularStyle,
                 color = Muted,
                 fontSize = 10.sp
             )
@@ -857,15 +1034,10 @@ private fun PersistentPlayerHistorySection(
 
         Spacer(Modifier.height(10.dp))
 
-        // Ô tìm kiếm toàn chiều ngang + Nút Sắp xếp tách dòng gọn gàng
-        OutlinedTextField(
+        PlayerGlassSearchField(
             value = search,
             onValueChange = { search = it },
-            placeholder = { Text("Tìm theo tên người chơi hoặc UUID...", fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-            leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null, modifier = Modifier.size(15.dp)) },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-            shape = McShape.ControlCompact
+            placeholderText = "Tìm theo tên người chơi hoặc UUID..."
         )
 
         Spacer(Modifier.height(6.dp))
@@ -873,13 +1045,15 @@ private fun PersistentPlayerHistorySection(
         Box(modifier = Modifier.fillMaxWidth()) {
             OutlinedButton(
                 onClick = { sortMenuOpen = true },
-                shape = McShape.ControlCompact,
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                shape = CircleShape,
+                border = BorderStroke(1.dp, glass.hairline),
+                colors = ButtonDefaults.outlinedButtonColors(containerColor = glass.glassRow),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
                 modifier = Modifier.fillMaxWidth().height(34.dp)
             ) {
                 Text(
                     "🔃 Sắp xếp: ${sortMode.label} ▾",
-                    color = Indigo,
+                    color = glass.accent,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
@@ -901,7 +1075,6 @@ private fun PersistentPlayerHistorySection(
 
         Spacer(Modifier.height(8.dp))
 
-        // Bộ lọc trạng thái: Tất cả / Online / Offline (vừa khít 1 dòng, không bị cắt "...")
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -913,25 +1086,27 @@ private fun PersistentPlayerHistorySection(
                     HistoryFilterMode.ONLINE -> onlineCount
                     HistoryFilterMode.OFFLINE -> offlineCount
                 }
-                if (selected) {
-                    Button(
-                        onClick = { filterMode = mode },
-                        colors = ButtonDefaults.buttonColors(containerColor = Indigo),
-                        shape = McShape.ControlCompact,
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 4.dp),
-                        modifier = Modifier.weight(1f).height(34.dp)
-                    ) {
-                        Text("${mode.label} ($count)", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
-                    }
-                } else {
-                    OutlinedButton(
-                        onClick = { filterMode = mode },
-                        shape = McShape.ControlCompact,
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 4.dp),
-                        modifier = Modifier.weight(1f).height(34.dp)
-                    ) {
-                        Text("${mode.label} ($count)", color = Indigo, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
-                    }
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(34.dp)
+                        .clip(CircleShape)
+                        .background(if (selected) glass.accentSoft else glass.glassRow)
+                        .border(1.dp, if (selected) glass.accent else glass.hairline, CircleShape)
+                        .clickable { filterMode = mode }
+                        .padding(horizontal = 6.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "${mode.label} ($count)",
+                        style = HorizonTabularStyle,
+                        color = if (selected) glass.accent else Muted,
+                        fontSize = 10.sp,
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
         }
@@ -956,16 +1131,20 @@ private fun PersistentPlayerHistorySection(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(if (item.active) MintSoft else IndigoSoft)
+                            .horizonGlassPlate(
+                                shape = McShape.Row,
+                                containerColor = glass.glassRow,
+                                borderColor = if (item.active) glass.liveGreen.copy(alpha = 0.45f) else glass.hairline,
+                                highlighted = item.active
+                            )
                             .clickable { onShowDetail(item.player) }
-                            .padding(10.dp)
+                            .padding(12.dp)
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            MinecraftPlayerAvatar(name = item.player, isOnline = item.active, size = 38.dp)
+                            MinecraftPlayerAvatar(name = item.player, isOnline = item.active, size = 40.dp)
                             Spacer(Modifier.size(10.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Row(
@@ -973,22 +1152,45 @@ private fun PersistentPlayerHistorySection(
                                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     Text(
-                                        if (isPlayerOp) "👑 ${item.player}" else item.player,
-                                        fontSize = 13.sp,
+                                        item.player,
+                                        fontSize = 13.5.sp,
                                         fontWeight = FontWeight.Bold,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                         modifier = Modifier.weight(1f, fill = false)
                                     )
+                                    if (isPlayerOp) {
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(CircleShape)
+                                                .background(glass.warnAmberSoft)
+                                                .border(1.dp, glass.warnAmber.copy(alpha = 0.55f), CircleShape)
+                                                .padding(horizontal = 7.dp, vertical = 2.dp)
+                                        ) {
+                                            Text(
+                                                "👑 OP",
+                                                color = glass.warnAmber,
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                maxLines = 1,
+                                                softWrap = false
+                                            )
+                                        }
+                                    }
                                     Box(
                                         modifier = Modifier
-                                            .clip(RoundedCornerShape(4.dp))
-                                            .background((if (item.active) Mint else Muted).copy(alpha = 0.18f))
-                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                            .clip(CircleShape)
+                                            .background(if (item.active) glass.liveGreenSoft else glass.glassInput)
+                                            .border(
+                                                1.dp,
+                                                if (item.active) glass.liveGreen.copy(alpha = 0.45f) else glass.hairline,
+                                                CircleShape
+                                            )
+                                            .padding(horizontal = 7.dp, vertical = 2.dp)
                                     ) {
                                         Text(
                                             if (item.active) "🟢 Trực tuyến" else "⚪ Ngoại tuyến",
-                                            color = if (item.active) Mint else Muted,
+                                            color = if (item.active) glass.liveGreen else Muted,
                                             fontSize = 9.sp,
                                             fontWeight = FontWeight.Bold,
                                             maxLines = 1,
@@ -996,8 +1198,11 @@ private fun PersistentPlayerHistorySection(
                                         )
                                     }
                                 }
+                                Spacer(Modifier.height(2.dp))
                                 Text(
                                     "UUID: ${item.uuid ?: "Chưa ghi nhận UUID"}",
+                                    style = HorizonTabularStyle,
+                                    fontFamily = FontFamily.Monospace,
                                     color = Muted,
                                     fontSize = 9.sp,
                                     maxLines = 1,
@@ -1008,69 +1213,62 @@ private fun PersistentPlayerHistorySection(
                                 onClick = { onCopyText(item.uuid ?: item.player) },
                                 modifier = Modifier.size(McIcon.TouchCompact)
                             ) {
-                                Icon(Icons.Outlined.ContentCopy, contentDescription = "Sao chép", tint = Indigo, modifier = Modifier.size(15.dp))
+                                Icon(Icons.Outlined.ContentCopy, contentDescription = "Sao chép", tint = glass.accent, modifier = Modifier.size(15.dp))
                             }
                             IconButton(
                                 onClick = { pendingDeletePlayer = item.player },
                                 modifier = Modifier.size(McIcon.TouchCompact)
                             ) {
-                                Icon(Icons.Outlined.Delete, contentDescription = "Xóa bản ghi", tint = Coral, modifier = Modifier.size(15.dp))
+                                Icon(Icons.Outlined.Delete, contentDescription = "Xóa bản ghi", tint = glass.dangerCoral, modifier = Modifier.size(15.dp))
+                            }
+                        }
+
+                        Spacer(Modifier.height(8.dp))
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            PlayerQuickActionPill(
+                                text = "🎒 Xem túi đồ",
+                                textColor = glass.accent,
+                                containerColor = glass.accentSoft,
+                                borderColor = glass.accent.copy(alpha = 0.5f),
+                                onClick = { onOpenInventory(item.player) }
+                            )
+                            PlayerQuickActionPill(
+                                text = if (isPlayerOp) "👑 Gỡ OP" else "👑 Cấp OP",
+                                textColor = if (isPlayerOp) glass.dangerCoral else glass.warnAmber,
+                                containerColor = if (isPlayerOp) glass.dangerCoralSoft else glass.warnAmberSoft,
+                                borderColor = (if (isPlayerOp) glass.dangerCoral else glass.warnAmber).copy(alpha = 0.5f),
+                                onClick = { onToggleOp(item.player, isPlayerOp) }
+                            )
+                            PlayerQuickActionPill(
+                                text = if (isPlayerWl) "🛡️ Đã Whitelist" else "🛡️ +Whitelist",
+                                textColor = if (isPlayerWl) glass.liveGreen else glass.accent,
+                                containerColor = if (isPlayerWl) glass.liveGreenSoft else glass.glassInput,
+                                borderColor = if (isPlayerWl) glass.liveGreen.copy(alpha = 0.45f) else glass.hairline,
+                                onClick = { onToggleWhitelist(item.player, isPlayerWl) }
+                            )
+                            if (isRunning && item.active) {
+                                PlayerQuickActionPill(
+                                    text = "🧱 Sáng tạo",
+                                    textColor = MaterialTheme.colorScheme.onSurface,
+                                    containerColor = glass.glassInput,
+                                    borderColor = glass.hairline,
+                                    onClick = { onSetGameMode(item.player, 1) }
+                                )
+                                PlayerQuickActionPill(
+                                    text = "🗡️ Sinh tồn",
+                                    textColor = MaterialTheme.colorScheme.onSurface,
+                                    containerColor = glass.glassInput,
+                                    borderColor = glass.hairline,
+                                    onClick = { onSetGameMode(item.player, 0) }
+                                )
                             }
                         }
 
                         Spacer(Modifier.height(6.dp))
-                        // Thanh Mở Túi Đồ, Cấp Quyền & Đổi Chế Độ Chơi 1 chạm ngay trên từng thẻ người chơi
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            AssistChip(
-                                onClick = { onOpenInventory(item.player) },
-                                label = {
-                                    Text(
-                                        "🎒 Mở Túi đồ",
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.ExtraBold,
-                                        color = Indigo
-                                    )
-                                }
-                            )
-                            AssistChip(
-                                onClick = { onToggleOp(item.player, isPlayerOp) },
-                                label = {
-                                    Text(
-                                        if (isPlayerOp) "👑 Đang là OP (Bấm gỡ)" else "👑 Cấp OP (1 chạm)",
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.ExtraBold,
-                                        color = if (isPlayerOp) Coral else Color(0xFFD97706)
-                                    )
-                                }
-                            )
-                            AssistChip(
-                                onClick = { onToggleWhitelist(item.player, isPlayerWl) },
-                                label = {
-                                    Text(
-                                        if (isPlayerWl) "🛡️ Đã Whitelist (Bấm gỡ)" else "🛡️ +Whitelist",
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Indigo
-                                    )
-                                }
-                            )
-                            if (isRunning && item.active) {
-                                AssistChip(
-                                    onClick = { onSetGameMode(item.player, 1) },
-                                    label = { Text("🧱 Sáng tạo", fontSize = 10.sp, fontWeight = FontWeight.Bold) }
-                                )
-                                AssistChip(
-                                    onClick = { onSetGameMode(item.player, 0) },
-                                    label = { Text("🗡️ Sinh tồn", fontSize = 10.sp, fontWeight = FontWeight.Bold) }
-                                )
-                            }
-                        }
-
-                        Spacer(Modifier.height(4.dp))
                         Text(
                             buildString {
                                 append("• Lần đầu vào: ${item.firstSeenTime ?: "Chưa rõ"}\n")
@@ -1078,9 +1276,10 @@ private fun PersistentPlayerHistorySection(
                                 append("• Rời gần nhất: ${item.lastLeaveTime ?: "Chưa rõ"}\n")
                                 append("• Số lần tham gia: ${item.sessions} phiên • Tổng thời gian chơi: ${formatActivitySeconds(item.totalSeconds)}")
                             },
+                            style = HorizonTabularStyle,
                             color = Muted,
                             fontSize = 10.sp,
-                            lineHeight = 14.sp
+                            lineHeight = 14.5.sp
                         )
                     }
                 }
@@ -1096,12 +1295,14 @@ private fun PersistentPlayerHistorySection(
                 OutlinedButton(
                     onClick = onExportCsv,
                     shape = McShape.ControlCompact,
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                    border = BorderStroke(1.dp, glass.hairline),
+                    colors = ButtonDefaults.outlinedButtonColors(containerColor = glass.glassRow),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                     modifier = Modifier.weight(1f).height(40.dp)
                 ) {
                     Text(
                         stringResource(R.string.player_export_csv),
-                        color = Indigo,
+                        color = glass.accent,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
@@ -1111,12 +1312,14 @@ private fun PersistentPlayerHistorySection(
                 OutlinedButton(
                     onClick = { confirmClearAll = true },
                     shape = McShape.ControlCompact,
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                    border = BorderStroke(1.dp, glass.dangerCoral.copy(alpha = 0.45f)),
+                    colors = ButtonDefaults.outlinedButtonColors(containerColor = glass.dangerCoralSoft),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                     modifier = Modifier.weight(1f).height(40.dp)
                 ) {
                     Text(
                         "🗑️ Xóa lịch sử",
-                        color = Coral,
+                        color = glass.dangerCoral,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
@@ -1130,12 +1333,15 @@ private fun PersistentPlayerHistorySection(
     pendingDeletePlayer?.let { targetPlayer ->
         AlertDialog(
             onDismissRequest = { pendingDeletePlayer = null },
+            containerColor = glass.glassChrome,
+            shape = McShape.Dialog,
             title = { Text("Xóa lịch sử của「$targetPlayer」?", fontWeight = FontWeight.Bold) },
             text = {
                 Text(
                     "Bản ghi lịch sử tham gia của「$targetPlayer」trong ứng dụng sẽ bị xóa.\n\n" +
                         "🛡️ An toàn dữ liệu: Thao tác này KHÔNG xóa nhân vật, túi đồ hay dữ liệu thế giới (world/playerdata) trong server.",
-                    fontSize = 12.sp
+                    fontSize = 12.sp,
+                    lineHeight = 16.5.sp
                 )
             },
             confirmButton = {
@@ -1145,12 +1351,12 @@ private fun PersistentPlayerHistorySection(
                         pendingDeletePlayer = null
                     }
                 ) {
-                    Text("Xóa bản ghi", color = Coral, fontWeight = FontWeight.Bold)
+                    Text("Xóa bản ghi", color = glass.dangerCoral, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { pendingDeletePlayer = null }) {
-                    Text(stringResource(R.string.props_cancel))
+                    Text(stringResource(R.string.props_cancel), color = Muted)
                 }
             }
         )
@@ -1159,12 +1365,15 @@ private fun PersistentPlayerHistorySection(
     if (confirmClearAll) {
         AlertDialog(
             onDismissRequest = { confirmClearAll = false },
+            containerColor = glass.glassChrome,
+            shape = McShape.Dialog,
             title = { Text("Xóa toàn bộ lịch sử người chơi?", fontWeight = FontWeight.Bold) },
             text = {
                 Text(
                     "Toàn bộ danh sách lịch sử người chơi của server này trong ứng dụng sẽ được làm trống.\n\n" +
                         "🛡️ An toàn dữ liệu: Thao tác này KHÔNG xóa thế giới, túi đồ (playerdata), danh sách OP, Whitelist hay Ban của server.",
-                    fontSize = 12.sp
+                    fontSize = 12.sp,
+                    lineHeight = 16.5.sp
                 )
             },
             confirmButton = {
@@ -1174,19 +1383,17 @@ private fun PersistentPlayerHistorySection(
                         confirmClearAll = false
                     }
                 ) {
-                    Text("Xóa toàn bộ lịch sử", color = Coral, fontWeight = FontWeight.Bold)
+                    Text("Xóa toàn bộ lịch sử", color = glass.dangerCoral, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { confirmClearAll = false }) {
-                    Text(stringResource(R.string.props_cancel))
+                    Text(stringResource(R.string.props_cancel), color = Muted)
                 }
             }
         )
     }
 }
-
-// ── OP 列表标签 ──────────────────────────────────────────────────────
 
 @Composable
 private fun OpsTab(
@@ -1200,9 +1407,9 @@ private fun OpsTab(
     onNavigateOpGuide: () -> Unit,
     onShowDetail: (PlayerManager.OpEntry) -> Unit
 ) {
+    val glass = HorizonGlass
     var search by remember { mutableStateOf("") }
     var opName by remember { mutableStateOf("") }
-    // 默认勾选"使用配置文件默认等级"——无需重启，实时生效
     var useDefaultLevel by remember { mutableStateOf(true) }
     var selectedLevel by remember { mutableStateOf(OpLevel.L4) }
     var levelMenuOpen by remember { mutableStateOf(false) }
@@ -1211,19 +1418,15 @@ private fun OpsTab(
         Text(
             stringResource(R.string.s691),
             color = Muted,
-            fontSize = 10.sp
+            fontSize = 10.5.sp,
+            lineHeight = 15.sp
         )
         Spacer(Modifier.height(10.dp))
 
-        // 搜索框
-        OutlinedTextField(
+        PlayerGlassSearchField(
             value = search,
             onValueChange = { search = it },
-            placeholder = { Text(stringResource(R.string.s692), fontSize = 11.sp) },
-            leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null, modifier = Modifier.size(14.dp)) },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-            shape = McShape.ControlCompact
+            placeholderText = stringResource(R.string.s692)
         )
         Spacer(Modifier.height(10.dp))
 
@@ -1239,8 +1442,8 @@ private fun OpsTab(
                         PlayerListRow(
                             name = op.name,
                             subtitle = stringResource(R.string.s695, op.level, op.uuid.take(8)),
-                            badgeText = "Lv.${op.level}",
-                            badgeColor = Indigo,
+                            badgeText = "👑 Lv.${op.level}",
+                            badgeColor = glass.warnAmber,
                             onClick = { onShowDetail(op) }
                         )
                     }
@@ -1249,7 +1452,7 @@ private fun OpsTab(
         }
 
         Spacer(Modifier.height(12.dp))
-        Text("⚡ Cấp quyền OP 1 chạm cho người chơi trong Server (Không cần nhập tay):", color = Indigo, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+        Text("⚡ Cấp quyền OP 1 chạm cho người chơi trong Server (Không cần nhập tay):", color = glass.accent, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
         Spacer(Modifier.height(6.dp))
         if (knownPlayers.isNotEmpty()) {
             FlowRow(
@@ -1259,21 +1462,17 @@ private fun OpsTab(
             ) {
                 knownPlayers.forEach { kp ->
                     val dot = if (kp.isOnline) "🟢" else "🕒"
-                    AssistChip(
+                    PlayerQuickActionPill(
+                        text = if (kp.isOp) "👑 ${kp.name} (Đã OP)" else "$dot ${kp.name} (+Cấp OP)",
+                        textColor = if (kp.isOp) glass.liveGreen else glass.accent,
+                        containerColor = if (kp.isOp) glass.liveGreenSoft else glass.accentSoft,
+                        borderColor = (if (kp.isOp) glass.liveGreen else glass.accent).copy(alpha = 0.5f),
                         onClick = {
                             if (useDefaultLevel) {
                                 onOpAddDefault(kp.name)
                             } else {
                                 onOpAdd(kp.name, selectedLevel.value)
                             }
-                        },
-                        label = {
-                            Text(
-                                if (kp.isOp) "👑 ${kp.name} (Đã OP)" else "$dot ${kp.name} (+Cấp OP)",
-                                fontSize = 11.sp,
-                                fontWeight = if (kp.isOnline) FontWeight.ExtraBold else FontWeight.SemiBold,
-                                color = if (kp.isOp) Mint else Indigo
-                            )
                         }
                     )
                 }
@@ -1283,7 +1482,8 @@ private fun OpsTab(
             Text(
                 "ℹ️ Chưa có người chơi nào trong danh sách server. Khi có người vào server, tên của họ sẽ tự động hiện sẵn tại đây để bấm cấp OP 1 chạm!",
                 color = Muted,
-                fontSize = 10.sp
+                fontSize = 10.sp,
+                lineHeight = 14.5.sp
             )
             Spacer(Modifier.height(6.dp))
         }
@@ -1293,12 +1493,17 @@ private fun OpsTab(
             onValueChange = { opName = it },
             label = { Text("Hoặc nhập tên người chơi khác (nếu chưa từng vào server)", fontSize = 11.sp) },
             singleLine = true,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedContainerColor = glass.glassInput,
+                unfocusedContainerColor = glass.glassInput,
+                focusedBorderColor = glass.accent,
+                unfocusedBorderColor = glass.hairline
+            ),
             modifier = Modifier.fillMaxWidth(),
-            shape = McShape.ControlCompact
+            shape = McShape.Control
         )
         Spacer(Modifier.height(8.dp))
 
-        // ── 勾选框：使用配置文件默认 OP 等级（无需重启） ──
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
@@ -1306,41 +1511,38 @@ private fun OpsTab(
             Checkbox(
                 checked = useDefaultLevel,
                 onCheckedChange = { useDefaultLevel = it },
-                colors = CheckboxDefaults.colors(checkedColor = Indigo)
+                colors = CheckboxDefaults.colors(checkedColor = glass.accent)
             )
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    stringResource(R.string.s1031),
-                    fontSize = 11.sp
-                )
-                // 显示当前配置的默认 OP 等级
+                Text(stringResource(R.string.s1031), fontSize = 11.sp)
                 Text(
                     if (defaultOpLevel != null) stringResource(R.string.s1059, defaultOpLevel)
                     else stringResource(R.string.s1060),
+                    style = HorizonTabularStyle,
                     color = Muted,
                     fontSize = 10.sp
                 )
             }
             Text(
                 stringResource(R.string.s1032),
-                color = Indigo,
+                color = glass.accent,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.clickable { onNavigateProperties() }
             )
         }
 
-        // ── 手动指定等级模式 ──
         if (!useDefaultLevel) {
             Spacer(Modifier.height(6.dp))
-            // 等级选择
             Box {
                 OutlinedButton(
                     onClick = { levelMenuOpen = true },
                     shape = McShape.ControlCompact,
+                    border = BorderStroke(1.dp, glass.hairline),
+                    colors = ButtonDefaults.outlinedButtonColors(containerColor = glass.glassRow),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(stringResource(selectedLevel.labelRes), color = Indigo, fontSize = 11.sp)
+                    Text(stringResource(selectedLevel.labelRes), color = glass.accent, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                 }
                 DropdownMenu(expanded = levelMenuOpen, onDismissRequest = { levelMenuOpen = false }) {
                     OpLevel.values().forEach { lvl ->
@@ -1351,20 +1553,19 @@ private fun OpsTab(
                     }
                 }
             }
-            // 红色提示 + 蓝色"不想重启？"
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     stringResource(R.string.s1033),
-                    color = Coral,
+                    color = glass.dangerCoral,
                     fontSize = 10.sp,
                     modifier = Modifier.weight(1f)
                 )
                 Text(
                     stringResource(R.string.s1034),
-                    color = Indigo,
+                    color = glass.accent,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.clickable { onNavigateOpGuide() }
@@ -1373,7 +1574,7 @@ private fun OpsTab(
             Text(
                 stringResource(R.string.s1036),
                 color = Muted,
-                fontSize = 9.sp
+                fontSize = 9.5.sp
             )
         }
         Spacer(Modifier.height(8.dp))
@@ -1389,7 +1590,7 @@ private fun OpsTab(
                 }
             },
             enabled = opName.isNotBlank(),
-            colors = ButtonDefaults.buttonColors(containerColor = Indigo),
+            colors = ButtonDefaults.buttonColors(containerColor = glass.accent, contentColor = Color.White),
             shape = McShape.ControlCompact,
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -1397,13 +1598,12 @@ private fun OpsTab(
                 if (useDefaultLevel) stringResource(R.string.s1035)
                 else stringResource(R.string.s700, selectedLevel.value),
                 color = Color.White,
-                fontSize = 11.sp
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.SemiBold
             )
         }
     }
 }
-
-// ── 白名单标签 ──────────────────────────────────────────────────────
 
 @Composable
 private fun WhitelistTab(
@@ -1415,13 +1615,20 @@ private fun WhitelistTab(
     onWhitelistAdd: (String) -> Unit,
     onShowDetail: (PlayerManager.WhitelistEntry) -> Unit
 ) {
+    val glass = HorizonGlass
     var search by remember { mutableStateOf("") }
     var newName by remember { mutableStateOf("") }
 
     McCard(title = stringResource(R.string.s659)) {
-        // 白名单开关
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizonGlassPlate(
+                    shape = McShape.Row,
+                    containerColor = if (whitelistEnabled) glass.liveGreenSoft else glass.glassRow,
+                    borderColor = if (whitelistEnabled) glass.liveGreen.copy(alpha = 0.45f) else glass.hairline
+                )
+                .padding(horizontal = 12.dp, vertical = 9.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
@@ -1429,7 +1636,7 @@ private fun WhitelistTab(
                     if (whitelistEnabled) stringResource(R.string.s272) else stringResource(R.string.s273),
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = if (whitelistEnabled) Mint else Muted
+                    color = if (whitelistEnabled) glass.liveGreen else Muted
                 )
                 Text(
                     if (whitelistEnabled) stringResource(R.string.s703)
@@ -1441,23 +1648,23 @@ private fun WhitelistTab(
             Switch(
                 checked = whitelistEnabled,
                 onCheckedChange = onToggle,
-                enabled = isRunning
+                enabled = isRunning,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = glass.liveGreen
+                )
             )
         }
         if (!isRunning) {
             Spacer(Modifier.height(4.dp))
-            Text(stringResource(R.string.s274), color = Coral, fontSize = 10.sp)
+            Text(stringResource(R.string.s274), color = glass.dangerCoral, fontSize = 10.sp)
         }
 
         Spacer(Modifier.height(12.dp))
-        OutlinedTextField(
+        PlayerGlassSearchField(
             value = search,
             onValueChange = { search = it },
-            placeholder = { Text(stringResource(R.string.s705), fontSize = 11.sp) },
-            leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null, modifier = Modifier.size(14.dp)) },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-            shape = McShape.ControlCompact
+            placeholderText = stringResource(R.string.s705)
         )
         Spacer(Modifier.height(10.dp))
 
@@ -1473,8 +1680,8 @@ private fun WhitelistTab(
                         PlayerListRow(
                             name = w.name,
                             subtitle = w.uuid,
-                            badgeText = null,
-                            badgeColor = Color.Transparent,
+                            badgeText = "🛡️ Whitelist",
+                            badgeColor = glass.liveGreen,
                             onClick = { onShowDetail(w) }
                         )
                     }
@@ -1483,7 +1690,7 @@ private fun WhitelistTab(
         }
 
         Spacer(Modifier.height(12.dp))
-        Text("⚡ Thêm vào Whitelist 1 chạm (Chọn người chơi trong Server — Không cần nhập tay):", color = Indigo, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+        Text("⚡ Thêm vào Whitelist 1 chạm (Chọn người chơi trong Server — Không cần nhập tay):", color = glass.accent, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
         Spacer(Modifier.height(6.dp))
         if (knownPlayers.isNotEmpty()) {
             FlowRow(
@@ -1493,16 +1700,12 @@ private fun WhitelistTab(
             ) {
                 knownPlayers.forEach { kp ->
                     val dot = if (kp.isOnline) "🟢" else "🕒"
-                    AssistChip(
-                        onClick = { onWhitelistAdd(kp.name) },
-                        label = {
-                            Text(
-                                if (kp.isWhitelisted) "🛡️ ${kp.name} (Đã thêm)" else "$dot ${kp.name} (+Whitelist)",
-                                fontSize = 11.sp,
-                                fontWeight = if (kp.isOnline) FontWeight.ExtraBold else FontWeight.SemiBold,
-                                color = if (kp.isWhitelisted) Mint else Indigo
-                            )
-                        }
+                    PlayerQuickActionPill(
+                        text = if (kp.isWhitelisted) "🛡️ ${kp.name} (Đã thêm)" else "$dot ${kp.name} (+Whitelist)",
+                        textColor = if (kp.isWhitelisted) glass.liveGreen else glass.accent,
+                        containerColor = if (kp.isWhitelisted) glass.liveGreenSoft else glass.accentSoft,
+                        borderColor = (if (kp.isWhitelisted) glass.liveGreen else glass.accent).copy(alpha = 0.5f),
+                        onClick = { onWhitelistAdd(kp.name) }
                     )
                 }
             }
@@ -1518,8 +1721,14 @@ private fun WhitelistTab(
                 onValueChange = { newName = it },
                 label = { Text("Hoặc nhập tên người chơi mới", fontSize = 11.sp) },
                 singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = glass.glassInput,
+                    unfocusedContainerColor = glass.glassInput,
+                    focusedBorderColor = glass.accent,
+                    unfocusedBorderColor = glass.hairline
+                ),
                 modifier = Modifier.weight(1f),
-                shape = McShape.ControlCompact
+                shape = McShape.Control
             )
             Button(
                 onClick = {
@@ -1529,14 +1738,12 @@ private fun WhitelistTab(
                     }
                 },
                 enabled = newName.isNotBlank(),
-                colors = ButtonDefaults.buttonColors(containerColor = Indigo),
+                colors = ButtonDefaults.buttonColors(containerColor = glass.accent, contentColor = Color.White),
                 shape = McShape.ControlCompact
-            ) { Text(stringResource(R.string.s709), color = Color.White, fontSize = 11.sp) }
+            ) { Text(stringResource(R.string.s709), color = Color.White, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold) }
         }
     }
 }
-
-// ── 封禁列表标签 ────────────────────────────────────────────────────
 
 @Composable
 private fun BannedTab(
@@ -1546,6 +1753,7 @@ private fun BannedTab(
     onBan: (String, String, String) -> Unit,
     onShowDetail: (PlayerManager.BannedEntry) -> Unit
 ) {
+    val glass = HorizonGlass
     var search by remember { mutableStateOf("") }
     var banName by remember { mutableStateOf("") }
     var banReason by remember { mutableStateOf("") }
@@ -1556,14 +1764,10 @@ private fun BannedTab(
         if (banned.isEmpty()) {
             EmptyHint(icon = Icons.Outlined.Person, text = stringResource(R.string.s710))
         } else {
-            OutlinedTextField(
+            PlayerGlassSearchField(
                 value = search,
                 onValueChange = { search = it },
-                placeholder = { Text(stringResource(R.string.s711), fontSize = 11.sp) },
-                leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null, modifier = Modifier.size(14.dp)) },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                shape = McShape.ControlCompact
+                placeholderText = stringResource(R.string.s711)
             )
             Spacer(Modifier.height(10.dp))
             val filtered = banned.filter { matchesPlayerQuery(it.name, search) }
@@ -1577,7 +1781,7 @@ private fun BannedTab(
                             name = b.name,
                             subtitle = if (isTemp) stringResource(R.string.s713, b.expires) else stringResource(R.string.s714),
                             badgeText = if (isTemp) stringResource(R.string.s715) else stringResource(R.string.s661),
-                            badgeColor = if (isTemp) Coral else CoralSoft,
+                            badgeColor = glass.dangerCoral,
                             onClick = { onShowDetail(b) }
                         )
                     }
@@ -1586,7 +1790,7 @@ private fun BannedTab(
         }
 
         Spacer(Modifier.height(12.dp))
-        Text("⚡ Chọn nhanh người chơi trong Server để Cấm (1 chạm — Không cần nhập tay):", color = Coral, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+        Text("⚡ Chọn nhanh người chơi trong Server để Cấm (1 chạm — Không cần nhập tay):", color = glass.dangerCoral, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
         Spacer(Modifier.height(6.dp))
         if (knownPlayers.isNotEmpty()) {
             FlowRow(
@@ -1610,8 +1814,14 @@ private fun BannedTab(
             onValueChange = { banName = it },
             label = { Text(stringResource(R.string.s697), fontSize = 11.sp) },
             singleLine = true,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedContainerColor = glass.glassInput,
+                unfocusedContainerColor = glass.glassInput,
+                focusedBorderColor = glass.accent,
+                unfocusedBorderColor = glass.hairline
+            ),
             modifier = Modifier.fillMaxWidth(),
-            shape = McShape.ControlCompact
+            shape = McShape.Control
         )
         Spacer(Modifier.height(6.dp))
         OutlinedTextField(
@@ -1619,18 +1829,25 @@ private fun BannedTab(
             onValueChange = { banReason = it },
             label = { Text(stringResource(R.string.s717), fontSize = 11.sp) },
             singleLine = true,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedContainerColor = glass.glassInput,
+                unfocusedContainerColor = glass.glassInput,
+                focusedBorderColor = glass.accent,
+                unfocusedBorderColor = glass.hairline
+            ),
             modifier = Modifier.fillMaxWidth(),
-            shape = McShape.ControlCompact
+            shape = McShape.Control
         )
         Spacer(Modifier.height(6.dp))
-        // 封禁时长选择
         Box {
             OutlinedButton(
                 onClick = { durationMenuOpen = true },
                 shape = McShape.ControlCompact,
+                border = BorderStroke(1.dp, glass.hairline),
+                colors = ButtonDefaults.outlinedButtonColors(containerColor = glass.glassRow),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text(stringResource(selectedDuration.labelRes), color = Indigo, fontSize = 11.sp)
+                Text(stringResource(selectedDuration.labelRes), color = glass.accent, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
             }
             DropdownMenu(expanded = durationMenuOpen, onDismissRequest = { durationMenuOpen = false }) {
                 BanDuration.values().forEach { d ->
@@ -1643,7 +1860,7 @@ private fun BannedTab(
         }
         Spacer(Modifier.height(8.dp))
         if (!isRunning) {
-            Text(stringResource(R.string.s718), color = Coral, fontSize = 10.sp)
+            Text(stringResource(R.string.s718), color = glass.dangerCoral, fontSize = 10.sp)
         }
         Button(
             onClick = {
@@ -1654,7 +1871,7 @@ private fun BannedTab(
                 }
             },
             enabled = isRunning && banName.isNotBlank(),
-            colors = ButtonDefaults.buttonColors(containerColor = Coral),
+            colors = ButtonDefaults.buttonColors(containerColor = glass.dangerCoral, contentColor = Color.White),
             shape = McShape.ControlCompact,
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -1662,13 +1879,12 @@ private fun BannedTab(
                 if (selectedDuration == BanDuration.FOREVER) stringResource(R.string.s714)
                 else stringResource(R.string.s719, stringResource(selectedDuration.labelRes)),
                 color = Color.White,
-                fontSize = 11.sp
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.SemiBold
             )
         }
     }
 }
-
-// ── 详情对话框 ──────────────────────────────────────────────────────
 
 private sealed class DetailInfo {
     data class Activity(val player: String) : DetailInfo()
@@ -1702,6 +1918,7 @@ private fun PlayerDetailDialog(
     onSetGameMode: (String, Int) -> Unit,
     onGiveXp: (String, Int) -> Unit
 ) {
+    val glass = HorizonGlass
     var confirmDeleteThisPlayer by remember { mutableStateOf(false) }
     var selectedDialogTab by remember(info, initialTab) { mutableStateOf(initialTab) }
     val playerName = info.playerName()
@@ -1729,11 +1946,13 @@ private fun PlayerDetailDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+        containerColor = glass.glassChrome,
+        shape = McShape.Dialog,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
         modifier = Modifier.fillMaxWidth(0.95f),
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                MinecraftPlayerAvatar(name = playerName, isOnline = isPlayerOnline || activity?.active == true, size = 34.dp)
+                MinecraftPlayerAvatar(name = playerName, isOnline = isPlayerOnline || activity?.active == true, size = 36.dp)
                 Spacer(Modifier.size(10.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(playerName, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
@@ -1809,166 +2028,220 @@ private fun PlayerDetailDialog(
                         }
                     )
                 } else {
-                when (info) {
-                    is DetailInfo.Activity -> {
-                        DetailRow(stringResource(R.string.s697), info.player)
-                        DetailRow("UUID", activity?.uuid ?: "Chưa ghi nhận UUID")
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizonGlassPlate(
+                                shape = McShape.Row,
+                                containerColor = glass.glassRow,
+                                borderColor = glass.hairline
+                            )
+                            .padding(11.dp)
+                    ) {
+                        when (info) {
+                            is DetailInfo.Activity -> {
+                                DetailRow(stringResource(R.string.s697), info.player)
+                                DetailRow("UUID", activity?.uuid ?: "Chưa ghi nhận UUID")
+                            }
+                            is DetailInfo.Op -> {
+                                val op = info.entry
+                                DetailRow(stringResource(R.string.s697), op.name)
+                                DetailRow("UUID", op.uuid.ifBlank { activity?.uuid ?: "Chưa ghi nhận UUID" })
+                                DetailRow(stringResource(R.string.s721), "${op.level} / 4")
+                            }
+                            is DetailInfo.Whitelist -> {
+                                val w = info.entry
+                                DetailRow(stringResource(R.string.s697), w.name)
+                                DetailRow("UUID", w.uuid.ifBlank { activity?.uuid ?: "Chưa ghi nhận UUID" })
+                            }
+                            is DetailInfo.Banned -> {
+                                val b = info.entry
+                                DetailRow(stringResource(R.string.s697), b.name)
+                                DetailRow("UUID", b.uuid.ifBlank { activity?.uuid ?: "Chưa ghi nhận UUID" })
+                                DetailRow(stringResource(R.string.s722), b.reason.ifBlank { stringResource(R.string.s723) })
+                                DetailRow(stringResource(R.string.s724), b.expires.ifBlank { stringResource(R.string.s661) })
+                                if (b.source.isNotBlank()) DetailRow(stringResource(R.string.s725), b.source)
+                            }
+                        }
                     }
-                    is DetailInfo.Op -> {
-                        val op = info.entry
-                        DetailRow(stringResource(R.string.s697), op.name)
-                        DetailRow("UUID", op.uuid.ifBlank { activity?.uuid ?: "Chưa ghi nhận UUID" })
-                        DetailRow(stringResource(R.string.s721), "${op.level} / 4")
-                    }
-                    is DetailInfo.Whitelist -> {
-                        val w = info.entry
-                        DetailRow(stringResource(R.string.s697), w.name)
-                        DetailRow("UUID", w.uuid.ifBlank { activity?.uuid ?: "Chưa ghi nhận UUID" })
-                    }
-                    is DetailInfo.Banned -> {
-                        val b = info.entry
-                        DetailRow(stringResource(R.string.s697), b.name)
-                        DetailRow("UUID", b.uuid.ifBlank { activity?.uuid ?: "Chưa ghi nhận UUID" })
-                        DetailRow(stringResource(R.string.s722), b.reason.ifBlank { stringResource(R.string.s723) })
-                        DetailRow(stringResource(R.string.s724), b.expires.ifBlank { stringResource(R.string.s661) })
-                        if (b.source.isNotBlank()) DetailRow(stringResource(R.string.s725), b.source)
-                    }
-                }
 
-                Spacer(Modifier.height(6.dp))
-                OutlinedButton(
-                    onClick = { selectedDialogTab = 1 },
-                    shape = McShape.ControlCompact,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("🎒 Mở Túi đồ, Giáp & Ender Chest của $playerName", color = Indigo, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                }
-
-                activity?.let { summary ->
                     Spacer(Modifier.height(8.dp))
-                    Text("Lịch sử tham gia bền vững", color = Indigo, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                    DetailRow("Trạng thái hiện tại", if (summary.active) "🟢 Đang trực tuyến" else "⚪ Ngoại tuyến")
-                    DetailRow("Lần đầu tham gia", summary.firstSeenTime ?: "Chưa có dữ liệu")
-                    DetailRow("Lần vào gần nhất", summary.lastJoinTime ?: "Chưa có dữ liệu")
-                    DetailRow("Lần rời gần nhất", summary.lastLeaveTime ?: if (summary.active) "Đang trực tuyến" else "Chưa có dữ liệu")
-                    DetailRow("Tổng số lần tham gia", "${summary.sessions} phiên")
-                    DetailRow("Tổng thời gian đã chơi", formatActivitySeconds(summary.totalSeconds))
-                    DetailRow("Ghi chú phiên gần nhất", summary.lastExitReason ?: if (summary.active) "Đang trực tuyến" else "Chưa có dữ liệu")
-                    Spacer(Modifier.height(6.dp))
-                    TextButton(onClick = { confirmDeleteThisPlayer = true }) {
-                        Text("🗑️ Xóa bản ghi lịch sử của người chơi này", color = Coral, fontSize = 11.sp)
-                    }
-                }
-
-                Spacer(Modifier.height(12.dp))
-                val currentOps by vm.ops.collectAsState()
-                val currentWhitelist by vm.whitelist.collectAsState()
-                val isCurrentlyOp = currentOps.any { it.name.equals(playerName, ignoreCase = true) }
-                val isCurrentlyWhitelisted = currentWhitelist.any { it.name.equals(playerName, ignoreCase = true) }
-
-                Text("⚡ Cấp quyền 1 chạm (Hoạt động cả khi Server đang bật hoặc tắt):", color = Indigo, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
-                Spacer(Modifier.height(6.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-                    Button(
-                        onClick = {
-                            if (isCurrentlyOp) vm.deopPlayer(playerName) else vm.opPlayer(playerName)
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isCurrentlyOp) Coral else Color(0xFFD97706),
-                            contentColor = Color.White
-                        ),
-                        shape = McShape.ControlCompact,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text(
-                            if (isCurrentlyOp) "🚫 Gỡ OP ($playerName)" else "👑 Cấp OP ($playerName)",
-                            fontSize = 10.5.sp,
-                            fontWeight = FontWeight.ExtraBold
-                        )
-                    }
                     OutlinedButton(
-                        onClick = {
-                            if (isCurrentlyWhitelisted) vm.whitelistRemove(playerName) else vm.whitelistAdd(playerName)
-                        },
+                        onClick = { selectedDialogTab = 1 },
                         shape = McShape.ControlCompact,
-                        modifier = Modifier.weight(1f)
+                        border = BorderStroke(1.dp, glass.accent.copy(alpha = 0.5f)),
+                        colors = ButtonDefaults.outlinedButtonColors(containerColor = glass.accentSoft),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text(
-                            if (isCurrentlyWhitelisted) "🛡️ Gỡ Whitelist" else "🛡️ +Whitelist",
-                            fontSize = 10.5.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Indigo
-                        )
+                        Text("🎒 Mở Túi đồ, Giáp & Ender Chest của $playerName", color = glass.accent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
-                }
 
-                Spacer(Modifier.height(10.dp))
-                if (!isRunning) {
-                    Text(stringResource(R.string.s726), color = Coral, fontSize = 10.sp)
-                } else {
-                    Text(stringResource(R.string.s727), color = Indigo, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    activity?.let { summary ->
+                        Spacer(Modifier.height(10.dp))
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizonGlassPlate(
+                                    shape = McShape.Row,
+                                    containerColor = glass.glassRow,
+                                    borderColor = glass.hairline
+                                )
+                                .padding(11.dp)
+                        ) {
+                            Text("Lịch sử tham gia bền vững", color = glass.accent, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            Spacer(Modifier.height(4.dp))
+                            DetailRow("Trạng thái hiện tại", if (summary.active) "🟢 Đang trực tuyến" else "⚪ Ngoại tuyến")
+                            DetailRow("Lần đầu tham gia", summary.firstSeenTime ?: "Chưa có dữ liệu")
+                            DetailRow("Lần vào gần nhất", summary.lastJoinTime ?: "Chưa có dữ liệu")
+                            DetailRow("Lần rời gần nhất", summary.lastLeaveTime ?: if (summary.active) "Đang trực tuyến" else "Chưa có dữ liệu")
+                            DetailRow("Tổng số lần tham gia", "${summary.sessions} phiên")
+                            DetailRow("Tổng thời gian đã chơi", formatActivitySeconds(summary.totalSeconds))
+                            DetailRow("Ghi chú phiên gần nhất", summary.lastExitReason ?: if (summary.active) "Đang trực tuyến" else "Chưa có dữ liệu")
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        TextButton(onClick = { confirmDeleteThisPlayer = true }) {
+                            Text("🗑️ Xóa bản ghi lịch sử của người chơi này", color = glass.dangerCoral, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+                    val currentOps by vm.ops.collectAsState()
+                    val currentWhitelist by vm.whitelist.collectAsState()
+                    val isCurrentlyOp = currentOps.any { it.name.equals(playerName, ignoreCase = true) }
+                    val isCurrentlyWhitelisted = currentWhitelist.any { it.name.equals(playerName, ignoreCase = true) }
+
+                    Text("⚡ Cấp quyền 1 chạm (Hoạt động cả khi Server đang bật hoặc tắt):", color = glass.accent, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
                     Spacer(Modifier.height(6.dp))
-
-                    Text(stringResource(R.string.s730), color = Muted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-                        listOf(R.string.s281 to 0, R.string.s282 to 1, R.string.s283 to 2, R.string.s284 to 3).forEach { (labelRes, mode) ->
-                            TextButton(onClick = { onSetGameMode(playerName, mode) }) {
-                                Text(stringResource(labelRes), fontSize = 10.sp, color = Indigo, fontWeight = FontWeight.Bold)
-                            }
+                        Button(
+                            onClick = {
+                                if (isCurrentlyOp) vm.deopPlayer(playerName) else vm.opPlayer(playerName)
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isCurrentlyOp) glass.dangerCoral else glass.warnAmber,
+                                contentColor = Color.White
+                            ),
+                            shape = McShape.ControlCompact,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(
+                                if (isCurrentlyOp) "🚫 Gỡ OP ($playerName)" else "👑 Cấp OP ($playerName)",
+                                fontSize = 10.5.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                if (isCurrentlyWhitelisted) vm.whitelistRemove(playerName) else vm.whitelistAdd(playerName)
+                            },
+                            shape = McShape.ControlCompact,
+                            border = BorderStroke(1.dp, glass.hairline),
+                            colors = ButtonDefaults.outlinedButtonColors(containerColor = glass.glassRow),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(
+                                if (isCurrentlyWhitelisted) "🛡️ Gỡ Whitelist" else "🛡️ +Whitelist",
+                                fontSize = 10.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = glass.accent
+                            )
                         }
                     }
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-                        TextButton(onClick = { onKick(playerName) }, modifier = Modifier.weight(1f)) {
-                            Text(stringResource(R.string.s688), color = Coral, fontSize = 11.sp)
-                        }
-                        TextButton(onClick = { onBan(playerName) }, modifier = Modifier.weight(1f)) {
-                            Text(stringResource(R.string.s728), color = Coral, fontSize = 11.sp)
-                        }
-                    }
+                    Spacer(Modifier.height(10.dp))
+                    if (!isRunning) {
+                        Text(stringResource(R.string.s726), color = glass.dangerCoral, fontSize = 10.sp)
+                    } else {
+                        Text(stringResource(R.string.s727), color = glass.accent, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        Spacer(Modifier.height(6.dp))
 
-                    // 根据类型显示对应操作
-                    when (info) {
-                        is DetailInfo.Activity -> Unit
-                        is DetailInfo.Op -> {
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-                                TextButton(onClick = { onDeop(playerName) }, modifier = Modifier.weight(1f)) {
-                                    Text(stringResource(R.string.s729), color = Coral, fontSize = 11.sp)
-                                }
+                        Text(stringResource(R.string.s730), color = Muted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                        Spacer(Modifier.height(4.dp))
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            listOf(R.string.s281 to 0, R.string.s282 to 1, R.string.s283 to 2, R.string.s284 to 3).forEach { (labelRes, mode) ->
+                                PlayerQuickActionPill(
+                                    text = stringResource(labelRes),
+                                    textColor = glass.accent,
+                                    containerColor = glass.glassRow,
+                                    borderColor = glass.hairline,
+                                    onClick = { onSetGameMode(playerName, mode) }
+                                )
                             }
                         }
-                        is DetailInfo.Whitelist -> {
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-                                TextButton(onClick = { onWhitelistRemove(playerName) }, modifier = Modifier.weight(1f)) {
-                                    Text(stringResource(R.string.s732), color = Coral, fontSize = 11.sp)
-                                }
+
+                        Spacer(Modifier.height(8.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                            OutlinedButton(
+                                onClick = { onKick(playerName) },
+                                shape = McShape.ControlCompact,
+                                border = BorderStroke(1.dp, glass.dangerCoral.copy(alpha = 0.45f)),
+                                colors = ButtonDefaults.outlinedButtonColors(containerColor = glass.dangerCoralSoft),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.AutoMirrored.Outlined.Logout, contentDescription = null, tint = glass.dangerCoral, modifier = Modifier.size(14.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text(stringResource(R.string.s688), color = glass.dangerCoral, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                            OutlinedButton(
+                                onClick = { onBan(playerName) },
+                                shape = McShape.ControlCompact,
+                                border = BorderStroke(1.dp, glass.dangerCoral.copy(alpha = 0.45f)),
+                                colors = ButtonDefaults.outlinedButtonColors(containerColor = glass.dangerCoralSoft),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(stringResource(R.string.s728), color = glass.dangerCoral, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                             }
                         }
-                        is DetailInfo.Banned -> {
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-                                TextButton(onClick = { onPardon(playerName) }, modifier = Modifier.weight(1f)) {
-                                    Text(stringResource(R.string.s733), color = Mint, fontSize = 11.sp)
+
+                        when (info) {
+                            is DetailInfo.Activity -> Unit
+                            is DetailInfo.Op -> {
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                                    TextButton(onClick = { onDeop(playerName) }, modifier = Modifier.weight(1f)) {
+                                        Text(stringResource(R.string.s729), color = glass.dangerCoral, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                    }
+                                }
+                            }
+                            is DetailInfo.Whitelist -> {
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                                    TextButton(onClick = { onWhitelistRemove(playerName) }, modifier = Modifier.weight(1f)) {
+                                        Text(stringResource(R.string.s732), color = glass.dangerCoral, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                    }
+                                }
+                            }
+                            is DetailInfo.Banned -> {
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                                    TextButton(onClick = { onPardon(playerName) }, modifier = Modifier.weight(1f)) {
+                                        Text(stringResource(R.string.s733), color = glass.liveGreen, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                    }
                                 }
                             }
                         }
                     }
-                }
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.s620)) }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.s620), fontWeight = FontWeight.Bold) }
         }
     )
+
     if (confirmDeleteThisPlayer) {
         val targetName = info.playerName()
         AlertDialog(
             onDismissRequest = { confirmDeleteThisPlayer = false },
+            containerColor = glass.glassChrome,
+            shape = McShape.Dialog,
             title = { Text("Xóa lịch sử của「$targetName」?", fontWeight = FontWeight.Bold) },
             text = {
                 Text(
                     "Bản ghi lịch sử tham gia của「$targetName」trong ứng dụng sẽ bị xóa. Dữ liệu nhân vật và túi đồ trong thế giới (world/playerdata) KHÔNG bị ảnh hưởng.",
-                    fontSize = 12.sp
+                    fontSize = 12.sp,
+                    lineHeight = 16.5.sp
                 )
             },
             confirmButton = {
@@ -1978,60 +2251,65 @@ private fun PlayerDetailDialog(
                         onDeleteHistory(targetName)
                     }
                 ) {
-                    Text("Xóa bản ghi", color = Coral, fontWeight = FontWeight.Bold)
+                    Text("Xóa bản ghi", color = glass.dangerCoral, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { confirmDeleteThisPlayer = false }) {
-                    Text(stringResource(R.string.props_cancel))
+                    Text(stringResource(R.string.props_cancel), color = Muted)
                 }
             }
         )
     }
 }
 
-// ── 通用组件 & Avatar Đầu Nhân Vật Minecraft (2D/3D Skin Head + Pixel-Art Steve/Alex Fallback) ──
-
 @Composable
 fun MinecraftPlayerAvatar(
     name: String,
     isOnline: Boolean? = null,
-    size: androidx.compose.ui.unit.Dp = 36.dp,
+    size: Dp = 36.dp,
     modifier: Modifier = Modifier
 ) {
+    val glass = HorizonGlass
     var headBitmap by remember(name) { mutableStateOf<android.graphics.Bitmap?>(null) }
     LaunchedEffect(name) {
         headBitmap = AddonIconLoader.loadPlayerHead(name)
     }
 
     val pixelFace = remember(name) { buildMinecraftFaceGrid(name) }
+    val avatarShape = RoundedCornerShape(9.dp)
     Box(modifier = modifier.size(size)) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .clip(RoundedCornerShape(8.dp))
-                .background(Color(0xFF1E293B)),
+                .clip(avatarShape)
+                .background(glass.glassInput)
+                .border(
+                    1.dp,
+                    if (isOnline == true) glass.liveGreen.copy(alpha = 0.6f) else glass.hairline,
+                    avatarShape
+                ),
             contentAlignment = Alignment.Center
         ) {
             val bmp = headBitmap
             if (bmp != null) {
-                androidx.compose.foundation.Image(
+                Image(
                     bitmap = bmp.asImageBitmap(),
                     contentDescription = name,
                     modifier = Modifier.fillMaxSize(),
-                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                    filterQuality = androidx.compose.ui.graphics.FilterQuality.None
+                    contentScale = ContentScale.Crop,
+                    filterQuality = FilterQuality.None
                 )
             } else {
-                androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
                     val cellW = this.size.width / 8f
                     val cellH = this.size.height / 8f
                     for (r in 0 until 8) {
                         for (c in 0 until 8) {
                             drawRect(
                                 color = Color(pixelFace[r][c]),
-                                topLeft = androidx.compose.ui.geometry.Offset(c * cellW, r * cellH),
-                                size = androidx.compose.ui.geometry.Size(cellW + 0.5f, cellH + 0.5f)
+                                topLeft = Offset(c * cellW, r * cellH),
+                                size = Size(cellW + 0.5f, cellH + 0.5f)
                             )
                         }
                     }
@@ -2042,29 +2320,32 @@ fun MinecraftPlayerAvatar(
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .size(10.dp)
-                    .clip(RoundedCornerShape(5.dp))
-                    .background(if (isOnline) Mint else Muted)
+                    .size(11.dp)
+                    .clip(CircleShape)
+                    .background(glass.glassCardStrong)
+                    .padding(1.5.dp)
+                    .clip(CircleShape)
+                    .background(if (isOnline) glass.liveGreen else Muted)
             )
         }
     }
 }
 
 private fun buildMinecraftFaceGrid(name: String): Array<IntArray> {
-    val hash = kotlin.math.abs(name.lowercase(java.util.Locale.ROOT).hashCode())
+    val hash = abs(name.lowercase(Locale.ROOT).hashCode())
     val hairPalette = intArrayOf(
-        0xFF3B2314.toInt(), // Steve Dark Brown
-        0xFFB45309.toInt(), // Alex Auburn Orange
-        0xFF06B6D4.toInt(), // Diamond Helmet Cyan
-        0xFF1E293B.toInt(), // Netherite Dark
-        0xFF15803D.toInt(), // Creeper Hood Green
-        0xFF7C3AED.toInt()  // Enderman Purple
+        0xFF3B2314.toInt(),
+        0xFFB45309.toInt(),
+        0xFF06B6D4.toInt(),
+        0xFF1E293B.toInt(),
+        0xFF15803D.toInt(),
+        0xFF7C3AED.toInt()
     )
     val eyePalette = intArrayOf(
-        0xFF3B82F6.toInt(), // Steve Blue
-        0xFF16A34A.toInt(), // Alex Emerald Green
-        0xFF8B5CF6.toInt(), // Ender Violet
-        0xFFDC2626.toInt()  // Redstone Red
+        0xFF3B82F6.toInt(),
+        0xFF16A34A.toInt(),
+        0xFF8B5CF6.toInt(),
+        0xFFDC2626.toInt()
     )
     val skinPalette = intArrayOf(
         0xFFD69E72.toInt(),
@@ -2096,40 +2377,52 @@ private fun PlayerListRow(
     badgeColor: Color,
     onClick: () -> Unit
 ) {
+    val glass = HorizonGlass
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(IndigoSoft)
+            .horizonGlassPlate(
+                shape = McShape.Row,
+                containerColor = glass.glassRow,
+                borderColor = glass.hairline
+            )
             .clickable { onClick() }
-            .padding(10.dp),
+            .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         MinecraftPlayerAvatar(name = name, isOnline = null, size = 36.dp)
         Spacer(Modifier.size(10.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(name, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(subtitle, color = Muted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(name, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                subtitle,
+                style = HorizonTabularStyle,
+                color = Muted,
+                fontSize = 10.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
         if (badgeText != null) {
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(badgeColor.copy(alpha = 0.15f))
-                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                    .clip(CircleShape)
+                    .background(badgeColor.copy(alpha = 0.14f))
+                    .border(1.dp, badgeColor.copy(alpha = 0.48f), CircleShape)
+                    .padding(horizontal = 8.dp, vertical = 3.dp)
             ) {
-                Text(badgeText, color = badgeColor, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                Text(badgeText, style = HorizonTabularStyle, color = badgeColor, fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
             }
-            Spacer(Modifier.size(6.dp))
+            Spacer(Modifier.size(8.dp))
         }
-        Icon(Icons.Outlined.Info, contentDescription = stringResource(R.string.s734), tint = Muted, modifier = Modifier.size(14.dp))
+        Icon(Icons.Outlined.Info, contentDescription = stringResource(R.string.s734), tint = Muted, modifier = Modifier.size(15.dp))
     }
 }
 
 @Composable
 private fun DetailRow(label: String, value: String) {
-    Column(modifier = Modifier.padding(vertical = 4.dp)) {
+    Column(modifier = Modifier.padding(vertical = 3.dp)) {
         Text(label, color = Muted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
-        Text(value, fontSize = 11.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
+        Text(value, style = HorizonTabularStyle, fontSize = 11.5.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
     }
 }

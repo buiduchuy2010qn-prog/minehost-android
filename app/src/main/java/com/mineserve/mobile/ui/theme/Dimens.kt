@@ -1,100 +1,92 @@
 package com.mineserve.mobile.ui.theme
 
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
 
 /**
- * 全局尺寸令牌。
- *
- * 存在的意义是把原先散落在 20+ 个页面里的 8/10/12/14/16/18/20dp 之类魔数收敛成
- * 一套可复用的取值：页面左右边距只有 [Page] 一个取值，卡片之间只有 [CardGap]，
- * 卡片内边距只有 [CardInner] / [CardInnerCompact]。
- * 组件与页面一律引用这里的令牌，不再各写各的数字，避免同一层级出现不同的留白。
+ * Hệ thống khoảng cách chuẩn điện thoại Pure Horizon Glass (v3.2.0).
  */
 object McSpacing {
-    /** 页面左右安全边距。HeaderBlock、McCard 与页面级列表内容都用它，保证左边缘对齐。 */
+    /** Lề trái/phải an toàn toàn trang. */
     val Page = 16.dp
 
-    /** 卡片之间的垂直间距。 */
-    val CardGap = 8.dp
+    /** Khoảng cách dọc giữa các thẻ kính. */
+    val CardGap = 10.dp
 
-    /** 紧凑卡片（compact）之间的垂直间距。 */
-    val CardGapCompact = 4.dp
+    /** Khoảng cách dọc giữa các thẻ kính gọn (compact). */
+    val CardGapCompact = 6.dp
 
-    /** 卡片内边距。 */
+    /** Đệm bên trong thẻ kính tiêu chuẩn. */
     val CardInner = 16.dp
 
-    /** 紧凑卡片内边距。 */
+    /** Đệm bên trong thẻ kính gọn. */
     val CardInnerCompact = 12.dp
 
-    /** 卡片内分组之间的间距（标题→内容、分组→分组）。 */
+    /** Khoảng cách giữa các phân vùng trong thẻ. */
     val Section = 16.dp
 
-    /** 行内元素之间的间距。 */
+    /** Khoảng cách giữa các phần tử trên cùng một hàng. */
     val Row = 8.dp
 
-    /** 卡片标题与内容之间的间距。 */
+    /** Khoảng cách giữa tiêu đề thẻ và nội dung. */
     val CardHeader = 12.dp
 
-    /** 紧凑卡片标题与内容之间的间距。 */
+    /** Khoảng cách giữa tiêu đề thẻ gọn và nội dung. */
     val CardHeaderCompact = 8.dp
 }
 
 /**
- * 全局圆角令牌。
- *
- * 卡片、按钮、输入框、列表行的圆角是设计语言里最容易被“随手写一个数”破坏的部分，
- * 这里固定为几档：卡片 12dp、控件 12dp（行内紧凑控件 10dp）、行内小容器 10dp、
- * 弹窗 20dp。同一层级只用一档，避免相邻元素圆角不同心。
+ * Hệ thống bo góc Pure Horizon Glass lấy cảm hứng từ BlockWay PC cho điện thoại.
  */
 object McShape {
-    /** 卡片（McCard）与页面级容器。 */
-    val Card = RoundedCornerShape(12.dp)
+    /** Thẻ kính chính (McCard, HostCard, khung trang). */
+    val Card = RoundedCornerShape(20.dp)
 
-    /** 按钮、输入框、下拉框等可操作控件（卡片级 / 整行 / 弹窗操作）。 */
-    val Control = RoundedCornerShape(12.dp)
+    /** Nút bấm chính, ô nhập liệu và điều khiển. */
+    val Control = RoundedCornerShape(14.dp)
 
-    /** 行内紧凑控件（列表行、字段行里与其它内容并排的小按钮）。 */
-    val ControlCompact = RoundedCornerShape(10.dp)
+    /** Nút thao tác gọn trong hàng danh sách. */
+    val ControlCompact = RoundedCornerShape(12.dp)
 
-    /** 卡片内部的行级容器（列表行、地址条、分组标题）。 */
-    val Row = RoundedCornerShape(10.dp)
+    /** Hàng danh sách con bên trong thẻ kính (AddressCopyRow, HostAction, trường con). */
+    val Row = RoundedCornerShape(14.dp)
 
-    /** 步骤点、标签等小圆角。 */
-    val Small = RoundedCornerShape(6.dp)
+    /** Nhãn nhỏ, huy hiệu phụ. */
+    val Small = RoundedCornerShape(8.dp)
 
-    /** 状态胶囊 / 分段控件的滑轨。 */
-    val Chip = RoundedCornerShape(12.dp)
+    /** Viên thuốc phân đoạn & thanh trượt tab. */
+    val Chip = RoundedCornerShape(14.dp)
 
-    /** 弹窗。 */
-    val Dialog = RoundedCornerShape(20.dp)
+    /** Hộp thoại kính mờ (Dialog / Sheet). */
+    val Dialog = RoundedCornerShape(24.dp)
 
-    /** 完全圆形（状态圆点、头像占位）。 */
+    /** Viên thuốc tròn hoàn toàn (Status pill, nút tròn thanh đỉnh, tab pill). */
+    val Pill = CircleShape
+
+    /** Hình tròn hoàn toàn (chấm trạng thái, khung đại diện). */
     val Circle = RoundedCornerShape(percent = 50)
 }
 
 /**
- * 全局图标尺寸令牌。
- *
- * 只保留三档常用尺寸 + 一档命中区：同一语义（行内提示 / 卡片标题 / 页面操作 /
- * 图标按钮）在任意页面看到的线条粗细与视觉重量都一致，不再出现 15/16/17/18dp 混用。
+ * Kích thước biểu tượng và vùng chạm chuẩn công thái học một tay trên điện thoại.
  */
 object McIcon {
-    /** 行内说明图标（提示条、统计行）。 */
+    /** Biểu tượng chú thích nội dòng. */
     val Inline = 16.dp
 
-    /** 卡片标题左侧的操作图标。 */
+    /** Biểu tượng thao tác cạnh tiêu đề thẻ. */
     val Action = 18.dp
 
-    /** 列表项 / 主要操作图标。 */
+    /** Biểu tượng mục danh sách / thao tác chính. */
     val Item = 20.dp
 
-    /** 空状态、弹窗主图标。 */
+    /** Biểu tượng trạng thái trống / hộp thoại. */
     val Display = 24.dp
 
-    /** Vùng chạm tối thiểu theo hướng dẫn Android. */
+    /** Vùng chạm tối thiểu 48dp theo chuẩn Android Accessibility. */
     val Touch = 48.dp
 
-    /** 紧凑行内的图标按钮命中区。 */
+    /** Vùng chạm nút gọn trong hàng. */
     val TouchCompact = 48.dp
 }

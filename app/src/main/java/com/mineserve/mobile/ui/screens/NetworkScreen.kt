@@ -1,17 +1,17 @@
 package com.mineserve.mobile.ui.screens
 
-import androidx.compose.ui.res.stringResource
-import com.mineserve.mobile.R
-
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -20,10 +20,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.ContentCopy
@@ -43,8 +43,8 @@ import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -53,7 +53,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -69,10 +68,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mineserve.mobile.R
 import com.mineserve.mobile.data.FrpLocalTarget
 import com.mineserve.mobile.data.FrpProfile
 import com.mineserve.mobile.data.FrpProfileKind
@@ -88,8 +89,6 @@ import com.mineserve.mobile.ui.HeaderBlock
 import com.mineserve.mobile.ui.HintNote
 import com.mineserve.mobile.ui.McCard
 import com.mineserve.mobile.ui.McViewModel
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.border
 import com.mineserve.mobile.ui.PlayConnectionMode
 import com.mineserve.mobile.ui.PlayitStage
 import com.mineserve.mobile.ui.PlayitTunnelController
@@ -100,16 +99,12 @@ import com.mineserve.mobile.ui.SwipeableInstantSnackbarHost
 import com.mineserve.mobile.ui.VirtualLanEndpoint
 import com.mineserve.mobile.ui.WarnNote
 import com.mineserve.mobile.ui.showInstantSnackbar
-import com.mineserve.mobile.ui.theme.Coral
-import com.mineserve.mobile.ui.theme.FieldBg
-import com.mineserve.mobile.ui.theme.Indigo
-import com.mineserve.mobile.ui.theme.IndigoSoft
+import com.mineserve.mobile.ui.theme.HorizonGlass
+import com.mineserve.mobile.ui.theme.HorizonTabularStyle
 import com.mineserve.mobile.ui.theme.McIcon
 import com.mineserve.mobile.ui.theme.McShape
-import com.mineserve.mobile.ui.theme.Mint
-import com.mineserve.mobile.ui.theme.MintSoft
 import com.mineserve.mobile.ui.theme.Muted
-import com.mineserve.mobile.ui.theme.TrackBg
+import com.mineserve.mobile.ui.theme.horizonGlassPlate
 import kotlinx.coroutines.flow.collectLatest
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -120,6 +115,7 @@ fun NetworkScreen(
     showBackBar: Boolean = true,
     onOpenFrpEditor: (String?) -> Unit = {}
 ) {
+    val glass = HorizonGlass
     val config by vm.config.collectAsState()
     val serverPort by vm.serverPort.collectAsState()
     val lanIp by vm.lanIp.collectAsState()
@@ -149,12 +145,14 @@ fun NetworkScreen(
     }
 
     Scaffold(
+        containerColor = Color.Transparent,
         snackbarHost = { SwipeableInstantSnackbarHost(snackbarHostState) },
         contentWindowInsets = WindowInsets(0.dp)
     ) { paddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .background(Color.Transparent)
                 .padding(paddingValues)
                 .verticalScroll(rememberScrollState())
         ) {
@@ -176,7 +174,6 @@ fun NetworkScreen(
             )
 
             if (playMode == PlayConnectionMode.SameNetwork) {
-                // ── CHẾ ĐỘ 1: CHƠI CÙNG MẠNG (Wi-Fi / Phát 4G Hotspot) ────────
                 LocalAddressCard(
                     vm = vm,
                     serverPort = serverPort,
@@ -186,7 +183,6 @@ fun NetworkScreen(
                     context = context
                 )
             } else {
-                // ── CHẾ ĐỘ 2: BẬT KẾT NỐI MỌI NƠI (Qua 4G / Khác Wi-Fi) ────────
                 PlayitEverywhereCard(
                     vm = vm,
                     playitState = playitState,
@@ -208,7 +204,6 @@ fun NetworkScreen(
                     context = context
                 )
 
-                // Địa chỉ cục bộ rút gọn để chủ phòng vẫn copy nhanh được 127.0.0.1
                 LocalAddressCard(
                     vm = vm,
                     serverPort = serverPort,
@@ -218,34 +213,34 @@ fun NetworkScreen(
                     context = context
                 )
 
-                // Nhật ký đường hầm
                 TunnelLogPreview(consoleLines, frpState, stunState, playitState)
 
-                // Thu gọn các đường hầm kỹ thuật phức tạp (FRP / STUN) vào mục nâng cao để giao diện gọn đẹp
                 McCard(title = "⚙️ Đường hầm nâng cao (Tự cấu hình FRP / STUN P2P)") {
                     Text(
                         "Dành cho người dùng nâng cao có máy chủ FRP riêng hoặc muốn dùng kết nối P2P STUN truyền thống. Nếu dùng Playit.gg ở trên thì KHÔNG cần bật mục này.",
                         color = Muted,
-                        fontSize = 11.sp,
-                        lineHeight = 15.sp
+                        fontSize = 11.5.sp,
+                        lineHeight = 16.sp
                     )
                     Spacer(Modifier.height(8.dp))
                     OutlinedButton(
                         onClick = { showAdvancedTunnels = !showAdvancedTunnels },
-                        shape = RoundedCornerShape(10.dp),
+                        shape = McShape.ControlCompact,
+                        border = BorderStroke(1.dp, glass.hairline),
+                        colors = ButtonDefaults.outlinedButtonColors(containerColor = glass.glassRow),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Icon(
                             if (showAdvancedTunnels) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
                             contentDescription = null,
-                            tint = Indigo,
+                            tint = glass.accent,
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(Modifier.size(6.dp))
                         Text(
                             if (showAdvancedTunnels) "Thu gọn cấu hình FRP & STUN nâng cao"
                             else "Mở cấu hình FRP & STUN nâng cao",
-                            color = Indigo,
+                            color = glass.accent,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -293,11 +288,13 @@ private fun NetworkModeAndPrivacyCard(
     onSelectMode: (PlayConnectionMode) -> Unit,
     onToggleMask: () -> Unit
 ) {
+    val glass = HorizonGlass
     McCard(title = "🎮 Chọn Chế Độ Chơi (Cùng Mạng vs. Kết Nối Mọi Nơi)") {
         Text(
             "Chọn đúng nhu cầu của bạn để hệ thống tự động tối ưu giao diện và kết nối:",
             color = Muted,
-            fontSize = 11.sp
+            fontSize = 11.5.sp,
+            lineHeight = 16.sp
         )
         Spacer(Modifier.height(10.dp))
 
@@ -308,50 +305,49 @@ private fun NetworkModeAndPrivacyCard(
             val isSame = playMode == PlayConnectionMode.SameNetwork
             val isEverywhere = playMode == PlayConnectionMode.Everywhere
 
-            // Nút 1: Chơi Cùng Mạng
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(if (isSame) MintSoft else FieldBg)
-                    .border(
-                        BorderStroke(if (isSame) 2.dp else 1.dp, if (isSame) Mint else TrackBg),
-                        RoundedCornerShape(12.dp)
+                    .horizonGlassPlate(
+                        shape = McShape.Row,
+                        containerColor = if (isSame) glass.liveGreenSoft else glass.glassRow,
+                        borderColor = if (isSame) glass.liveGreen else glass.hairline,
+                        highlighted = isSame
                     )
                     .clickable { onSelectMode(PlayConnectionMode.SameNetwork) }
                     .padding(12.dp)
             ) {
                 Text(
                     "🏠 Chơi Cùng Mạng",
-                    color = if (isSame) Mint else MaterialTheme.colorScheme.onSurface,
+                    color = if (isSame) glass.liveGreen else MaterialTheme.colorScheme.onSurface,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
                     "Chung Wi-Fi hoặc 1 máy bật Phát 4G Hotspot cho máy kia bắt. Siêu mượt, ping 1ms.",
+                    style = HorizonTabularStyle,
                     color = Muted,
-                    fontSize = 10.sp,
-                    lineHeight = 14.sp
+                    fontSize = 10.5.sp,
+                    lineHeight = 14.5.sp
                 )
             }
 
-            // Nút 2: Bật Kết Nối Mọi Nơi
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(if (isEverywhere) IndigoSoft else FieldBg)
-                    .border(
-                        BorderStroke(if (isEverywhere) 2.dp else 1.dp, if (isEverywhere) Indigo else TrackBg),
-                        RoundedCornerShape(12.dp)
+                    .horizonGlassPlate(
+                        shape = McShape.Row,
+                        containerColor = if (isEverywhere) glass.accentSoft else glass.glassRow,
+                        borderColor = if (isEverywhere) glass.accent else glass.hairline,
+                        highlighted = isEverywhere
                     )
                     .clickable { onSelectMode(PlayConnectionMode.Everywhere) }
                     .padding(12.dp)
             ) {
                 Text(
                     "🌍 Kết Nối Mọi Nơi",
-                    color = if (isEverywhere) Indigo else MaterialTheme.colorScheme.onSurface,
+                    color = if (isEverywhere) glass.accent else MaterialTheme.colorScheme.onSurface,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -359,21 +355,23 @@ private fun NetworkModeAndPrivacyCard(
                 Text(
                     "Bạn bè ở xa dùng 4G/5G hoặc Wi-Fi khác nhà đều vào được từ bất kỳ đâu.",
                     color = Muted,
-                    fontSize = 10.sp,
-                    lineHeight = 14.sp
+                    fontSize = 10.5.sp,
+                    lineHeight = 14.5.sp
                 )
             }
         }
 
         Spacer(Modifier.height(10.dp))
 
-        // Hộp giải thích Bảo mật IP & nút Che địa chỉ khi quay video / chụp ảnh
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(10.dp))
-                .background(MintSoft.copy(alpha = 0.65f))
-                .padding(10.dp)
+                .horizonGlassPlate(
+                    shape = McShape.Row,
+                    containerColor = glass.liveGreenSoft,
+                    borderColor = glass.liveGreen.copy(alpha = 0.45f)
+                )
+                .padding(11.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -382,20 +380,22 @@ private fun NetworkModeAndPrivacyCard(
             ) {
                 Text(
                     "🛡️ Bảo vệ 100% — KHÔNG lộ IP mạng nhà / 4G!",
-                    color = Mint,
+                    color = glass.liveGreen,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f)
                 )
                 OutlinedButton(
                     onClick = onToggleMask,
-                    shape = RoundedCornerShape(8.dp),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                    shape = CircleShape,
+                    border = BorderStroke(1.dp, glass.hairline),
+                    colors = ButtonDefaults.outlinedButtonColors(containerColor = glass.glassRow),
+                    contentPadding = PaddingValues(horizontal = 9.dp, vertical = 2.dp),
                     modifier = Modifier.height(28.dp)
                 ) {
                     Text(
                         if (maskAddress) "👁️ Hiện địa chỉ" else "🙈 Che địa chỉ",
-                        color = Indigo,
+                        color = glass.accent,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.SemiBold
                     )
@@ -408,9 +408,9 @@ private fun NetworkModeAndPrivacyCard(
                 } else {
                     "Chế độ Cùng Mạng chỉ dùng địa chỉ nội bộ (192.168.x.x) bên trong cục Wi-Fi hoặc Hotspot của bạn, người ngoài Internet hoàn toàn không thể truy cập được."
                 },
-                color = MaterialTheme.colorScheme.onSurface,
-                fontSize = 10.sp,
-                lineHeight = 14.sp
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.86f),
+                fontSize = 10.5.sp,
+                lineHeight = 15.sp
             )
         }
     }
@@ -430,6 +430,7 @@ private fun PlayitEverywhereCard(
     maskAddress: Boolean,
     context: Context
 ) {
+    val glass = HorizonGlass
     var showSecretEditor by remember { mutableStateOf(false) }
     var manualSecretInput by remember { mutableStateOf("") }
     var showHowItWorks by remember { mutableStateOf(false) }
@@ -441,9 +442,9 @@ private fun PlayitEverywhereCard(
         playitState.stage == PlayitStage.ConnectingControl
 
     val statusColor = when (playitState.stage) {
-        PlayitStage.Running -> if (playitState.isRunning) Mint else Coral
-        PlayitStage.WaitingForClaim, PlayitStage.VerifyingSecret, PlayitStage.CreatingTunnel, PlayitStage.ConnectingControl -> Coral
-        PlayitStage.Error -> Coral
+        PlayitStage.Running -> if (playitState.isRunning) glass.liveGreen else glass.dangerCoral
+        PlayitStage.WaitingForClaim, PlayitStage.VerifyingSecret, PlayitStage.CreatingTunnel, PlayitStage.ConnectingControl -> glass.warnAmber
+        PlayitStage.Error -> glass.dangerCoral
         PlayitStage.Idle -> Muted
     }
 
@@ -462,7 +463,7 @@ private fun PlayitEverywhereCard(
             Spacer(Modifier.size(8.dp))
             StatusPill(playitState.statusText, statusColor)
             Spacer(Modifier.size(6.dp))
-            Text("· Cổng đích $serverPort", color = Muted, fontSize = 11.sp)
+            Text("· Cổng đích $serverPort", style = HorizonTabularStyle, color = Muted, fontSize = 11.sp)
         }
 
         Spacer(Modifier.height(8.dp))
@@ -475,19 +476,22 @@ private fun PlayitEverywhereCard(
             WarnNote("💡 Lưu ý: Hãy bật máy chủ Minecraft (ở trang Tổng quan hoặc Quản lý) để người chơi kết nối vào được sau khi mở đường hầm.")
         }
 
-        // Bước kích hoạt 1 lần trên trình duyệt khi chưa có Secret Key
         if (playitState.stage == PlayitStage.WaitingForClaim && playitState.claimUrl.isNotBlank()) {
             Spacer(Modifier.height(10.dp))
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(IndigoSoft)
+                    .horizonGlassPlate(
+                        shape = McShape.Row,
+                        containerColor = glass.accentSoft,
+                        borderColor = glass.accent.copy(alpha = 0.5f),
+                        highlighted = true
+                    )
                     .padding(12.dp)
             ) {
                 Text(
                     "🔗 Kích hoạt 1 chạm (Chỉ cần làm 1 lần đầu tiên)",
-                    color = Indigo,
+                    color = glass.accent,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -508,21 +512,23 @@ private fun PlayitEverywhereCard(
                                 context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(playitState.claimUrl)))
                             }
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = Indigo),
-                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = glass.accent, contentColor = Color.White),
+                        shape = McShape.ControlCompact,
                         modifier = Modifier.weight(1f)
                     ) {
                         Icon(Icons.AutoMirrored.Outlined.OpenInNew, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.size(6.dp))
-                        Text("Mở trang kích hoạt", color = Color.White, fontSize = 12.sp)
+                        Text("Mở trang kích hoạt", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                     }
                     OutlinedButton(
                         onClick = { vm.copyPublicUrl(context, playitState.claimUrl) },
-                        shape = RoundedCornerShape(10.dp)
+                        border = BorderStroke(1.dp, glass.hairline),
+                        colors = ButtonDefaults.outlinedButtonColors(containerColor = glass.glassRow),
+                        shape = McShape.ControlCompact
                     ) {
-                        Icon(Icons.Outlined.ContentCopy, contentDescription = null, tint = Indigo, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Outlined.ContentCopy, contentDescription = null, tint = glass.accent, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.size(4.dp))
-                        Text("Copy link", color = Indigo, fontSize = 12.sp)
+                        Text("Copy link", color = glass.accent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
@@ -533,14 +539,13 @@ private fun PlayitEverywhereCard(
             WarnNote(playitState.errorMessage)
         }
 
-        // Hiển thị Địa chỉ Công khai để gửi cho bạn bè (Cả dạng Chữ và dạng Toàn Số)
         val playitNumericAddress by vm.playitNumericAddress.collectAsState()
         if (playitState.publicAddress.isNotBlank()) {
             Spacer(Modifier.height(12.dp))
             Text(
                 if (isRunning) "✅ Địa chỉ công khai (Ẩn 100% IP nhà — Gửi cho bạn bè dùng 4G / Wi-Fi bất kỳ):"
                 else "📌 Địa chỉ Playit.gg gần nhất của bạn (Hãy bấm Bật kết nối để hoạt động):",
-                color = if (isRunning) Mint else Muted,
+                color = if (isRunning) glass.liveGreen else Muted,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold
             )
@@ -550,9 +555,9 @@ private fun PlayitEverywhereCard(
                 value = PlayitTunnelController.maskEndpointForDisplay(playitState.publicAddress, maskAddress),
                 onCopy = { vm.copyPublicUrl(context, playitState.publicAddress) },
                 icon = Icons.Outlined.Public,
-                accent = if (isRunning) Mint else Indigo,
-                containerColor = if (isRunning) MintSoft else IndigoSoft,
-                borderColor = if (isRunning) Mint else Indigo
+                accent = if (isRunning) glass.liveGreen else glass.accent,
+                containerColor = if (isRunning) glass.liveGreenSoft else glass.accentSoft,
+                borderColor = if (isRunning) glass.liveGreen else glass.accent
             )
             val numericAddr = playitNumericAddress ?: playitState.secondaryAddress.takeIf { it.isNotBlank() && it != playitState.publicAddress }
             if (!numericAddr.isNullOrBlank()) {
@@ -562,9 +567,9 @@ private fun PlayitEverywhereCard(
                     value = PlayitTunnelController.maskEndpointForDisplay(numericAddr, maskAddress),
                     onCopy = { vm.copyPublicUrl(context, numericAddr) },
                     icon = Icons.Outlined.Lan,
-                    accent = Mint,
-                    containerColor = MintSoft,
-                    borderColor = Mint
+                    accent = glass.liveGreen,
+                    containerColor = glass.liveGreenSoft,
+                    borderColor = glass.liveGreen
                 )
             }
         }
@@ -581,8 +586,8 @@ private fun PlayitEverywhereCard(
         if (!serverRunning && !isRunning && !isBusy) {
             Button(
                 onClick = { vm.startServerWithMode(PlayConnectionMode.Everywhere) },
-                colors = ButtonDefaults.buttonColors(containerColor = Mint),
-                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = glass.liveGreen, contentColor = Color.White),
+                shape = McShape.Control,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Icon(Icons.Outlined.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
@@ -610,11 +615,11 @@ private fun PlayitEverywhereCard(
                 Icon(
                     if (showHowItWorks) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
                     contentDescription = null,
-                    tint = Indigo,
+                    tint = glass.accent,
                     modifier = Modifier.size(16.dp)
                 )
                 Spacer(Modifier.size(4.dp))
-                Text("Hướng dẫn bạn bè vào server", color = Indigo, fontSize = 11.sp)
+                Text("Hướng dẫn bạn bè vào server", color = glass.accent, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
             }
             TextButton(onClick = { showSecretEditor = !showSecretEditor }) {
                 Icon(Icons.Outlined.Edit, contentDescription = null, tint = Muted, modifier = Modifier.size(14.dp))
@@ -627,15 +632,18 @@ private fun PlayitEverywhereCard(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(FieldBg)
-                    .padding(10.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+                    .horizonGlassPlate(
+                        shape = McShape.Row,
+                        containerColor = glass.glassRow,
+                        borderColor = glass.hairline
+                    )
+                    .padding(11.dp),
+                verticalArrangement = Arrangement.spacedBy(5.dp)
             ) {
-                Text("📖 Cách để bạn bè ở xa (dùng 4G hoặc Wi-Fi khác) vào chơi:", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                Text("• Bước 1: Bạn khởi động máy chủ Minecraft ở trang Tổng quan/Quản lý (nếu bạn bè dùng tài khoản Cracked/Offline, nhớ tắt chế độ Bản quyền online-mode=false).", color = Muted, fontSize = 11.sp, lineHeight = 15.sp)
-                Text("• Bước 2: Bấm '🚀 Bật kết nối Mọi Nơi' ở trên. Sao chép địa chỉ công khai (ví dụ: xxx.gl.joinmc.link).", color = Muted, fontSize = 11.sp, lineHeight = 15.sp)
-                Text("• Bước 3: Bạn bè mở Minecraft (trên điện thoại 4G/Wi-Fi hoặc PC) -> Chơi nhiều người (Multiplayer) -> Kết nối trực tiếp / Thêm máy chủ -> Dán địa chỉ đó vào là vào chơi ngay!", color = Muted, fontSize = 11.sp, lineHeight = 15.sp)
+                Text("📖 Cách để bạn bè ở xa (dùng 4G hoặc Wi-Fi khác) vào chơi:", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                Text("• Bước 1: Bạn khởi động máy chủ Minecraft ở trang Tổng quan/Quản lý (nếu bạn bè dùng tài khoản Cracked/Offline, nhớ tắt chế độ Bản quyền online-mode=false).", color = Muted, fontSize = 11.sp, lineHeight = 16.sp)
+                Text("• Bước 2: Bấm '🚀 Bật kết nối Mọi Nơi' ở trên. Sao chép địa chỉ công khai (ví dụ: xxx.gl.joinmc.link).", color = Muted, fontSize = 11.sp, lineHeight = 16.sp)
+                Text("• Bước 3: Bạn bè mở Minecraft (trên điện thoại 4G/Wi-Fi hoặc PC) -> Chơi nhiều người (Multiplayer) -> Kết nối trực tiếp / Thêm máy chủ -> Dán địa chỉ đó vào là vào chơi ngay!", color = Muted, fontSize = 11.sp, lineHeight = 16.sp)
             }
         }
 
@@ -644,17 +652,21 @@ private fun PlayitEverywhereCard(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(FieldBg)
-                    .padding(10.dp),
+                    .horizonGlassPlate(
+                        shape = McShape.Row,
+                        containerColor = glass.glassRow,
+                        borderColor = glass.hairline
+                    )
+                    .padding(11.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text("🔑 Nhập Agent Secret Key thủ công hoặc đặt lại liên kết:", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                Text("🔑 Nhập Agent Secret Key thủ công hoặc đặt lại liên kết:", fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
                 OutlinedTextField(
                     value = manualSecretInput,
                     onValueChange = { manualSecretInput = it },
                     placeholder = { Text("Dán Agent Secret Key (hex) nếu đã có sẵn...", fontSize = 11.sp) },
                     singleLine = true,
+                    shape = McShape.Control,
                     modifier = Modifier.fillMaxWidth()
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -665,11 +677,11 @@ private fun PlayitEverywhereCard(
                             showSecretEditor = false
                         },
                         enabled = manualSecretInput.trim().length >= 24,
-                        colors = ButtonDefaults.buttonColors(containerColor = Indigo),
-                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = glass.accent, contentColor = Color.White),
+                        shape = McShape.ControlCompact,
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("Lưu & Kết nối", color = Color.White, fontSize = 11.sp)
+                        Text("Lưu & Kết nối", color = Color.White, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
                     }
                     if (playitState.hasSavedSecret) {
                         OutlinedButton(
@@ -677,9 +689,11 @@ private fun PlayitEverywhereCard(
                                 vm.resetPlayitSecretKey()
                                 showSecretEditor = false
                             },
-                            shape = RoundedCornerShape(8.dp)
+                            border = BorderStroke(1.dp, glass.dangerCoral.copy(alpha = 0.5f)),
+                            colors = ButtonDefaults.outlinedButtonColors(containerColor = glass.dangerCoralSoft),
+                            shape = McShape.ControlCompact
                         ) {
-                            Text("Xóa khóa cũ", color = Coral, fontSize = 11.sp)
+                            Text("Xóa khóa cũ", color = glass.dangerCoral, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }
                 }
@@ -697,21 +711,23 @@ private fun VirtualLanCard(
     onCopy: (String) -> Unit,
     context: Context
 ) {
+    val glass = HorizonGlass
     var expanded by remember { mutableStateOf(false) }
 
     McCard(title = "⚡ Mạng LAN Ảo P2P (ZeroTier / Tailscale — Ping cực thấp cho Map Mod)") {
         Text(
             "Nếu bạn host Map có nhiều Mod nặng và muốn đường truyền trực tiếp giữa các máy tại Việt Nam (ping 15–30ms, dùng được cả 4G lẫn Wi-Fi, bảo mật mã hóa đầu-cuối không lộ IP nhà), hãy bật ZeroTier One hoặc Tailscale.",
+            style = HorizonTabularStyle,
             color = Muted,
-            fontSize = 11.sp,
-            lineHeight = 16.sp
+            fontSize = 11.5.sp,
+            lineHeight = 16.5.sp
         )
         Spacer(Modifier.height(10.dp))
 
         if (endpoints.isNotEmpty()) {
             Text(
                 "✅ Đã phát hiện địa chỉ Mạng LAN Ảo đang bật trên máy của bạn:",
-                color = Mint,
+                color = glass.liveGreen,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold
             )
@@ -723,9 +739,9 @@ private fun VirtualLanCard(
                     value = PlayitTunnelController.maskEndpointForDisplay(fullAddr, maskAddress),
                     onCopy = { onCopy(fullAddr) },
                     icon = Icons.Outlined.Lan,
-                    accent = Mint,
-                    containerColor = MintSoft,
-                    borderColor = Mint
+                    accent = glass.liveGreen,
+                    containerColor = glass.liveGreenSoft,
+                    borderColor = glass.liveGreen
                 )
                 Spacer(Modifier.height(6.dp))
             }
@@ -737,26 +753,35 @@ private fun VirtualLanCard(
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(
                 onClick = onRefresh,
-                shape = RoundedCornerShape(10.dp),
+                shape = McShape.ControlCompact,
+                border = BorderStroke(1.dp, glass.hairline),
+                colors = ButtonDefaults.outlinedButtonColors(containerColor = glass.glassRow),
                 modifier = Modifier.weight(1f)
             ) {
-                Icon(Icons.Outlined.Refresh, contentDescription = null, tint = Indigo, modifier = Modifier.size(16.dp))
+                Icon(Icons.Outlined.Refresh, contentDescription = null, tint = glass.accent, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.size(6.dp))
-                Text("Quét lại IP Mạng Ảo", color = Indigo, fontSize = 12.sp)
+                Text("Quét lại IP Mạng Ảo", color = glass.accent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             }
             OutlinedButton(
                 onClick = { expanded = !expanded },
-                shape = RoundedCornerShape(10.dp),
+                shape = McShape.ControlCompact,
+                border = BorderStroke(1.dp, glass.hairline),
+                colors = ButtonDefaults.outlinedButtonColors(containerColor = glass.glassRow),
                 modifier = Modifier.weight(1f)
             ) {
                 Icon(
                     if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
                     contentDescription = null,
-                    tint = Indigo,
+                    tint = glass.accent,
                     modifier = Modifier.size(16.dp)
                 )
                 Spacer(Modifier.size(6.dp))
-                Text(if (expanded) "Thu gọn hướng dẫn" else "Cách dùng ZeroTier", color = Indigo, fontSize = 12.sp)
+                Text(
+                    if (expanded) "Thu gọn hướng dẫn" else "Cách dùng ZeroTier",
+                    color = glass.accent,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
             }
         }
 
@@ -765,25 +790,28 @@ private fun VirtualLanCard(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(FieldBg)
-                    .padding(10.dp),
+                    .horizonGlassPlate(
+                        shape = McShape.Row,
+                        containerColor = glass.glassRow,
+                        borderColor = glass.hairline
+                    )
+                    .padding(11.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Text("📖 Hướng dẫn chơi qua 4G / Khác Wi-Fi bằng ZeroTier One hoặc Tailscale:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                Text("1. Cả bạn và bạn bè tải ứng dụng 'ZeroTier One' hoặc 'Tailscale' (miễn phí trên CH Play / App Store / PC).", color = Muted, fontSize = 11.sp, lineHeight = 15.sp)
-                Text("2. Cùng tham gia 1 phòng mạng ảo (Network ID 16 số của ZeroTier hoặc đăng nhập chung nhóm Tailscale) và gạt công tắc BẬT.", color = Muted, fontSize = 11.sp, lineHeight = 15.sp)
-                Text("3. Bấm nút 'Quét lại IP Mạng Ảo' ở trên -> Sao chép địa chỉ IP:Port hiện ra gửi cho bạn bè nhập vào Minecraft là vào thẳng!", color = Muted, fontSize = 11.sp, lineHeight = 15.sp)
+                Text("1. Cả bạn và bạn bè tải ứng dụng 'ZeroTier One' hoặc 'Tailscale' (miễn phí trên CH Play / App Store / PC).", color = Muted, fontSize = 11.sp, lineHeight = 15.5.sp)
+                Text("2. Cùng tham gia 1 phòng mạng ảo (Network ID 16 số của ZeroTier hoặc đăng nhập chung nhóm Tailscale) và gạt công tắc BẬT.", color = Muted, fontSize = 11.sp, lineHeight = 15.5.sp)
+                Text("3. Bấm nút 'Quét lại IP Mạng Ảo' ở trên -> Sao chép địa chỉ IP:Port hiện ra gửi cho bạn bè nhập vào Minecraft là vào thẳng!", color = Muted, fontSize = 11.sp, lineHeight = 15.5.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TextButton(onClick = {
                         runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://my.zerotier.com/"))) }
                     }) {
-                        Text("🌐 Mở ZeroTier Central", color = Indigo, fontSize = 11.sp)
+                        Text("🌐 Mở ZeroTier Central", color = glass.accent, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                     }
                     TextButton(onClick = {
                         runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://tailscale.com/download"))) }
                     }) {
-                        Text("🌐 Tải Tailscale", color = Indigo, fontSize = 11.sp)
+                        Text("🌐 Tải Tailscale", color = glass.accent, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
@@ -792,12 +820,15 @@ private fun VirtualLanCard(
 }
 
 @Composable
-private fun statusVisual(status: TunnelStatus): Triple<Color, String, Color> = when (status) {
-    TunnelStatus.Running -> Triple(Mint, stringResource(R.string.net_status_running), Mint)
-    TunnelStatus.Starting -> Triple(Coral, stringResource(R.string.net_status_starting), Coral)
-    TunnelStatus.Failed -> Triple(Coral, stringResource(R.string.net_status_failed), Coral)
-    TunnelStatus.Stopped -> Triple(Muted, stringResource(R.string.net_status_stopped), Muted)
-    TunnelStatus.Idle -> Triple(Muted, stringResource(R.string.net_status_idle), Muted)
+private fun statusVisual(status: TunnelStatus): Triple<Color, String, Color> {
+    val glass = HorizonGlass
+    return when (status) {
+        TunnelStatus.Running -> Triple(glass.liveGreen, stringResource(R.string.net_status_running), glass.liveGreen)
+        TunnelStatus.Starting -> Triple(glass.warnAmber, stringResource(R.string.net_status_starting), glass.warnAmber)
+        TunnelStatus.Failed -> Triple(glass.dangerCoral, stringResource(R.string.net_status_failed), glass.dangerCoral)
+        TunnelStatus.Stopped -> Triple(Muted, stringResource(R.string.net_status_stopped), Muted)
+        TunnelStatus.Idle -> Triple(Muted, stringResource(R.string.net_status_idle), Muted)
+    }
 }
 
 @Composable
@@ -834,34 +865,45 @@ private fun TunnelActionRow(
     onStart: () -> Unit,
     onStop: () -> Unit
 ) {
+    val glass = HorizonGlass
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Button(
             onClick = onStart,
             enabled = startEnabled,
             colors = ButtonDefaults.buttonColors(
-                containerColor = Indigo,
-                disabledContainerColor = TrackBg
+                containerColor = glass.accent,
+                contentColor = Color.White,
+                disabledContainerColor = glass.glassInput
             ),
-            shape = RoundedCornerShape(12.dp),
+            shape = McShape.Control,
             modifier = Modifier.weight(1f)
         ) {
             Icon(Icons.Outlined.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
             Spacer(Modifier.size(6.dp))
-            Text(startText, color = Color.White)
+            Text(startText, color = Color.White, fontWeight = FontWeight.SemiBold)
         }
-        Button(
+        OutlinedButton(
             onClick = onStop,
             enabled = stopEnabled,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Muted,
-                disabledContainerColor = TrackBg
+            border = BorderStroke(1.dp, if (stopEnabled) glass.dangerCoral.copy(alpha = 0.55f) else glass.hairline),
+            colors = ButtonDefaults.outlinedButtonColors(
+                containerColor = if (stopEnabled) glass.dangerCoralSoft else glass.glassInput
             ),
-            shape = RoundedCornerShape(12.dp),
+            shape = McShape.Control,
             modifier = Modifier.weight(1f)
         ) {
-            Icon(Icons.Outlined.Stop, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+            Icon(
+                Icons.Outlined.Stop,
+                contentDescription = null,
+                tint = if (stopEnabled) glass.dangerCoral else Muted,
+                modifier = Modifier.size(18.dp)
+            )
             Spacer(Modifier.size(6.dp))
-            Text(stopText, color = Color.White)
+            Text(
+                stopText,
+                color = if (stopEnabled) glass.dangerCoral else Muted,
+                fontWeight = FontWeight.SemiBold
+            )
         }
     }
 }
@@ -889,15 +931,16 @@ private fun PublicAddressBlock(
     state: TunnelState,
     onCopy: () -> Unit
 ) {
+    val glass = HorizonGlass
     if (state.status != TunnelStatus.Running || url.isBlank()) return
     Spacer(Modifier.height(12.dp))
     AddressCopyRow(
         label = label,
         value = url,
         onCopy = onCopy,
-        accent = Mint,
-        containerColor = MintSoft,
-        borderColor = Mint
+        accent = glass.liveGreen,
+        containerColor = glass.liveGreenSoft,
+        borderColor = glass.liveGreen
     )
 }
 
@@ -910,6 +953,7 @@ private fun LocalAddressCard(
     maskAddress: Boolean,
     context: Context
 ) {
+    val glass = HorizonGlass
     val lanInterfaceLabel by vm.lanInterfaceLabel.collectAsState()
     val lanLastUpdated by vm.lanLastUpdatedText.collectAsState()
     val vpnActiveWarning by vm.vpnActiveWarning.collectAsState()
@@ -924,14 +968,14 @@ private fun LocalAddressCard(
         ) {
             StatusPill(
                 if (serverRunning) stringResource(R.string.s587) else stringResource(R.string.s280),
-                if (serverRunning) Mint else Muted
+                if (serverRunning) glass.liveGreen else Muted
             )
             if (!serverRunning) {
                 Button(
                     onClick = { vm.startServerWithMode(PlayConnectionMode.SameNetwork) },
-                    colors = ButtonDefaults.buttonColors(containerColor = Mint),
-                    shape = RoundedCornerShape(10.dp),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = glass.liveGreen, contentColor = Color.White),
+                    shape = McShape.ControlCompact,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
                     modifier = Modifier.height(32.dp)
                 ) {
                     Text("▶️ Bật máy chủ Cùng Mạng", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
@@ -940,7 +984,7 @@ private fun LocalAddressCard(
         }
         Spacer(Modifier.height(12.dp))
 
-        Text("1️⃣ Địa chỉ LAN dành cho bạn bè bắt chung Wi-Fi hoặc 4G Hotspot của bạn:", color = Mint, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        Text("1️⃣ Địa chỉ LAN dành cho bạn bè bắt chung Wi-Fi hoặc 4G Hotspot của bạn:", color = glass.liveGreen, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(6.dp))
         val hasValidLan = lanIp != "--" && lanIp.isNotBlank()
         val lanAddressDisplay = if (hasValidLan) {
@@ -953,8 +997,8 @@ private fun LocalAddressCard(
             value = lanAddressDisplay,
             onCopy = { vm.copyServerAddress(context) },
             icon = Icons.Outlined.Lan,
-            accent = if (hasValidLan) Mint else Coral,
-            containerColor = if (hasValidLan) MintSoft else FieldBg
+            accent = if (hasValidLan) glass.liveGreen else glass.dangerCoral,
+            containerColor = if (hasValidLan) glass.liveGreenSoft else glass.glassRow
         )
         Spacer(Modifier.height(6.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -967,14 +1011,17 @@ private fun LocalAddressCard(
                         append(stringResource(R.string.s594))
                     }
                 },
-                color = Muted, fontSize = 10.sp,
+                style = HorizonTabularStyle,
+                color = Muted,
+                fontSize = 10.sp,
+                lineHeight = 14.sp,
                 modifier = Modifier.weight(1f)
             )
             IconButton(onClick = { vm.refreshLanIp(notifyOnChange = true) }, modifier = Modifier.size(McIcon.TouchCompact)) {
                 Icon(
                     Icons.Outlined.Refresh,
                     contentDescription = stringResource(R.string.s591),
-                    tint = Indigo,
+                    tint = glass.accent,
                     modifier = Modifier.size(McIcon.Inline)
                 )
             }
@@ -986,7 +1033,7 @@ private fun LocalAddressCard(
 
         Spacer(Modifier.height(12.dp))
 
-        Text("2️⃣ Địa chỉ Localhost dành riêng cho chính chiếc điện thoại này:", color = Indigo, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+        Text("2️⃣ Địa chỉ Localhost dành riêng cho chính chiếc điện thoại này:", color = glass.accent, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(6.dp))
         AddressCopyRow(
             label = stringResource(R.string.s588),
@@ -996,21 +1043,25 @@ private fun LocalAddressCard(
         Spacer(Modifier.height(6.dp))
         Text(
             "Chỉ dùng 127.0.0.1:$serverPort khi bạn mở Minecraft ngay trên chính chiếc điện thoại đang chạy MineHost này. Bạn bè trên máy khác KHÔNG dùng địa chỉ này.",
+            style = HorizonTabularStyle,
             color = Muted,
-            fontSize = 10.sp
+            fontSize = 10.sp,
+            lineHeight = 14.sp
         )
 
         Spacer(Modifier.height(10.dp))
         OutlinedButton(
             onClick = { vm.checkConnectionReachability() },
             enabled = !connectionCheckRunning,
-            shape = RoundedCornerShape(10.dp),
+            shape = McShape.ControlCompact,
+            border = BorderStroke(1.dp, glass.hairline),
+            colors = ButtonDefaults.outlinedButtonColors(containerColor = glass.glassRow),
             modifier = Modifier.fillMaxWidth()
         ) {
             Text(
                 if (connectionCheckRunning) "⏳ Đang kiểm tra khả năng kết nối..."
                 else "🩺 Kiểm tra kết nối thực tế (Localhost / LAN / Playit.gg)",
-                color = Indigo,
+                color = glass.accent,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold
             )
@@ -1037,6 +1088,7 @@ private fun FrpCard(
     onOpenEditor: (String?) -> Unit,
     onCopy: (String) -> Unit
 ) {
+    val glass = HorizonGlass
     val profile = FrpProfiles.active(config)
     var showPicker by remember { mutableStateOf(false) }
 
@@ -1049,19 +1101,24 @@ private fun FrpCard(
             Spacer(Modifier.height(8.dp))
             OutlinedButton(
                 onClick = { onOpenEditor(null) },
-                shape = RoundedCornerShape(10.dp),
+                shape = McShape.ControlCompact,
+                border = BorderStroke(1.dp, glass.hairline),
+                colors = ButtonDefaults.outlinedButtonColors(containerColor = glass.glassRow),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Icon(Icons.Outlined.Edit, contentDescription = null, tint = Indigo, modifier = Modifier.size(16.dp))
+                Icon(Icons.Outlined.Edit, contentDescription = null, tint = glass.accent, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.size(6.dp))
-                Text(stringResource(R.string.net_frp_create), color = Indigo, fontSize = 12.sp)
+                Text(stringResource(R.string.net_frp_create), color = glass.accent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             }
         } else {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(FieldBg)
+                    .horizonGlassPlate(
+                        shape = McShape.Row,
+                        containerColor = glass.glassRow,
+                        borderColor = glass.hairline
+                    )
                     .clickable { showPicker = true }
                     .padding(horizontal = 12.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -1069,19 +1126,23 @@ private fun FrpCard(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         stringResource(R.string.net_frp_profile_label),
-                        color = Muted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold
+                        color = Muted,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold
                     )
                     Spacer(Modifier.height(2.dp))
                     Text(
                         FrpProfiles.label(profile),
-                        fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                        style = HorizonTabularStyle,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
                         maxLines = 1
                     )
                 }
                 Icon(
                     Icons.Outlined.ExpandMore,
                     contentDescription = stringResource(R.string.net_frp_switch_hint),
-                    tint = Indigo,
+                    tint = glass.accent,
                     modifier = Modifier.size(18.dp)
                 )
             }
@@ -1148,25 +1209,35 @@ private fun FrpProfilePickerDialog(
     onDismiss: () -> Unit,
     onOpenEditor: (String?) -> Unit
 ) {
+    val glass = HorizonGlass
     var pendingDelete by remember { mutableStateOf<FrpProfile?>(null) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = glass.glassChrome,
+        shape = McShape.Dialog,
         title = { Text(stringResource(R.string.net_frp_dialog_title), fontSize = 16.sp, fontWeight = FontWeight.SemiBold) },
         text = {
-            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
                 config.frpProfiles.forEach { p ->
                     val selected = p.id == activeId
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(if (selected) IndigoSoft else Color.Transparent)
+                            .horizonGlassPlate(
+                                shape = McShape.Row,
+                                containerColor = if (selected) glass.accentSoft else glass.glassRow,
+                                borderColor = if (selected) glass.accent else glass.hairline,
+                                highlighted = selected
+                            )
                             .clickable {
                                 vm.setActiveFrpProfile(p.id)
                                 onDismiss()
                             }
-                            .padding(start = 4.dp, end = 0.dp, top = 4.dp, bottom = 4.dp),
+                            .padding(start = 4.dp, end = 2.dp, top = 4.dp, bottom = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         RadioButton(
@@ -1175,41 +1246,48 @@ private fun FrpProfilePickerDialog(
                                 vm.setActiveFrpProfile(p.id)
                                 onDismiss()
                             },
-                            colors = RadioButtonDefaults.colors(selectedColor = Indigo)
+                            colors = RadioButtonDefaults.colors(selectedColor = glass.accent)
                         )
                         Column(modifier = Modifier.weight(1f)) {
                             Text(p.name, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                             Text(
                                 if (p.tunnelLabel.isBlank()) p.kind.displayName
                                 else "${p.kind.displayName} · ${p.tunnelLabel}",
-                                color = Muted, fontSize = 10.sp, maxLines = 2
+                                style = HorizonTabularStyle,
+                                color = Muted,
+                                fontSize = 10.sp,
+                                maxLines = 2
                             )
                         }
                         IconButton(onClick = { onOpenEditor(p.id) }, modifier = Modifier.size(McIcon.TouchCompact)) {
                             Icon(
                                 Icons.Outlined.Edit,
                                 contentDescription = stringResource(R.string.net_frp_dialog_edit),
-                                tint = Indigo, modifier = Modifier.size(McIcon.Inline)
+                                tint = glass.accent,
+                                modifier = Modifier.size(McIcon.Inline)
                             )
                         }
                         IconButton(onClick = { pendingDelete = p }, modifier = Modifier.size(McIcon.TouchCompact)) {
                             Icon(
                                 Icons.Outlined.Delete,
                                 contentDescription = stringResource(R.string.net_frp_dialog_delete),
-                                tint = Coral, modifier = Modifier.size(McIcon.Inline)
+                                tint = glass.dangerCoral,
+                                modifier = Modifier.size(McIcon.Inline)
                             )
                         }
                     }
                 }
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(4.dp))
                 OutlinedButton(
                     onClick = { onOpenEditor(null) },
-                    shape = RoundedCornerShape(10.dp),
+                    shape = McShape.ControlCompact,
+                    border = BorderStroke(1.dp, glass.hairline),
+                    colors = ButtonDefaults.outlinedButtonColors(containerColor = glass.glassRow),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Icon(Icons.Outlined.Edit, contentDescription = null, tint = Indigo, modifier = Modifier.size(16.dp))
+                    Icon(Icons.Outlined.Edit, contentDescription = null, tint = glass.accent, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.size(6.dp))
-                    Text(stringResource(R.string.net_frp_create), color = Indigo, fontSize = 12.sp)
+                    Text(stringResource(R.string.net_frp_create), color = glass.accent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
         },
@@ -1221,6 +1299,8 @@ private fun FrpProfilePickerDialog(
     pendingDelete?.let { target ->
         AlertDialog(
             onDismissRequest = { pendingDelete = null },
+            containerColor = glass.glassChrome,
+            shape = McShape.Dialog,
             title = { Text(stringResource(R.string.net_frp_delete_title), fontSize = 16.sp, fontWeight = FontWeight.SemiBold) },
             text = { Text(stringResource(R.string.net_frp_delete_message, target.name), fontSize = 13.sp) },
             confirmButton = {
@@ -1230,7 +1310,7 @@ private fun FrpProfilePickerDialog(
                         pendingDelete = null
                         if (vm.config.value.frpProfiles.isEmpty()) onDismiss()
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Coral),
+                    colors = ButtonDefaults.buttonColors(containerColor = glass.dangerCoral, contentColor = Color.White),
                     shape = McShape.Control
                 ) { Text(stringResource(R.string.net_frp_dialog_delete)) }
             },
@@ -1252,6 +1332,7 @@ private fun StunCard(
     onStop: () -> Unit,
     onCopy: (String) -> Unit
 ) {
+    val glass = HorizonGlass
     var showAdvanced by remember { mutableStateOf(false) }
     val address = diagnostics.publicAddress.ifBlank { stunState.publicUrl }
 
@@ -1268,15 +1349,17 @@ private fun StunCard(
                 label = stringResource(R.string.stun_card_address),
                 value = address,
                 onCopy = { onCopy(address) },
-                accent = Mint,
-                containerColor = MintSoft,
-                borderColor = Mint
+                accent = glass.liveGreen,
+                containerColor = glass.liveGreenSoft,
+                borderColor = glass.liveGreen
             )
             Spacer(Modifier.height(6.dp))
             Text(
                 if (diagnostics.portStable) stringResource(R.string.stun_card_address_hint)
                 else stringResource(R.string.stun_card_address_drift, diagnostics.addressChanges),
-                color = Muted, fontSize = 10.sp
+                style = HorizonTabularStyle,
+                color = Muted,
+                fontSize = 10.sp
             )
         } else if (stunState.status != TunnelStatus.Failed) {
             Spacer(Modifier.height(10.dp))
@@ -1321,13 +1404,17 @@ private fun StunCard(
         ) {
             Icon(
                 if (showAdvanced) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
-                contentDescription = null, tint = Indigo, modifier = Modifier.size(16.dp)
+                contentDescription = null,
+                tint = glass.accent,
+                modifier = Modifier.size(16.dp)
             )
             Spacer(Modifier.size(6.dp))
             Text(
                 if (showAdvanced) stringResource(R.string.stun_advanced_hide)
                 else stringResource(R.string.stun_advanced),
-                color = Indigo, fontSize = 12.sp
+                color = glass.accent,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold
             )
         }
         if (showAdvanced) {
@@ -1360,7 +1447,9 @@ private fun StunConfigSection(vm: McViewModel, config: McConfig) {
             )
             Text(
                 stringResource(R.string.stun_follow_local_port, serverPort),
-                color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp
+                style = HorizonTabularStyle,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontSize = 12.sp
             )
         }
         if (!followLocalPort) {
@@ -1372,7 +1461,9 @@ private fun StunConfigSection(vm: McViewModel, config: McConfig) {
                     vm.updateConfig { it.copy(stunLocalPort = port) }
                 },
                 placeholder = { Text(stringResource(R.string.stun_target_port_hint)) },
+                textStyle = HorizonTabularStyle.copy(fontSize = 13.sp),
                 singleLine = true,
+                shape = McShape.Control,
                 modifier = Modifier.fillMaxWidth()
             )
         }
@@ -1387,7 +1478,9 @@ private fun StunConfigSection(vm: McViewModel, config: McConfig) {
                 vm.updateConfig { it.copy(stunKeepAliveSeconds = secs) }
             },
             placeholder = { Text("20") },
+            textStyle = HorizonTabularStyle.copy(fontSize = 13.sp),
             singleLine = true,
+            shape = McShape.Control,
             modifier = Modifier.fillMaxWidth()
         )
         Spacer(Modifier.height(4.dp))
@@ -1403,7 +1496,9 @@ private fun StunConfigSection(vm: McViewModel, config: McConfig) {
                 vm.updateConfig { it.copy(stunMaxConnections = n) }
             },
             placeholder = { Text("128") },
+            textStyle = HorizonTabularStyle.copy(fontSize = 13.sp),
             singleLine = true,
+            shape = McShape.Control,
             modifier = Modifier.fillMaxWidth()
         )
 
@@ -1432,8 +1527,10 @@ private fun StunConfigSection(vm: McViewModel, config: McConfig) {
             value = config.stunServers,
             onValueChange = { v -> vm.updateConfig { it.copy(stunServers = v) } },
             placeholder = { Text(stringResource(R.string.stun_servers_hint)) },
+            textStyle = HorizonTabularStyle.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
             singleLine = false,
             maxLines = 4,
+            shape = McShape.Control,
             modifier = Modifier.fillMaxWidth()
         )
         Spacer(Modifier.height(4.dp))
@@ -1448,6 +1545,8 @@ private fun TunnelLogPreview(
     stunState: TunnelState,
     playitState: PlayitUiState
 ) {
+    val glass = HorizonGlass
+    val codePlateBg = if (glass.isLight) glass.glassCardStrong else Color(0xFF0D0C1D).copy(alpha = 0.80f)
     val tunnelLogs: List<String> = remember(consoleLines, playitState.recentLogs) {
         val fromConsole = consoleLines.filter { it.contains("[tunnel]") }
         if (fromConsole.isNotEmpty()) fromConsole
@@ -1466,36 +1565,50 @@ private fun TunnelLogPreview(
         if (tunnelLogs.isEmpty()) {
             Text(stringResource(R.string.net_log_empty), color = Muted, fontSize = 11.sp)
         } else {
-            tunnelLogs.takeLast(8).forEach { line ->
-                Text(
-                    line,
-                    fontSize = 10.sp,
-                    fontFamily = FontFamily.Monospace,
-                    color = Muted,
-                    maxLines = 1,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 2.dp)
-                )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(McShape.Row)
+                    .background(codePlateBg)
+                    .border(1.dp, glass.hairline, McShape.Row)
+                    .padding(9.dp)
+            ) {
+                tunnelLogs.takeLast(8).forEach { line ->
+                    Text(
+                        line,
+                        style = HorizonTabularStyle,
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = Muted,
+                        maxLines = 1,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 2.dp)
+                    )
+                }
             }
 
             Spacer(Modifier.height(8.dp))
             OutlinedButton(
                 onClick = { showFullLog = true },
-                shape = RoundedCornerShape(10.dp),
+                shape = McShape.ControlCompact,
+                border = BorderStroke(1.dp, glass.hairline),
+                colors = ButtonDefaults.outlinedButtonColors(containerColor = glass.glassRow),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Icon(
                     Icons.Outlined.OpenInFull,
                     contentDescription = null,
-                    tint = Indigo,
+                    tint = glass.accent,
                     modifier = Modifier.size(16.dp)
                 )
                 Spacer(Modifier.size(6.dp))
                 Text(
                     stringResource(R.string.net_log_expand) + " (${tunnelLogs.size})",
+                    style = HorizonTabularStyle,
                     fontSize = 12.sp,
-                    color = Indigo
+                    color = glass.accent,
+                    fontWeight = FontWeight.SemiBold
                 )
             }
         }
@@ -1503,7 +1616,9 @@ private fun TunnelLogPreview(
         Spacer(Modifier.height(12.dp))
         Text(
             stringResource(R.string.net_log_connection),
-            color = Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold
+            color = Muted,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold
         )
         Spacer(Modifier.height(6.dp))
         if (activeConnCount != null) {
@@ -1519,13 +1634,19 @@ private fun TunnelLogPreview(
     if (showFullLog) {
         AlertDialog(
             onDismissRequest = { showFullLog = false },
+            containerColor = glass.glassChrome,
+            shape = McShape.Dialog,
             title = {
-                Text(stringResource(R.string.s618, tunnelLogs.size), fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.s618, tunnelLogs.size), style = HorizonTabularStyle, fontWeight = FontWeight.Bold)
             },
             text = {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(codePlateBg)
+                        .border(1.dp, glass.hairline, RoundedCornerShape(10.dp))
+                        .padding(10.dp)
                         .verticalScroll(rememberScrollState())
                 ) {
                     if (tunnelLogs.isEmpty()) {
@@ -1534,6 +1655,7 @@ private fun TunnelLogPreview(
                         tunnelLogs.forEach { line ->
                             Text(
                                 line,
+                                style = HorizonTabularStyle,
                                 fontSize = 10.sp,
                                 fontFamily = FontFamily.Monospace,
                                 color = Muted,
@@ -1546,8 +1668,12 @@ private fun TunnelLogPreview(
                 }
             },
             confirmButton = {
-                Button(onClick = { showFullLog = false }, shape = McShape.Control) {
-                    Text(stringResource(R.string.s620))
+                Button(
+                    onClick = { showFullLog = false },
+                    colors = ButtonDefaults.buttonColors(containerColor = glass.accent, contentColor = Color.White),
+                    shape = McShape.Control
+                ) {
+                    Text(stringResource(R.string.s620), fontWeight = FontWeight.SemiBold)
                 }
             }
         )
@@ -1568,45 +1694,53 @@ private val freeFrpPlatforms = listOf(
 
 @Composable
 private fun FreeFrpPlatformsCard(context: Context) {
+    val glass = HorizonGlass
     McCard(title = stringResource(R.string.s654)) {
         Text(
             stringResource(R.string.s655),
-            color = Muted, fontSize = 10.sp, lineHeight = 14.sp
+            color = Muted,
+            fontSize = 10.5.sp,
+            lineHeight = 15.sp
         )
         Spacer(Modifier.height(10.dp))
-        freeFrpPlatforms.forEach { p ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(IndigoSoft)
-                    .clickable {
-                        try {
-                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(p.url)))
-                        } catch (_: Exception) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            freeFrpPlatforms.forEach { p ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizonGlassPlate(
+                            shape = McShape.Row,
+                            containerColor = glass.glassRow,
+                            borderColor = glass.hairline
+                        )
+                        .clickable {
+                            try {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(p.url)))
+                            } catch (_: Exception) {
+                            }
                         }
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(p.name, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Text(p.url, color = glass.accent, fontSize = 10.sp)
                     }
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(p.name, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                    Text(p.url, color = Indigo, fontSize = 10.sp)
+                    Icon(
+                        Icons.AutoMirrored.Outlined.OpenInNew,
+                        contentDescription = stringResource(R.string.s656),
+                        tint = glass.accent,
+                        modifier = Modifier.size(14.dp)
+                    )
                 }
-                Icon(
-                    Icons.AutoMirrored.Outlined.OpenInNew,
-                    contentDescription = stringResource(R.string.s656),
-                    tint = Indigo,
-                    modifier = Modifier.size(14.dp)
-                )
             }
-            Spacer(Modifier.height(6.dp))
         }
     }
 }
 
 @Composable
 private fun NetworkGuide() {
+    val glass = HorizonGlass
     var expanded by remember { mutableStateOf(false) }
 
     McCard(title = stringResource(R.string.s621)) {
@@ -1619,21 +1753,26 @@ private fun NetworkGuide() {
         ) {
             Text(
                 stringResource(R.string.s622, if (expanded) stringResource(R.string.s620) else stringResource(R.string.s623)),
-                color = Indigo, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                color = glass.accent,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.weight(1f)
             )
             Icon(
                 if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
                 contentDescription = null,
-                tint = Indigo
+                tint = glass.accent
             )
         }
 
         if (expanded) {
             Column {
+                Spacer(Modifier.height(4.dp))
                 Text(
                     stringResource(R.string.net_guide_intro),
-                    color = Muted, fontSize = 11.sp, lineHeight = 16.sp
+                    color = Muted,
+                    fontSize = 11.sp,
+                    lineHeight = 16.sp
                 )
                 Spacer(Modifier.height(10.dp))
                 GuideStep("1", stringResource(R.string.net_guide_frp_t), stringResource(R.string.net_guide_frp_d))
@@ -1649,6 +1788,7 @@ private fun NetworkGuide() {
 
 @Composable
 private fun GuideStep(step: String, title: String, description: String) {
+    val glass = HorizonGlass
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1658,10 +1798,11 @@ private fun GuideStep(step: String, title: String, description: String) {
             modifier = Modifier
                 .size(24.dp)
                 .clip(CircleShape)
-                .background(Indigo),
+                .background(glass.accentSoft)
+                .border(1.dp, glass.accent.copy(alpha = 0.55f), CircleShape),
             contentAlignment = Alignment.Center
         ) {
-            Text(step, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Text(step, style = HorizonTabularStyle, color = glass.accent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         }
         Spacer(Modifier.size(10.dp))
         Column(modifier = Modifier.weight(1f)) {

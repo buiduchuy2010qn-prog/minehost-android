@@ -13,6 +13,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -64,10 +65,12 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -109,6 +112,8 @@ import com.mineserve.mobile.ui.showInstantSnackbar
 import com.mineserve.mobile.ui.theme.Coral
 import com.mineserve.mobile.ui.theme.CoralSoft
 import com.mineserve.mobile.ui.theme.FieldGray
+import com.mineserve.mobile.ui.theme.HorizonGlass
+import com.mineserve.mobile.ui.theme.HorizonTabularStyle
 import com.mineserve.mobile.ui.theme.Indigo
 import com.mineserve.mobile.ui.theme.IndigoSoft
 import com.mineserve.mobile.ui.theme.McIcon
@@ -117,6 +122,7 @@ import com.mineserve.mobile.ui.theme.McSpacing
 import com.mineserve.mobile.ui.theme.Mint
 import com.mineserve.mobile.ui.theme.MintSoft
 import com.mineserve.mobile.ui.theme.Muted
+import com.mineserve.mobile.ui.theme.horizonGlassPlate
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
@@ -162,19 +168,217 @@ private val pluginSites = listOf(
 )
 private enum class InstalledFilter(val labelRes: Int) { All(R.string.s747), Enabled(R.string.s748), Disabled(R.string.s749), Local(R.string.s127) }
 
+// ── BlockWay Pure Horizon Glass Helpers (Kho Mod / Plugin / Modpack) ──
+
+@Composable
+private fun KhoModSearchPill(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    modifier: Modifier = Modifier
+) {
+    val glass = HorizonGlass
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        placeholder = { Text(placeholder, fontSize = 11.5.sp, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        leadingIcon = {
+            Icon(
+                Icons.Outlined.Search,
+                contentDescription = null,
+                tint = glass.accent,
+                modifier = Modifier.size(16.dp)
+            )
+        },
+        trailingIcon = if (value.isNotEmpty()) {
+            {
+                Text(
+                    "✕",
+                    color = Muted,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .clickable { onValueChange("") }
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            }
+        } else null,
+        singleLine = true,
+        modifier = modifier,
+        shape = CircleShape,
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedContainerColor = glass.glassInput,
+            unfocusedContainerColor = glass.glassInput,
+            focusedBorderColor = glass.accent,
+            unfocusedBorderColor = glass.hairline,
+            cursorColor = glass.accent
+        )
+    )
+}
+
+@Composable
+private fun KhoModGlassPillChip(
+    label: String,
+    selected: Boolean,
+    emeraldTint: Boolean = false,
+    onClick: () -> Unit
+) {
+    val glass = HorizonGlass
+    val activeBg = if (emeraldTint) glass.liveGreenSoft else glass.accentSoft
+    val activeBorder = if (emeraldTint) glass.liveGreen else glass.accent
+    val activeText = if (emeraldTint) glass.liveGreen else glass.accent
+    Box(
+        modifier = Modifier
+            .clip(CircleShape)
+            .background(if (selected) activeBg else glass.glassRow)
+            .border(
+                width = if (selected) 1.2.dp else 1.dp,
+                color = if (selected) activeBorder else glass.hairline,
+                shape = CircleShape
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+    ) {
+        Text(
+            label,
+            color = if (selected) activeText else MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 11.sp,
+            fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.SemiBold,
+            style = HorizonTabularStyle,
+            maxLines = 1
+        )
+    }
+}
+
+@Composable
+private fun KhoModSubTabRail(
+    options: List<String>,
+    selectedIndex: Int,
+    modifier: Modifier = Modifier,
+    onSelect: (Int) -> Unit
+) {
+    val glass = HorizonGlass
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .horizonGlassPlate(
+                shape = RoundedCornerShape(18.dp),
+                containerColor = glass.glassCard,
+                borderColor = glass.hairline
+            )
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        options.forEachIndexed { index, label ->
+            val selected = index == selectedIndex
+            Box(
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .background(if (selected) glass.accentSoft else glass.glassRow)
+                    .border(
+                        width = if (selected) 1.25.dp else 1.dp,
+                        color = if (selected) glass.accent else glass.hairline,
+                        shape = CircleShape
+                    )
+                    .clickable { onSelect(index) }
+                    .padding(horizontal = 13.dp, vertical = 7.dp)
+            ) {
+                Text(
+                    label,
+                    color = if (selected) glass.accent else MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 11.5.sp,
+                    fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.SemiBold,
+                    style = HorizonTabularStyle,
+                    maxLines = 1
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun InstalledEmeraldPill(
+    isEnabled: Boolean = true,
+    disabledText: String = "⏸ Đã tắt"
+) {
+    val glass = HorizonGlass
+    val bg = if (isEnabled) glass.liveGreenSoft else glass.warnAmberSoft
+    val border = if (isEnabled) glass.liveGreen.copy(alpha = 0.55f) else glass.warnAmber.copy(alpha = 0.50f)
+    val fg = if (isEnabled) glass.liveGreen else glass.warnAmber
+    Box(
+        modifier = Modifier
+            .clip(CircleShape)
+            .background(bg)
+            .border(1.dp, border, CircleShape)
+            .padding(horizontal = 10.dp, vertical = 4.5.dp)
+    ) {
+        Text(
+            if (isEnabled) "✓ Đã cài" else disabledText,
+            color = fg,
+            fontSize = 10.5.sp,
+            fontWeight = FontWeight.ExtraBold,
+            maxLines = 1
+        )
+    }
+}
+
+@Composable
+private fun KhoModDescriptionBlock(
+    info: AddonInfo,
+    modifier: Modifier = Modifier,
+    descMaxLines: Int = 2,
+    warnClientOnlyOnServer: Boolean = false
+) {
+    val glass = HorizonGlass
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        AddonSideBadge(info.side)
+        if (warnClientOnlyOnServer && info.side == AddonSide.CLIENT_ONLY) {
+            Text(
+                "⚠️ Mod chỉ dành cho máy người chơi — nên TẮT trên server để tránh lỗi khởi động.",
+                fontSize = 10.5.sp,
+                color = glass.dangerCoral,
+                fontWeight = FontWeight.SemiBold,
+                lineHeight = 15.sp
+            )
+        }
+        val desc = info.descVi
+        if (!desc.isNullOrBlank()) {
+            Text(
+                "💡 " + desc + if (info.autoTranslated) " (dịch tự động)" else "",
+                fontSize = 11.2.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                lineHeight = 16.sp, // ~1.43x generous Vietnamese line-height
+                maxLines = descMaxLines,
+                overflow = TextOverflow.Ellipsis
+            )
+        } else {
+            Text(
+                "💡 Chưa có mô tả" + (info.categoriesVi?.let { " · Loại: $it" } ?: ""),
+                fontSize = 10.5.sp,
+                lineHeight = 15.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (!desc.isNullOrBlank() && info.categoriesVi != null) {
+            Text(
+                "🏷️ ${info.categoriesVi}",
+                fontSize = 10.sp,
+                lineHeight = 14.2.sp,
+                color = Muted
+            )
+        }
+    }
+}
+
 /**
- * 插件管理页（重构完善版）
- *
- * 完善功能：
- *  - P0-1 plugin.yml 元信息解析（真实名称/版本/作者/依赖）
- *  - P0-2 GitHub API 更新检测（5 分钟缓存）
- *  - P0-3 插件详情对话框（完整元信息）
- *  - P1-4 搜索 + 筛选标签
- *  - P1-5 自定义 URL 下载
- *  - P1-6 删除时询问清理数据目录
+ * 插件管理页（重构完善版 — BlockWay Pure Horizon Glass Kho Mod）
  */
 @Composable
 fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
+    val glass = HorizonGlass
     // Nạp mô tả tiếng Việt + Server/Client của danh mục 56 mod để mod ĐÃ CÀI cũng hiện đúng thông tin
     remember {
         vm.userScreenshot56ModItems().forEach {
@@ -207,11 +411,17 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
     if (modBatchProgress != null) {
         AlertDialog(
             onDismissRequest = {},
+            containerColor = glass.glassChrome,
+            shape = McShape.Dialog,
             title = { Text("📦 Đang xử lý & giải mã gói Mod...", fontSize = 15.sp, fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = Indigo)
-                    Text(modBatchProgress ?: "", fontSize = 12.sp, color = Muted)
+                    LinearProgressIndicator(
+                        modifier = Modifier.fillMaxWidth().clip(CircleShape),
+                        color = glass.accent,
+                        trackColor = glass.accentSoft
+                    )
+                    Text(modBatchProgress ?: "", fontSize = 12.sp, lineHeight = 17.sp, color = Muted, style = HorizonTabularStyle)
                 }
             },
             confirmButton = {}
@@ -221,15 +431,17 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
     if (lastModImportReport != null) {
         AlertDialog(
             onDismissRequest = { vm.clearModImportReport() },
+            containerColor = glass.glassChrome,
+            shape = McShape.Dialog,
             title = { Text("🎉 Kết quả Giải mã & Cài đặt Mod", fontSize = 15.sp, fontWeight = FontWeight.Bold) },
             text = {
                 Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                    Text(lastModImportReport ?: "", fontSize = 12.sp, lineHeight = 18.sp)
+                    Text(lastModImportReport ?: "", fontSize = 12.sp, lineHeight = 18.sp, style = HorizonTabularStyle)
                 }
             },
             confirmButton = {
                 TextButton(onClick = { vm.clearModImportReport() }) {
-                    Text("Đã hiểu", color = Indigo, fontWeight = FontWeight.Bold)
+                    Text("Đã hiểu", color = glass.accent, fontWeight = FontWeight.Bold)
                 }
             }
         )
@@ -241,7 +453,9 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
         val p = installingEntry.value
         AlertDialog(
             onDismissRequest = {},
-            title = { Text(stringResource(R.string.ui_installing), fontSize = 16.sp) },
+            containerColor = glass.glassChrome,
+            shape = McShape.Dialog,
+            title = { Text(stringResource(R.string.ui_installing), fontSize = 16.sp, fontWeight = FontWeight.Bold) },
             text = {
                 Column {
                     Text(p.pluginId, fontSize = 13.sp, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -249,22 +463,27 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                     if (p.totalBytes > 0) {
                         LinearProgressIndicator(
                             progress = { (p.downloadedBytes.toFloat() / p.totalBytes).coerceIn(0f, 1f) },
-                            modifier = Modifier.fillMaxWidth().height(6.dp),
-                            color = Indigo
+                            modifier = Modifier.fillMaxWidth().height(6.dp).clip(CircleShape),
+                            color = glass.liveGreen,
+                            trackColor = glass.liveGreenSoft
                         )
                         Spacer(Modifier.height(8.dp))
                         Text(
                             "${formatBytes(p.downloadedBytes)} / ${formatBytes(p.totalBytes)} · ${p.speedBytesPerSec / 1024} KB/s",
-                            fontSize = 12.sp, color = Muted
+                            fontSize = 12.sp,
+                            color = Muted,
+                            style = HorizonTabularStyle
                         )
                     } else {
                         CircularProgressIndicator(
-                            modifier = Modifier.size(28.dp), color = Indigo, strokeWidth = 3.dp
+                            modifier = Modifier.size(28.dp), color = glass.accent, strokeWidth = 3.dp
                         )
                         Spacer(Modifier.height(8.dp))
                         Text(
                             "${formatBytes(p.downloadedBytes)} · ${p.speedBytesPerSec / 1024} KB/s",
-                            fontSize = 12.sp, color = Muted
+                            fontSize = 12.sp,
+                            color = Muted,
+                            style = HorizonTabularStyle
                         )
                     }
                 }
@@ -364,6 +583,7 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
     val pluginConflicts = remember(installedPlugins) { vm.detectPluginConflicts(installedPlugins) }
 
     Scaffold(
+        containerColor = Color.Transparent,
         snackbarHost = { SwipeableInstantSnackbarHost(snackbarHostState) },
         // 嵌套在外层 McApp Scaffold 内：insets 已由外层消费，这里不再重复应用，避免顶部空白/白色遮挡
         contentWindowInsets = WindowInsets(0.dp)
@@ -371,56 +591,81 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .background(Color.Transparent)
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
         ) {
             if (isPowerNukkitX) {
                 Text(
                     stringResource(R.string.pl_pnx_mods_hint),
-                    color = Coral,
+                    color = glass.dangerCoral,
                     fontSize = 11.sp,
+                    lineHeight = 15.6.sp,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
                 )
             }
             HeaderBlock(eyebrow = stringResource(R.string.eyebrow_plugins), title = stringResource(R.string.s750))
 
-            TextButton(onClick = onAddonTools, modifier = Modifier.padding(horizontal = 16.dp)) {
-                Text("Addon PE, Voice Chat & Datapack →")
+            Box(
+                modifier = Modifier
+                    .padding(horizontal = McSpacing.Page, vertical = 4.dp)
+                    .clip(CircleShape)
+                    .background(glass.glassRow)
+                    .border(1.dp, glass.hairline, CircleShape)
+                    .clickable(onClick = onAddonTools)
+                    .padding(horizontal = 14.dp, vertical = 7.dp)
+            ) {
+                Text(
+                    "✨ Addon PE, Voice Chat & Datapack →",
+                    color = glass.accent,
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.Bold
+                )
             }
 
             // ── 当前核心状态卡片 ──
             McCard(
                 title = stringResource(R.string.s751),
                 trailing = {
-                    Text(
-                        stringResource(R.string.s333),
-                        color = Indigo,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.clickable {
-                            if (activeCore != null) {
-                                vm.refreshInstalledPlugins()
-                                vm.refreshMods()
-                                scope.launch { snackbarHostState.showSnackbar(context.getString(R.string.s752)) }
-                            } else {
-                                scope.launch { snackbarHostState.showSnackbar(context.getString(R.string.s753)) }
+                    Box(
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .background(glass.accentSoft)
+                            .border(1.dp, glass.accent.copy(alpha = 0.45f), CircleShape)
+                            .clickable {
+                                if (activeCore != null) {
+                                    vm.refreshInstalledPlugins()
+                                    vm.refreshMods()
+                                    scope.launch { snackbarHostState.showSnackbar(context.getString(R.string.s752)) }
+                                } else {
+                                    scope.launch { snackbarHostState.showSnackbar(context.getString(R.string.s753)) }
+                                }
                             }
-                        }
-                    )
+                            .padding(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            stringResource(R.string.s333),
+                            color = glass.accent,
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             ) {
                 if (activeCore == null) {
                     Text(
                         stringResource(R.string.s754),
-                        color = Coral,
+                        color = glass.dangerCoral,
                         fontSize = 12.sp,
+                        lineHeight = 17.sp,
                         modifier = Modifier.padding(vertical = 6.dp)
                     )
                 } else {
                     Text(
                         "${activeCore.name}  ·  ${activeCore.core.displayName} ${activeCore.version}",
                         fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold
+                        fontWeight = FontWeight.ExtraBold,
+                        style = HorizonTabularStyle
                     )
                     Spacer(Modifier.height(4.dp))
                     if (coreType.supportsMods && !coreType.supportsPlugins) {
@@ -429,7 +674,7 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                         Text(
                             "Thư mục mod: ${modsPath ?: "--"}",
                             color = Muted,
-                            fontSize = 10.sp,
+                            fontSize = 10.5.sp,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -439,26 +684,27 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                                 modifier = Modifier
                                     .size(8.dp)
                                     .clip(CircleShape)
-                                    .background(if (mods.isEmpty()) Muted else Mint)
+                                    .background(if (mods.isEmpty()) Muted else glass.liveGreen)
                             )
                             Spacer(Modifier.size(6.dp))
                             Text(
                                 if (mods.isEmpty()) {
                                     "Chưa tải mod nào trong thư mục mods/"
                                 } else {
-                                    "✅ Đã tải & cài đặt: ${mods.size} mod (Đang bật: $enabledCount" +
+                                    "✓ Đã cài: ${mods.size} mod (Đang bật: $enabledCount" +
                                         (if (disabledCount > 0) " · Đang tắt: $disabledCount" else "") + ")"
                                 },
-                                color = if (mods.isEmpty()) Muted else Mint,
+                                color = if (mods.isEmpty()) Muted else glass.liveGreen,
                                 fontSize = 11.sp,
-                                fontWeight = if (mods.isEmpty()) FontWeight.Normal else FontWeight.SemiBold
+                                fontWeight = if (mods.isEmpty()) FontWeight.Normal else FontWeight.Bold,
+                                style = HorizonTabularStyle
                             )
                         }
                     } else {
                         Text(
                             stringResource(R.string.s755, pluginsPath ?: "--"),
                             color = Muted,
-                            fontSize = 10.sp,
+                            fontSize = 10.5.sp,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -468,25 +714,26 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                                 modifier = Modifier
                                     .size(8.dp)
                                     .clip(CircleShape)
-                                    .background(if (installedPlugins.isEmpty() && mods.isEmpty()) Muted else Mint)
+                                    .background(if (installedPlugins.isEmpty() && mods.isEmpty()) Muted else glass.liveGreen)
                             )
                             Spacer(Modifier.size(6.dp))
                             val pluginSummary = if (installedPlugins.isEmpty()) {
                                 stringResource(R.string.s756, 0)
                             } else {
-                                "✅ Đã tải & cài đặt ${installedPlugins.size} plugin" +
+                                "✓ Đã cài ${installedPlugins.size} plugin" +
                                     if (installedPlugins.count { !it.isEnabled } > 0)
                                         stringResource(R.string.s757, installedPlugins.count { !it.isEnabled })
                                     else ""
                             }
                             val modHybridSummary = if (coreType.supportsMods && mods.isNotEmpty()) {
-                                " · ✅ Đã cài ${mods.size} mod"
+                                " · ✓ Đã cài ${mods.size} mod"
                             } else ""
                             Text(
                                 pluginSummary + modHybridSummary,
-                                color = if (installedPlugins.isEmpty() && mods.isEmpty()) Muted else Mint,
+                                color = if (installedPlugins.isEmpty() && mods.isEmpty()) Muted else glass.liveGreen,
                                 fontSize = 11.sp,
-                                fontWeight = if (installedPlugins.isEmpty() && mods.isEmpty()) FontWeight.Normal else FontWeight.SemiBold
+                                fontWeight = if (installedPlugins.isEmpty() && mods.isEmpty()) FontWeight.Normal else FontWeight.Bold,
+                                style = HorizonTabularStyle
                             )
                         }
                     }
@@ -494,21 +741,22 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                     if (coreType == ServerCore.Pumpkin || rustStatus.isNativeRustEnabled) {
                         Text(
                             "🦀 Nhân Rust Thuần hỗ trợ Plugin WebAssembly (.wasm) tốc độ máy — 0% Java (Không dùng file .jar)",
-                            color = Mint,
+                            color = glass.liveGreen,
                             fontSize = 11.5.sp,
+                            lineHeight = 16.sp,
                             fontWeight = FontWeight.ExtraBold
                         )
                     } else {
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             Text(
                                 if (coreType.supportsPlugins) stringResource(R.string.s467) else stringResource(R.string.s468),
-                                color = if (coreType.supportsPlugins) Mint else Coral,
+                                color = if (coreType.supportsPlugins) glass.liveGreen else glass.dangerCoral,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
                             Text(
                                 if (coreType.supportsMods) stringResource(R.string.s469) else stringResource(R.string.s470),
-                                color = if (coreType.supportsMods) Mint else Coral,
+                                color = if (coreType.supportsMods) glass.liveGreen else glass.dangerCoral,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
@@ -531,9 +779,10 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
 
                 McCard(title = "🦀 Plugin WebAssembly (.wasm) Cho Server Rust Thuần") {
                     Text(
-                        "✅ Mọi plugin tại đây đều là tệp nhị phân WebAssembly (.wasm) chạy trực tiếp trong nhân Rust — Tuyệt đối KHÔNG tải hay chạy Java!",
-                        color = Mint,
+                        "✓ Mọi plugin tại đây đều là tệp nhị phân WebAssembly (.wasm) chạy trực tiếp trong nhân Rust — Tuyệt đối KHÔNG tải hay chạy Java!",
+                        color = glass.liveGreen,
                         fontSize = 11.5.sp,
+                        lineHeight = 16.3.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(Modifier.height(8.dp))
@@ -542,8 +791,13 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(if (hasMultiversion) MintSoft else IndigoSoft)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (hasMultiversion) glass.liveGreenSoft else glass.accentSoft)
+                            .border(
+                                1.dp,
+                                if (hasMultiversion) glass.liveGreen.copy(alpha = 0.55f) else glass.accent.copy(alpha = 0.45f),
+                                RoundedCornerShape(12.dp)
+                            )
                             .padding(10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -554,19 +808,23 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                                 else "🌐 Đa Phiên Bản WASM (Cho mọi bản 1.7.2 → 26.3 vào chung)",
                                 fontSize = 12.5.sp,
                                 fontWeight = FontWeight.ExtraBold,
-                                color = if (hasMultiversion) Mint else Indigo
+                                color = if (hasMultiversion) glass.liveGreen else glass.accent
                             )
                             Text(
                                 "Tương đương ViaVersion + ViaBackwards viết 100% bằng Rust/WASM (~3.0 MB)",
                                 fontSize = 10.5.sp,
-                                color = Muted
+                                lineHeight = 15.sp,
+                                color = Muted,
+                                style = HorizonTabularStyle
                             )
                         }
-                        if (!hasMultiversion) {
+                        if (hasMultiversion) {
+                            InstalledEmeraldPill(isEnabled = true)
+                        } else {
                             Button(
                                 onClick = { vm.installMultiversionWasmOneTap() },
                                 enabled = !liveTask.active && !isServerRunning,
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEA580C)),
+                                colors = ButtonDefaults.buttonColors(containerColor = glass.warnAmber),
                                 shape = McShape.ControlCompact
                             ) {
                                 Text("⬇️ Cài ngay", color = Color.White, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
@@ -576,26 +834,39 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
 
                     if (installedWasm.isNotEmpty()) {
                         Spacer(Modifier.height(10.dp))
-                        Text("📦 Plugin WASM đã cài (${installedWasm.size}):", fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
+                        Text("📦 Plugin WASM đã cài (${installedWasm.size}):", fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, style = HorizonTabularStyle)
                         Spacer(Modifier.height(6.dp))
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             installedWasm.forEach { wp ->
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clip(McShape.Row)
-                                        .background(com.mineserve.mobile.ui.theme.FieldGray)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(glass.glassRow)
+                                        .border(
+                                            1.dp,
+                                            if (wp.enabled) glass.liveGreen.copy(alpha = 0.50f) else glass.hairline,
+                                            RoundedCornerShape(12.dp)
+                                        )
                                         .padding(horizontal = 10.dp, vertical = 8.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            (if (wp.enabled) "🟢 " else "⏸️ ") + wp.displayName + ".wasm",
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                        Text("${wp.sizeKb} KB • WebAssembly", fontSize = 10.sp, color = Muted)
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Text(
+                                                wp.displayName + ".wasm",
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            InstalledEmeraldPill(isEnabled = wp.enabled)
+                                        }
+                                        Text("${wp.sizeKb} KB • WebAssembly", fontSize = 10.5.sp, color = Muted, style = HorizonTabularStyle)
                                     }
                                     Switch(
                                         checked = wp.enabled,
@@ -606,10 +877,10 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                                         onClick = { vm.deleteRustWasmPlugin(wp.fileName) },
                                         enabled = !isServerRunning,
                                         shape = McShape.ControlCompact,
-                                        border = BorderStroke(1.dp, Coral),
+                                        border = BorderStroke(1.dp, glass.dangerCoral.copy(alpha = 0.65f)),
                                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                                     ) {
-                                        Text("Xóa", color = Coral, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        Text("Xóa", color = glass.dangerCoral, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }
@@ -625,12 +896,13 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                             }
                         },
                         shape = McShape.ControlCompact,
+                        border = BorderStroke(1.dp, glass.accent.copy(alpha = 0.55f)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
                             if (showMarketList) "▲ Ẩn Kho Plugin Pumpkin WASM Chính Thức"
                             else "🛒 Mở Kho Plugin Pumpkin WASM Chính Thức (Tải 1 chạm)",
-                            color = Indigo,
+                            color = glass.accent,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -639,29 +911,30 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                     if (showMarketList) {
                         Spacer(Modifier.height(8.dp))
                         if (loadingMarket) {
-                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth().clip(CircleShape), color = glass.accent)
                         } else if (marketWasm.isEmpty()) {
-                            Text("Không tải được danh sách từ market.pumpkinmc.org (Kiểm tra mạng rồi thử lại).", fontSize = 11.sp, color = Coral)
+                            Text("Không tải được danh sách từ market.pumpkinmc.org (Kiểm tra mạng rồi thử lại).", fontSize = 11.sp, color = glass.dangerCoral)
                         } else {
                             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 marketWasm.take(15).forEach { item ->
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .clip(McShape.Row)
-                                            .background(com.mineserve.mobile.ui.theme.FieldGray)
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(glass.glassRow)
+                                            .border(1.dp, glass.hairline, RoundedCornerShape(12.dp))
                                             .padding(horizontal = 10.dp, vertical = 8.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
                                         Column(modifier = Modifier.weight(1f)) {
-                                            Text("${item.name} v${item.version}", fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
-                                            Text("👤 ${item.author} • 📂 ${item.category} • ⬇️ ${item.downloads}", fontSize = 10.sp, color = Muted)
+                                            Text("${item.name} v${item.version}", fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, style = HorizonTabularStyle)
+                                            Text("👤 ${item.author} • 📂 ${item.category} • ⬇️ ${item.downloads}", fontSize = 10.5.sp, color = Muted, style = HorizonTabularStyle)
                                         }
                                         Button(
                                             onClick = { vm.installPumpkinMarketWasmPlugin(item) },
                                             enabled = !liveTask.active && !isServerRunning,
-                                            colors = ButtonDefaults.buttonColors(containerColor = Mint),
+                                            colors = ButtonDefaults.buttonColors(containerColor = glass.liveGreen),
                                             shape = McShape.ControlCompact,
                                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 5.dp)
                                         ) {
@@ -699,9 +972,14 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(if (optPackStatus.isPackActive) MintSoft else IndigoSoft)
-                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (optPackStatus.isPackActive) glass.liveGreenSoft else glass.accentSoft)
+                            .border(
+                                1.dp,
+                                if (optPackStatus.isPackActive) glass.liveGreen.copy(alpha = 0.55f) else glass.accent.copy(alpha = 0.45f),
+                                RoundedCornerShape(12.dp)
+                            )
+                            .padding(horizontal = 11.dp, vertical = 9.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
@@ -711,17 +989,19 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                                 } else {
                                     "⚡ Chưa bật Gói Tối Ưu · Tự động khớp phiên bản: MC $detectedMcVer"
                                 },
-                                color = if (optPackStatus.isPackActive) Mint else Indigo,
+                                color = if (optPackStatus.isPackActive) glass.liveGreen else glass.accent,
                                 fontSize = 12.5.sp,
-                                fontWeight = FontWeight.ExtraBold
+                                fontWeight = FontWeight.ExtraBold,
+                                style = HorizonTabularStyle
                             )
-                            Spacer(Modifier.height(2.dp))
+                            Spacer(Modifier.height(3.dp))
                             Text(
-                                "✅ Chỉ cài cho Server (100% Server-Side) — Người chơi PC / Pojav / FCL vào bình thường KHÔNG CẦN cài mod!" +
+                                "✓ Chỉ cài cho Server (100% Server-Side) — Người chơi PC / Pojav / FCL vào bình thường KHÔNG CẦN cài mod!" +
                                     if (optPackStatus.cachedCount > 0) " · Đã lưu sẵn trong máy: ${optPackStatus.cachedCount} mod" else "",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 11.sp,
-                                lineHeight = 15.sp
+                                lineHeight = 15.8.sp,
+                                style = HorizonTabularStyle
                             )
                         }
                     }
@@ -730,9 +1010,9 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                         Spacer(Modifier.height(6.dp))
                         Text(
                             "💡 Máy chủ hiện tại đang là ${coreType.displayName} $detectedMcVer: Khi bạn gạt bật công tắc hoặc bấm nút bên dưới, ứng dụng sẽ TỰ ĐỘNG nâng cấp lõi lên Fabric $detectedMcVer (giữ nguyên 100% Map, người chơi & cài đặt) và nạp trọn bộ 14 Mod tối ưu!",
-                            color = Indigo,
+                            color = glass.accent,
                             fontSize = 11.sp,
-                            lineHeight = 15.sp,
+                            lineHeight = 15.8.sp,
                             fontWeight = FontWeight.SemiBold
                         )
                     }
@@ -742,39 +1022,52 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(FieldGray)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(glass.glassRow)
+                                .border(1.dp, glass.accent.copy(alpha = 0.45f), RoundedCornerShape(10.dp))
                                 .padding(horizontal = 10.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             CircularProgressIndicator(
                                 modifier = Modifier.size(16.dp),
                                 strokeWidth = 2.dp,
-                                color = Indigo
+                                color = glass.accent
                             )
                             Spacer(Modifier.size(8.dp))
                             Text(
                                 optPackProgress ?: "",
-                                color = Indigo,
+                                color = glass.accent,
                                 fontSize = 11.5.sp,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                style = HorizonTabularStyle
                             )
                         }
                     }
 
                     Spacer(Modifier.height(8.dp))
-                    // Hiển thị danh sách các Mod tối ưu kết hợp trong gói
-                    val displayedItems = if (showAllOptMods) optBundle else optBundle.take(6)
-                    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    // Hiển thị danh sách các Mod tối ưu kết hợp trong gói (đưa Mod đang bật lên đầu)
+                    val sortedOptBundle = remember(optBundle, optPackStatus.enabledModIds, optPackStatus.installedModIds) {
+                        optBundle.sortedWith(
+                            compareByDescending<com.mineserve.mobile.server.PluginManager.ServerOptimizationModItem> { it.id in optPackStatus.enabledModIds }
+                                .thenByDescending { it.id in optPackStatus.installedModIds }
+                        )
+                    }
+                    val displayedItems = if (showAllOptMods) sortedOptBundle else sortedOptBundle.take(6)
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         displayedItems.forEach { item ->
                             val isEnabledNow = item.id in optPackStatus.enabledModIds
                             val isInstalledNow = item.id in optPackStatus.installedModIds
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(if (isEnabledNow) MintSoft.copy(alpha = 0.65f) else FieldGray)
-                                    .padding(horizontal = 9.dp, vertical = 6.dp),
+                                    .clip(RoundedCornerShape(11.dp))
+                                    .background(glass.glassRow)
+                                    .border(
+                                        1.dp,
+                                        if (isEnabledNow || isInstalledNow) glass.liveGreen.copy(alpha = 0.50f) else glass.hairline,
+                                        RoundedCornerShape(11.dp)
+                                    )
+                                    .padding(horizontal = 10.dp, vertical = 7.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 AddonJarIcon(
@@ -799,13 +1092,14 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                                         )
                                         Box(
                                             modifier = Modifier
-                                                .clip(RoundedCornerShape(5.dp))
-                                                .background(IndigoSoft)
-                                                .padding(horizontal = 5.dp, vertical = 1.dp)
+                                                .clip(CircleShape)
+                                                .background(glass.accentSoft)
+                                                .border(1.dp, glass.accent.copy(alpha = 0.35f), CircleShape)
+                                                .padding(horizontal = 6.dp, vertical = 1.5.dp)
                                         ) {
                                             Text(
                                                 item.impactBadge,
-                                                color = Indigo,
+                                                color = glass.accent,
                                                 fontSize = 9.5.sp,
                                                 fontWeight = FontWeight.ExtraBold,
                                                 maxLines = 1
@@ -813,13 +1107,14 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                                         }
                                         Box(
                                             modifier = Modifier
-                                                .clip(RoundedCornerShape(5.dp))
-                                                .background(MintSoft)
-                                                .padding(horizontal = 5.dp, vertical = 1.dp)
+                                                .clip(CircleShape)
+                                                .background(glass.liveGreenSoft)
+                                                .border(1.dp, glass.liveGreen.copy(alpha = 0.35f), CircleShape)
+                                                .padding(horizontal = 6.dp, vertical = 1.5.dp)
                                         ) {
                                             Text(
                                                 item.categoryBadge,
-                                                color = Mint,
+                                                color = glass.liveGreen,
                                                 fontSize = 9.5.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 maxLines = 1
@@ -829,24 +1124,24 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                                     AddonSideBadge(if (item.id == "fabric-api") AddonSide.LIBRARY else AddonSide.SERVER_ONLY)
                                     Text(
                                         item.descriptionVi,
-                                        color = Muted,
-                                        fontSize = 10.5.sp,
-                                        lineHeight = 14.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontSize = 11.sp,
+                                        lineHeight = 15.6.sp, // 1.42x Vietnamese description line-height
                                         maxLines = 2,
                                         overflow = TextOverflow.Ellipsis
                                     )
                                 }
                                 Spacer(Modifier.size(6.dp))
-                                Text(
-                                    when {
-                                        isEnabledNow -> "🟢 Đang bật"
-                                        isInstalledNow -> "⏸ Lưu sẵn"
-                                        else -> "⚡ Sẵn sàng"
-                                    },
-                                    color = if (isEnabledNow) Mint else Muted,
-                                    fontSize = 10.5.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
+                                when {
+                                    isEnabledNow -> InstalledEmeraldPill(isEnabled = true)
+                                    isInstalledNow -> InstalledEmeraldPill(isEnabled = false, disabledText = "⏸ Lưu sẵn")
+                                    else -> Text(
+                                        "⚡ Sẵn sàng",
+                                        color = Muted,
+                                        fontSize = 10.5.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
                             }
                         }
                     }
@@ -857,9 +1152,10 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                     ) {
                         Text(
                             if (showAllOptMods) "Thu gọn danh sách ▲" else "Xem đủ ${optBundle.size} Mod tối ưu cực mạnh ▼",
-                            color = Indigo,
+                            color = glass.accent,
                             fontSize = 11.5.sp,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            style = HorizonTabularStyle
                         )
                     }
 
@@ -876,7 +1172,7 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                             },
                             enabled = !isTogglingOptPack && !isServerRunning,
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (optPackStatus.isPackActive) Coral else Mint
+                                containerColor = if (optPackStatus.isPackActive) glass.dangerCoral else glass.liveGreen
                             ),
                             shape = McShape.ControlCompact,
                             modifier = Modifier.weight(1f)
@@ -889,7 +1185,8 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                                 },
                                 color = Color.White,
                                 fontSize = 12.sp,
-                                fontWeight = FontWeight.ExtraBold
+                                fontWeight = FontWeight.ExtraBold,
+                                style = HorizonTabularStyle
                             )
                         }
                     }
@@ -897,8 +1194,9 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                         Spacer(Modifier.height(4.dp))
                         Text(
                             "⚠️ Hãy dừng Server trước khi bật hoặc tắt Gói Mod Tối Ưu để tránh lỗi sập tiến trình!",
-                            color = Coral,
+                            color = glass.dangerCoral,
                             fontSize = 10.5.sp,
+                            lineHeight = 15.sp,
                             fontWeight = FontWeight.SemiBold
                         )
                     }
@@ -926,7 +1224,8 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(10.dp))
-                                .background(IndigoSoft)
+                                .background(glass.accentSoft)
+                                .border(1.dp, glass.accent.copy(alpha = 0.45f), RoundedCornerShape(10.dp))
                                 .padding(horizontal = 10.dp, vertical = 8.dp),
                             verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
@@ -935,54 +1234,74 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(liveTask.title, fontSize = 11.5.sp, fontWeight = FontWeight.ExtraBold, color = Indigo)
-                                Text("${pct}%", fontSize = 11.5.sp, fontWeight = FontWeight.ExtraBold, color = Mint)
+                                Text(liveTask.title, fontSize = 11.5.sp, fontWeight = FontWeight.ExtraBold, color = glass.accent)
+                                Text("${pct}%", fontSize = 11.5.sp, fontWeight = FontWeight.ExtraBold, color = glass.liveGreen, style = HorizonTabularStyle)
                             }
                             LinearProgressIndicator(
                                 progress = { liveTask.progress.coerceIn(0f, 1f) },
-                                modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(4.dp)),
-                                color = Mint,
-                                trackColor = Indigo.copy(alpha = 0.2f)
+                                modifier = Modifier.fillMaxWidth().height(6.dp).clip(CircleShape),
+                                color = glass.liveGreen,
+                                trackColor = glass.accent.copy(alpha = 0.2f)
                             )
                             if (liveTask.detail.isNotBlank()) {
-                                Text(liveTask.detail, fontSize = 10.sp, color = Muted)
+                                Text(liveTask.detail, fontSize = 10.5.sp, lineHeight = 15.sp, color = Muted, style = HorizonTabularStyle)
                             }
                         }
                     }
 
                     // 1. Simple Voice Chat 1-Tap
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(glass.glassRow)
+                            .border(
+                                1.dp,
+                                if (voiceChatStatus.isInstalled) glass.liveGreen.copy(alpha = 0.55f) else glass.hairline,
+                                RoundedCornerShape(12.dp)
+                            )
+                            .padding(10.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                "🎙️ Đàm Thoại Trong Game 1 Chạm (Simple Voice Chat Pro)",
-                                fontWeight = FontWeight.ExtraBold,
-                                fontSize = 13.sp,
-                                color = Indigo
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    "🎙️ Simple Voice Chat Pro",
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 12.5.sp,
+                                    color = if (voiceChatStatus.isInstalled) glass.liveGreen else glass.accent
+                                )
+                                if (voiceChatStatus.isInstalled) {
+                                    InstalledEmeraldPill(isEnabled = true)
+                                }
+                            }
                             Text(
                                 if (voiceChatStatus.isInstalled) {
-                                    "✅ Đã cài (${voiceChatStatus.fileName}) • Cổng UDP: ${voiceChatStatus.udpPort}"
+                                    "Tệp: ${voiceChatStatus.fileName} • Cổng UDP: ${voiceChatStatus.udpPort}"
                                 } else {
                                     "Tự tải đúng bản Fabric/Forge/NeoForge/Paper & cấu hình sẵn cổng UDP 24454"
                                 },
                                 fontSize = 11.sp,
-                                color = if (voiceChatStatus.isInstalled) Mint else Muted,
-                                fontWeight = if (voiceChatStatus.isInstalled) FontWeight.Bold else FontWeight.Normal
+                                lineHeight = 15.6.sp,
+                                color = if (voiceChatStatus.isInstalled) glass.liveGreen else Muted,
+                                fontWeight = if (voiceChatStatus.isInstalled) FontWeight.SemiBold else FontWeight.Normal,
+                                style = HorizonTabularStyle
                             )
                         }
+                        Spacer(Modifier.size(8.dp))
                         Button(
                             onClick = { vm.installSimpleVoiceChatOneTap() },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (voiceChatStatus.isInstalled) Mint else Indigo
+                                containerColor = if (voiceChatStatus.isInstalled) glass.liveGreen else glass.accent
                             ),
                             shape = McShape.ControlCompact
                         ) {
                             Text(
-                                if (voiceChatStatus.isInstalled) "🔄 Cập nhật Voice" else "🎙️ Cài Ngay 1 Chạm",
+                                if (voiceChatStatus.isInstalled) "🔄 Cập nhật" else "🎙️ Cài 1 Chạm",
                                 color = Color.White,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.ExtraBold
@@ -994,8 +1313,9 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(FieldGray)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(glass.glassRow)
+                            .border(1.dp, glass.hairline, RoundedCornerShape(12.dp))
                             .padding(10.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
@@ -1003,19 +1323,22 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                             "🎨 Xưởng Gắn Resource Pack & Việt Hóa Server (Tự Băm SHA-1 Chuẩn):",
                             fontWeight = FontWeight.ExtraBold,
                             fontSize = 12.sp,
-                            color = Indigo
+                            color = glass.accent
                         )
                         if (resourcePackInfo.url.isNotBlank()) {
                             Text(
-                                "✅ Đang gắn: ${resourcePackInfo.url.take(55)}${if (resourcePackInfo.url.length > 55) "..." else ""}\n🔐 SHA-1: ${resourcePackInfo.sha1.ifBlank { "Tự động" }}",
+                                "✓ Đang gắn: ${resourcePackInfo.url.take(55)}${if (resourcePackInfo.url.length > 55) "..." else ""}\n🔐 SHA-1: ${resourcePackInfo.sha1.ifBlank { "Tự động" }}",
                                 fontSize = 10.5.sp,
-                                color = Mint,
-                                fontWeight = FontWeight.Bold
+                                lineHeight = 15.sp,
+                                color = glass.liveGreen,
+                                fontWeight = FontWeight.Bold,
+                                style = HorizonTabularStyle
                             )
                         } else {
                             Text(
                                 "Chọn nhanh gói có sẵn hoặc dán link .zip để mọi người vào Server tự động được tải về:",
                                 fontSize = 10.5.sp,
+                                lineHeight = 15.sp,
                                 color = Muted
                             )
                         }
@@ -1025,18 +1348,18 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             com.mineserve.mobile.server.ProHostFeatures.RESOURCE_PACK_PRESETS.forEach { preset ->
-                                OutlinedButton(
+                                KhoModGlassPillChip(
+                                    label = preset.titleVi,
+                                    selected = resourcePackInfo.url == preset.url,
+                                    emeraldTint = resourcePackInfo.url == preset.url,
                                     onClick = {
                                         vm.applyServerResourcePackOneTap(
                                             packUrl = preset.url,
                                             promptVi = preset.promptVi,
                                             requirePack = requireRpToggle
                                         )
-                                    },
-                                    shape = RoundedCornerShape(8.dp)
-                                ) {
-                                    Text(preset.titleVi, fontSize = 10.5.sp, fontWeight = FontWeight.ExtraBold)
-                                }
+                                    }
+                                )
                             }
                         }
                         Row(
@@ -1049,7 +1372,14 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                                 onValueChange = { customRpUrl = it },
                                 label = { Text("Hoặc dán link trực tiếp .zip Resource Pack", fontSize = 10.5.sp) },
                                 singleLine = true,
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier.weight(1f),
+                                shape = McShape.ControlCompact,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedContainerColor = glass.glassInput,
+                                    unfocusedContainerColor = glass.glassInput,
+                                    focusedBorderColor = glass.accent,
+                                    unfocusedBorderColor = glass.hairline
+                                )
                             )
                             Button(
                                 onClick = {
@@ -1060,9 +1390,10 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                                     )
                                 },
                                 enabled = customRpUrl.isNotBlank(),
+                                colors = ButtonDefaults.buttonColors(containerColor = glass.accent),
                                 shape = McShape.ControlCompact
                             ) {
-                                Text("Gắn & Băm SHA-1", color = Color.White, fontSize = 10.5.sp, fontWeight = FontWeight.ExtraBold)
+                                Text("Gắn & SHA-1", color = Color.White, fontSize = 10.5.sp, fontWeight = FontWeight.ExtraBold)
                             }
                         }
                         Row(
@@ -1073,6 +1404,7 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                             Text(
                                 "Bắt buộc người chơi phải tải gói tài nguyên (require-resource-pack)",
                                 fontSize = 10.5.sp,
+                                lineHeight = 15.sp,
                                 color = Muted,
                                 modifier = Modifier.weight(1f)
                             )
@@ -1145,15 +1477,15 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                 }
             }
 
-            // ── 4 Phân mục Tài nguyên: Plugin / Mod / Gói Mod & ZIP / Gói Tài Nguyên ──
+            // ── 4 Phân mục Tài nguyên: Plugin / Mod / Gói Mod & ZIP / Gói Tài Nguyên (BlockWay Frosted Sub-Tabs) ──
             if (config.installedCores.isNotEmpty() && activeCore != null && availableTypes.isNotEmpty()) {
                 val types = availableTypes
-                SegmentedTabs(
+                KhoModSubTabRail(
                     options = types.map { type ->
                         when (type) {
                             ResourceType.Plugin -> if (installedPlugins.isNotEmpty()) "${type.titleVi} (${installedPlugins.size})" else type.titleVi
                             ResourceType.Mod -> if (mods.isNotEmpty()) "${type.titleVi} (${mods.size})" else type.titleVi
-                            ResourceType.Modpack -> type.titleVi
+                            ResourceType.Modpack -> if (matched56Top > 0) "${type.titleVi} ($matched56Top/56)" else type.titleVi
                             ResourceType.ResourcePack -> type.titleVi
                         }
                     },
@@ -1165,10 +1497,10 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                 // ── 标签切换栏（仅插件分类显示） ──
                 if (resourceType == ResourceType.Plugin && ResourceType.Plugin in availableTypes) {
                     val tabs = PluginTab.values()
-                    SegmentedTabs(
+                    KhoModSubTabRail(
                         options = tabs.map { tab ->
                             val count = if (tab == PluginTab.Installed) installedPlugins.size else 0
-                            if (count > 0) "${stringResource(tab.labelRes)} $count" else stringResource(tab.labelRes)
+                            if (count > 0) "${stringResource(tab.labelRes)} ($count)" else stringResource(tab.labelRes)
                         },
                         selectedIndex = tabs.indexOf(activeTab),
                         modifier = Modifier.padding(horizontal = McSpacing.Page, vertical = 4.dp),
@@ -1267,8 +1599,9 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                             stringResource(R.string.s760)
                         else
                             stringResource(R.string.s761),
-                        color = if (isServerRunning) Muted else Coral,
-                        fontSize = 11.sp
+                        color = if (isServerRunning) Muted else glass.dangerCoral,
+                        fontSize = 11.sp,
+                        lineHeight = 15.6.sp
                     )
                     Spacer(Modifier.height(10.dp))
                     Button(
@@ -1278,8 +1611,8 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                         },
                         enabled = isServerRunning,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Indigo,
-                            disabledContainerColor = IndigoSoft
+                            containerColor = glass.accent,
+                            disabledContainerColor = glass.accentSoft
                         ),
                         shape = McShape.Control,
                         modifier = Modifier.fillMaxWidth()
@@ -1299,7 +1632,8 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
             Text(
                 stringResource(R.string.s764),
                 color = Muted,
-                fontSize = 10.sp,
+                fontSize = 10.5.sp,
+                lineHeight = 15.sp,
                 modifier = Modifier.padding(horizontal = 20.dp)
             )
 
@@ -1309,38 +1643,45 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                 Text(
                     stringResource(R.string.s766),
                     color = Muted,
-                    fontSize = 10.sp
+                    fontSize = 10.5.sp,
+                    lineHeight = 15.sp
                 )
                 Spacer(Modifier.height(8.dp))
-                val context = LocalContext.current
-                pluginSites.forEach { site ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                try {
-                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(site.url)))
-                                } catch (e: Exception) { /* 无浏览器时忽略 */ }
+                val siteContext = LocalContext.current
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    pluginSites.forEach { site ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(glass.glassRow)
+                                .border(1.dp, glass.hairline, RoundedCornerShape(12.dp))
+                                .clickable {
+                                    try {
+                                        siteContext.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(site.url)))
+                                    } catch (e: Exception) { /* 无浏览器时忽略 */ }
+                                }
+                                .padding(horizontal = 12.dp, vertical = 9.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(site.name, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Text(
+                                    stringResource(site.descRes),
+                                    color = Muted,
+                                    fontSize = 10.5.sp,
+                                    lineHeight = 15.sp,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                             }
-                            .padding(vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(site.name, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                            Text(
-                                stringResource(site.descRes),
-                                color = Muted,
-                                fontSize = 10.sp,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
+                            Icon(
+                                Icons.AutoMirrored.Outlined.OpenInNew,
+                                contentDescription = stringResource(R.string.s767),
+                                tint = glass.accent,
+                                modifier = Modifier.size(15.dp)
                             )
                         }
-                        Icon(
-                            Icons.AutoMirrored.Outlined.OpenInNew,
-                            contentDescription = stringResource(R.string.s767),
-                            tint = Indigo,
-                            modifier = Modifier.size(14.dp)
-                        )
                     }
                 }
             }
@@ -1364,12 +1705,15 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
     pendingModDelete?.let { mod ->
         AlertDialog(
             onDismissRequest = { pendingModDelete = null },
+            containerColor = glass.glassChrome,
+            shape = McShape.Dialog,
             title = { Text(stringResource(R.string.s768), fontWeight = FontWeight.Bold) },
             text = {
                 Text(
                     stringResource(R.string.s769, mod.baseName),
                     color = Muted,
-                    fontSize = 12.sp
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp
                 )
             },
             confirmButton = {
@@ -1377,7 +1721,7 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                     vm.deleteMod(mod.fileName)
                     pendingModDelete = null
                 }) {
-                    Text(stringResource(R.string.s339), color = Coral, fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(R.string.s339), color = glass.dangerCoral, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
@@ -1397,7 +1741,7 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
     }
 }
 
-// ── 已安装标签 ──────────────────────────────────────────────────────
+// ── 已安装标签 (BlockWay Horizon Glass) ────────────────────────────────────
 
 @Composable
 private fun InstalledTab(
@@ -1409,10 +1753,18 @@ private fun InstalledTab(
     onDelete: (PluginManager.InstalledPlugin) -> Unit,
     onShowDetail: (PluginManager.InstalledPlugin) -> Unit
 ) {
+    val glass = HorizonGlass
     var searchQuery by remember { mutableStateOf("") }
     var activeFilter by remember { mutableStateOf(InstalledFilter.All) }
 
-    McCard(title = stringResource(R.string.s390)) {
+    McCard(
+        title = stringResource(R.string.s390),
+        trailing = {
+            if (installed.isNotEmpty()) {
+                InstalledEmeraldPill(isEnabled = true)
+            }
+        }
+    ) {
         if (!activeCoreExists) {
             EmptyHint(icon = Icons.Outlined.Extension, text = stringResource(R.string.s770))
             return@McCard
@@ -1425,7 +1777,7 @@ private fun InstalledTab(
         // 服务端运行中禁止启用/禁用或删除插件（文件正被 JVM 占用，改动不会生效且易损坏）
         if (serverRunning) {
             Spacer(Modifier.height(6.dp))
-            Text(stringResource(R.string.pl_running_block), color = Coral, fontSize = 11.sp, lineHeight = 15.sp)
+            Text(stringResource(R.string.pl_running_block), color = glass.dangerCoral, fontSize = 11.sp, lineHeight = 15.6.sp)
         }
 
         // 插件冲突警告
@@ -1434,37 +1786,37 @@ private fun InstalledTab(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(Coral.copy(alpha = 0.12f))
-                    .border(1.dp, Coral, RoundedCornerShape(10.dp))
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(glass.dangerCoralSoft)
+                    .border(1.dp, glass.dangerCoral.copy(alpha = 0.65f), RoundedCornerShape(12.dp))
                     .padding(10.dp)
             ) {
-                Column {
-                    Text(stringResource(R.string.pl_conflict_title), color = Coral, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(stringResource(R.string.pl_conflict_title), color = glass.dangerCoral, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     conflicts.forEach { c ->
-                        Text("• $c", color = Coral, fontSize = 10.sp, lineHeight = 14.sp)
+                        Text("• $c", color = glass.dangerCoral, fontSize = 10.5.sp, lineHeight = 15.sp)
                     }
                 }
             }
         }
 
-        // 搜索框
-        OutlinedTextField(
+        Spacer(Modifier.height(6.dp))
+
+        // BlockWay Frosted Search Pill
+        KhoModSearchPill(
             value = searchQuery,
             onValueChange = { searchQuery = it },
-            placeholder = { Text(stringResource(R.string.s772), fontSize = 11.sp) },
-            leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null, modifier = Modifier.size(16.dp)) },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-            shape = McShape.ControlCompact
+            placeholder = stringResource(R.string.s772),
+            modifier = Modifier.fillMaxWidth()
         )
 
         Spacer(Modifier.height(8.dp))
 
-        // 筛选标签
-        Row(
+        // Frosted Filter Pills
+        FlowRow(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             InstalledFilter.values().forEach { filter ->
                 val count = when (filter) {
@@ -1473,35 +1825,27 @@ private fun InstalledTab(
                     InstalledFilter.Disabled -> installed.count { !it.isEnabled }
                     InstalledFilter.Local -> installed.count { it.sourceTag == "本地" || it.sourceTag == "Cục bộ" || it.sourceTag == "Local" }
                 }
-                val label = "${stringResource(filter.labelRes)} $count"
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(if (activeFilter == filter) Indigo else IndigoSoft)
-                        .clickable { activeFilter = filter }
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Text(
-                        label,
-                        color = if (activeFilter == filter) Color.White else Muted,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
+                KhoModGlassPillChip(
+                    label = "${stringResource(filter.labelRes)} ($count)",
+                    selected = activeFilter == filter,
+                    emeraldTint = filter == InstalledFilter.Enabled,
+                    onClick = { activeFilter = filter }
+                )
             }
         }
 
         Spacer(Modifier.height(10.dp))
 
-        // 过滤 + 搜索
-        val filtered = remember(installed, activeFilter, searchQuery) { installed.filter { p ->
-            (activeFilter == InstalledFilter.All ||
-                (activeFilter == InstalledFilter.Enabled && p.isEnabled) ||
-                (activeFilter == InstalledFilter.Disabled && !p.isEnabled) ||
-                (activeFilter == InstalledFilter.Local && (p.sourceTag == "本地" || p.sourceTag == "Cục bộ" || p.sourceTag == "Local"))) &&
-                (searchQuery.isBlank() || p.baseName.contains(searchQuery, ignoreCase = true) ||
-                    (p.meta?.name?.contains(searchQuery, ignoreCase = true) == true))
-        }
+        // 过滤 + 搜索 (Đưa plugin đang bật lên đầu danh sách)
+        val filtered = remember(installed, activeFilter, searchQuery) {
+            installed.filter { p ->
+                (activeFilter == InstalledFilter.All ||
+                    (activeFilter == InstalledFilter.Enabled && p.isEnabled) ||
+                    (activeFilter == InstalledFilter.Disabled && !p.isEnabled) ||
+                    (activeFilter == InstalledFilter.Local && (p.sourceTag == "本地" || p.sourceTag == "Cục bộ" || p.sourceTag == "Local"))) &&
+                    (searchQuery.isBlank() || p.baseName.contains(searchQuery, ignoreCase = true) ||
+                        (p.meta?.name?.contains(searchQuery, ignoreCase = true) == true))
+            }.sortedByDescending { it.isEnabled }
         }
 
         if (filtered.isEmpty()) {
@@ -1510,7 +1854,7 @@ private fun InstalledTab(
         }
 
         LazyColumn(
-            modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(max = 440.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(filtered, key = { it.fileName }) { p ->
@@ -1534,13 +1878,19 @@ private fun InstalledPluginRow(
     onDelete: () -> Unit,
     onShowDetail: () -> Unit
 ) {
+    val glass = HorizonGlass
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(if (plugin.isEnabled) IndigoSoft else CoralSoft.copy(alpha = 0.4f))
+            .clip(RoundedCornerShape(12.dp))
+            .background(glass.glassRow)
+            .border(
+                width = 1.dp,
+                color = if (plugin.isEnabled) glass.liveGreen.copy(alpha = 0.52f) else glass.hairline,
+                shape = RoundedCornerShape(12.dp)
+            )
             .clickable { onShowDetail() }
-            .padding(10.dp),
+            .padding(horizontal = 11.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         AddonJarIcon(
@@ -1548,27 +1898,32 @@ private fun InstalledPluginRow(
             baseName = plugin.meta?.name ?: plugin.baseName,
             slugHint = plugin.meta?.name ?: plugin.baseName,
             isEnabled = plugin.isEnabled,
-            size = 36.dp
+            size = 38.dp
         )
         Spacer(Modifier.size(10.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(3.dp)
+            ) {
                 Text(
                     plugin.meta?.name ?: plugin.baseName,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 12.5.sp,
+                    fontWeight = FontWeight.ExtraBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     color = if (plugin.isEnabled) MaterialTheme.colorScheme.onSurface else Muted
                 )
                 if (plugin.meta?.version != null) {
-                    Spacer(Modifier.size(4.dp))
                     Text(
                         "v${plugin.meta.version}",
-                        color = Muted,
-                        fontSize = 9.sp
+                        color = glass.accent,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        style = HorizonTabularStyle
                     )
                 }
+                InstalledEmeraldPill(isEnabled = plugin.isEnabled)
             }
             val metaLine = buildString {
                 append(plugin.sizeText)
@@ -1581,29 +1936,35 @@ private fun InstalledPluginRow(
             Text(
                 metaLine,
                 color = Muted,
-                fontSize = 10.sp,
+                fontSize = 10.5.sp,
+                style = HorizonTabularStyle,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            AddonInfoLines(rememberPluginInfo(plugin), modifier = Modifier.padding(top = 3.dp), descMaxLines = 2)
+            KhoModDescriptionBlock(
+                rememberPluginInfo(plugin),
+                modifier = Modifier.padding(top = 3.dp),
+                descMaxLines = 2
+            )
         }
         // 详情按钮
         Box(
             modifier = Modifier
                 .size(McIcon.TouchCompact)
                 .clip(McShape.ControlCompact)
-                .background(Color.Transparent)
+                .background(glass.accentSoft)
                 .clickable { onShowDetail() },
             contentAlignment = Alignment.Center
         ) {
-            Icon(Icons.Outlined.Info, contentDescription = stringResource(R.string.s734), tint = Indigo, modifier = Modifier.size(McIcon.Inline))
+            Icon(Icons.Outlined.Info, contentDescription = stringResource(R.string.s734), tint = glass.accent, modifier = Modifier.size(McIcon.Inline))
         }
+        Spacer(Modifier.size(4.dp))
         // 启用/禁用开关
         Switch(
             checked = plugin.isEnabled,
             onCheckedChange = { onToggle() },
             enabled = enabled,
-            modifier = Modifier.size(width = 36.dp, height = 20.dp)
+            modifier = Modifier.size(width = 38.dp, height = 22.dp)
         )
         Spacer(Modifier.size(6.dp))
         // 删除按钮
@@ -1611,16 +1972,17 @@ private fun InstalledPluginRow(
             modifier = Modifier
                 .size(McIcon.TouchCompact)
                 .clip(McShape.ControlCompact)
-                .background(CoralSoft)
+                .background(glass.dangerCoralSoft)
+                .border(1.dp, glass.dangerCoral.copy(alpha = 0.40f), McShape.ControlCompact)
                 .clickable(enabled = enabled) { onDelete() },
             contentAlignment = Alignment.Center
         ) {
-            Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.s339), tint = Coral, modifier = Modifier.size(McIcon.Inline))
+            Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.s339), tint = glass.dangerCoral, modifier = Modifier.size(McIcon.Inline))
         }
     }
 }
 
-// ── 本地上传标签 ────────────────────────────────────────────────────
+// ── 本地上传标签 (BlockWay Horizon Glass) ──────────────────────────────────
 
 @Composable
 private fun UploadTab(
@@ -1630,6 +1992,7 @@ private fun UploadTab(
     onInstallFromUrl: (String, String) -> Unit,
     onGotoInstalled: () -> Unit
 ) {
+    val glass = HorizonGlass
     // SAF 文件选择器
     val filePickerLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -1648,56 +2011,59 @@ private fun UploadTab(
         Text(
             stringResource(R.string.s793),
             color = Muted,
-            fontSize = 11.sp
+            fontSize = 11.sp,
+            lineHeight = 15.6.sp
         )
         Spacer(Modifier.height(4.dp))
         Text(
             stringResource(R.string.s794),
             color = Muted,
-            fontSize = 10.sp
+            fontSize = 10.5.sp,
+            lineHeight = 15.sp
         )
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(14.dp))
 
-        // 大按钮区
+        // 大按钮区 (Frosted Glass Dropzone)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(120.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(IndigoSoft)
-                .border(width = 1.dp, color = Indigo, shape = McShape.Control)
+                .clip(RoundedCornerShape(14.dp))
+                .background(glass.accentSoft)
+                .border(width = 1.2.dp, color = glass.accent.copy(alpha = 0.65f), shape = RoundedCornerShape(14.dp))
                 .clickable {
                     filePickerLauncher.launch(arrayOf("application/java-archive", "application/octet-stream", "*/*"))
                 },
             contentAlignment = Alignment.Center
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(Icons.Outlined.CloudUpload, contentDescription = stringResource(R.string.s497), tint = Indigo, modifier = Modifier.size(36.dp))
+                Icon(Icons.Outlined.CloudUpload, contentDescription = stringResource(R.string.s497), tint = glass.accent, modifier = Modifier.size(36.dp))
                 Spacer(Modifier.size(8.dp))
-                Text(stringResource(R.string.s795), color = Indigo, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                Text(stringResource(R.string.s795), color = glass.accent, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
                 Spacer(Modifier.size(2.dp))
-                Text(stringResource(R.string.s796), color = Muted, fontSize = 10.sp)
+                Text(stringResource(R.string.s796), color = Muted, fontSize = 10.5.sp)
             }
         }
 
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(18.dp))
 
         // 分隔线
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(modifier = Modifier.weight(1f).height(1.dp).background(IndigoSoft))
+            Box(modifier = Modifier.weight(1f).height(1.dp).background(glass.hairline))
             Text(stringResource(R.string.s797), color = Muted, fontSize = 10.sp, modifier = Modifier.padding(horizontal = 8.dp))
-            Box(modifier = Modifier.weight(1f).height(1.dp).background(IndigoSoft))
+            Box(modifier = Modifier.weight(1f).height(1.dp).background(glass.hairline))
         }
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(14.dp))
 
         // 自定义 URL 下载
-        Text(stringResource(R.string.s798), color = Indigo, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        Text(stringResource(R.string.s798), color = glass.accent, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(4.dp))
         Text(
             stringResource(R.string.s799),
             color = Muted,
-            fontSize = 10.sp
+            fontSize = 10.5.sp,
+            lineHeight = 15.sp
         )
         Spacer(Modifier.height(8.dp))
 
@@ -1705,11 +2071,17 @@ private fun UploadTab(
             value = customUrl,
             onValueChange = { customUrl = it },
             label = { Text(stringResource(R.string.s800), fontSize = 11.sp) },
-            leadingIcon = { Icon(Icons.Outlined.Link, contentDescription = null, modifier = Modifier.size(14.dp)) },
+            leadingIcon = { Icon(Icons.Outlined.Link, contentDescription = null, tint = glass.accent, modifier = Modifier.size(14.dp)) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
             shape = McShape.ControlCompact,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri)
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedContainerColor = glass.glassInput,
+                unfocusedContainerColor = glass.glassInput,
+                focusedBorderColor = glass.accent,
+                unfocusedBorderColor = glass.hairline
+            )
         )
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(
@@ -1718,7 +2090,13 @@ private fun UploadTab(
             label = { Text(stringResource(R.string.s801), fontSize = 11.sp) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
-            shape = McShape.ControlCompact
+            shape = McShape.ControlCompact,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedContainerColor = glass.glassInput,
+                unfocusedContainerColor = glass.glassInput,
+                focusedBorderColor = glass.accent,
+                unfocusedBorderColor = glass.hairline
+            )
         )
 
         // 自定义 URL 下载进度
@@ -1726,17 +2104,17 @@ private fun UploadTab(
             Spacer(Modifier.height(8.dp))
             LinearProgressIndicator(
                 progress = { customUrlProgress.percent / 100f },
-                modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
-                color = Mint,
-                trackColor = IndigoSoft
+                modifier = Modifier.fillMaxWidth().height(5.dp).clip(CircleShape),
+                color = glass.liveGreen,
+                trackColor = glass.accentSoft
             )
             Spacer(Modifier.height(4.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text("${customUrlProgress.percent}%", color = Indigo, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
-                Text(customUrlProgress.speedText, color = Muted, fontSize = 10.sp)
+                Text("${customUrlProgress.percent}%", color = glass.accent, fontSize = 10.5.sp, fontWeight = FontWeight.Bold, style = HorizonTabularStyle)
+                Text(customUrlProgress.speedText, color = Muted, fontSize = 10.5.sp, style = HorizonTabularStyle)
             }
         }
 
@@ -1746,22 +2124,23 @@ private fun UploadTab(
                 onInstallFromUrl(customUrl.trim(), customName.trim())
             },
             enabled = customUrl.isNotBlank() && customName.isNotBlank() && customUrlProgress == null,
-            colors = ButtonDefaults.buttonColors(containerColor = Indigo),
+            colors = ButtonDefaults.buttonColors(containerColor = glass.accent),
             shape = McShape.ControlCompact,
             modifier = Modifier.fillMaxWidth()
         ) {
             Icon(Icons.Outlined.Link, contentDescription = null, modifier = Modifier.size(14.dp))
             Spacer(Modifier.size(4.dp))
-            Text(stringResource(R.string.s486), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.s486), color = Color.White, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
         }
 
         Spacer(Modifier.height(12.dp))
         OutlinedButton(
             onClick = onGotoInstalled,
             shape = McShape.ControlCompact,
+            border = BorderStroke(1.dp, glass.hairline),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text(stringResource(R.string.s802), color = Indigo, fontSize = 11.sp)
+            Text(stringResource(R.string.s802), color = glass.accent, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
         }
     }
 }
@@ -1774,36 +2153,47 @@ private fun DeletePluginDialog(
     onConfirm: (Boolean) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val glass = HorizonGlass
     var alsoRemoveData by remember { mutableStateOf(true) }
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = glass.glassChrome,
+        shape = McShape.Dialog,
         title = { Text(stringResource(R.string.s803), fontWeight = FontWeight.Bold) },
         text = {
             Column {
-                Text(stringResource(R.string.s804), fontSize = 13.sp)
+                Text(stringResource(R.string.s804), fontSize = 13.sp, lineHeight = 18.sp)
                 Spacer(Modifier.height(6.dp))
                 Text(
                     plugin.fileName,
-                    color = Indigo,
+                    color = glass.accent,
                     fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold
+                    fontWeight = FontWeight.Bold
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
                     stringResource(R.string.s805, plugin.sizeText, plugin.lastModifiedText),
                     color = Muted,
-                    fontSize = 10.sp
+                    fontSize = 10.5.sp,
+                    style = HorizonTabularStyle
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
                     stringResource(R.string.s806),
-                    color = Coral,
-                    fontSize = 10.sp
+                    color = glass.dangerCoral,
+                    fontSize = 10.5.sp,
+                    lineHeight = 15.sp
                 )
                 Spacer(Modifier.height(12.dp))
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.clickable { alsoRemoveData = !alsoRemoveData }
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(glass.glassRow)
+                        .border(1.dp, glass.hairline, RoundedCornerShape(10.dp))
+                        .clickable { alsoRemoveData = !alsoRemoveData }
+                        .padding(8.dp)
                 ) {
                     Checkbox(
                         checked = alsoRemoveData,
@@ -1811,14 +2201,14 @@ private fun DeletePluginDialog(
                     )
                     Spacer(Modifier.size(4.dp))
                     Column {
-                        Text(stringResource(R.string.s807), fontSize = 12.sp)
+                        Text(stringResource(R.string.s807), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                         Text(
                             if (plugin.meta?.name != null)
                                 stringResource(R.string.s808, plugin.meta.name)
                             else
                                 stringResource(R.string.s809),
                             color = Muted,
-                            fontSize = 10.sp
+                            fontSize = 10.5.sp
                         )
                     }
                 }
@@ -1827,12 +2217,12 @@ private fun DeletePluginDialog(
         confirmButton = {
             Button(
                 onClick = { onConfirm(alsoRemoveData) },
-                colors = ButtonDefaults.buttonColors(containerColor = Coral),
+                colors = ButtonDefaults.buttonColors(containerColor = glass.dangerCoral),
                 shape = McShape.Control
-            ) { Text(stringResource(R.string.s339), color = Color.White) }
+            ) { Text(stringResource(R.string.s339), color = Color.White, fontWeight = FontWeight.Bold) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.s402)) }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.s402), color = Muted) }
         }
     )
 }
@@ -1842,13 +2232,15 @@ private fun PluginDetailDialog(
     plugin: PluginManager.InstalledPlugin,
     onDismiss: () -> Unit
 ) {
+    val glass = HorizonGlass
     val meta = plugin.meta
-    val context = LocalContext.current
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = glass.glassChrome,
+        shape = McShape.Dialog,
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.Extension, contentDescription = null, tint = Indigo, modifier = Modifier.size(20.dp))
+                Icon(Icons.Outlined.Extension, contentDescription = null, tint = glass.accent, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.size(8.dp))
                 Text(stringResource(R.string.s810), fontWeight = FontWeight.Bold)
             }
@@ -1877,7 +2269,8 @@ private fun PluginDetailDialog(
                     Text(
                         stringResource(R.string.s821),
                         color = Muted,
-                        fontSize = 10.sp
+                        fontSize = 10.5.sp,
+                        lineHeight = 15.sp
                     )
                 }
                 DetailRow(stringResource(R.string.s822), plugin.sizeText)
@@ -1887,7 +2280,7 @@ private fun PluginDetailDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.s620)) }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.s620), color = glass.accent, fontWeight = FontWeight.Bold) }
         }
     )
 }
@@ -1896,7 +2289,7 @@ private fun PluginDetailDialog(
 private fun DetailRow(label: String, value: String) {
     Column(modifier = Modifier.padding(vertical = 4.dp)) {
         Text(label, color = Muted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
-        Text(value, fontSize = 11.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
+        Text(value, fontSize = 11.5.sp, lineHeight = 16.3.sp, style = HorizonTabularStyle, maxLines = 4, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -1906,15 +2299,16 @@ private fun DetailRow(label: String, value: String) {
 private fun BadgeChip(text: String, color: Color, bg: Color) {
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(6.dp))
+            .clip(CircleShape)
             .background(bg)
-            .padding(horizontal = 7.dp, vertical = 3.dp)
+            .border(1.dp, color.copy(alpha = 0.45f), CircleShape)
+            .padding(horizontal = 8.dp, vertical = 3.dp)
     ) {
-        Text(text, color = color, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        Text(text, color = color, fontSize = 10.5.sp, fontWeight = FontWeight.Bold, style = HorizonTabularStyle)
     }
 }
 
-// ── 模组分类 ──────────────────────────────────────────────────────
+// ── 模组分类 (BlockWay Horizon Glass Kho Mod) ──────────────────────────────
 
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
@@ -1940,6 +2334,7 @@ private fun ModsTab(
     onLoadMoreModrinth: () -> Unit,
     isLoadingMore: Boolean
 ) {
+    val glass = HorizonGlass
     var detailHit by remember { mutableStateOf<PluginManager.ModrinthHit?>(null) }
     var modrinthQuery by remember { mutableStateOf("") }
     var selectedModCategory by remember { mutableStateOf("") }
@@ -1960,7 +2355,7 @@ private fun ModsTab(
         ActivityResultContracts.OpenDocument()
     ) { uri -> uri?.let(onUpload) }
 
-    // 已安装模组 (Quản lý Mod trực quan + Lọc Bật/Tắt + Công tắc có cảnh báo)
+    // 已安装模组 (Quản lý Mod trực quan + Lọc Bật/Tắt + Công tắc có cảnh báo — Đưa Mod đang bật lên đầu)
     val enabledModsCount = mods.count { it.isEnabled }
     val disabledModsCount = mods.count { !it.isEnabled }
     val totalModsBytes = remember(mods) { mods.sumOf { it.sizeBytes } }
@@ -1977,19 +2372,24 @@ private fun ModsTab(
                 mod.fileName.contains(installedModSearch, ignoreCase = true) ||
                 (mod.displayName?.contains(installedModSearch, ignoreCase = true) == true)
             matchFilter && matchQuery
-        }
+        }.sortedByDescending { it.isEnabled }
     }
 
     McCard(
         title = if (mods.isEmpty()) {
             stringResource(R.string.s828)
         } else {
-            "🧩 Quản lý Mod trực quan (${mods.size} Mod • 💾 ${vm.formatStorageBytes(totalModsBytes)})"
+            "🧩 Quản lý Mod (${mods.size} Mod • 💾 ${vm.formatStorageBytes(totalModsBytes)})"
+        },
+        trailing = {
+            if (mods.isNotEmpty()) {
+                InstalledEmeraldPill(isEnabled = enabledModsCount > 0, disabledText = "⏸ Tạm tắt")
+            }
         }
     ) {
         if (serverRunning) {
             // 服务端运行中禁止启用/禁用或删除模组（文件正被 JVM 占用，改动不会生效且易损坏）
-            Text(stringResource(R.string.pl_running_block), color = Coral, fontSize = 11.sp, lineHeight = 15.sp)
+            Text(stringResource(R.string.pl_running_block), color = glass.dangerCoral, fontSize = 11.sp, lineHeight = 15.6.sp)
             Spacer(Modifier.height(6.dp))
         }
         if (mods.isEmpty()) {
@@ -1997,6 +2397,7 @@ private fun ModsTab(
                 stringResource(R.string.s829),
                 color = Muted,
                 fontSize = 12.sp,
+                lineHeight = 17.sp,
                 modifier = Modifier.padding(vertical = 8.dp)
             )
         } else {
@@ -2005,29 +2406,34 @@ private fun ModsTab(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(Color(0xFF064E3B).copy(alpha = 0.25f))
-                    .border(1.dp, Color(0xFF10B981), RoundedCornerShape(12.dp))
-                    .padding(10.dp),
+                    .horizonGlassPlate(
+                        shape = RoundedCornerShape(14.dp),
+                        containerColor = glass.liveGreenSoft,
+                        borderColor = glass.liveGreen.copy(alpha = 0.55f),
+                        highlighted = true
+                    )
+                    .padding(11.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Text(
                     "🛠️ Bác Sĩ Tự Động Sửa Lỗi Mod (Chống Văng Server FormattedException)",
                     fontWeight = FontWeight.ExtraBold,
                     fontSize = 12.sp,
-                    color = Color(0xFF34D399)
+                    color = glass.liveGreen
                 )
                 Text(
                     "Tự động mổ xẻ toàn bộ ${mods.size} tệp .jar: tải bù thư viện thiếu (Fabric API...), thay thế hoặc tạm tắt các Mod bị lệch phiên bản Minecraft ($currentServerVersion) chỉ với 1 chạm:",
                     fontSize = 11.sp,
-                    lineHeight = 14.5.sp
+                    lineHeight = 15.6.sp,
+                    style = HorizonTabularStyle
                 )
                 if (modDoctorBusy && !modDoctorProgress.isNullOrBlank()) {
                     Text(
                         modDoctorProgress.orEmpty(),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFFFBBF24)
+                        color = glass.warnAmber,
+                        style = HorizonTabularStyle
                     )
                 }
                 Row(
@@ -2037,8 +2443,8 @@ private fun ModsTab(
                     Button(
                         onClick = { vm.autoFixModCrashAndRestart(autoRestart = true) },
                         enabled = !serverRunning && !modDoctorBusy,
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF059669), contentColor = Color.White),
-                        shape = RoundedCornerShape(9.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = glass.liveGreen, contentColor = Color.White),
+                        shape = RoundedCornerShape(10.dp),
                         modifier = Modifier.weight(1.3f)
                     ) {
                         Text(
@@ -2050,10 +2456,11 @@ private fun ModsTab(
                     OutlinedButton(
                         onClick = { vm.autoFixModCrashAndRestart(autoRestart = false) },
                         enabled = !serverRunning && !modDoctorBusy,
-                        shape = RoundedCornerShape(9.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, glass.liveGreen.copy(alpha = 0.55f)),
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("🔧 Chỉ Quét & Sửa", fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
+                        Text("🔧 Chỉ Quét & Sửa", color = glass.liveGreen, fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
                     }
                 }
             }
@@ -2106,26 +2513,29 @@ private fun ModsTab(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(bottom = 8.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(CoralSoft)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(glass.dangerCoralSoft)
+                        .border(1.dp, glass.dangerCoral.copy(alpha = 0.55f), RoundedCornerShape(12.dp))
                         .padding(10.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Text(
                         "🤖 Trợ lý Thông Minh phát hiện ${disabledCoreLibs.size} Thư viện Lõi đang bị tắt (${disabledCoreLibs.joinToString { it.baseName }})",
-                        color = Coral,
+                        color = glass.dangerCoral,
                         fontSize = 11.5.sp,
-                        fontWeight = FontWeight.ExtraBold
+                        fontWeight = FontWeight.ExtraBold,
+                        style = HorizonTabularStyle
                     )
                     Text(
                         "Khi đang bật các Mod khác mà tắt Thư viện Lõi (như Fabric API, Architectury, Balm...), Server sẽ báo lỗi thiếu thư viện khi khởi động.",
                         color = MaterialTheme.colorScheme.onSurface,
-                        fontSize = 11.sp
+                        fontSize = 11.sp,
+                        lineHeight = 15.6.sp
                     )
                     Button(
                         onClick = { vm.runSmartAutoOptimization() },
                         enabled = !serverRunning,
-                        colors = ButtonDefaults.buttonColors(containerColor = Mint),
+                        colors = ButtonDefaults.buttonColors(containerColor = glass.liveGreen),
                         shape = McShape.ControlCompact,
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -2138,14 +2548,15 @@ private fun ModsTab(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 8.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(IndigoSoft)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(glass.glassRow)
+                    .border(1.dp, glass.hairline, RoundedCornerShape(12.dp))
                     .padding(10.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Text(
                     "⚡ Thao tác nhanh toàn bộ Mod (Có hộp thoại cảnh báo an toàn):",
-                    color = Indigo,
+                    color = glass.accent,
                     fontSize = 11.5.sp,
                     fontWeight = FontWeight.ExtraBold
                 )
@@ -2156,31 +2567,33 @@ private fun ModsTab(
                     Button(
                         onClick = { pendingBulkModAction = "disable_all" },
                         enabled = !serverRunning && enabledModsCount > 0,
-                        colors = ButtonDefaults.buttonColors(containerColor = Coral),
+                        colors = ButtonDefaults.buttonColors(containerColor = glass.dangerCoral),
                         shape = McShape.ControlCompact,
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
                         modifier = Modifier.weight(1f)
                     ) {
                         Text(
-                            "🔴 Tắt toàn bộ Mod ($enabledModsCount)",
+                            "🔴 Tắt toàn bộ ($enabledModsCount)",
                             color = Color.White,
                             fontSize = 11.sp,
-                            fontWeight = FontWeight.ExtraBold
+                            fontWeight = FontWeight.ExtraBold,
+                            style = HorizonTabularStyle
                         )
                     }
                     Button(
                         onClick = { pendingBulkModAction = "enable_all" },
                         enabled = !serverRunning && disabledModsCount > 0,
-                        colors = ButtonDefaults.buttonColors(containerColor = Mint),
+                        colors = ButtonDefaults.buttonColors(containerColor = glass.liveGreen),
                         shape = McShape.ControlCompact,
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
                         modifier = Modifier.weight(1f)
                     ) {
                         Text(
-                            "🟢 Bật toàn bộ Mod ($disabledModsCount)",
+                            "🟢 Bật toàn bộ ($disabledModsCount)",
                             color = Color.White,
                             fontSize = 11.sp,
-                            fontWeight = FontWeight.ExtraBold
+                            fontWeight = FontWeight.ExtraBold,
+                            style = HorizonTabularStyle
                         )
                     }
                 }
@@ -2188,68 +2601,62 @@ private fun ModsTab(
                     onClick = { pendingBulkModAction = "optimize_only" },
                     enabled = !serverRunning && mods.isNotEmpty(),
                     shape = McShape.ControlCompact,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Indigo),
+                    border = BorderStroke(1.dp, glass.accent.copy(alpha = 0.6f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
                         "🤖 Chế độ Thông Minh: Chỉ bật Mod Tối ưu TPS/RAM & Thư viện Lõi",
-                        color = Indigo,
+                        color = glass.accent,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.ExtraBold
                     )
                 }
             }
 
-            // Thanh tìm kiếm & Bộ lọc Tất cả / Đang bật / Đang tắt
-            OutlinedTextField(
+            // BlockWay Search Pill & Frosted Filter Chips
+            KhoModSearchPill(
                 value = installedModSearch,
                 onValueChange = { installedModSearch = it },
-                placeholder = { Text("🔍 Tìm Mod đã cài (VD: Lithium, Macaw, Farmer, Fabric API...)", fontSize = 11.sp) },
-                leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                shape = McShape.ControlCompact
+                placeholder = "Tìm Mod đã cài (VD: Lithium, Macaw, Farmer, Fabric API...)",
+                modifier = Modifier.fillMaxWidth()
             )
             Spacer(Modifier.height(8.dp))
-            Row(
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 listOf(
                     InstalledFilter.All to "📦 Tất cả (${mods.size})",
-                    InstalledFilter.Enabled to "🟢 Đang bật ($enabledModsCount)",
+                    InstalledFilter.Enabled to "✓ Đang bật ($enabledModsCount)",
                     InstalledFilter.Disabled to "⏸ Đang tắt ($disabledModsCount)"
                 ).forEach { (filter, label) ->
-                    val isSelected = installedModFilter == filter
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(if (isSelected) Indigo else IndigoSoft)
-                            .clickable { installedModFilter = filter }
-                            .padding(horizontal = 10.dp, vertical = 5.dp)
-                    ) {
-                        Text(
-                            label,
-                            color = if (isSelected) Color.White else Indigo,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
+                    KhoModGlassPillChip(
+                        label = label,
+                        selected = installedModFilter == filter,
+                        emeraldTint = filter == InstalledFilter.Enabled,
+                        onClick = { installedModFilter = filter }
+                    )
                 }
             }
             Spacer(Modifier.height(8.dp))
 
             LazyColumn(
                 modifier = Modifier.fillMaxWidth().heightIn(max = 460.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
+                verticalArrangement = Arrangement.spacedBy(7.dp)
             ) {
                 items(filteredInstalledMods, key = { it.fileName }) { mod ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(if (mod.isEnabled) MintSoft else CoralSoft.copy(alpha = 0.45f))
-                            .padding(10.dp),
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(glass.glassRow)
+                            .border(
+                                width = 1.dp,
+                                color = if (mod.isEnabled) glass.liveGreen.copy(alpha = 0.52f) else glass.hairline,
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .padding(horizontal = 11.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         AddonJarIcon(
@@ -2263,26 +2670,32 @@ private fun ModsTab(
                         Spacer(Modifier.size(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             val titleText = mod.displayName?.takeIf { it.isNotBlank() } ?: mod.baseName
-                            Text(
-                                titleText,
-                                fontSize = 12.5.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            val statusText = if (mod.isEnabled) "🟢 Đang bật" else "⏸ Đang tắt (.disabled)"
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(3.dp)
+                            ) {
+                                Text(
+                                    titleText,
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                InstalledEmeraldPill(isEnabled = mod.isEnabled)
+                            }
                             val fileSub = if (mod.displayName != null && !mod.displayName.equals(mod.baseName, ignoreCase = true)) {
                                 " · ${mod.baseName}"
                             } else ""
                             Text(
-                                "$statusText · 💾 ${mod.sizeText}$fileSub",
-                                color = if (mod.isEnabled) Mint else Coral,
-                                fontSize = 10.sp,
+                                "💾 ${mod.sizeText}$fileSub",
+                                color = if (mod.isEnabled) glass.liveGreen else Muted,
+                                fontSize = 10.5.sp,
                                 fontWeight = FontWeight.SemiBold,
+                                style = HorizonTabularStyle,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
-                            AddonInfoLines(
+                            KhoModDescriptionBlock(
                                 rememberModInfo(mod),
                                 modifier = Modifier.padding(top = 3.dp),
                                 descMaxLines = 3,
@@ -2296,19 +2709,12 @@ private fun ModsTab(
                             enabled = !serverRunning,
                             modifier = Modifier.padding(horizontal = 4.dp)
                         )
-                        TextButton(
-                            onClick = { pendingModToggle = mod },
-                            enabled = !serverRunning
+                        IconButton(
+                            onClick = { onDelete(mod) },
+                            enabled = !serverRunning,
+                            modifier = Modifier.size(McIcon.TouchCompact)
                         ) {
-                            Text(
-                                if (mod.isEnabled) "⏸ Tắt Mod" else "🟢 Bật Mod",
-                                color = if (mod.isEnabled) Coral else Mint,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                        IconButton(onClick = { onDelete(mod) }, enabled = !serverRunning, modifier = Modifier.size(McIcon.Touch)) {
-                            Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.s339), tint = Coral, modifier = Modifier.size(McIcon.Action))
+                            Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.s339), tint = glass.dangerCoral, modifier = Modifier.size(McIcon.Inline))
                         }
                     }
                 }
@@ -2319,11 +2725,12 @@ private fun ModsTab(
             onClick = { filePickerLauncher.launch(arrayOf("application/java-archive", "*/*")) },
             enabled = activeCoreExists,
             shape = McShape.ControlCompact,
+            border = BorderStroke(1.dp, glass.accent.copy(alpha = 0.50f)),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Icon(Icons.Outlined.Upload, contentDescription = null, modifier = Modifier.size(16.dp))
+            Icon(Icons.Outlined.Upload, contentDescription = null, tint = glass.accent, modifier = Modifier.size(16.dp))
             Spacer(Modifier.size(6.dp))
-            Text(stringResource(R.string.s830), color = Indigo, fontSize = 12.sp)
+            Text(stringResource(R.string.s830), color = glass.accent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
         }
     }
 
@@ -2332,6 +2739,8 @@ private fun ModsTab(
         val willEnable = !targetMod.isEnabled
         AlertDialog(
             onDismissRequest = { pendingModToggle = null },
+            containerColor = glass.glassChrome,
+            shape = McShape.Dialog,
             title = {
                 Text(
                     if (willEnable) "🟢 Xác nhận BẬT Mod '${targetMod.baseName}'?"
@@ -2365,7 +2774,7 @@ private fun ModsTab(
                         pendingModToggle = null
                         onToggle(fileName)
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = if (willEnable) Mint else Coral)
+                    colors = ButtonDefaults.buttonColors(containerColor = if (willEnable) glass.liveGreen else glass.dangerCoral)
                 ) {
                     Text(
                         if (willEnable) "🟢 Đồng ý Bật Mod" else "⏸ Đồng ý Tắt Mod",
@@ -2386,6 +2795,8 @@ private fun ModsTab(
     pendingBulkModAction?.let { bulkAction ->
         AlertDialog(
             onDismissRequest = { pendingBulkModAction = null },
+            containerColor = glass.glassChrome,
+            shape = McShape.Dialog,
             title = {
                 Text(
                     when (bulkAction) {
@@ -2432,9 +2843,9 @@ private fun ModsTab(
                     },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = when (bulkAction) {
-                            "disable_all" -> Coral
-                            "enable_all" -> Mint
-                            else -> Indigo
+                            "disable_all" -> glass.dangerCoral
+                            "enable_all" -> glass.liveGreen
+                            else -> glass.accent
                         }
                     )
                 ) {
@@ -2458,7 +2869,7 @@ private fun ModsTab(
     }
 
 
-    // ── Kho Modrinth Toàn Cầu (Mọi Mod & Phiên bản thông dụng) ──
+    // ── Kho Modrinth Toàn Cầu (BlockWay Kho Mod Mobile UI/UX) ──
     var sortMenuOpen by remember { mutableStateOf(false) }
     val universalModCategories = remember {
         listOf(
@@ -2477,28 +2888,43 @@ private fun ModsTab(
     }
     McCard(title = "🌐 Kho Modrinth Toàn Cầu (Tìm & Cài Mọi Mod)") {
         Text(
-            "Tìm kiếm bất kỳ Mod nào trên Modrinth hoặc bấm danh mục bên dưới để duyệt kho Mod thông dụng. Khi bấm Cài đặt, App sẽ tự chọn đúng phiên bản tương thích và tự tải kèm toàn bộ Mod phụ thuộc (Fabric API, Architectury, Balm, GeckoLib...).",
+            "Tìm kiếm bất kỳ Mod nào trên Modrinth hoặc chạm danh mục bên dưới để duyệt kho Mod. Khi bấm Cài đặt, App tự chọn đúng phiên bản tương thích và tự tải kèm toàn bộ Mod phụ thuộc (Fabric API, Architectury, Balm, GeckoLib...).",
             color = Muted,
-            fontSize = 11.sp
+            fontSize = 11.sp,
+            lineHeight = 15.8.sp
         )
-        Spacer(Modifier.height(6.dp))
-        // 搜索框 + 排序 + 搜索按钮
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
-                value = modrinthQuery,
-                onValueChange = { modrinthQuery = it },
-                placeholder = { Text(stringResource(R.string.s833), fontSize = 11.sp) },
-                singleLine = true,
-                modifier = Modifier.weight(1f),
-                shape = McShape.ControlCompact
-            )
-            Spacer(Modifier.size(6.dp))
-            Box {
-                OutlinedButton(
-                    onClick = { sortMenuOpen = true },
-                    shape = McShape.ControlCompact
+        Spacer(Modifier.height(8.dp))
+        // BlockWay Frosted Search Pill + Sort + Search Button
+        KhoModSearchPill(
+            value = modrinthQuery,
+            onValueChange = { modrinthQuery = it },
+            placeholder = stringResource(R.string.s833),
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Box(modifier = Modifier.weight(1f)) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(CircleShape)
+                        .background(glass.glassRow)
+                        .border(1.dp, glass.hairline, CircleShape)
+                        .clickable { sortMenuOpen = true }
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
                 ) {
-                    Text(sortOptions[sortIndex].second, fontSize = 11.sp, color = Indigo)
+                    Text(
+                        "↕ ${sortOptions[sortIndex].second}",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = glass.accent,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
                 DropdownMenu(expanded = sortMenuOpen, onDismissRequest = { sortMenuOpen = false }) {
                     sortOptions.forEachIndexed { i, (_, label) ->
@@ -2519,7 +2945,6 @@ private fun ModsTab(
                     }
                 }
             }
-            Spacer(Modifier.size(6.dp))
             Button(
                 onClick = {
                     onSearchModrinth(
@@ -2530,20 +2955,22 @@ private fun ModsTab(
                         selectedModCategory
                     )
                 },
-                enabled = true,
-                colors = ButtonDefaults.buttonColors(containerColor = Indigo),
-                shape = McShape.ControlCompact
+                colors = ButtonDefaults.buttonColors(containerColor = glass.accent),
+                shape = CircleShape,
+                contentPadding = PaddingValues(horizontal = 18.dp, vertical = 8.dp)
             ) {
-                Text(stringResource(R.string.s834), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Text(stringResource(R.string.s834), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
             }
         }
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(8.dp))
+        // BlockWay Frosted Category Pills
         FlowRow(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             universalModCategories.forEach { (catKey, catLabel) ->
-                FilterChip(
+                KhoModGlassPillChip(
+                    label = catLabel,
                     selected = selectedModCategory == catKey,
                     onClick = {
                         selectedModCategory = catKey
@@ -2554,33 +2981,35 @@ private fun ModsTab(
                             selectedModVersion,
                             catKey
                         )
-                    },
-                    label = { Text(catLabel, fontSize = 11.sp) }
+                    }
                 )
             }
         }
-        // 版本筛选 ｜ 加载器 下拉（布局参考：版本下拉框｜加载器下拉框）
+        // Phiên bản Minecraft & Loader filter
         var versionMenuOpen by remember { mutableStateOf(false) }
         var versionSearchInput by remember { mutableStateOf("") }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(10.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(stringResource(R.string.s1061), color = Muted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.s1061), color = Muted, fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.size(6.dp))
-            OutlinedButton(
-                onClick = { versionMenuOpen = true },
-                shape = McShape.ControlCompact
+            Box(
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .background(glass.accentSoft)
+                    .border(1.dp, glass.accent.copy(alpha = 0.45f), CircleShape)
+                    .clickable { versionMenuOpen = true }
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
             ) {
                 Text(
-                    if (selectedModVersion.isNotBlank()) "📋 ${selectedModVersion} ▾" else "📋 Chọn / Nhập phiên bản ▾",
+                    if (selectedModVersion.isNotBlank()) "📋 MC ${selectedModVersion} ▾" else "📋 Chọn / Nhập phiên bản ▾",
                     fontSize = 11.sp,
-                    color = Indigo,
-                    fontWeight = FontWeight.Bold,
+                    color = glass.accent,
+                    fontWeight = FontWeight.ExtraBold,
+                    style = HorizonTabularStyle,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            Spacer(Modifier.size(8.dp))
-            Text(stringResource(R.string.s835), color = Muted, fontSize = 10.sp)
         }
         if (versionMenuOpen) {
             val trimmedVerSearch = versionSearchInput.trim()
@@ -2590,6 +3019,8 @@ private fun ModsTab(
             }
             AlertDialog(
                 onDismissRequest = { versionMenuOpen = false },
+                containerColor = glass.glassChrome,
+                shape = McShape.Dialog,
                 title = {
                     Text(
                         "🎮 Lướt chọn hoặc nhập tay phiên bản Game",
@@ -2602,33 +3033,19 @@ private fun ModsTab(
                         modifier = Modifier.fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        OutlinedTextField(
+                        KhoModSearchPill(
                             value = versionSearchInput,
                             onValueChange = { versionSearchInput = it },
-                            placeholder = { Text("🔍 Nhập tìm hoặc gõ tay (VD: 1.21.4, 1.20.1, 1.16.5...)", fontSize = 11.5.sp) },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                            trailingIcon = {
-                                if (versionSearchInput.isNotEmpty()) {
-                                    Text(
-                                        "✕",
-                                        color = Muted,
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier
-                                            .clickable { versionSearchInput = "" }
-                                            .padding(8.dp)
-                                    )
-                                }
-                            }
+                            placeholder = "Nhập tìm hoặc gõ tay (VD: 1.21.4, 1.20.1, 1.16.5...)",
+                            modifier = Modifier.fillMaxWidth()
                         )
                         if (trimmedVerSearch.isNotBlank() && filteredModVersions.none { it.equals(trimmedVerSearch, ignoreCase = true) }) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(10.dp))
-                                    .background(Mint.copy(alpha = 0.14f))
-                                    .border(1.dp, Mint.copy(alpha = 0.40f), RoundedCornerShape(10.dp))
+                                    .background(glass.liveGreenSoft)
+                                    .border(1.dp, glass.liveGreen.copy(alpha = 0.50f), RoundedCornerShape(10.dp))
                                     .clickable {
                                         onSetModVersion(trimmedVerSearch)
                                         versionMenuOpen = false
@@ -2645,10 +3062,11 @@ private fun ModsTab(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    "✨ Tìm Mod/Plugin cho bản nhập tay: $trimmedVerSearch",
-                                    color = Mint,
+                                    "✨ Tìm Mod cho bản nhập tay: $trimmedVerSearch",
+                                    color = glass.liveGreen,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.ExtraBold,
+                                    style = HorizonTabularStyle,
                                     modifier = Modifier.weight(1f)
                                 )
                                 Text(
@@ -2657,9 +3075,9 @@ private fun ModsTab(
                                     fontSize = 10.5.sp,
                                     fontWeight = FontWeight.Bold,
                                     modifier = Modifier
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(Mint)
-                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                        .clip(CircleShape)
+                                        .background(glass.liveGreen)
+                                        .padding(horizontal = 10.dp, vertical = 4.dp)
                                 )
                             }
                         }
@@ -2681,10 +3099,19 @@ private fun ModsTab(
                                         .clip(RoundedCornerShape(10.dp))
                                         .background(
                                             when {
-                                                isCurrent -> Indigo.copy(alpha = 0.20f)
-                                                isServerVer -> Mint.copy(alpha = 0.12f)
-                                                else -> com.mineserve.mobile.ui.theme.FieldGray
+                                                isCurrent -> glass.accentSoft
+                                                isServerVer -> glass.liveGreenSoft
+                                                else -> glass.glassRow
                                             }
+                                        )
+                                        .border(
+                                            1.dp,
+                                            when {
+                                                isCurrent -> glass.accent.copy(alpha = 0.55f)
+                                                isServerVer -> glass.liveGreen.copy(alpha = 0.45f)
+                                                else -> glass.hairline
+                                            },
+                                            RoundedCornerShape(10.dp)
                                         )
                                         .clickable {
                                             onSetModVersion(v)
@@ -2703,22 +3130,23 @@ private fun ModsTab(
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
-                                            if (isServerVer) "🎯 Minecraft $v (Phiên bản Server hiện tại)"
+                                            if (isServerVer) "🎯 Minecraft $v (Server hiện tại)"
                                             else "📦 Minecraft $v",
-                                            color = if (isCurrent) Indigo else if (isServerVer) Mint else MaterialTheme.colorScheme.onSurface,
+                                            color = if (isCurrent) glass.accent else if (isServerVer) glass.liveGreen else MaterialTheme.colorScheme.onSurface,
                                             fontSize = 12.sp,
-                                            fontWeight = FontWeight.ExtraBold
+                                            fontWeight = FontWeight.ExtraBold,
+                                            style = HorizonTabularStyle
                                         )
                                     }
                                     Text(
                                         if (isCurrent) "✓ Đang chọn" else "Chọn & Tìm",
-                                        color = if (isCurrent) Indigo else Color.White,
+                                        color = if (isCurrent) glass.accent else Color.White,
                                         fontSize = 10.5.sp,
                                         fontWeight = FontWeight.Bold,
                                         modifier = Modifier
-                                            .clip(RoundedCornerShape(6.dp))
-                                            .background(if (isCurrent) Indigo.copy(alpha = 0.15f) else Indigo)
-                                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                                            .clip(CircleShape)
+                                            .background(if (isCurrent) glass.accentSoft else glass.accent)
+                                            .padding(horizontal = 9.dp, vertical = 4.dp)
                                     )
                                 }
                             }
@@ -2727,7 +3155,7 @@ private fun ModsTab(
                 },
                 confirmButton = {
                     TextButton(onClick = { versionMenuOpen = false }) {
-                        Text("Đóng", color = Indigo, fontWeight = FontWeight.Bold)
+                        Text("Đóng", color = glass.accent, fontWeight = FontWeight.Bold)
                     }
                 }
             )
@@ -2736,9 +3164,10 @@ private fun ModsTab(
             Spacer(Modifier.height(4.dp))
             Text(
                 stringResource(R.string.s1063, selectedModVersion, currentServerVersion),
-                color = Coral,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.SemiBold
+                color = glass.dangerCoral,
+                fontSize = 10.5.sp,
+                fontWeight = FontWeight.SemiBold,
+                style = HorizonTabularStyle
             )
         }
         // 加载器多选筛选（可展开列表，避免元素零散排布）
@@ -2752,100 +3181,137 @@ private fun ModsTab(
                 }
             )
         }
-        // 结果列表
+        // 结果列表 — Installed Mods Sorted First + Lightweight HorizonGlass.glassRow + ✓ Đã cài Emerald Pill
         if (modrinthResults.isNotEmpty()) {
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(10.dp))
             val coreLoader = if (coreType == ServerCore.Fabric || coreType == ServerCore.Quilt) "fabric" else "forge"
-            LazyColumn(
-                modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp)
-            ) {
-                itemsIndexed(modrinthResults, key = { index, hit -> "${hit.slug}:$index" }) { _, hit ->
-                val slugLower = hit.slug.lowercase(java.util.Locale.ROOT)
-                val slugNorm = slugLower.replace("-", "").replace("_", "")
-                val titleNorm = hit.title.lowercase(java.util.Locale.ROOT).replace(Regex("[^a-z0-9]"), "")
-                val matchedInstalledMod = mods.firstOrNull { m ->
-                    val baseLower = m.baseName.lowercase(java.util.Locale.ROOT)
-                    val baseNorm = baseLower.replace("-", "").replace("_", "")
-                    baseLower.startsWith(slugLower) ||
-                        baseLower.contains(slugLower) ||
-                        (slugNorm.length >= 4 && baseNorm.startsWith(slugNorm)) ||
-                        (titleNorm.length >= 5 && baseNorm.startsWith(titleNorm))
-                }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 5.dp)
-                        .clickable { detailHit = hit },
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    AddonIconLoader.registerKnownIcon(hit.slug, hit.title, hit.icon_url)
-                    ModrinthIcon(hit.icon_url)
-                    Spacer(Modifier.size(8.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(hit.title, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        val downloadsText = formatModrinthDownloads(hit.downloads)
-                        Text(
-                            "${hit.author} · $downloadsText",
-                            color = Muted,
-                            fontSize = 10.sp
-                        )
-                        // 当前核心不匹配红字提醒
-                        if (hit.categories.isNotEmpty() && coreLoader !in hit.categories) {
-                            Text(
-                                stringResource(R.string.s836, coreType.displayName),
-                                color = Coral,
-                                fontSize = 9.sp
-                            )
-                        }
-                        // 选中版本与当前服务器版本不匹配红字提示（模组条目下方）
-                        if (selectedModVersion.isNotBlank() && currentServerVersion.isNotBlank() && selectedModVersion != currentServerVersion) {
-                            Text(
-                                stringResource(R.string.s1063, selectedModVersion, currentServerVersion),
-                                color = Coral,
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                        AddonInfoLines(rememberHitInfo(hit, isPlugin = false), modifier = Modifier.padding(top = 2.dp), descMaxLines = 2)
+            val sortedModrinthWithMatch = remember(modrinthResults, mods) {
+                modrinthResults.map { hit ->
+                    val slugLower = hit.slug.lowercase(java.util.Locale.ROOT)
+                    val slugNorm = slugLower.replace("-", "").replace("_", "")
+                    val titleNorm = hit.title.lowercase(java.util.Locale.ROOT).replace(Regex("[^a-z0-9]"), "")
+                    val matched = mods.firstOrNull { m ->
+                        val baseLower = m.baseName.lowercase(java.util.Locale.ROOT)
+                        val baseNorm = baseLower.replace("-", "").replace("_", "")
+                        baseLower.startsWith(slugLower) ||
+                            baseLower.contains(slugLower) ||
+                            (slugNorm.length >= 4 && baseNorm.startsWith(slugNorm)) ||
+                            (titleNorm.length >= 5 && baseNorm.startsWith(titleNorm))
                     }
-                    if (matchedInstalledMod != null) {
-                        if (matchedInstalledMod.isEnabled) {
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(MintSoft)
-                                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                    hit to matched
+                }.sortedByDescending { it.second != null }
+            }
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth().heightIn(max = 460.dp),
+                verticalArrangement = Arrangement.spacedBy(7.dp)
+            ) {
+                itemsIndexed(sortedModrinthWithMatch, key = { index, pair -> "${pair.first.slug}:$index" }) { _, (hit, matchedInstalledMod) ->
+                    val isInstalled = matchedInstalledMod != null
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(glass.glassRow)
+                            .border(
+                                width = 1.dp,
+                                color = if (isInstalled) glass.liveGreen.copy(alpha = 0.55f) else glass.hairline,
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .clickable { detailHit = hit }
+                            .padding(horizontal = 11.dp, vertical = 9.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        AddonIconLoader.registerKnownIcon(hit.slug, hit.title, hit.icon_url)
+                        ModrinthIcon(hit.icon_url, size = 38.dp)
+                        Spacer(Modifier.size(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(3.dp)
                             ) {
-                                Text("✅ Đã cài", color = Mint, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Text(
+                                    hit.title,
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                if (matchedInstalledMod?.isEnabled == true) {
+                                    InstalledEmeraldPill(isEnabled = true)
+                                }
+                            }
+                            val downloadsText = formatModrinthDownloads(hit.downloads)
+                            Text(
+                                "👤 ${hit.author}  ·  ⬇️ $downloadsText",
+                                color = Muted,
+                                fontSize = 10.5.sp,
+                                style = HorizonTabularStyle
+                            )
+                            if (hit.categories.isNotEmpty() && coreLoader !in hit.categories) {
+                                Text(
+                                    stringResource(R.string.s836, coreType.displayName),
+                                    color = glass.dangerCoral,
+                                    fontSize = 9.5.sp
+                                )
+                            }
+                            if (selectedModVersion.isNotBlank() && currentServerVersion.isNotBlank() && selectedModVersion != currentServerVersion) {
+                                Text(
+                                    stringResource(R.string.s1063, selectedModVersion, currentServerVersion),
+                                    color = glass.dangerCoral,
+                                    fontSize = 9.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    style = HorizonTabularStyle
+                                )
+                            }
+                            KhoModDescriptionBlock(
+                                rememberHitInfo(hit, isPlugin = false),
+                                modifier = Modifier.padding(top = 3.dp),
+                                descMaxLines = 2
+                            )
+                        }
+                        Spacer(Modifier.size(8.dp))
+                        if (matchedInstalledMod != null) {
+                            if (matchedInstalledMod.isEnabled) {
+                                InstalledEmeraldPill(isEnabled = true)
+                            } else {
+                                OutlinedButton(
+                                    onClick = { onToggle(matchedInstalledMod.fileName) },
+                                    enabled = !serverRunning,
+                                    shape = CircleShape,
+                                    border = BorderStroke(1.dp, glass.liveGreen.copy(alpha = 0.6f)),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 5.dp)
+                                ) {
+                                    Text("⏸ Bật lại", color = glass.liveGreen, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                                }
                             }
                         } else {
-                            OutlinedButton(
-                                onClick = { onToggle(matchedInstalledMod.fileName) },
-                                enabled = !serverRunning,
-                                shape = McShape.ControlCompact
+                            Button(
+                                onClick = { onInstallModrinth(hit, selectedModVersion) },
+                                colors = ButtonDefaults.buttonColors(containerColor = glass.accent),
+                                shape = CircleShape,
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                             ) {
-                                Text("⏸ Đã tải · Bật", color = Indigo, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                Text(stringResource(R.string.s837), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
-                        }
-                    } else {
-                        Button(
-                            onClick = { onInstallModrinth(hit, selectedModVersion) },
-                            colors = ButtonDefaults.buttonColors(containerColor = Mint),
-                            shape = McShape.ControlCompact
-                        ) {
-                            Text(stringResource(R.string.s837), color = Color.White, fontSize = 11.sp)
                         }
                     }
                 }
-                }
             }
-            Spacer(Modifier.height(4.dp))
-            TextButton(
+            Spacer(Modifier.height(6.dp))
+            OutlinedButton(
                 onClick = onLoadMoreModrinth,
                 enabled = !isLoadingMore,
-                modifier = Modifier.fillMaxWidth().height(36.dp),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-            ) { Text(if (isLoadingMore) "Đang tải..." else stringResource(R.string.pl_load_more), color = Indigo, fontSize = 11.sp) }
+                shape = CircleShape,
+                border = BorderStroke(1.dp, glass.hairline),
+                modifier = Modifier.fillMaxWidth().height(38.dp)
+            ) {
+                Text(
+                    if (isLoadingMore) "⏳ Đang tải thêm..." else stringResource(R.string.pl_load_more),
+                    color = glass.accent,
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
     }
 
@@ -2853,7 +3319,7 @@ private fun ModsTab(
     ModrinthDetailDialog(detailHit) { detailHit = null }
 }
 
-/** 插件页 Modrinth 资源检索（布局与模组页统一） */
+/** 插件页 Modrinth 资源检索（BlockWay Horizon Glass Kho Plugin） */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PluginModrinthCard(
@@ -2869,6 +3335,7 @@ private fun PluginModrinthCard(
     onLoadMore: () -> Unit,
     isLoadingMore: Boolean
 ) {
+    val glass = HorizonGlass
     var query by remember { mutableStateOf("") }
     var selectedPluginCategory by remember { mutableStateOf("") }
     var selectedLoaders by remember { mutableStateOf(setOf<String>()) }
@@ -2894,33 +3361,47 @@ private fun PluginModrinthCard(
             onSearch("", selectedLoaders.toList(), "downloads", selectedVersion.ifBlank { currentServerVersion }, selectedPluginCategory)
         }
     }
-    // 插件页统一使用 Modrinth 插件库（project_type=plugin，加载器以 bukkit/paper 为主）
     val coreLoader = "bukkit"
 
     McCard(title = "🌐 Kho Plugin Modrinth Toàn Cầu (Mọi Plugin & Phiên Bản)") {
         Text(
             "Tìm kiếm bất kỳ Plugin nào trên Modrinth hoặc duyệt theo danh mục bên dưới. App tự động chọn phiên bản tương thích và tải kèm các Plugin phụ thuộc cần thiết.",
             color = Muted,
-            fontSize = 11.sp
+            fontSize = 11.sp,
+            lineHeight = 15.8.sp
         )
-        Spacer(Modifier.height(6.dp))
-        // 搜索框 + 排序 + 搜索按钮
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                placeholder = { Text(stringResource(R.string.s1070), fontSize = 11.sp) },
-                singleLine = true,
-                modifier = Modifier.weight(1f),
-                shape = McShape.ControlCompact
-            )
-            Spacer(Modifier.size(6.dp))
-            Box {
-                OutlinedButton(
-                    onClick = { sortMenuOpen = true },
-                    shape = McShape.ControlCompact
+        Spacer(Modifier.height(8.dp))
+        // BlockWay Frosted Search Pill
+        KhoModSearchPill(
+            value = query,
+            onValueChange = { query = it },
+            placeholder = stringResource(R.string.s1070),
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Box(modifier = Modifier.weight(1f)) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(CircleShape)
+                        .background(glass.glassRow)
+                        .border(1.dp, glass.hairline, CircleShape)
+                        .clickable { sortMenuOpen = true }
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
                 ) {
-                    Text(sortOptions[sortIndex].second, fontSize = 11.sp, color = Indigo)
+                    Text(
+                        "↕ ${sortOptions[sortIndex].second}",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = glass.accent,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
                 DropdownMenu(expanded = sortMenuOpen, onDismissRequest = { sortMenuOpen = false }) {
                     sortOptions.forEachIndexed { i, (_, label) ->
@@ -2935,23 +3416,24 @@ private fun PluginModrinthCard(
                     }
                 }
             }
-            Spacer(Modifier.size(6.dp))
             Button(
                 onClick = { onSearch(query.trim(), selectedLoaders.toList(), sortOptions[sortIndex].first, selectedVersion, selectedPluginCategory) },
-                enabled = true,
-                colors = ButtonDefaults.buttonColors(containerColor = Indigo),
-                shape = McShape.ControlCompact
+                colors = ButtonDefaults.buttonColors(containerColor = glass.accent),
+                shape = CircleShape,
+                contentPadding = PaddingValues(horizontal = 18.dp, vertical = 8.dp)
             ) {
-                Text(stringResource(R.string.s834), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Text(stringResource(R.string.s834), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
             }
         }
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(8.dp))
+        // BlockWay Frosted Category Pills
         FlowRow(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             universalPluginCategories.forEach { (catKey, catLabel) ->
-                FilterChip(
+                KhoModGlassPillChip(
+                    label = catLabel,
                     selected = selectedPluginCategory == catKey,
                     onClick = {
                         selectedPluginCategory = catKey
@@ -2962,25 +3444,30 @@ private fun PluginModrinthCard(
                             selectedVersion,
                             catKey
                         )
-                    },
-                    label = { Text(catLabel, fontSize = 11.sp) }
+                    }
                 )
             }
         }
         // 版本筛选 ｜ 加载器 下拉
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(10.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(stringResource(R.string.s1061), color = Muted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.s1061), color = Muted, fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.size(6.dp))
             Box {
-                OutlinedButton(
-                    onClick = { versionMenuOpen = true },
-                    shape = McShape.ControlCompact
+                Box(
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .background(glass.accentSoft)
+                        .border(1.dp, glass.accent.copy(alpha = 0.45f), CircleShape)
+                        .clickable { versionMenuOpen = true }
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
                 ) {
                     Text(
-                        if (selectedVersion.isNotBlank()) selectedVersion else "--",
+                        if (selectedVersion.isNotBlank()) "📋 MC $selectedVersion ▾" else "📋 Tất cả phiên bản ▾",
                         fontSize = 11.sp,
-                        color = Indigo,
+                        color = glass.accent,
+                        fontWeight = FontWeight.ExtraBold,
+                        style = HorizonTabularStyle,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -2991,25 +3478,23 @@ private fun PluginModrinthCard(
                     }
                     gameVersions.forEach { v ->
                         DropdownMenuItem(
-                            text = { Text(v, fontSize = 11.sp, color = if (v == currentServerVersion) Indigo else Muted) },
+                            text = { Text(v, fontSize = 11.sp, color = if (v == currentServerVersion) glass.accent else Muted, style = HorizonTabularStyle) },
                             onClick = { onSetVersion(v); versionMenuOpen = false }
                         )
                     }
                 }
             }
-            Spacer(Modifier.size(8.dp))
-            Text(stringResource(R.string.s835), color = Muted, fontSize = 10.sp)
         }
         if (selectedVersion.isNotBlank() && currentServerVersion.isNotBlank() && selectedVersion != currentServerVersion) {
             Spacer(Modifier.height(4.dp))
             Text(
                 stringResource(R.string.s1063, selectedVersion, currentServerVersion),
-                color = Coral,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.SemiBold
+                color = glass.dangerCoral,
+                fontSize = 10.5.sp,
+                fontWeight = FontWeight.SemiBold,
+                style = HorizonTabularStyle
             )
         }
-        // 加载器多选筛选（可展开列表，避免元素零散排布）
         if (loaders.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
             LoaderFilterSection(
@@ -3020,91 +3505,118 @@ private fun PluginModrinthCard(
                 }
             )
         }
-        // 结果列表（条目下方红字提示版本不匹配）
+        // 结果列表 — Installed Plugins First + Lightweight HorizonGlass.glassRow + ✓ Đã cài Emerald Pill
         if (results.isNotEmpty()) {
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(10.dp))
+            val sortedPluginWithMatch = remember(results, installedPlugins) {
+                results.map { hit ->
+                    val slugLower = hit.slug.lowercase(java.util.Locale.ROOT)
+                    val titleNorm = hit.title.lowercase(java.util.Locale.ROOT).replace(Regex("[^a-z0-9]"), "")
+                    val matched = installedPlugins.firstOrNull { p ->
+                        val nameLower = (p.meta?.name ?: p.baseName).lowercase(java.util.Locale.ROOT)
+                        val fileLower = p.fileName.lowercase(java.util.Locale.ROOT)
+                        val nameNorm = nameLower.replace(Regex("[^a-z0-9]"), "")
+                        nameLower == slugLower ||
+                            fileLower.startsWith(slugLower) ||
+                            (titleNorm.length >= 4 && nameNorm == titleNorm)
+                    }
+                    hit to matched
+                }.sortedByDescending { it.second != null }
+            }
             LazyColumn(
-                modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp)
+                modifier = Modifier.fillMaxWidth().heightIn(max = 460.dp),
+                verticalArrangement = Arrangement.spacedBy(7.dp)
             ) {
-                itemsIndexed(results, key = { index, hit -> "${hit.slug}:$index" }) { _, hit ->
-                val slugLower = hit.slug.lowercase(java.util.Locale.ROOT)
-                val titleNorm = hit.title.lowercase(java.util.Locale.ROOT).replace(Regex("[^a-z0-9]"), "")
-                val matchedInstalledPlugin = installedPlugins.firstOrNull { p ->
-                    val nameLower = (p.meta?.name ?: p.baseName).lowercase(java.util.Locale.ROOT)
-                    val fileLower = p.fileName.lowercase(java.util.Locale.ROOT)
-                    val nameNorm = nameLower.replace(Regex("[^a-z0-9]"), "")
-                    nameLower == slugLower ||
-                        fileLower.startsWith(slugLower) ||
-                        (titleNorm.length >= 4 && nameNorm == titleNorm)
-                }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 5.dp)
-                        .clickable { detailHit = hit },
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    AddonIconLoader.registerKnownIcon(hit.slug, hit.title, hit.icon_url)
-                    ModrinthIcon(hit.icon_url)
-                    Spacer(Modifier.size(8.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(hit.title, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        val downloadsText = formatModrinthDownloads(hit.downloads)
-                        Text(
-                            "${hit.author} · $downloadsText",
-                            color = Muted,
-                            fontSize = 10.sp
-                        )
-                        if (hit.categories.isNotEmpty() && coreLoader !in hit.categories) {
+                itemsIndexed(sortedPluginWithMatch, key = { index, pair -> "${pair.first.slug}:$index" }) { _, (hit, matchedInstalledPlugin) ->
+                    val isInstalled = matchedInstalledPlugin != null
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(glass.glassRow)
+                            .border(
+                                width = 1.dp,
+                                color = if (isInstalled) glass.liveGreen.copy(alpha = 0.55f) else glass.hairline,
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .clickable { detailHit = hit }
+                            .padding(horizontal = 11.dp, vertical = 9.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        AddonIconLoader.registerKnownIcon(hit.slug, hit.title, hit.icon_url)
+                        ModrinthIcon(hit.icon_url, size = 38.dp)
+                        Spacer(Modifier.size(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                stringResource(R.string.s1071, coreLoader),
-                                color = Coral,
-                                fontSize = 9.sp
+                                hit.title,
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            val downloadsText = formatModrinthDownloads(hit.downloads)
+                            Text(
+                                "👤 ${hit.author}  ·  ⬇️ $downloadsText",
+                                color = Muted,
+                                fontSize = 10.5.sp,
+                                style = HorizonTabularStyle
+                            )
+                            if (hit.categories.isNotEmpty() && coreLoader !in hit.categories) {
+                                Text(
+                                    stringResource(R.string.s1071, coreLoader),
+                                    color = glass.dangerCoral,
+                                    fontSize = 9.5.sp
+                                )
+                            }
+                            if (selectedVersion.isNotBlank() && currentServerVersion.isNotBlank() && selectedVersion != currentServerVersion) {
+                                Text(
+                                    stringResource(R.string.s1063, selectedVersion, currentServerVersion),
+                                    color = glass.dangerCoral,
+                                    fontSize = 9.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    style = HorizonTabularStyle
+                                )
+                            }
+                            KhoModDescriptionBlock(
+                                rememberHitInfo(hit, isPlugin = true),
+                                modifier = Modifier.padding(top = 3.dp),
+                                descMaxLines = 2
                             )
                         }
-                        if (selectedVersion.isNotBlank() && currentServerVersion.isNotBlank() && selectedVersion != currentServerVersion) {
-                            Text(
-                                stringResource(R.string.s1063, selectedVersion, currentServerVersion),
-                                color = Coral,
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.SemiBold
+                        Spacer(Modifier.size(8.dp))
+                        if (matchedInstalledPlugin != null) {
+                            InstalledEmeraldPill(
+                                isEnabled = matchedInstalledPlugin.isEnabled,
+                                disabledText = "⏸ Đã tải"
                             )
+                        } else {
+                            Button(
+                                onClick = { onInstall(hit, selectedVersion) },
+                                colors = ButtonDefaults.buttonColors(containerColor = glass.accent),
+                                shape = CircleShape,
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                            ) {
+                                Text(stringResource(R.string.s837), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
                         }
-                        AddonInfoLines(rememberHitInfo(hit, isPlugin = true), modifier = Modifier.padding(top = 2.dp), descMaxLines = 2)
                     }
-                    if (matchedInstalledPlugin != null) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(MintSoft)
-                                .padding(horizontal = 10.dp, vertical = 6.dp)
-                        ) {
-                            Text(
-                                if (matchedInstalledPlugin.isEnabled) "✅ Đã cài" else "⏸ Đã tải",
-                                color = Mint,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    } else {
-                        Button(
-                            onClick = { onInstall(hit, selectedVersion) },
-                            colors = ButtonDefaults.buttonColors(containerColor = Mint),
-                            shape = McShape.ControlCompact
-                        ) {
-                            Text(stringResource(R.string.s837), color = Color.White, fontSize = 11.sp)
-                        }
-                    }
-                }
                 }
             }
-            Spacer(Modifier.height(4.dp))
-            TextButton(
+            Spacer(Modifier.height(6.dp))
+            OutlinedButton(
                 onClick = onLoadMore,
                 enabled = !isLoadingMore,
-                modifier = Modifier.fillMaxWidth().height(36.dp),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-            ) { Text(if (isLoadingMore) "Đang tải..." else stringResource(R.string.pl_load_more), color = Indigo, fontSize = 11.sp) }
+                shape = CircleShape,
+                border = BorderStroke(1.dp, glass.hairline),
+                modifier = Modifier.fillMaxWidth().height(38.dp)
+            ) {
+                Text(
+                    if (isLoadingMore) "⏳ Đang tải thêm..." else stringResource(R.string.pl_load_more),
+                    color = glass.accent,
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
     }
 
@@ -3120,8 +3632,7 @@ private fun formatModrinthDownloads(d: Long): String = when {
     else -> stringResource(R.string.s840, d)
 }
 
-/** Modrinth 模组图标（网络加载，失败显示占位） */
-/** 可展开的加载器筛选列表：默认收起（显示标题+已选数量），点击展开多选，避免元素零散排布 */
+/** 可展开的加载器筛选列表 (Frosted Glass Chips) */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun LoaderFilterSection(
@@ -3129,47 +3640,50 @@ private fun LoaderFilterSection(
     selected: Set<String>,
     onToggle: (String) -> Unit
 ) {
+    val glass = HorizonGlass
     var expanded by remember { mutableStateOf(false) }
     Column {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(8.dp))
-                .background(FieldGray)
+                .clip(RoundedCornerShape(10.dp))
+                .background(glass.glassRow)
+                .border(1.dp, glass.hairline, RoundedCornerShape(10.dp))
                 .clickable { expanded = !expanded }
-                .padding(horizontal = 10.dp, vertical = 6.dp),
+                .padding(horizontal = 11.dp, vertical = 7.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
                 stringResource(R.string.s835),
                 color = Muted,
-                fontSize = 10.sp,
+                fontSize = 10.5.sp,
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.weight(1f)
             )
             if (selected.isNotEmpty()) {
                 Text(
                     stringResource(R.string.ui_loader_selected, selected.size),
-                    color = Indigo,
-                    fontSize = 10.sp
+                    color = glass.accent,
+                    fontSize = 10.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    style = HorizonTabularStyle
                 )
                 Spacer(Modifier.size(6.dp))
             }
-            Text(if (expanded) "▾" else "▸", color = Muted, fontSize = 11.sp)
+            Text(if (expanded) "▾" else "▸", color = glass.accent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         }
         if (expanded) {
-            Spacer(Modifier.height(4.dp))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Spacer(Modifier.height(6.dp))
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
                 loaders.forEach { loader ->
                     val isSelected = loader in selected
-                    FilterChip(
+                    KhoModGlassPillChip(
+                        label = loader,
                         selected = isSelected,
-                        onClick = { onToggle(loader) },
-                        label = { Text(loader, fontSize = 10.sp) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = IndigoSoft,
-                            selectedLabelColor = Indigo
-                        )
+                        onClick = { onToggle(loader) }
                     )
                 }
             }
@@ -3181,17 +3695,20 @@ private fun LoaderFilterSection(
 @Composable
 private fun ModrinthDetailDialog(hit: PluginManager.ModrinthHit?, isPlugin: Boolean = false, onDismiss: () -> Unit) {
     val h = hit ?: return
+    val glass = HorizonGlass
     val info = rememberHitInfo(h, isPlugin)
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = glass.glassChrome,
+        shape = McShape.Dialog,
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                ModrinthIcon(h.icon_url, size = 30.dp)
-                Spacer(Modifier.size(8.dp))
+                ModrinthIcon(h.icon_url, size = 34.dp)
+                Spacer(Modifier.size(10.dp))
                 Text(
                     h.title,
                     fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.ExtraBold,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
@@ -3201,26 +3718,29 @@ private fun ModrinthDetailDialog(hit: PluginManager.ModrinthHit?, isPlugin: Bool
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text(
-                    "${h.author} · ${formatModrinthDownloads(h.downloads)}",
+                    "👤 ${h.author}  ·  ⬇️ ${formatModrinthDownloads(h.downloads)}",
                     color = Muted,
-                    fontSize = 12.sp
+                    fontSize = 12.sp,
+                    style = HorizonTabularStyle
                 )
                 if (h.categories.isNotEmpty()) {
                     Spacer(Modifier.height(6.dp))
                     Text(
                         h.categories.joinToString(" · "),
-                        color = Indigo,
-                        fontSize = 11.sp
+                        color = glass.accent,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold
                     )
                 }
                 Spacer(Modifier.height(8.dp))
                 AddonInfoLines(info, descMaxLines = 30, showSideExplain = true)
                 if (h.description.isNotBlank() && info.descVi != h.description) {
                     Spacer(Modifier.height(8.dp))
-                    Text("Mô tả gốc (tiếng Anh):", fontSize = 10.sp, color = Muted)
+                    Text("Mô tả gốc (tiếng Anh):", fontSize = 10.sp, color = Muted, fontWeight = FontWeight.SemiBold)
                     Text(
                         h.description,
                         fontSize = 11.sp,
+                        lineHeight = 15.8.sp,
                         color = Muted
                     )
                 }
@@ -3228,14 +3748,15 @@ private fun ModrinthDetailDialog(hit: PluginManager.ModrinthHit?, isPlugin: Bool
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.s620))
+                Text(stringResource(R.string.s620), color = glass.accent, fontWeight = FontWeight.Bold)
             }
         }
     )
 }
 
 @Composable
-private fun ModrinthIcon(url: String, size: Dp = 32.dp) {
+private fun ModrinthIcon(url: String, size: Dp = 36.dp) {
+    val glass = HorizonGlass
     var bitmap by remember(url) { mutableStateOf<Bitmap?>(null) }
     LaunchedEffect(url) {
         bitmap = AddonIconLoader.load(url)
@@ -3243,8 +3764,9 @@ private fun ModrinthIcon(url: String, size: Dp = 32.dp) {
     Box(
         modifier = Modifier
             .size(size)
-            .clip(RoundedCornerShape(8.dp))
-            .background(IndigoSoft),
+            .clip(RoundedCornerShape(10.dp))
+            .background(glass.accentSoft)
+            .border(1.dp, glass.hairline, RoundedCornerShape(10.dp)),
         contentAlignment = Alignment.Center
     ) {
         val bmp = bitmap
@@ -3257,7 +3779,7 @@ private fun ModrinthIcon(url: String, size: Dp = 32.dp) {
                 contentScale = ContentScale.Crop
             )
         } else {
-            Text("🟦", fontSize = 14.sp)
+            Text("🧩", fontSize = 14.sp)
         }
     }
 }
@@ -3272,6 +3794,7 @@ private fun AddonJarIcon(
     isEnabled: Boolean = true,
     size: Dp = 36.dp
 ) {
+    val glass = HorizonGlass
     var bitmap by remember(jarPath, baseName, slugHint, modIdHint, iconUrlHint) { mutableStateOf<Bitmap?>(null) }
     LaunchedEffect(jarPath, baseName, slugHint, modIdHint, iconUrlHint) {
         bitmap = AddonIconLoader.loadForAddon(
@@ -3282,13 +3805,13 @@ private fun AddonJarIcon(
             iconUrlHint = iconUrlHint
         )
     }
-    val borderColor = if (isEnabled) Mint.copy(alpha = 0.65f) else Coral.copy(alpha = 0.65f)
+    val borderColor = if (isEnabled) glass.liveGreen.copy(alpha = 0.55f) else glass.hairline
     Box(
         modifier = Modifier
             .size(size)
-            .clip(RoundedCornerShape(9.dp))
-            .background(if (isEnabled) IndigoSoft else CoralSoft)
-            .border(1.dp, borderColor, RoundedCornerShape(9.dp)),
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (isEnabled) glass.accentSoft else glass.glassInput)
+            .border(1.dp, borderColor, RoundedCornerShape(10.dp)),
         contentAlignment = Alignment.Center
     ) {
         val bmp = bitmap
@@ -3306,8 +3829,8 @@ private fun AddonJarIcon(
             }
             Text(
                 initials,
-                color = if (isEnabled) Indigo else Coral,
-                fontSize = 10.sp,
+                color = if (isEnabled) glass.accent else Muted,
+                fontSize = 10.5.sp,
                 fontWeight = FontWeight.ExtraBold
             )
         }
@@ -3334,6 +3857,7 @@ private fun ModPackDecoderAndTransferCard(
     hasInstalledMods: Boolean,
     showFull56ListByDefault: Boolean = true
 ) {
+    val glass = HorizonGlass
     val config by vm.config.collectAsStateWithLifecycle()
     val installedMods by vm.mods.collectAsStateWithLifecycle()
     val all56Items = remember { vm.userScreenshot56ModItems() }
@@ -3392,7 +3916,6 @@ private fun ModPackDecoderAndTransferCard(
             inst to total
         }
     }
-    val matched56Count = downloaded56Count
 
     val filteredCatalogItems = remember(all56Items, selectedCategoryGroup, catalogSearchQuery) {
         all56Items.filter { item ->
@@ -3446,20 +3969,33 @@ private fun ModPackDecoderAndTransferCard(
     McCard(
         title = "📦 Kho 56 Mod Gốc (Phân 6 Nhóm & Đa Phiên Bản) + Giải Mã Gói Mod",
         trailing = {
-            Text(
-                if (downloaded56Count > 0) "✅ Đã cài $downloaded56Count/${all56Items.size} mod" else "Chưa cài (0/${all56Items.size})",
-                color = if (downloaded56Count > 0) Mint else Indigo,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold
-            )
+            Box(
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .background(if (downloaded56Count > 0) glass.liveGreenSoft else glass.accentSoft)
+                    .border(
+                        1.dp,
+                        if (downloaded56Count > 0) glass.liveGreen.copy(alpha = 0.55f) else glass.accent.copy(alpha = 0.45f),
+                        CircleShape
+                    )
+                    .padding(horizontal = 9.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    if (downloaded56Count > 0) "✓ Đã cài $downloaded56Count/${all56Items.size}" else "0/${all56Items.size} mod",
+                    color = if (downloaded56Count > 0) glass.liveGreen else glass.accent,
+                    fontSize = 10.5.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    style = HorizonTabularStyle
+                )
+            }
         }
     ) {
         Text(
-            "Đã tích hợp và PHÂN LOẠI ĐỦ 56 MOD từ 5 ảnh chụp màn hình của bạn thành 6 nhóm chức năng rõ ràng (hỗ trợ đa phiên bản Minecraft: 1.21.11, 1.21.4, 1.21.1, 1.20.4, 1.20.1, 1.19.2, 1.18.2, 1.16.5...).\n" +
-                "• Những mod nào đã tải sẽ hiển thị rõ '✅ Đã cài' và tự động bỏ qua khi tải lại để không bao giờ bị tải trùng!",
+            "Đã tích hợp và phân loại đủ 56 Mod thành 6 nhóm chức năng rõ ràng (hỗ trợ đa phiên bản Minecraft: 1.21.11, 1.21.4, 1.21.1, 1.20.4, 1.20.1, 1.19.2, 1.18.2, 1.16.5...).\n" +
+                "• Những mod đã tải hiển thị nhãn ngọc lục bảo '✓ Đã cài' ở đầu nhóm và tự động bỏ qua khi tải lại để không bao giờ trùng tệp!",
             color = Muted,
             fontSize = 11.sp,
-            lineHeight = 16.sp
+            lineHeight = 15.8.sp
         )
         Spacer(Modifier.height(10.dp))
 
@@ -3469,11 +4005,11 @@ private fun ModPackDecoderAndTransferCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(10.dp))
-                .background(Indigo.copy(alpha = 0.08f))
-                .border(1.dp, Indigo.copy(alpha = 0.30f), RoundedCornerShape(10.dp))
+                .clip(RoundedCornerShape(12.dp))
+                .background(glass.accentSoft)
+                .border(1.dp, glass.accent.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
                 .clickable { showPackVerPickerModal = true }
-                .padding(horizontal = 10.dp, vertical = 8.dp),
+                .padding(horizontal = 11.dp, vertical = 9.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -3483,23 +4019,25 @@ private fun ModPackDecoderAndTransferCard(
                         if (selectedCustomVersion.isBlank()) " (Theo Server)" else " (Đã chọn riêng)",
                     fontSize = 11.5.sp,
                     fontWeight = FontWeight.ExtraBold,
-                    color = Indigo
+                    color = glass.accent,
+                    style = HorizonTabularStyle
                 )
                 Text(
-                    "Ấn vào đây để lướt chọn hoặc nhập tay phiên bản rồi cài Mod",
-                    fontSize = 10.sp,
+                    "Chạm vào đây để lướt chọn hoặc nhập tay phiên bản rồi cài Mod",
+                    fontSize = 10.5.sp,
                     color = Muted
                 )
             }
             Text(
-                "📋 Lướt chọn / Nhập ▾",
-                color = Indigo,
+                "📋 Lướt chọn ▾",
+                color = glass.accent,
                 fontSize = 10.5.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Indigo.copy(alpha = 0.14f))
-                    .padding(horizontal = 8.dp, vertical = 5.dp)
+                    .clip(CircleShape)
+                    .background(glass.glassRow)
+                    .border(1.dp, glass.accent.copy(alpha = 0.35f), CircleShape)
+                    .padding(horizontal = 9.dp, vertical = 5.dp)
             )
         }
         if (showPackVerPickerModal) {
@@ -3510,6 +4048,8 @@ private fun ModPackDecoderAndTransferCard(
             }
             AlertDialog(
                 onDismissRequest = { showPackVerPickerModal = false },
+                containerColor = glass.glassChrome,
+                shape = McShape.Dialog,
                 title = {
                     Text(
                         "🌐 Lướt chọn hoặc nhập tay phiên bản tải Mod",
@@ -3522,33 +4062,19 @@ private fun ModPackDecoderAndTransferCard(
                         modifier = Modifier.fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        OutlinedTextField(
+                        KhoModSearchPill(
                             value = packVerSearchInput,
                             onValueChange = { packVerSearchInput = it },
-                            placeholder = { Text("🔍 Nhập tìm hoặc gõ tay (VD: 1.21.4, 1.20.1, 1.16.5...)", fontSize = 11.5.sp) },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                            trailingIcon = {
-                                if (packVerSearchInput.isNotEmpty()) {
-                                    Text(
-                                        "✕",
-                                        color = Muted,
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier
-                                            .clickable { packVerSearchInput = "" }
-                                            .padding(8.dp)
-                                    )
-                                }
-                            }
+                            placeholder = "Nhập tìm hoặc gõ tay (VD: 1.21.4, 1.20.1, 1.16.5...)",
+                            modifier = Modifier.fillMaxWidth()
                         )
                         if (trimmedPackVer.isNotBlank()) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(10.dp))
-                                    .background(Mint.copy(alpha = 0.14f))
-                                    .border(1.dp, Mint.copy(alpha = 0.40f), RoundedCornerShape(10.dp))
+                                    .background(glass.liveGreenSoft)
+                                    .border(1.dp, glass.liveGreen.copy(alpha = 0.50f), RoundedCornerShape(10.dp))
                                     .clickable {
                                         selectedCustomVersion = trimmedPackVer
                                         showPackVerPickerModal = false
@@ -3558,22 +4084,23 @@ private fun ModPackDecoderAndTransferCard(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    "✨ Dùng phiên bản nhập tay: MC $trimmedPackVer",
-                                    color = Mint,
+                                    "✨ Dùng bản nhập tay: MC $trimmedPackVer",
+                                    color = glass.liveGreen,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.ExtraBold,
+                                    style = HorizonTabularStyle,
                                     modifier = Modifier.weight(1f)
                                 )
                                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                     Text(
                                         "✓ Chọn",
-                                        color = Indigo,
+                                        color = glass.accent,
                                         fontSize = 10.5.sp,
                                         fontWeight = FontWeight.Bold,
                                         modifier = Modifier
-                                            .clip(RoundedCornerShape(6.dp))
-                                            .background(Indigo.copy(alpha = 0.14f))
-                                            .padding(horizontal = 7.dp, vertical = 4.dp)
+                                            .clip(CircleShape)
+                                            .background(glass.accentSoft)
+                                            .padding(horizontal = 8.dp, vertical = 4.dp)
                                     )
                                     if (activeCoreExists && !serverRunning) {
                                         Text(
@@ -3582,14 +4109,14 @@ private fun ModPackDecoderAndTransferCard(
                                             fontSize = 10.5.sp,
                                             fontWeight = FontWeight.ExtraBold,
                                             modifier = Modifier
-                                                .clip(RoundedCornerShape(6.dp))
-                                                .background(Mint)
+                                                .clip(CircleShape)
+                                                .background(glass.liveGreen)
                                                 .clickable {
                                                     selectedCustomVersion = trimmedPackVer
                                                     showPackVerPickerModal = false
                                                     showAutoPackConfirmDialog = true
                                                 }
-                                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                                                .padding(horizontal = 9.dp, vertical = 4.dp)
                                         )
                                     }
                                 }
@@ -3607,7 +4134,12 @@ private fun ModPackDecoderAndTransferCard(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clip(RoundedCornerShape(10.dp))
-                                        .background(if (isAutoServerVer) Mint.copy(alpha = 0.18f) else FieldGray)
+                                        .background(if (isAutoServerVer) glass.liveGreenSoft else glass.glassRow)
+                                        .border(
+                                            1.dp,
+                                            if (isAutoServerVer) glass.liveGreen.copy(alpha = 0.50f) else glass.hairline,
+                                            RoundedCornerShape(10.dp)
+                                        )
                                         .clickable {
                                             selectedCustomVersion = ""
                                             showPackVerPickerModal = false
@@ -3618,14 +4150,15 @@ private fun ModPackDecoderAndTransferCard(
                                 ) {
                                     Text(
                                         "🎯 Theo Server hiện tại (MC $serverMcVer)",
-                                        color = if (isAutoServerVer) Mint else Indigo,
+                                        color = if (isAutoServerVer) glass.liveGreen else glass.accent,
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.ExtraBold,
+                                        style = HorizonTabularStyle,
                                         modifier = Modifier.weight(1f)
                                     )
                                     Text(
                                         if (isAutoServerVer) "✓ Đang chọn" else "Chọn",
-                                        color = if (isAutoServerVer) Mint else Indigo,
+                                        color = if (isAutoServerVer) glass.liveGreen else glass.accent,
                                         fontSize = 10.5.sp,
                                         fontWeight = FontWeight.Bold
                                     )
@@ -3637,7 +4170,12 @@ private fun ModPackDecoderAndTransferCard(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clip(RoundedCornerShape(10.dp))
-                                        .background(if (isSelected) Indigo.copy(alpha = 0.20f) else FieldGray)
+                                        .background(if (isSelected) glass.accentSoft else glass.glassRow)
+                                        .border(
+                                            1.dp,
+                                            if (isSelected) glass.accent.copy(alpha = 0.55f) else glass.hairline,
+                                            RoundedCornerShape(10.dp)
+                                        )
                                         .clickable {
                                             selectedCustomVersion = ver
                                             showPackVerPickerModal = false
@@ -3648,21 +4186,22 @@ private fun ModPackDecoderAndTransferCard(
                                 ) {
                                     Text(
                                         "📦 Minecraft $ver",
-                                        color = if (isSelected) Indigo else MaterialTheme.colorScheme.onSurface,
+                                        color = if (isSelected) glass.accent else MaterialTheme.colorScheme.onSurface,
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.ExtraBold,
+                                        style = HorizonTabularStyle,
                                         modifier = Modifier.weight(1f)
                                     )
                                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                         Text(
                                             if (isSelected) "✓ Đang chọn" else "Chọn",
-                                            color = Indigo,
+                                            color = glass.accent,
                                             fontSize = 10.5.sp,
                                             fontWeight = FontWeight.Bold,
                                             modifier = Modifier
-                                                .clip(RoundedCornerShape(6.dp))
-                                                .background(Indigo.copy(alpha = 0.14f))
-                                                .padding(horizontal = 7.dp, vertical = 4.dp)
+                                                .clip(CircleShape)
+                                                .background(glass.accentSoft)
+                                                .padding(horizontal = 8.dp, vertical = 4.dp)
                                         )
                                         if (activeCoreExists && !serverRunning) {
                                             Text(
@@ -3671,14 +4210,14 @@ private fun ModPackDecoderAndTransferCard(
                                                 fontSize = 10.5.sp,
                                                 fontWeight = FontWeight.ExtraBold,
                                                 modifier = Modifier
-                                                    .clip(RoundedCornerShape(6.dp))
-                                                    .background(Mint)
+                                                    .clip(CircleShape)
+                                                    .background(glass.liveGreen)
                                                     .clickable {
                                                         selectedCustomVersion = ver
                                                         showPackVerPickerModal = false
                                                         showAutoPackConfirmDialog = true
                                                     }
-                                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                                                    .padding(horizontal = 9.dp, vertical = 4.dp)
                                             )
                                         }
                                     }
@@ -3689,7 +4228,7 @@ private fun ModPackDecoderAndTransferCard(
                 },
                 confirmButton = {
                     TextButton(onClick = { showPackVerPickerModal = false }) {
-                        Text("Đóng", color = Indigo, fontWeight = FontWeight.Bold)
+                        Text("Đóng", color = glass.accent, fontWeight = FontWeight.Bold)
                     }
                 }
             )
@@ -3702,32 +4241,36 @@ private fun ModPackDecoderAndTransferCard(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(MintSoft)
-                    .padding(10.dp),
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(glass.liveGreenSoft)
+                    .border(1.dp, glass.liveGreen.copy(alpha = 0.55f), RoundedCornerShape(12.dp))
+                    .padding(11.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Text(
-                    "✅ ĐÃ TẢI & CÀI ĐẶT ĐỦ 56/56 MOD GỐC (MC $effectiveMcVer)",
-                    color = Mint,
+                    "✓ ĐÃ TẢI & CÀI ĐẶT ĐỦ 56/56 MOD GỐC (MC $effectiveMcVer)",
+                    color = glass.liveGreen,
                     fontSize = 12.sp,
-                    fontWeight = FontWeight.ExtraBold
+                    fontWeight = FontWeight.ExtraBold,
+                    style = HorizonTabularStyle
                 )
                 Text(
-                    "Toàn bộ 56/56 mod trong danh sách của bạn đã có sẵn trong thư mục mods/ (Đang bật: $enabled56Count/56). Bạn không cần tải lại nữa!",
+                    "Toàn bộ 56/56 mod trong danh sách đã có sẵn trong thư mục mods/ (Đang bật: $enabled56Count/56). Bạn không cần tải lại nữa!",
                     color = MaterialTheme.colorScheme.onSurface,
                     fontSize = 11.sp,
-                    lineHeight = 15.sp
+                    lineHeight = 15.8.sp,
+                    style = HorizonTabularStyle
                 )
                 OutlinedButton(
                     onClick = { showAutoPackConfirmDialog = true },
                     enabled = activeCoreExists && !serverRunning,
                     shape = McShape.ControlCompact,
+                    border = BorderStroke(1.dp, glass.accent.copy(alpha = 0.50f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
                         "🔄 Tuỳ chọn: Kiểm tra / Dọn mod lạ / Cài lại",
-                        color = Indigo,
+                        color = glass.accent,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold
                     )
@@ -3738,21 +4281,23 @@ private fun ModPackDecoderAndTransferCard(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(IndigoSoft)
-                    .padding(10.dp),
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(glass.accentSoft)
+                    .border(1.dp, glass.accent.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
+                    .padding(11.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Text(
                     "📊 Đã tải & cài $downloaded56Count/56 Mod gốc (Còn thiếu $missingCount Mod)",
-                    color = Indigo,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold
+                    color = glass.accent,
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    style = HorizonTabularStyle
                 )
                 Button(
                     onClick = { showAutoPackConfirmDialog = true },
                     enabled = activeCoreExists && !serverRunning,
-                    colors = ButtonDefaults.buttonColors(containerColor = Mint),
+                    colors = ButtonDefaults.buttonColors(containerColor = glass.liveGreen),
                     shape = McShape.Control,
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -3760,7 +4305,8 @@ private fun ModPackDecoderAndTransferCard(
                         "➕ Tải BỔ SUNG $missingCount Mod Còn Thiếu (MC $effectiveMcVer)",
                         color = Color.White,
                         fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        style = HorizonTabularStyle
                     )
                 }
             }
@@ -3768,7 +4314,7 @@ private fun ModPackDecoderAndTransferCard(
             Button(
                 onClick = { showAutoPackConfirmDialog = true },
                 enabled = activeCoreExists && !serverRunning,
-                colors = ButtonDefaults.buttonColors(containerColor = Mint),
+                colors = ButtonDefaults.buttonColors(containerColor = glass.liveGreen),
                 shape = McShape.Control,
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -3776,7 +4322,8 @@ private fun ModPackDecoderAndTransferCard(
                     "⚡ Dọn Mod Lạ & Tải ĐỦ 56/56 Mod Gốc (MC $effectiveMcVer)",
                     color = Color.White,
                     fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    style = HorizonTabularStyle
                 )
             }
         }
@@ -3791,20 +4338,20 @@ private fun ModPackDecoderAndTransferCard(
             Button(
                 onClick = { folderTreeLauncher.launch(null) },
                 enabled = activeCoreExists && !serverRunning,
-                colors = ButtonDefaults.buttonColors(containerColor = Indigo),
+                colors = ButtonDefaults.buttonColors(containerColor = glass.accent),
                 shape = McShape.ControlCompact,
                 modifier = Modifier.weight(1f)
             ) {
-                Text("📂 Tải Thư Mục Full Mod", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text("📂 Tải Thư Mục Mod", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }
             Button(
                 onClick = { archiveLauncher.launch(arrayOf("application/zip", "application/x-modrinth-modpack+zip", "*/*")) },
                 enabled = activeCoreExists && !serverRunning,
-                colors = ButtonDefaults.buttonColors(containerColor = Indigo),
+                colors = ButtonDefaults.buttonColors(containerColor = glass.accent),
                 shape = McShape.ControlCompact,
                 modifier = Modifier.weight(1f)
             ) {
-                Text("🗜️ Giải Mã ZIP / .mrpack", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text("🗜️ Giải Mã ZIP/.mrpack", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }
         }
 
@@ -3819,17 +4366,19 @@ private fun ModPackDecoderAndTransferCard(
                 onClick = { multiJarLauncher.launch(arrayOf("application/java-archive", "*/*")) },
                 enabled = activeCoreExists && !serverRunning,
                 shape = McShape.ControlCompact,
+                border = BorderStroke(1.dp, glass.hairline),
                 modifier = Modifier.weight(1f)
             ) {
-                Text("📑 Chọn Nhiều Tệp .jar", color = Indigo, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                Text("📑 Chọn Nhiều .jar", color = glass.accent, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
             }
             OutlinedButton(
                 onClick = { showServerTransferDialog = true },
                 enabled = activeCoreExists && !serverRunning,
                 shape = McShape.ControlCompact,
+                border = BorderStroke(1.dp, glass.hairline),
                 modifier = Modifier.weight(1f)
             ) {
-                Text("🔄 Chuyển Từ Server Cũ", color = Indigo, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                Text("🔄 Chuyển Server Cũ", color = glass.accent, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
             }
         }
 
@@ -3847,20 +4396,23 @@ private fun ModPackDecoderAndTransferCard(
                 },
                 enabled = activeCoreExists && hasInstalledMods,
                 shape = McShape.ControlCompact,
+                border = BorderStroke(1.dp, glass.hairline),
                 modifier = Modifier.weight(1f)
             ) {
-                Text("📤 Xuất Full Mod ra ZIP", color = Indigo, fontSize = 11.sp)
+                Text("📤 Xuất Mod ra ZIP", color = glass.accent, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
             }
             OutlinedButton(
                 onClick = { showFull56List = !showFull56List },
                 shape = McShape.ControlCompact,
+                border = BorderStroke(1.dp, glass.liveGreen.copy(alpha = 0.55f)),
                 modifier = Modifier.weight(1f)
             ) {
                 Text(
-                    if (showFull56List) "🔼 Thu gọn 6 Nhóm Mod" else "📋 Xem 6 Nhóm (Đã cài $downloaded56Count/56)",
-                    color = Mint,
+                    if (showFull56List) "🔼 Thu gọn 6 Nhóm" else "📋 Xem 6 Nhóm ($downloaded56Count/56)",
+                    color = glass.liveGreen,
                     fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    style = HorizonTabularStyle
                 )
             }
         }
@@ -3870,77 +4422,52 @@ private fun ModPackDecoderAndTransferCard(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(FieldGray)
-                    .padding(10.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                    .horizonGlassPlate(
+                        shape = RoundedCornerShape(14.dp),
+                        containerColor = glass.glassCard,
+                        borderColor = glass.hairline
+                    )
+                    .padding(11.dp),
+                verticalArrangement = Arrangement.spacedBy(9.dp)
             ) {
                 Text(
                     "🗂️ Phân loại 56 Mod theo 6 Nhóm Chức Năng (Bấm chọn nhóm để lọc hoặc cài nguyên nhóm):",
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Indigo
+                    color = glass.accent
                 )
 
-                // ── 6 Nhóm Phân Loại 56 Mod ──
+                // ── 6 Nhóm Phân Loại 56 Mod (BlockWay Frosted Pills) ──
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     val allSelected = selectedCategoryGroup == "ALL"
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(if (allSelected) Indigo else MaterialTheme.colorScheme.surface)
-                            .clickable { selectedCategoryGroup = "ALL" }
-                            .padding(horizontal = 9.dp, vertical = 5.dp)
-                    ) {
-                        Text(
-                            if (downloaded56Count >= all56Items.size) {
-                                "✅ Tất cả 6 Nhóm (Đã cài $downloaded56Count/${all56Items.size})"
-                            } else {
-                                "📦 Tất cả 6 Nhóm ($downloaded56Count/${all56Items.size})"
-                            },
-                            color = if (allSelected) Color.White else Indigo,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
+                    KhoModGlassPillChip(
+                        label = if (downloaded56Count >= all56Items.size) {
+                            "✓ Tất cả 6 Nhóm ($downloaded56Count/${all56Items.size})"
+                        } else {
+                            "📦 Tất cả 6 Nhóm ($downloaded56Count/${all56Items.size})"
+                        },
+                        selected = allSelected,
+                        emeraldTint = downloaded56Count >= all56Items.size && allSelected,
+                        onClick = { selectedCategoryGroup = "ALL" }
+                    )
 
                     categoryGroups.forEach { groupName ->
                         val (installedInGroup, groupCount) = groupCountsByTitle[groupName] ?: (0 to 0)
                         val isGroupFull = groupCount > 0 && installedInGroup >= groupCount
                         val isGroupSelected = selectedCategoryGroup == groupName
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(
-                                    when {
-                                        isGroupSelected -> Indigo
-                                        isGroupFull -> MintSoft
-                                        else -> MaterialTheme.colorScheme.surface
-                                    }
-                                )
-                                .clickable { selectedCategoryGroup = groupName }
-                                .padding(horizontal = 9.dp, vertical = 5.dp)
-                        ) {
-                            Text(
-                                if (isGroupFull) {
-                                    "✅ $groupName (Đã cài $installedInGroup/$groupCount)"
-                                } else if (installedInGroup > 0) {
-                                    "$groupName (Đã cài $installedInGroup/$groupCount)"
-                                } else {
-                                    "$groupName (0/$groupCount)"
-                                },
-                                color = when {
-                                    isGroupSelected -> Color.White
-                                    isGroupFull -> Mint
-                                    else -> MaterialTheme.colorScheme.onSurface
-                                },
-                                fontSize = 10.sp,
-                                fontWeight = if (isGroupSelected || isGroupFull) FontWeight.Bold else FontWeight.SemiBold
-                            )
-                        }
+                        KhoModGlassPillChip(
+                            label = if (isGroupFull) {
+                                "✓ $groupName ($installedInGroup/$groupCount)"
+                            } else {
+                                "$groupName ($installedInGroup/$groupCount)"
+                            },
+                            selected = isGroupSelected || isGroupFull,
+                            emeraldTint = isGroupFull && !isGroupSelected,
+                            onClick = { selectedCategoryGroup = groupName }
+                        )
                     }
                 }
 
@@ -3953,15 +4480,17 @@ private fun ModPackDecoderAndTransferCard(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(MintSoft)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(glass.liveGreenSoft)
+                                .border(1.dp, glass.liveGreen.copy(alpha = 0.55f), RoundedCornerShape(10.dp))
                                 .padding(horizontal = 10.dp, vertical = 8.dp)
                         ) {
                             Text(
-                                "✅ Nhóm '$selectedCategoryGroup' đã tải & cài đặt đủ ($installedInSelectedGroup/$groupOnlyCount Mod)",
-                                color = Mint,
+                                "✓ Nhóm '$selectedCategoryGroup' đã tải & cài đặt đủ ($installedInSelectedGroup/$groupOnlyCount Mod)",
+                                color = glass.liveGreen,
                                 fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                style = HorizonTabularStyle
                             )
                         }
                     } else {
@@ -3974,7 +4503,7 @@ private fun ModPackDecoderAndTransferCard(
                                 )
                             },
                             enabled = activeCoreExists && !serverRunning,
-                            colors = ButtonDefaults.buttonColors(containerColor = Indigo),
+                            colors = ButtonDefaults.buttonColors(containerColor = glass.accent),
                             shape = McShape.ControlCompact,
                             modifier = Modifier.fillMaxWidth()
                         ) {
@@ -3984,35 +4513,38 @@ private fun ModPackDecoderAndTransferCard(
                                 } else if (selectedCategoryGroup == "🧱 Thư viện Lõi") {
                                     "⚡ Tải & Cài trọn bộ $selectedCategoryGroup ($groupOnlyCount Mod • MC $effectiveMcVer)"
                                 } else {
-                                    "⚡ Tải & Cài Nhóm '$selectedCategoryGroup' ($groupOnlyCount Mod + Kèm Thư viện Lõi • MC $effectiveMcVer)"
+                                    "⚡ Tải & Cài Nhóm '$selectedCategoryGroup' ($groupOnlyCount Mod + Kèm Lõi • MC $effectiveMcVer)"
                                 },
                                 color = Color.White,
                                 fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                style = HorizonTabularStyle
                             )
                         }
                     }
                 }
 
-                // Ô tìm kiếm nhanh trong 56 Mod
-                OutlinedTextField(
+                // BlockWay Frosted Search Pill trong 56 Mod
+                KhoModSearchPill(
                     value = catalogSearchQuery,
                     onValueChange = { catalogSearchQuery = it },
-                    placeholder = { Text("🔍 Tìm trong 56 Mod (VD: Macaw, Farmer, Lithium, Voice, Waystones...)", fontSize = 11.sp) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = McShape.ControlCompact
+                    placeholder = "Tìm trong 56 Mod (VD: Macaw, Farmer, Lithium, Voice, Waystones...)",
+                    modifier = Modifier.fillMaxWidth()
                 )
 
-                // Hiển thị danh sách Mod theo từng nhóm rõ ràng (LazyColumn mượt 60-120FPS)
-                val groupedDisplay = remember(filteredCatalogItems, selectedCategoryGroup, categoryGroups) {
+                // Hiển thị danh sách Mod theo từng nhóm rõ ràng (Đưa Mod đã cài lên đầu nhóm, LazyColumn 60-120FPS)
+                val groupedDisplay = remember(filteredCatalogItems, selectedCategoryGroup, categoryGroups, matchedModBySlug) {
                     if (selectedCategoryGroup == "ALL") {
                         categoryGroups.mapNotNull { grp ->
-                            val list = filteredCatalogItems.filter { it.categoryGroup == grp }
+                            val list = filteredCatalogItems
+                                .filter { it.categoryGroup == grp }
+                                .sortedByDescending { matchedModBySlug[it.slug] != null }
                             if (list.isEmpty()) null else grp to list
                         }
                     } else {
-                        listOf(selectedCategoryGroup to filteredCatalogItems)
+                        listOf(
+                            selectedCategoryGroup to filteredCatalogItems.sortedByDescending { matchedModBySlug[it.slug] != null }
+                        )
                     }
                 }
 
@@ -4020,7 +4552,7 @@ private fun ModPackDecoderAndTransferCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(max = 520.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                    verticalArrangement = Arrangement.spacedBy(7.dp)
                 ) {
                     groupedDisplay.forEach { (grpTitle, grpItems) ->
                         val grpInstalledCount = grpItems.count { matchedModBySlug[it.slug] != null }
@@ -4037,29 +4569,19 @@ private fun ModPackDecoderAndTransferCard(
                                     "$grpTitle (Đã cài $grpInstalledCount/${grpItems.size} mod)",
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.ExtraBold,
-                                    color = if (grpIsFull) Mint else Indigo,
+                                    color = if (grpIsFull) glass.liveGreen else glass.accent,
+                                    style = HorizonTabularStyle,
                                     modifier = Modifier.weight(1f)
                                 )
                                 if (selectedCategoryGroup == "ALL") {
                                     if (grpIsFull) {
-                                        Text(
-                                            "✅ Đã cài đủ (${grpInstalledCount}/${grpItems.size})",
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Mint,
-                                            modifier = Modifier
-                                                .clip(RoundedCornerShape(6.dp))
-                                                .background(MintSoft)
-                                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                                        )
+                                        InstalledEmeraldPill(isEnabled = true)
                                     } else {
-                                        Text(
-                                            if (grpInstalledCount > 0) "➕ Tải thiếu (${grpItems.size - grpInstalledCount} mod)" else "⚡ Cài nhóm này",
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Mint,
+                                        Box(
                                             modifier = Modifier
-                                                .clip(RoundedCornerShape(6.dp))
+                                                .clip(CircleShape)
+                                                .background(glass.accentSoft)
+                                                .border(1.dp, glass.accent.copy(alpha = 0.45f), CircleShape)
                                                 .clickable(enabled = activeCoreExists && !serverRunning) {
                                                     vm.installUserScreenshotModCategory(
                                                         categoryGroup = grpTitle,
@@ -4067,8 +4589,16 @@ private fun ModPackDecoderAndTransferCard(
                                                         customMcVersion = selectedCustomVersion
                                                     )
                                                 }
-                                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                                        )
+                                                .padding(horizontal = 9.dp, vertical = 3.5.dp)
+                                        ) {
+                                            Text(
+                                                if (grpInstalledCount > 0) "➕ Tải thiếu (${grpItems.size - grpInstalledCount})" else "⚡ Cài nhóm này",
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = glass.accent,
+                                                style = HorizonTabularStyle
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -4081,9 +4611,14 @@ private fun ModPackDecoderAndTransferCard(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(MaterialTheme.colorScheme.surface)
-                                    .padding(horizontal = 10.dp, vertical = 9.dp),
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(glass.glassRow)
+                                    .border(
+                                        width = 1.dp,
+                                        color = if (isInstalled) glass.liveGreen.copy(alpha = 0.55f) else glass.hairline,
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
+                                    .padding(horizontal = 11.dp, vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 AddonJarIcon(
@@ -4097,55 +4632,45 @@ private fun ModPackDecoderAndTransferCard(
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         "#${item.index} · ${item.title}",
-                                        fontSize = 13.5.sp,
-                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        style = HorizonTabularStyle,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
                                     Text(
                                         item.descVi,
-                                        fontSize = 12.sp,
+                                        fontSize = 11.5.sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        lineHeight = 16.sp
+                                        lineHeight = 16.5.sp // 1.43x generous Vietnamese line-height
                                     )
                                     Spacer(Modifier.height(4.dp))
                                     Row(
                                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        BadgeChip(item.weightVi, Mint, MintSoft)
-                                        BadgeChip(item.scopeVi, Indigo, IndigoSoft)
+                                        BadgeChip(item.weightVi, glass.liveGreen, glass.liveGreenSoft)
+                                        BadgeChip(item.scopeVi, glass.accent, glass.accentSoft)
                                     }
-                                    Spacer(Modifier.height(2.dp))
+                                    Spacer(Modifier.height(3.dp))
                                     Text(
                                         if (matchedMod != null) {
-                                            "✅ Đã tải tệp: ${matchedMod.fileName} (${matchedMod.sizeText})"
+                                            "✓ Đã tải: ${matchedMod.fileName} (${matchedMod.sizeText})"
                                         } else {
                                             "Chưa tải (${item.originalJarName})"
                                         },
-                                        fontSize = 11.sp,
-                                        color = if (matchedMod != null) Mint else Muted,
+                                        fontSize = 10.5.sp,
+                                        color = if (matchedMod != null) glass.liveGreen else Muted,
                                         fontWeight = if (matchedMod != null) FontWeight.SemiBold else FontWeight.Normal,
+                                        style = HorizonTabularStyle,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
                                 }
                                 Spacer(Modifier.size(8.dp))
                                 if (isInstalled && matchedMod != null) {
-                                    Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                        Box(
-                                            modifier = Modifier
-                                                .clip(RoundedCornerShape(6.dp))
-                                                .background(if (isEnabledMod) MintSoft else CoralSoft)
-                                                .padding(horizontal = 7.dp, vertical = 3.dp)
-                                        ) {
-                                            Text(
-                                                if (isEnabledMod) "🟢 Đang bật" else "⏸ Đang tắt",
-                                                color = if (isEnabledMod) Mint else Coral,
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                        }
+                                    Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                        InstalledEmeraldPill(isEnabled = isEnabledMod)
                                         Switch(
                                             checked = isEnabledMod,
                                             onCheckedChange = {
@@ -4160,12 +4685,12 @@ private fun ModPackDecoderAndTransferCard(
                                             vm.installSingleCatalogMod(item, customMcVersion = selectedCustomVersion)
                                         },
                                         enabled = activeCoreExists && !serverRunning,
-                                        colors = ButtonDefaults.buttonColors(containerColor = Indigo),
-                                        shape = RoundedCornerShape(8.dp),
-                                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 5.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = glass.accent),
+                                        shape = CircleShape,
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 5.dp),
                                         modifier = Modifier.height(34.dp)
                                     ) {
-                                        Text("➕ Cài", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        Text("➕ Cài", color = Color.White, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }
@@ -4180,6 +4705,8 @@ private fun ModPackDecoderAndTransferCard(
         val willEnable = !modEntry.isEnabled
         AlertDialog(
             onDismissRequest = { pendingCatalogModToggle = null },
+            containerColor = glass.glassChrome,
+            shape = McShape.Dialog,
             title = {
                 Text(
                     if (willEnable) "🟢 Xác nhận BẬT Mod '${catalogItem.title}'?"
@@ -4194,7 +4721,8 @@ private fun ModPackDecoderAndTransferCard(
                         "Nhóm phân loại: ${catalogItem.categoryGroup} • Tệp: ${modEntry.fileName} (${modEntry.sizeText})",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Indigo
+                        color = glass.accent,
+                        style = HorizonTabularStyle
                     )
                     Text(
                         if (willEnable) {
@@ -4224,7 +4752,7 @@ private fun ModPackDecoderAndTransferCard(
                         pendingCatalogModToggle = null
                         vm.toggleModEnabled(targetFile)
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = if (willEnable) Mint else Coral)
+                    colors = ButtonDefaults.buttonColors(containerColor = if (willEnable) glass.liveGreen else glass.dangerCoral)
                 ) {
                     Text(
                         if (willEnable) "🟢 Đồng ý Bật Mod" else "⏸ Đồng ý Tắt Mod",
@@ -4244,6 +4772,8 @@ private fun ModPackDecoderAndTransferCard(
     if (showServerTransferDialog) {
         AlertDialog(
             onDismissRequest = { showServerTransferDialog = false },
+            containerColor = glass.glassChrome,
+            shape = McShape.Dialog,
             title = { Text("🔄 Chuyển Mod & Config Từ Server Khác", fontSize = 15.sp, fontWeight = FontWeight.Bold) },
             text = {
                 Column(
@@ -4252,14 +4782,16 @@ private fun ModPackDecoderAndTransferCard(
                 ) {
                     if (otherServers.isEmpty()) {
                         Text(
-                            "Hiện chỉ có 1 server trong ứng dụng. Nếu bộ mod cũ của bạn nằm trong thư mục điện thoại hoặc từ launcher khác (Pojav/Zalith/FCL), hãy bấm nút '📂 Tải Thư Mục Full Mod' hoặc '⚡ Dọn Mod Lạ & Tải ĐỦ 56/56 Mod Gốc' nhé!",
+                            "Hiện chỉ có 1 server trong ứng dụng. Nếu bộ mod cũ của bạn nằm trong thư mục điện thoại hoặc từ launcher khác (Pojav/Zalith/FCL), hãy bấm nút '📂 Tải Thư Mục Mod' hoặc '⚡ Dọn Mod Lạ & Tải ĐỦ 56/56 Mod Gốc' nhé!",
                             color = Muted,
-                            fontSize = 12.sp
+                            fontSize = 12.sp,
+                            lineHeight = 17.sp
                         )
                     } else {
                         Text(
                             "Chọn server cũ mà bạn muốn lấy toàn bộ Mod chuyển sang server「${config.activeCoreName ?: ""}」:",
                             fontSize = 12.sp,
+                            lineHeight = 17.sp,
                             color = Muted
                         )
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -4273,13 +4805,15 @@ private fun ModPackDecoderAndTransferCard(
                                     vm.copyModsFromAnotherServer(srv.dirName, copyConfigsToo)
                                 },
                                 modifier = Modifier.fillMaxWidth(),
+                                border = BorderStroke(1.dp, glass.accent.copy(alpha = 0.50f)),
                                 shape = McShape.ControlCompact
                             ) {
                                 Text(
                                     "Chuyển từ: ${srv.name} (${srv.core.displayName} ${srv.version})",
-                                    color = Indigo,
+                                    color = glass.accent,
                                     fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold
+                                    fontWeight = FontWeight.SemiBold,
+                                    style = HorizonTabularStyle
                                 )
                             }
                         }
@@ -4288,7 +4822,7 @@ private fun ModPackDecoderAndTransferCard(
             },
             confirmButton = {
                 TextButton(onClick = { showServerTransferDialog = false }) {
-                    Text("Đóng")
+                    Text("Đóng", color = glass.accent, fontWeight = FontWeight.Bold)
                 }
             }
         )
@@ -4300,15 +4834,18 @@ private fun ModPackDecoderAndTransferCard(
         val missingCountDialog = (all56Items.size - downloaded56Count).coerceAtLeast(0)
         AlertDialog(
             onDismissRequest = { showAutoPackConfirmDialog = false },
+            containerColor = glass.glassChrome,
+            shape = McShape.Dialog,
             title = {
                 Text(
                     if (downloaded56Count >= all56Items.size) {
-                        "✅ Đã Cài Đủ 56/56 Mod (MC $effectiveMcVer)"
+                        "✓ Đã Cài Đủ 56/56 Mod (MC $effectiveMcVer)"
                     } else {
                         "⚡ Cài Đặt Bộ 56 Mod Gốc (MC $effectiveMcVer)"
                     },
                     fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    style = HorizonTabularStyle
                 )
             },
             text = {
@@ -4319,20 +4856,26 @@ private fun ModPackDecoderAndTransferCard(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(if (downloaded56Count >= all56Items.size) MintSoft else IndigoSoft)
-                            .padding(8.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (downloaded56Count >= all56Items.size) glass.liveGreenSoft else glass.accentSoft)
+                            .border(
+                                1.dp,
+                                if (downloaded56Count >= all56Items.size) glass.liveGreen.copy(alpha = 0.55f) else glass.accent.copy(alpha = 0.45f),
+                                RoundedCornerShape(10.dp)
+                            )
+                            .padding(10.dp)
                     ) {
                         Text(
                             if (downloaded56Count >= all56Items.size) {
-                                "✅ Máy chủ đã tải & cài đặt đủ 56/56 Mod! Hệ thống sẽ không tải lại các mod đã có (trừ khi bạn tích chọn 'Tải lại từ đầu' bên dưới)."
+                                "✓ Máy chủ đã tải & cài đặt đủ 56/56 Mod! Hệ thống sẽ không tải lại các mod đã có (trừ khi bạn tích chọn 'Tải lại từ đầu' bên dưới)."
                             } else {
-                                "📊 Trạng thái hiện tại: Đã cài $downloaded56Count/56 Mod · Còn thiếu $missingCountDialog Mod.\nHệ thống sẽ giữ nguyên $downloaded56Count mod đã có và CHỈ TẢI BỔ SUNG $missingCountDialog mod còn thiếu!"
+                                "📊 Trạng thái hiện tại: Đã cài $downloaded56Count/56 Mod · Còn thiếu $missingCountDialog Mod.\nHệ thống giữ nguyên $downloaded56Count mod đã có và CHỈ TẢI BỔ SUNG $missingCountDialog mod còn thiếu!"
                             },
                             fontSize = 11.sp,
-                            color = if (downloaded56Count >= all56Items.size) Mint else Indigo,
+                            color = if (downloaded56Count >= all56Items.size) glass.liveGreen else glass.accent,
                             fontWeight = FontWeight.SemiBold,
-                            lineHeight = 15.sp
+                            lineHeight = 15.8.sp,
+                            style = HorizonTabularStyle
                         )
                     }
                     Text(
@@ -4344,14 +4887,15 @@ private fun ModPackDecoderAndTransferCard(
                             "• 🐾 Động vật & Sinh vật (3 Mod): Animal Garden (Manatee & Mouse), Tom's Mobs.",
                         fontSize = 11.sp,
                         color = Muted,
-                        lineHeight = 16.sp
+                        lineHeight = 16.2.sp
                     )
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(FieldGray)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(glass.glassRow)
+                            .border(1.dp, glass.hairline, RoundedCornerShape(10.dp))
                             .clickable { cleanAllNon56 = !cleanAllNon56 }
                             .padding(8.dp)
                     ) {
@@ -4359,6 +4903,7 @@ private fun ModPackDecoderAndTransferCard(
                         Text(
                             "🧹 Dọn sạch các mod lạ không nằm trong 56 mod này (Khuyên dùng để sửa dứt điểm lỗi server)",
                             fontSize = 11.sp,
+                            lineHeight = 15.6.sp,
                             fontWeight = FontWeight.SemiBold
                         )
                     }
@@ -4367,15 +4912,18 @@ private fun ModPackDecoderAndTransferCard(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(FieldGray)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(glass.glassRow)
+                                .border(1.dp, glass.hairline, RoundedCornerShape(10.dp))
                                 .clickable { forceReinstallAll = !forceReinstallAll }
                                 .padding(8.dp)
                         ) {
                             Checkbox(checked = forceReinstallAll, onCheckedChange = { forceReinstallAll = it })
                             Text(
                                 "🔄 Tải lại từ đầu cả $downloaded56Count mod đã cài (Chỉ bật nếu file mod cũ bị hỏng)",
-                                fontSize = 11.sp
+                                fontSize = 11.sp,
+                                lineHeight = 15.6.sp,
+                                style = HorizonTabularStyle
                             )
                         }
                     }
@@ -4391,7 +4939,7 @@ private fun ModPackDecoderAndTransferCard(
                             forceReinstallAll = forceReinstallAll
                         )
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Mint)
+                    colors = ButtonDefaults.buttonColors(containerColor = glass.liveGreen)
                 ) {
                     Text(
                         if (!forceReinstallAll && missingCountDialog in 1 until all56Items.size) {
@@ -4402,13 +4950,14 @@ private fun ModPackDecoderAndTransferCard(
                             "Tải & Cài Đủ 56 Mod ($effectiveMcVer)"
                         },
                         color = Color.White,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        style = HorizonTabularStyle
                     )
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showAutoPackConfirmDialog = false }) {
-                    Text("Hủy")
+                    Text("Hủy", color = Muted)
                 }
             }
         )
@@ -4420,6 +4969,7 @@ private fun ResourcePackConfigCard(
     vm: McViewModel,
     activeCoreExists: Boolean
 ) {
+    val glass = HorizonGlass
     val props by vm.serverProperties.collectAsStateWithLifecycle()
     var url by remember(props["resource-pack"]) { mutableStateOf(props["resource-pack"].orEmpty()) }
     var sha1 by remember(props["resource-pack-sha1"]) { mutableStateOf(props["resource-pack-sha1"].orEmpty()) }
@@ -4428,7 +4978,22 @@ private fun ResourcePackConfigCard(
         mutableStateOf(props["require-resource-pack"]?.equals("true", ignoreCase = true) == true)
     }
 
-    McCard(title = "🎨 Quản Lý Gói Tài Nguyên (Resource Pack)") {
+    val fieldColors = OutlinedTextFieldDefaults.colors(
+        focusedContainerColor = glass.glassInput,
+        unfocusedContainerColor = glass.glassInput,
+        focusedBorderColor = glass.accent,
+        unfocusedBorderColor = glass.hairline,
+        cursorColor = glass.accent
+    )
+
+    McCard(
+        title = "🎨 Quản Lý Gói Tài Nguyên (Resource Pack)",
+        trailing = {
+            if (url.isNotBlank()) {
+                InstalledEmeraldPill(isEnabled = true)
+            }
+        }
+    ) {
         Text(
             "💡 Phân biệt rõ 2 cách dùng Gói Tài Nguyên (Texture Pack / Resource Pack):\n" +
                 "1️⃣ Cài riêng trên máy người chơi: Người chơi tự chép tệp .zip vào thư mục `resourcepacks/` trong game của họ (không bắt buộc cài trên server).\n" +
@@ -4444,6 +5009,8 @@ private fun ResourcePackConfigCard(
             label = { Text("Đường dẫn tải trực tiếp Resource Pack (.zip URL)", fontSize = 11.sp) },
             placeholder = { Text("https://example.com/resourcepack.zip", fontSize = 11.sp) },
             singleLine = true,
+            shape = McShape.ControlCompact,
+            colors = fieldColors,
             modifier = Modifier.fillMaxWidth()
         )
         Spacer(Modifier.height(8.dp))
@@ -4453,6 +5020,9 @@ private fun ResourcePackConfigCard(
             label = { Text("Mã kiểm tra SHA-1 (Tùy chọn, giúp game xác thực tệp)", fontSize = 11.sp) },
             placeholder = { Text("Để trống nếu chưa có mã SHA-1", fontSize = 11.sp) },
             singleLine = true,
+            shape = McShape.ControlCompact,
+            colors = fieldColors,
+            textStyle = HorizonTabularStyle,
             modifier = Modifier.fillMaxWidth()
         )
         Spacer(Modifier.height(8.dp))
@@ -4462,6 +5032,8 @@ private fun ResourcePackConfigCard(
             label = { Text("Lời nhắn hiển thị khi mời người chơi tải gói", fontSize = 11.sp) },
             placeholder = { Text("Hãy tải gói tài nguyên của server để hiển thị đầy đủ hình ảnh!", fontSize = 11.sp) },
             singleLine = true,
+            shape = McShape.ControlCompact,
+            colors = fieldColors,
             modifier = Modifier.fillMaxWidth()
         )
         Spacer(Modifier.height(8.dp))
@@ -4469,15 +5041,17 @@ private fun ResourcePackConfigCard(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(8.dp))
-                .background(FieldGray)
+                .clip(RoundedCornerShape(10.dp))
+                .background(glass.glassRow)
+                .border(1.dp, glass.hairline, RoundedCornerShape(10.dp))
                 .clickable { requirePack = !requirePack }
-                .padding(horizontal = 10.dp, vertical = 6.dp)
+                .padding(horizontal = 10.dp, vertical = 7.dp)
         ) {
             Checkbox(checked = requirePack, onCheckedChange = { requirePack = it })
             Text(
                 "Bắt buộc người chơi phải chấp nhận Gói tài nguyên mới được vào server (require-resource-pack)",
                 fontSize = 11.sp,
+                lineHeight = 15.6.sp,
                 modifier = Modifier.weight(1f)
             )
         }
@@ -4489,7 +5063,7 @@ private fun ResourcePackConfigCard(
             Button(
                 onClick = { vm.applyServerResourcePack(url, sha1, prompt, requirePack) },
                 enabled = activeCoreExists,
-                colors = ButtonDefaults.buttonColors(containerColor = Mint),
+                colors = ButtonDefaults.buttonColors(containerColor = glass.liveGreen),
                 shape = McShape.ControlCompact,
                 modifier = Modifier.weight(1f)
             ) {
@@ -4505,9 +5079,10 @@ private fun ResourcePackConfigCard(
                         vm.applyServerResourcePack("", "", "", false)
                     },
                     enabled = activeCoreExists,
+                    border = BorderStroke(1.dp, glass.dangerCoral.copy(alpha = 0.6f)),
                     shape = McShape.ControlCompact
                 ) {
-                    Text("Xóa", color = Coral, fontSize = 11.sp)
+                    Text("Xóa", color = glass.dangerCoral, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }

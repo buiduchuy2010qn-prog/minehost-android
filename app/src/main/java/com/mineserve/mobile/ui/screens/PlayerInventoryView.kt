@@ -1,13 +1,14 @@
 package com.mineserve.mobile.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -17,7 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -30,6 +31,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
@@ -59,17 +61,13 @@ import com.mineserve.mobile.server.PlayerManager
 import com.mineserve.mobile.server.inventory.InventoryCoreSupport
 import com.mineserve.mobile.server.inventory.InventoryItemStack
 import com.mineserve.mobile.server.inventory.InventorySection
-import com.mineserve.mobile.server.inventory.InventorySourceMode
 import com.mineserve.mobile.server.inventory.MinecraftItemCatalog
 import com.mineserve.mobile.server.inventory.PlayerInventorySnapshot
-import com.mineserve.mobile.ui.theme.Coral
-import com.mineserve.mobile.ui.theme.CoralSoft
-import com.mineserve.mobile.ui.theme.Indigo
-import com.mineserve.mobile.ui.theme.IndigoSoft
+import com.mineserve.mobile.ui.theme.HorizonGlass
+import com.mineserve.mobile.ui.theme.HorizonTabularStyle
 import com.mineserve.mobile.ui.theme.McShape
-import com.mineserve.mobile.ui.theme.Mint
-import com.mineserve.mobile.ui.theme.MintSoft
 import com.mineserve.mobile.ui.theme.Muted
+import com.mineserve.mobile.ui.theme.horizonGlassPlate
 
 data class SelectedInventorySlot(
     val section: InventorySection,
@@ -92,6 +90,7 @@ fun PlayerInventoryTabContent(
     onUpdateSlot: (InventorySection, Int, InventoryItemStack?, String) -> Unit,
     onMoveOrSwapSlot: (InventorySection, Int, InventorySection, Int) -> Unit
 ) {
+    val glass = HorizonGlass
     var selectedSlot by remember(playerName) {
         mutableStateOf<SelectedInventorySlot?>(SelectedInventorySlot(InventorySection.HOTBAR, 0))
     }
@@ -108,9 +107,12 @@ fun PlayerInventoryTabContent(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(10.dp))
-                .background(IndigoSoft)
-                .padding(10.dp),
+                .horizonGlassPlate(
+                    shape = McShape.Row,
+                    containerColor = glass.glassRow,
+                    borderColor = glass.hairline
+                )
+                .padding(11.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
@@ -120,15 +122,21 @@ fun PlayerInventoryTabContent(
                         PlayerManager.PlayerEdition.JAVA -> "JAVA"
                         else -> if (!playerXuid.isNullOrBlank() || playerName.startsWith(".")) "BEDROCK" else "JAVA"
                     }
+                    val isBedrock = editionBadge == "BEDROCK"
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(if (editionBadge == "BEDROCK") MintSoft else Indigo.copy(alpha = 0.15f))
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                            .clip(CircleShape)
+                            .background(if (isBedrock) glass.liveGreenSoft else glass.accentSoft)
+                            .border(
+                                1.dp,
+                                if (isBedrock) glass.liveGreen.copy(alpha = 0.45f) else glass.accent.copy(alpha = 0.45f),
+                                CircleShape
+                            )
+                            .padding(horizontal = 7.dp, vertical = 2.dp)
                     ) {
                         Text(
                             editionBadge,
-                            color = if (editionBadge == "BEDROCK") Mint else Indigo,
+                            color = if (isBedrock) glass.liveGreen else glass.accent,
                             fontSize = 9.sp,
                             fontWeight = FontWeight.ExtraBold
                         )
@@ -138,7 +146,7 @@ fun PlayerInventoryTabContent(
                         text = snapshot?.sourceMode?.labelVi ?: support.summaryVi,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Indigo,
+                        color = glass.accent,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -146,14 +154,31 @@ fun PlayerInventoryTabContent(
                 val effUuid = snapshot?.playerUuid ?: playerUuid
                 val effXuid = snapshot?.playerXuid ?: playerXuid
                 if (!effUuid.isNullOrBlank()) {
-                    Text("UUID: $effUuid", color = Muted, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        "UUID: $effUuid",
+                        style = HorizonTabularStyle,
+                        fontFamily = FontFamily.Monospace,
+                        color = Muted,
+                        fontSize = 9.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
                 if (!effXuid.isNullOrBlank()) {
-                    Text("XUID (Xbox/Floodgate): $effXuid", color = Muted, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        "XUID (Xbox/Floodgate): $effXuid",
+                        style = HorizonTabularStyle,
+                        fontFamily = FontFamily.Monospace,
+                        color = Muted,
+                        fontSize = 9.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
                 if (snapshot != null) {
                     Text(
                         "Cập nhật lúc: ${snapshot.capturedAtText} • Đang chứa ${snapshot.totalOccupiedSlots}/41 ô",
+                        style = HorizonTabularStyle,
                         color = Muted,
                         fontSize = 10.sp
                     )
@@ -163,7 +188,7 @@ fun PlayerInventoryTabContent(
                             notice,
                             color = Muted,
                             fontSize = 9.sp,
-                            lineHeight = 12.sp
+                            lineHeight = 13.sp
                         )
                     }
                 }
@@ -173,9 +198,9 @@ fun PlayerInventoryTabContent(
                 enabled = !isLoading && !isMutating
             ) {
                 if (isLoading || isMutating) {
-                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Indigo)
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = glass.accent)
                 } else {
-                    Icon(Icons.Outlined.Refresh, contentDescription = "Làm mới túi đồ", tint = Indigo)
+                    Icon(Icons.Outlined.Refresh, contentDescription = "Làm mới túi đồ", tint = glass.accent)
                 }
             }
         }
@@ -191,13 +216,15 @@ fun PlayerInventoryTabContent(
                     onClick = onForceSaveAndRefresh ?: onRefresh,
                     enabled = !isLoading && !isMutating,
                     shape = McShape.ControlCompact,
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                    modifier = Modifier.weight(1f).height(32.dp)
+                    border = BorderStroke(1.dp, glass.hairline),
+                    colors = ButtonDefaults.outlinedButtonColors(containerColor = glass.glassRow),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                    modifier = Modifier.weight(1f).height(34.dp)
                 ) {
                     Text(
                         "💾 Lưu & Đồng bộ túi đồ",
-                        color = Indigo,
-                        fontSize = 10.sp,
+                        color = glass.accent,
+                        fontSize = 10.5.sp,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -207,15 +234,15 @@ fun PlayerInventoryTabContent(
                     Button(
                         onClick = { onEquipStarterKit(true) },
                         enabled = !isLoading && !isMutating,
-                        colors = ButtonDefaults.buttonColors(containerColor = Indigo),
+                        colors = ButtonDefaults.buttonColors(containerColor = glass.accent, contentColor = Color.White),
                         shape = McShape.ControlCompact,
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                        modifier = Modifier.weight(1f).height(32.dp)
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        modifier = Modifier.weight(1f).height(34.dp)
                     ) {
                         Text(
                             "💎 Trang bị Bộ Netherite",
                             color = Color.White,
-                            fontSize = 10.sp,
+                            fontSize = 10.5.sp,
                             fontWeight = FontWeight.Bold,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -231,13 +258,16 @@ fun PlayerInventoryTabContent(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(CoralSoft)
-                    .padding(8.dp)
+                    .horizonGlassPlate(
+                        shape = McShape.Row,
+                        containerColor = glass.warnAmberSoft,
+                        borderColor = glass.warnAmber.copy(alpha = 0.45f)
+                    )
+                    .padding(9.dp)
             ) {
                 Text(
                     "⚠️ ${snapshot.staleReason}",
-                    color = Coral,
+                    color = glass.warnAmber,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -249,14 +279,17 @@ fun PlayerInventoryTabContent(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(CoralSoft)
+                    .horizonGlassPlate(
+                        shape = McShape.Row,
+                        containerColor = glass.dangerCoralSoft,
+                        borderColor = glass.dangerCoral.copy(alpha = 0.5f)
+                    )
                     .padding(10.dp)
             ) {
                 Column {
-                    Text("❌ Không thể đọc/cập nhật túi đồ", color = Coral, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text("❌ Không thể đọc/cập nhật túi đồ", color = glass.dangerCoral, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(2.dp))
-                    Text(errorMessage, color = Coral, fontSize = 10.sp)
+                    Text(errorMessage, color = glass.dangerCoral, fontSize = 10.sp)
                 }
             }
         }
@@ -267,14 +300,17 @@ fun PlayerInventoryTabContent(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(CoralSoft)
+                    .horizonGlassPlate(
+                        shape = McShape.Row,
+                        containerColor = glass.dangerCoralSoft,
+                        borderColor = glass.dangerCoral.copy(alpha = 0.45f)
+                    )
                     .padding(12.dp)
             ) {
                 Column {
-                    Text("🚫 Chưa hỗ trợ túi đồ trên ${support.core.displayName}", color = Coral, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Text("🚫 Chưa hỗ trợ túi đồ trên ${support.core.displayName}", color = glass.dangerCoral, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     Spacer(Modifier.height(4.dp))
-                    Text(support.limitationsVi, color = Muted, fontSize = 11.sp)
+                    Text(support.limitationsVi, color = Muted, fontSize = 11.sp, lineHeight = 16.sp)
                 }
             }
             return@Column
@@ -290,15 +326,20 @@ fun PlayerInventoryTabContent(
             ) {
                 if (isLoading) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        CircularProgressIndicator(modifier = Modifier.size(26.dp), strokeWidth = 2.5.dp, color = Indigo)
+                        CircularProgressIndicator(modifier = Modifier.size(26.dp), strokeWidth = 2.5.dp, color = glass.accent)
                         Spacer(Modifier.height(8.dp))
                         Text("Đang đọc dữ liệu túi đồ thật từ Server...", color = Muted, fontSize = 11.sp)
                     }
                 } else {
-                    OutlinedButton(onClick = onRefresh, shape = McShape.ControlCompact) {
-                        Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                    OutlinedButton(
+                        onClick = onRefresh,
+                        shape = McShape.ControlCompact,
+                        border = BorderStroke(1.dp, glass.hairline),
+                        colors = ButtonDefaults.outlinedButtonColors(containerColor = glass.glassRow)
+                    ) {
+                        Icon(Icons.Outlined.Refresh, contentDescription = null, tint = glass.accent, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("Tải túi đồ của $playerName", fontSize = 11.sp)
+                        Text("Tải túi đồ của $playerName", color = glass.accent, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
@@ -311,22 +352,25 @@ fun PlayerInventoryTabContent(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(MintSoft)
+                    .horizonGlassPlate(
+                        shape = McShape.Row,
+                        containerColor = glass.liveGreenSoft,
+                        borderColor = glass.liveGreen.copy(alpha = 0.55f)
+                    )
                     .padding(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Outlined.SwapHoriz, contentDescription = null, tint = Mint, modifier = Modifier.size(16.dp))
+                Icon(Icons.Outlined.SwapHoriz, contentDescription = null, tint = glass.liveGreen, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
                 Text(
                     "Đang chọn chuyển từ ${InventoryItemStack.slotLabelVi(src.section, src.slot)}. Hãy chạm vào 1 ô bất kỳ bên dưới để chuyển/hoán đổi!",
-                    color = Mint,
+                    color = glass.liveGreen,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f)
                 )
                 TextButton(onClick = { pendingMoveSource = null }) {
-                    Text("Hủy", color = Coral, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Text("Hủy", color = glass.dangerCoral, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -347,7 +391,8 @@ fun PlayerInventoryTabContent(
         // ── 3. Hàng Trang bị Giáp (4 ô) + Tay phụ Offhand (1 ô) ──
         Text(
             "🛡️ Giáp & Tay phụ • Ô Hotbar đang cầm: #${snapshot.selectedHotbarSlot + 1}",
-            color = Indigo,
+            style = HorizonTabularStyle,
+            color = glass.accent,
             fontSize = 11.sp,
             fontWeight = FontWeight.SemiBold
         )
@@ -355,8 +400,11 @@ fun PlayerInventoryTabContent(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(8.dp))
-                .background(Color(0xFF1E222D))
+                .horizonGlassPlate(
+                    shape = McShape.Row,
+                    containerColor = glass.glassCardStrong,
+                    borderColor = glass.hairline
+                )
                 .padding(8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
@@ -367,7 +415,7 @@ fun PlayerInventoryTabContent(
                 Triple(101, "Quần", snapshot.armorLegs),
                 Triple(100, "Giày", snapshot.armorFeet)
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                 armorSlots.forEach { (slotNum, placeholder, item) ->
                     MinecraftInventorySlotBox(
                         item = item,
@@ -382,7 +430,7 @@ fun PlayerInventoryTabContent(
             }
             if (snapshot.offhandSupported) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Tay phụ", color = Color(0xFF94A3B8), fontSize = 9.sp, modifier = Modifier.padding(end = 4.dp))
+                    Text("Tay phụ", color = Muted, fontSize = 9.5.sp, modifier = Modifier.padding(end = 5.dp))
                     MinecraftInventorySlotBox(
                         item = snapshot.offhand,
                         placeholderLabel = "Khiên",
@@ -401,7 +449,8 @@ fun PlayerInventoryTabContent(
         // ── 4. Lưới Túi đồ chính (27 ô: 3 hàng x 9 cột, slot 9..35) + Thanh Hotbar (9 ô: slot 0..8) ──
         Text(
             "🎒 Túi đồ chính (27 ô) & Thanh công cụ Hotbar (9 ô)",
-            color = Indigo,
+            style = HorizonTabularStyle,
+            color = glass.accent,
             fontSize = 11.sp,
             fontWeight = FontWeight.SemiBold
         )
@@ -409,12 +458,14 @@ fun PlayerInventoryTabContent(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(8.dp))
-                .background(Color(0xFF1E222D))
-                .padding(6.dp),
+                .horizonGlassPlate(
+                    shape = McShape.Row,
+                    containerColor = glass.glassCardStrong,
+                    borderColor = glass.hairline
+                )
+                .padding(7.dp),
             verticalArrangement = Arrangement.spacedBy(3.dp)
         ) {
-            // 3 hàng túi đồ chính (slot 9..17, 18..26, 27..35) — tự co giãn vừa khít 9 cột không bị khuất
             for (row in 0 until 3) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -425,7 +476,7 @@ fun PlayerInventoryTabContent(
                         val item = snapshot.mainInventory.getOrNull(slotIndex - 9)
                         MinecraftInventorySlotBox(
                             item = item,
-                            placeholderLabel = "${slotIndex}",
+                            placeholderLabel = "$slotIndex",
                             isSelected = selectedSlot == SelectedInventorySlot(InventorySection.MAIN, slotIndex),
                             isActiveHotbarSlot = false,
                             isMoveSource = pendingMoveSource == SelectedInventorySlot(InventorySection.MAIN, slotIndex),
@@ -437,7 +488,11 @@ fun PlayerInventoryTabContent(
                 }
             }
 
-            Spacer(Modifier.height(4.dp))
+            HorizontalDivider(
+                modifier = Modifier.padding(vertical = 3.dp),
+                thickness = 1.dp,
+                color = glass.hairline
+            )
 
             // 1 hàng Hotbar (slot 0..8)
             Row(
@@ -466,22 +521,26 @@ fun PlayerInventoryTabContent(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Color(0xFF261C35))
+                    .horizonGlassPlate(
+                        shape = McShape.Row,
+                        containerColor = glass.accentSoft,
+                        borderColor = glass.accent.copy(alpha = 0.45f)
+                    )
                     .clickable { showEnderChest = !showEnderChest }
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                    .padding(horizontal = 11.dp, vertical = 9.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     "🟣 Rương Ender (${snapshot.enderOccupiedSlots}/27 ô có vật phẩm)",
-                    color = Color(0xFFD8B4FE),
+                    style = HorizonTabularStyle,
+                    color = glass.accent,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f)
                 )
                 Text(
                     if (showEnderChest) "Thu gọn ▲" else "Mở rương ▼",
-                    color = Color(0xFFC084FC),
+                    color = glass.accent,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -491,9 +550,12 @@ fun PlayerInventoryTabContent(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFF1F162B))
-                        .padding(6.dp),
+                        .horizonGlassPlate(
+                            shape = McShape.Row,
+                            containerColor = glass.glassCardStrong,
+                            borderColor = glass.accent.copy(alpha = 0.35f)
+                        )
+                        .padding(7.dp),
                     verticalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
                     for (row in 0 until 3) {
@@ -521,7 +583,7 @@ fun PlayerInventoryTabContent(
             }
         }
 
-        // ── 6. Khung Chi tiết Ô đang chọn & Thao tác Chỉnh sửa Có kiểm soát (Phần 2 & Phần 6) ──
+        // ── 6. Khung Chi tiết Ô đang chọn & Thao tác Chỉnh sửa Có kiểm soát ──
         selectedSlot?.let { sel ->
             val currentItem = snapshot.itemAt(sel.section, sel.slot)
             Spacer(Modifier.height(10.dp))
@@ -586,16 +648,19 @@ fun PlayerInventoryTabContent(
         }
     }
 
-    // ── Hộp thoại Xác nhận Xóa vật phẩm khỏi ô (Phần 6) ──
+    // ── Hộp thoại Xác nhận Xóa vật phẩm khỏi ô ──
     if (showClearSlotConfirm && activeSel != null) {
         val existingItem = snapshot?.itemAt(activeSel.section, activeSel.slot)
         AlertDialog(
             onDismissRequest = { showClearSlotConfirm = false },
+            containerColor = glass.glassChrome,
+            shape = McShape.Dialog,
             title = { Text("Xác nhận xóa vật phẩm?", fontWeight = FontWeight.Bold, fontSize = 15.sp) },
             text = {
                 Text(
                     "Bạn có chắc chắn muốn xóa「${existingItem?.displayNameVi ?: "vật phẩm"}」x${existingItem?.count ?: 1} tại ${InventoryItemStack.slotLabelVi(activeSel.section, activeSel.slot)} của $playerName không? Hành động này sẽ được thực thi trên Server và ghi vào nhật ký quản trị.",
-                    fontSize = 12.sp
+                    fontSize = 12.sp,
+                    lineHeight = 16.5.sp
                 )
             },
             confirmButton = {
@@ -605,12 +670,12 @@ fun PlayerInventoryTabContent(
                         onUpdateSlot(activeSel.section, activeSel.slot, null, "Xóa vật phẩm khỏi ô")
                     }
                 ) {
-                    Text("Xác nhận xóa", color = Coral, fontWeight = FontWeight.Bold)
+                    Text("Xác nhận xóa", color = glass.dangerCoral, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showClearSlotConfirm = false }) {
-                    Text("Hủy")
+                    Text("Hủy", color = Muted)
                 }
             }
         )
@@ -628,34 +693,40 @@ private fun MinecraftInventorySlotBox(
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
+    val glass = HorizonGlass
     val bgColor = when {
-        isMoveSource -> Color(0xFF065F46)
-        isSelected -> Color(0xFF334155)
-        item != null -> Color(0xFF2B303C)
-        else -> Color(0xFF161922)
+        isMoveSource -> glass.liveGreenSoft
+        isSelected -> glass.accentSoft
+        isActiveHotbarSlot && item == null -> glass.accentSoft.copy(alpha = 0.55f)
+        item != null -> glass.glassRow
+        else -> glass.glassInput
     }
     val borderColor = when {
-        isMoveSource -> Mint
-        isSelected -> Color(0xFF38BDF8)
-        isActiveHotbarSlot -> Color(0xFFFACC15)
-        item?.enchantments?.isNotEmpty() == true -> Color(0xFFA855F7)
-        else -> Color(0xFF3F4756)
+        isMoveSource -> glass.liveGreen
+        isSelected -> glass.accent
+        isActiveHotbarSlot -> glass.accent.copy(alpha = 0.85f)
+        item?.enchantments?.isNotEmpty() == true -> glass.auroraSecondary.copy(alpha = 0.72f)
+        else -> glass.hairline
     }
-    val borderWidth = if (isSelected || isActiveHotbarSlot || isMoveSource) 1.8.dp else 1.dp
+    val borderWidth = if (isSelected || isActiveHotbarSlot || isMoveSource) 1.6.dp else 1.dp
+    val countTextColor = if (glass.isLight) Color(0xFF0F172A) else Color.White
 
     val sizeModifier = if (modifier === Modifier) Modifier.size(slotSize) else modifier
+    val cellShape = RoundedCornerShape(6.dp)
+
     Box(
         modifier = sizeModifier
-            .clip(RoundedCornerShape(5.dp))
+            .clip(cellShape)
             .background(bgColor)
-            .border(borderWidth, borderColor, RoundedCornerShape(5.dp))
+            .border(borderWidth, borderColor, cellShape)
             .clickable { onClick() },
         contentAlignment = Alignment.Center
     ) {
         if (item == null) {
             Text(
                 text = placeholderLabel,
-                color = Color(0xFF475569),
+                style = HorizonTabularStyle,
+                color = Muted.copy(alpha = 0.65f),
                 fontSize = 7.sp,
                 fontFamily = FontFamily.Monospace
             )
@@ -667,7 +738,6 @@ private fun MinecraftInventorySlotBox(
                     .fillMaxSize()
                     .padding(4.dp)
             )
-            // Chỉ báo vật phẩm có Phù phép (Enchanted)
             if (item.enchantments.isNotEmpty()) {
                 Text(
                     text = "✨",
@@ -677,12 +747,12 @@ private fun MinecraftInventorySlotBox(
                         .padding(1.dp)
                 )
             }
-            // Số lượng vật phẩm ở góc dưới phải
             if (item.count > 1) {
                 Text(
                     text = item.count.toString(),
-                    color = Color.White,
-                    fontSize = 8.sp,
+                    style = HorizonTabularStyle,
+                    color = countTextColor,
+                    fontSize = 8.5.sp,
                     fontWeight = FontWeight.ExtraBold,
                     fontFamily = FontFamily.Monospace,
                     modifier = Modifier
@@ -690,13 +760,12 @@ private fun MinecraftInventorySlotBox(
                         .padding(end = 2.dp, bottom = 2.dp)
                 )
             }
-            // Thanh độ bền (Durability Bar) ở cạnh dưới cùng của ô
             val dur = item.durabilityFraction
             if (dur != null && dur < 1.0f) {
                 val barColor = when {
-                    dur > 0.5f -> Color(0xFF22C55E)
-                    dur > 0.2f -> Color(0xFFEAB308)
-                    else -> Color(0xFFEF4444)
+                    dur > 0.5f -> glass.liveGreen
+                    dur > 0.2f -> glass.warnAmber
+                    else -> glass.dangerCoral
                 }
                 Box(
                     modifier = Modifier
@@ -704,7 +773,7 @@ private fun MinecraftInventorySlotBox(
                         .padding(horizontal = 2.dp, vertical = 1.dp)
                         .fillMaxWidth()
                         .height(2.dp)
-                        .background(Color(0xFF0F172A))
+                        .background(glass.glassInput)
                 ) {
                     Box(
                         modifier = Modifier
@@ -724,11 +793,11 @@ fun MinecraftItemPixelIcon(
     hasEnchantments: Boolean,
     modifier: Modifier = Modifier
 ) {
+    val glass = HorizonGlass
     val category = remember(itemId) { MinecraftItemCatalog.visualCategory(itemId) }
     val primaryArgb = remember(itemId) { MinecraftItemCatalog.materialColorArgb(itemId) }
 
     if (category == MinecraftItemCatalog.VisualCategory.GENERIC) {
-        // Phương án dự phòng trung thực (Phần 2): Hiển thị mã chữ viết tắt của ID vật phẩm, không dùng ảnh không liên quan
         val shortCode = remember(itemId) {
             itemId.substringAfter(':')
                 .split('_')
@@ -739,13 +808,13 @@ fun MinecraftItemPixelIcon(
         }
         Box(
             modifier = modifier
-                .clip(RoundedCornerShape(3.dp))
+                .clip(RoundedCornerShape(4.dp))
                 .background(Color(primaryArgb).copy(alpha = 0.28f)),
             contentAlignment = Alignment.Center
         ) {
             Text(
                 text = shortCode,
-                color = Color.White,
+                color = if (glass.isLight) Color(0xFF0F172A) else Color.White,
                 fontSize = 7.sp,
                 fontWeight = FontWeight.ExtraBold,
                 fontFamily = FontFamily.Monospace,
@@ -782,8 +851,8 @@ private fun buildItemPixelArt8x8(
     enchanted: Boolean
 ): Array<IntArray> {
     val _0 = 0
-    val H = 0xFF78350F.toInt() // Gỗ cán cầm
-    val G = if (enchanted) 0xFFC084FC.toInt() else 0xFFFFFFFF.toInt() // Viền sáng / Phù phép
+    val H = 0xFF78350F.toInt()
+    val G = if (enchanted) 0xFFC084FC.toInt() else 0xFFFFFFFF.toInt()
     return when (category) {
         MinecraftItemCatalog.VisualCategory.SWORD -> arrayOf(
             intArrayOf(_0, _0, _0, _0, _0, _0, M, G),
@@ -890,16 +959,21 @@ private fun SelectedSlotDetailCard(
     onOpenChangeCount: () -> Unit,
     onOpenClearConfirm: () -> Unit
 ) {
+    val glass = HorizonGlass
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(IndigoSoft)
-            .padding(10.dp)
+            .horizonGlassPlate(
+                shape = McShape.Row,
+                containerColor = glass.glassRow,
+                borderColor = glass.accent.copy(alpha = 0.45f)
+            )
+            .padding(11.dp)
     ) {
         Text(
             text = "📍 ${InventoryItemStack.slotLabelVi(section, slot)}",
-            color = Indigo,
+            style = HorizonTabularStyle,
+            color = glass.accent,
             fontSize = 11.sp,
             fontWeight = FontWeight.ExtraBold
         )
@@ -912,21 +986,22 @@ private fun SelectedSlotDetailCard(
                 Button(
                     onClick = onOpenSetItem,
                     shape = McShape.ControlCompact,
-                    colors = ButtonDefaults.buttonColors(containerColor = Indigo),
+                    colors = ButtonDefaults.buttonColors(containerColor = glass.accent, contentColor = Color.White),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Icon(Icons.Outlined.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("Thêm / Đặt vật phẩm vào ô này", color = Color.White, fontSize = 11.sp)
+                    Text("Thêm / Đặt vật phẩm vào ô này", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
         } else {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
-                        .size(34.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(Color(0xFF1E222D))
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(glass.glassInput)
+                        .border(1.dp, glass.hairline, RoundedCornerShape(8.dp))
                         .padding(4.dp)
                 ) {
                     MinecraftItemPixelIcon(
@@ -939,6 +1014,7 @@ private fun SelectedSlotDetailCard(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "${item.displayNameVi} ×${item.count}",
+                        style = HorizonTabularStyle,
                         fontWeight = FontWeight.Bold,
                         fontSize = 13.sp
                     )
@@ -953,7 +1029,7 @@ private fun SelectedSlotDetailCard(
 
             if (!item.customName.isNullOrBlank()) {
                 Spacer(Modifier.height(4.dp))
-                Text("🏷️ Tên tùy chỉnh: ${item.customName}", fontSize = 10.sp, color = Indigo)
+                Text("🏷️ Tên tùy chỉnh: ${item.customName}", fontSize = 10.sp, color = glass.accent, fontWeight = FontWeight.SemiBold)
             }
 
             val maxDur = item.resolvedMaxDamage
@@ -962,19 +1038,20 @@ private fun SelectedSlotDetailCard(
                 Spacer(Modifier.height(2.dp))
                 Text(
                     "🔨 Độ bền: $remaining / $maxDur (Hao mòn: ${item.damage})${if (item.unbreakable) " • Không thể vỡ (Unbreakable)" else ""}",
+                    style = HorizonTabularStyle,
                     fontSize = 10.sp,
                     color = Muted
                 )
             } else if (item.unbreakable) {
                 Spacer(Modifier.height(2.dp))
-                Text("🛡️ Không thể vỡ (Unbreakable)", fontSize = 10.sp, color = Mint)
+                Text("🛡️ Không thể vỡ (Unbreakable)", fontSize = 10.sp, color = glass.liveGreen, fontWeight = FontWeight.SemiBold)
             }
 
             if (item.enchantments.isNotEmpty()) {
                 Spacer(Modifier.height(4.dp))
-                Text("✨ Phù phép (Enchantments):", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF7C3AED))
+                Text("✨ Phù phép (Enchantments):", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = glass.accent)
                 item.enchantments.forEach { ench ->
-                    Text("  • ${ench.displayNameVi} (${ench.id})", fontSize = 10.sp, color = Color(0xFF6D28D9))
+                    Text("  • ${ench.displayNameVi} (${ench.id})", fontSize = 10.sp, color = Muted)
                 }
             }
 
@@ -990,8 +1067,8 @@ private fun SelectedSlotDetailCard(
                 Spacer(Modifier.height(4.dp))
                 Text(
                     "🔒 Metadata / NBT gốc của vật phẩm được bảo toàn khi chuyển ô hoặc sửa số lượng.",
-                    fontSize = 9.sp,
-                    color = Mint
+                    fontSize = 9.5.sp,
+                    color = glass.liveGreen
                 )
             }
 
@@ -1004,16 +1081,20 @@ private fun SelectedSlotDetailCard(
                     OutlinedButton(
                         onClick = onStartMove,
                         shape = McShape.ControlCompact,
+                        border = BorderStroke(1.dp, glass.hairline),
+                        colors = ButtonDefaults.outlinedButtonColors(containerColor = glass.glassInput),
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("⇄ Chuyển ô", fontSize = 10.sp, color = Indigo)
+                        Text("⇄ Chuyển ô", fontSize = 10.5.sp, color = glass.accent, fontWeight = FontWeight.SemiBold)
                     }
                     OutlinedButton(
                         onClick = onOpenChangeCount,
                         shape = McShape.ControlCompact,
+                        border = BorderStroke(1.dp, glass.hairline),
+                        colors = ButtonDefaults.outlinedButtonColors(containerColor = glass.glassInput),
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("🔢 Số lượng", fontSize = 10.sp, color = Indigo)
+                        Text("🔢 Số lượng", fontSize = 10.5.sp, color = glass.accent, fontWeight = FontWeight.SemiBold)
                     }
                 }
                 Spacer(Modifier.height(4.dp))
@@ -1024,18 +1105,22 @@ private fun SelectedSlotDetailCard(
                     OutlinedButton(
                         onClick = onOpenSetItem,
                         shape = McShape.ControlCompact,
+                        border = BorderStroke(1.dp, glass.hairline),
+                        colors = ButtonDefaults.outlinedButtonColors(containerColor = glass.glassInput),
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("✏️ Đổi vật phẩm", fontSize = 10.sp, color = Indigo)
+                        Text("✏️ Đổi vật phẩm", fontSize = 10.5.sp, color = glass.accent, fontWeight = FontWeight.SemiBold)
                     }
                     OutlinedButton(
                         onClick = onOpenClearConfirm,
                         shape = McShape.ControlCompact,
+                        border = BorderStroke(1.dp, glass.dangerCoral.copy(alpha = 0.45f)),
+                        colors = ButtonDefaults.outlinedButtonColors(containerColor = glass.dangerCoralSoft),
                         modifier = Modifier.weight(1f)
                     ) {
-                        Icon(Icons.Outlined.Delete, contentDescription = null, tint = Coral, modifier = Modifier.size(13.dp))
+                        Icon(Icons.Outlined.Delete, contentDescription = null, tint = glass.dangerCoral, modifier = Modifier.size(13.dp))
                         Spacer(Modifier.width(3.dp))
-                        Text("Xóa ô", fontSize = 10.sp, color = Coral)
+                        Text("Xóa ô", fontSize = 10.5.sp, color = glass.dangerCoral, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
@@ -1046,7 +1131,7 @@ private fun SelectedSlotDetailCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Outlined.Info, contentDescription = null, tint = Muted, modifier = Modifier.size(13.dp))
                 Spacer(Modifier.width(4.dp))
-                Text(editDisabledReason, color = Muted, fontSize = 9.sp)
+                Text(editDisabledReason, color = Muted, fontSize = 9.5.sp)
             }
         }
     }
@@ -1060,6 +1145,7 @@ private fun SetSlotItemDialog(
     onDismiss: () -> Unit,
     onConfirm: (String, Int) -> Unit
 ) {
+    val glass = HorizonGlass
     var itemId by remember { mutableStateOf(initialItemId) }
     var countText by remember { mutableStateOf(initialCount.coerceIn(1, 64).toString()) }
     var searchQuery by remember { mutableStateOf("") }
@@ -1074,6 +1160,8 @@ private fun SetSlotItemDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = glass.glassChrome,
+        shape = McShape.Dialog,
         title = { Text("Đặt vật phẩm • $slotLabel", fontWeight = FontWeight.Bold, fontSize = 14.sp) },
         text = {
             Column(modifier = Modifier.fillMaxWidth()) {
@@ -1082,6 +1170,7 @@ private fun SetSlotItemDialog(
                     onValueChange = { itemId = it },
                     label = { Text("ID Vật phẩm (VD: minecraft:diamond_sword hoặc mod:item)") },
                     singleLine = true,
+                    shape = McShape.Control,
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(6.dp))
@@ -1089,7 +1178,9 @@ private fun SetSlotItemDialog(
                     value = countText,
                     onValueChange = { countText = it.filter(Char::isDigit).take(2) },
                     label = { Text("Số lượng (1 – 64)") },
+                    textStyle = HorizonTabularStyle.copy(fontSize = 14.sp),
                     singleLine = true,
+                    shape = McShape.Control,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -1099,25 +1190,30 @@ private fun SetSlotItemDialog(
                     onValueChange = { searchQuery = it },
                     label = { Text("Tìm nhanh vật phẩm phổ biến...") },
                     singleLine = true,
+                    shape = McShape.Control,
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(6.dp))
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(150.dp)
+                        .height(158.dp),
+                    verticalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
                     filteredCatalog.take(6).forEach { opt ->
+                        val isPicked = itemId == opt.id
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(6.dp))
+                                .clip(RoundedCornerShape(7.dp))
+                                .background(if (isPicked) glass.accentSoft else glass.glassRow)
+                                .border(1.dp, if (isPicked) glass.accent else glass.hairline, RoundedCornerShape(7.dp))
                                 .clickable {
                                     itemId = opt.id
                                     val cur = countText.toIntOrNull() ?: 1
                                     if (cur > opt.maxStack) countText = opt.maxStack.toString()
                                 }
-                                .padding(vertical = 5.dp, horizontal = 6.dp),
+                                .padding(vertical = 5.dp, horizontal = 7.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Box(modifier = Modifier.size(20.dp)) {
@@ -1139,11 +1235,11 @@ private fun SetSlotItemDialog(
                 onClick = { onConfirm(itemId.trim(), parsedCount) },
                 enabled = itemId.isNotBlank()
             ) {
-                Text("Áp dụng lên Server", color = Indigo, fontWeight = FontWeight.Bold)
+                Text("Áp dụng lên Server", color = glass.accent, fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Hủy") }
+            TextButton(onClick = onDismiss) { Text("Hủy", color = Muted) }
         }
     )
 }
@@ -1155,9 +1251,12 @@ private fun ChangeItemCountDialog(
     onDismiss: () -> Unit,
     onConfirmCount: (Int) -> Unit
 ) {
+    val glass = HorizonGlass
     var count by remember { mutableStateOf(item.count.coerceIn(1, 64)) }
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = glass.glassChrome,
+        shape = McShape.Dialog,
         title = { Text("Số lượng • ${item.displayNameVi}", fontWeight = FontWeight.Bold, fontSize = 14.sp) },
         text = {
             Column(modifier = Modifier.fillMaxWidth()) {
@@ -1168,14 +1267,23 @@ private fun ChangeItemCountDialog(
                     horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    OutlinedButton(onClick = { count = (count - 1).coerceAtLeast(1) }) { Text("-1") }
+                    OutlinedButton(
+                        onClick = { count = (count - 1).coerceAtLeast(1) },
+                        border = BorderStroke(1.dp, glass.hairline),
+                        colors = ButtonDefaults.outlinedButtonColors(containerColor = glass.glassRow)
+                    ) { Text("-1", style = HorizonTabularStyle, fontWeight = FontWeight.Bold) }
                     Text(
                         text = count.toString(),
-                        fontSize = 20.sp,
+                        style = HorizonTabularStyle,
+                        fontSize = 22.sp,
                         fontWeight = FontWeight.ExtraBold,
-                        color = Indigo
+                        color = glass.accent
                     )
-                    OutlinedButton(onClick = { count = (count + 1).coerceAtMost(64) }) { Text("+1") }
+                    OutlinedButton(
+                        onClick = { count = (count + 1).coerceAtMost(64) },
+                        border = BorderStroke(1.dp, glass.hairline),
+                        colors = ButtonDefaults.outlinedButtonColors(containerColor = glass.glassRow)
+                    ) { Text("+1", style = HorizonTabularStyle, fontWeight = FontWeight.Bold) }
                 }
                 Spacer(Modifier.height(8.dp))
                 Row(
@@ -1184,7 +1292,7 @@ private fun ChangeItemCountDialog(
                 ) {
                     listOf(1, 16, 32, 64).forEach { preset ->
                         TextButton(onClick = { count = preset }) {
-                            Text("×$preset", color = Indigo, fontWeight = FontWeight.Bold)
+                            Text("×$preset", style = HorizonTabularStyle, color = glass.accent, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -1192,11 +1300,11 @@ private fun ChangeItemCountDialog(
         },
         confirmButton = {
             TextButton(onClick = { onConfirmCount(count) }) {
-                Text("Lưu số lượng", color = Indigo, fontWeight = FontWeight.Bold)
+                Text("Lưu số lượng", color = glass.accent, fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Hủy") }
+            TextButton(onClick = onDismiss) { Text("Hủy", color = Muted) }
         }
     )
 }

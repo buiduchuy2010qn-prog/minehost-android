@@ -1,14 +1,15 @@
 <resources>
-    <!-- 深色模式下的设计令牌 -->
-    <color name="bg">#10131A</color>
-    <color name="card">#1A1F2B</color>
-    <color name="ink">#E6E9F2</color>
-    <color name="muted">#9AA3B5</color>
-    <color name="indigo">#9FB0F0</color>
-    <color name="indigo_soft">#2A3563</color>
-    <color name="mint">#8CF0C4</color>
-    <color name="mint_soft">#17382C</color>
-    <color name="coral">#FFB4A8</color>
-    <color name="coral_soft">#3D2424</color>
-    <color name="line">#2A3140</color>
+    <!-- BlockWay Pure Horizon Dusk Dark tokens -->
+    <color name="window_bg">#0E0D1E</color>
+    <color name="bg">#0E0D1E</color>
+    <color name="card">#1A1730</color>
+    <color name="ink">#F2EFFB</color>
+    <color name="muted">#C5BEE0</color>
+    <color name="indigo">#B39DFF</color>
+    <color name="indigo_soft">#312463</color>
+    <color name="mint">#4ADE80</color>
+    <color name="mint_soft">#163B2A</color>
+    <color name="coral">#FB7185</color>
+    <color name="coral_soft">#471E32</color>
+    <color name="line">#38315C</color>
 </resources>

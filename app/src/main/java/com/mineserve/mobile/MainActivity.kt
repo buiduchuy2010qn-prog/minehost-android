@@ -1,25 +1,30 @@
 package com.mineserve.mobile
 
-import android.util.Log
-import android.view.WindowManager
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.drawable.ColorDrawable
 import android.os.Build
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
-import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.graphics.toArgb
 import androidx.core.content.ContextCompat
-import com.mineserve.mobile.ui.McApp
-import com.mineserve.mobile.ui.theme.MineServeMobileTheme
+import androidx.core.view.WindowCompat
+import androidx.lifecycle.lifecycleScope
 import com.mineserve.mobile.service.McForegroundService
+import com.mineserve.mobile.ui.McApp
+import com.mineserve.mobile.ui.theme.AppUiSettings
+import com.mineserve.mobile.ui.theme.MineServeMobileTheme
+import com.mineserve.mobile.ui.theme.horizonGlassTokensFor
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
@@ -27,12 +32,14 @@ class MainActivity : ComponentActivity() {
         const val TAG = "MainActivity"
     }
 
-    // Android 13+ 通知权限运行时申请
+    // Android 13+ runtime notification permission
     private val notifPermissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* 用户拒绝仅影响通知可见性，前台服务仍可保活 */ }
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        AppUiSettings.ensureLoaded(this)
         super.onCreate(savedInstanceState)
+
         lifecycleScope.launch {
             val repo = McApplication.get(this@MainActivity).repository
             combine(repo.configFlow, repo.serverState) { config, server ->
@@ -42,22 +49,42 @@ class MainActivity : ComponentActivity() {
                 else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             }
         }
+
+        val initialGlass = horizonGlassTokensFor(AppUiSettings.colorPreset.value)
         enableEdgeToEdge(
-            statusBarStyle = androidx.activity.SystemBarStyle.auto(
-                android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT
-            ),
-            navigationBarStyle = androidx.activity.SystemBarStyle.auto(
-                android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT
-            )
+            statusBarStyle = if (initialGlass.isLight) {
+                SystemBarStyle.light(
+                    android.graphics.Color.TRANSPARENT,
+                    android.graphics.Color.TRANSPARENT
+                )
+            } else {
+                SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+            },
+            navigationBarStyle = if (initialGlass.isLight) {
+                SystemBarStyle.light(
+                    android.graphics.Color.TRANSPARENT,
+                    android.graphics.Color.TRANSPARENT
+                )
+            } else {
+                SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+            }
         )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            // 三键导航默认强制半透明对比度遮罩，关闭后才是全透明
             window.isNavigationBarContrastEnforced = false
         }
+
+        lifecycleScope.launch {
+            AppUiSettings.colorPreset.collect { preset ->
+                val glass = horizonGlassTokensFor(preset)
+                window.setBackgroundDrawable(ColorDrawable(glass.skyTop.toArgb()))
+                WindowCompat.getInsetsController(window, window.decorView).apply {
+                    isAppearanceLightStatusBars = glass.isLight
+                    isAppearanceLightNavigationBars = glass.isLight
+                }
+            }
+        }
+
         ensureNotificationPermission()
-        // 高刷新率：见 applyHighestRefreshRate() 的说明
-        // Let Android choose the display mode.
-        // 更新通知点击进入：通知带 open_update extra，通知 MainActivity 打开更新对话框
         if (intent?.getBooleanExtra("open_update", false) == true) {
             McApplication.get().requestOpenUpdate()
         }
@@ -83,7 +110,6 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             val config = McApplication.get(this@MainActivity).repository.configFlow.first()
             if (config.keepStatusOverlay) {
-                // 授权页返回时服务可能还没完成启动，确保服务存在并让它重新挂载悬浮窗。
                 if (McForegroundService.isRunning) {
                     startService(Intent(this@MainActivity, McForegroundService::class.java).apply {
                         action = McForegroundService.ACTION_REFRESH_KEEP_ALIVE
@@ -103,4 +129,3 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
-

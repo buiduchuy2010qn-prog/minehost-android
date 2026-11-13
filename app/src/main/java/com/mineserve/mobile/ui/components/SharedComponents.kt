@@ -1,10 +1,7 @@
 package com.mineserve.mobile.ui
 
-// 性能修改理由：输入过程使用本地状态，避免异步保存回读打断输入法的光标位置。
 import android.content.Intent
 import android.net.Uri
-import androidx.compose.ui.res.stringResource
-import com.mineserve.mobile.R
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
@@ -13,16 +10,11 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.unit.IntOffset
-import kotlin.math.abs
-import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -41,6 +33,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -55,20 +48,23 @@ import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -83,46 +79,45 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mineserve.mobile.R
 import com.mineserve.mobile.data.JavaRuntime
 import com.mineserve.mobile.data.JavaVendor
 import com.mineserve.mobile.data.JavaVersion
 import com.mineserve.mobile.data.ProotDistro
 import com.mineserve.mobile.data.ServerState
 import com.mineserve.mobile.data.StepStatus
-import kotlinx.coroutines.delay
-import com.mineserve.mobile.ui.theme.Coral
-import com.mineserve.mobile.ui.theme.FieldBg
-import com.mineserve.mobile.ui.theme.FieldGray
-import com.mineserve.mobile.ui.theme.IndigoSoft
-import com.mineserve.mobile.ui.theme.LightIndigo
-import com.mineserve.mobile.ui.theme.LightIndigoDark
+import com.mineserve.mobile.ui.theme.HorizonGlass
+import com.mineserve.mobile.ui.theme.HorizonTabularStyle
 import com.mineserve.mobile.ui.theme.McIcon
 import com.mineserve.mobile.ui.theme.McShape
 import com.mineserve.mobile.ui.theme.McSpacing
-import com.mineserve.mobile.ui.theme.Mint
-import com.mineserve.mobile.ui.theme.MintBright
-import com.mineserve.mobile.ui.theme.MintSoft
 import com.mineserve.mobile.ui.theme.Muted
+import com.mineserve.mobile.ui.theme.horizonGlassPlate
+import kotlin.math.abs
+import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
 
 /**
- * 顶部 Header：参考界面 eyebrow + h1。
- * 默认以白色背景覆盖状态栏区域（配合全屏），内容避开状态栏文字；
- * 若该页面顶部已有返回栏承接状态栏避让，可传 statusBarPadding = false。
+ * Tiêu đề đầu trang chuẩn Pure Horizon Glass:
+ * Tự động gọn lại khi trang đã nằm bên dưới thanh kính MineHostNavigation.
  */
 @Composable
 fun HeaderBlock(
@@ -132,17 +127,32 @@ fun HeaderBlock(
     statusBarPadding: Boolean = true,
     trailing: (@Composable () -> Unit)? = null
 ) {
+    val glass = HorizonGlass
     if (LocalMineHostChrome.current) {
-        Column(modifier.padding(horizontal = McSpacing.Page, vertical = 8.dp)) {
-            Text(eyebrow, style = MaterialTheme.typography.bodyMedium, color = Muted)
-            trailing?.invoke()
+        Row(
+            modifier = modifier
+                .fillMaxWidth()
+                .padding(horizontal = McSpacing.Page, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = eyebrow,
+                style = MaterialTheme.typography.bodyMedium,
+                color = Muted,
+                modifier = Modifier.weight(1f)
+            )
+            if (trailing != null) {
+                Spacer(Modifier.width(8.dp))
+                trailing.invoke()
+            }
         }
         return
     }
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface)
+            .background(glass.glassChrome)
     ) {
         Column(
             modifier = Modifier
@@ -173,25 +183,51 @@ fun HeaderBlock(
                 trailing?.invoke()
             }
         }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(glass.hairline)
+        )
     }
 }
 
-/** 子页面统一返回栏：白底延伸到状态栏后面（状态栏透明）+ 返回按钮 + 标题 */
+/**
+ * Thanh quay lại trang con:
+ * Khi nằm trong khung MineHostNavigation (`LocalMineHostChrome.current == true`),
+ * tự động bỏ `.statusBarsPadding()` để triệt tiêu lỗi nhân đôi khoảng trống đỉnh màn hình.
+ */
 @Composable
 fun BackBar(title: String, onBack: () -> Unit) {
+    val hasChrome = LocalMineHostChrome.current
+    val glass = HorizonGlass
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface)
+            .background(if (hasChrome) Color.Transparent else glass.glassChrome)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .statusBarsPadding()
-                .padding(start = 8.dp, end = McSpacing.Page, top = 6.dp, bottom = 6.dp),
+                .then(if (hasChrome) Modifier else Modifier.statusBarsPadding())
+                .padding(
+                    start = if (hasChrome) McSpacing.Page else 8.dp,
+                    end = McSpacing.Page,
+                    top = 6.dp,
+                    bottom = 6.dp
+                ),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onBack, modifier = Modifier.size(McIcon.Touch)) {
+            IconButton(
+                onClick = onBack,
+                modifier = Modifier
+                    .size(McIcon.Touch)
+                    .horizonGlassPlate(
+                        shape = McShape.Pill,
+                        containerColor = glass.glassRow,
+                        borderColor = glass.hairline
+                    )
+            ) {
                 Icon(
                     Icons.AutoMirrored.Outlined.ArrowBack,
                     contentDescription = stringResource(R.string.s404),
@@ -205,72 +241,91 @@ fun BackBar(title: String, onBack: () -> Unit) {
                 color = MaterialTheme.colorScheme.onBackground,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f).padding(start = 8.dp)
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 10.dp)
+            )
+        }
+        if (!hasChrome) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(glass.hairline)
             )
         }
     }
 }
 
-/** 统一空状态提示：图标 + 灰字文案，垂直居中 */
+/** Trạng thái danh sách trống với quả cầu kính mờ Pure Horizon Glass. */
 @Composable
 fun EmptyHint(icon: ImageVector, text: String, modifier: Modifier = Modifier) {
+    val glass = HorizonGlass
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 28.dp),
+            .padding(vertical = 26.dp, horizontal = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Icon(icon, contentDescription = null, tint = Muted, modifier = Modifier.size(40.dp))
-        Spacer(Modifier.height(10.dp))
-        Text(text, color = Muted, style = MaterialTheme.typography.bodyLarge)
+        Box(
+            modifier = Modifier
+                .size(56.dp)
+                .horizonGlassPlate(
+                    shape = McShape.Pill,
+                    containerColor = glass.glassRow,
+                    borderColor = glass.hairline
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = glass.accent,
+                modifier = Modifier.size(26.dp)
+            )
+        }
+        Spacer(Modifier.height(12.dp))
+        Text(
+            text = text,
+            color = Muted,
+            style = MaterialTheme.typography.bodyLarge,
+            textAlign = TextAlign.Center
+        )
     }
 }
 
 /**
- * Hero 卡片：渐变背景 + 状态行 + 紧凑指标行（TPS / 在线 / 进程内存 / 运行时长）
+ * Thẻ Hero tổng quan (giữ nguyên toàn bộ tham số cho các màn hình phụ).
  */
 @Composable
 fun HeroBlock(
     state: ServerState,
     coreLabel: String,
     cpuPercent: Int? = null,
-    /**
-     * 服务端 -Xmx 上限（MB）。内存进度条用它作分母，与 [ServerState.usedMemoryMb] 一起
-     * 决定进度比例；为 null/0 时进度条按 0 处理，只显示数值文本。
-     */
     maxHeapMb: Int? = null,
     onlineModeEnabled: Boolean = false,
-    /**
-     * 服务端配置文件里 `white-list` 是否为 true（PNX 对应 pnx.yml 的 `settings.allowList`）。
-     *
-     * 白名单开着时必须在概览页看得见：它决定了「谁能进服」，而玩家的反馈只会是
-     * 一句 `You are not white-listed`——服务器看起来一切正常，人却进不来。
-     */
     whitelistEnabled: Boolean = false,
     isRefreshing: Boolean = false,
     lastRefreshAtMs: Long = 0L,
-    /**
-     * 跳过「启动中」阶段展示（见 [com.mineserve.mobile.data.McConfig.skipStartupProgress]）。
-     *
-     * true 时：不显示「正在启动服务端 · xxx」与阶段进度条，状态行直接按运行中呈现。
-     * 只影响呈现，[ServerState.startupPhase] 本身照常推进。
-     */
     skipStartupProgress: Boolean = false,
     onRefresh: (() -> Unit)? = null
 ) {
+    val glass = HorizonGlass
+    val textPrimary = MaterialTheme.colorScheme.onSurface
+    val textSecondary = MaterialTheme.colorScheme.onSurfaceVariant
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = McSpacing.Page, vertical = 8.dp)
-            .clip(McShape.Card)
-            .background(
-                Brush.linearGradient(colors = listOf(LightIndigo, LightIndigoDark))
+            .horizonGlassPlate(
+                shape = McShape.Card,
+                containerColor = glass.glassCardStrong,
+                borderColor = glass.hairline,
+                highlighted = state.isRunning
             )
-            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .padding(horizontal = 16.dp, vertical = 14.dp)
     ) {
         Column {
-            // 启动中：isRunning 且尚未完成启动（runningSinceMs == 0）。
-            // 用户开了「跳过启动中进度」就当作已经就绪，不再暴露中间态。
             val isStarting = state.isRunning && state.runningSinceMs == 0L && !skipStartupProgress
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -283,21 +338,19 @@ fun HeroBlock(
                 ) {
                     MinecraftPixelArtIcon(
                         kind = if (state.isRunning) MinecraftArtKind.CREEPER else MinecraftArtKind.GRASS,
-                        size = 22.dp
+                        size = 24.dp
                     )
                     Spacer(Modifier.size(8.dp))
-                    // 状态指示点：启动中橙色，运行中亮绿，未运行半透明白
+                    val dotColor = when {
+                        isStarting -> glass.warnAmber
+                        state.isRunning -> glass.liveGreen
+                        else -> textSecondary.copy(alpha = 0.55f)
+                    }
                     Box(
                         modifier = Modifier
-                            .size(8.dp)
+                            .size(9.dp)
                             .clip(CircleShape)
-                            .background(
-                                when {
-                                    isStarting -> Color(0xFFFFA726)
-                                    state.isRunning -> MintBright
-                                    else -> Color.White.copy(alpha = 0.5f)
-                                }
-                            )
+                            .background(dotColor)
                     )
                     Spacer(Modifier.size(6.dp))
                     Text(
@@ -306,16 +359,13 @@ fun HeroBlock(
                             state.isRunning -> stringResource(R.string.hero_running, coreLabel)
                             else -> stringResource(R.string.hero_stopped)
                         },
-                        color = Color.White,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium,
+                        color = textPrimary,
+                        style = MaterialTheme.typography.titleSmall,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
                 if (onRefresh != null) {
-                    // 刷新中显示旋转进度圈，替代静态图标——
-                    // 采集本身很快，若没有这层反馈，用户无法区分「没反应」和「刷了但值没变」。
                     if (isRefreshing) {
                         Box(
                             modifier = Modifier.size(McIcon.TouchCompact),
@@ -324,7 +374,7 @@ fun HeroBlock(
                             CircularProgressIndicator(
                                 modifier = Modifier.size(McIcon.Action),
                                 strokeWidth = 2.dp,
-                                color = Color.White.copy(alpha = 0.9f)
+                                color = glass.accent
                             )
                         }
                     } else {
@@ -335,17 +385,17 @@ fun HeroBlock(
                             Icon(
                                 imageVector = Icons.Outlined.Refresh,
                                 contentDescription = stringResource(R.string.hero_refresh),
-                                tint = Color.White.copy(alpha = 0.85f),
+                                tint = textSecondary,
                                 modifier = Modifier.size(McIcon.Action)
                             )
                         }
                     }
                 }
             }
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 HeroStat(
-                    if (state.isRunning) String.format("%.1f", state.tps) else "--",
+                    if (state.isRunning) String.format(java.util.Locale.US, "%.1f", state.tps) else "--",
                     stringResource(R.string.hero_tps),
                     modifier = Modifier.weight(1f)
                 )
@@ -362,8 +412,7 @@ fun HeroBlock(
                     modifier = Modifier.weight(1f)
                 )
             }
-            // CPU 与内存同为水平进度条，各占一行；CPU 是整机读数，未运行服务端时也照常显示。
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(10.dp))
             CpuMeterBar(percent = cpuPercent)
             Spacer(Modifier.height(8.dp))
             MemoryBar(
@@ -371,40 +420,39 @@ fun HeroBlock(
                 maxMb = maxHeapMb?.toLong() ?: 0L,
                 running = state.isRunning
             )
-            // 手动刷新完成反馈：明确告诉用户「已经更新过了」，
-            // 即使各项数值本身没有变化，也不会被误认为按钮失效。
             if (!isRefreshing && lastRefreshAtMs > 0L) {
                 Spacer(Modifier.height(4.dp))
                 Text(
                     "Đã cập nhật · ${formatRefreshAgo(lastRefreshAtMs)}",
-                    color = Color.White.copy(alpha = 0.85f),
-                    fontSize = 12.sp
+                    color = textSecondary,
+                    style = MaterialTheme.typography.labelMedium
                 )
             }
             if (onlineModeEnabled) {
                 Spacer(Modifier.height(6.dp))
                 Text(
                     stringResource(R.string.hero_online_mode_warning),
-                    color = Color(0xFFFF8A80),
-                    fontSize = 14.sp
+                    color = glass.dangerCoral,
+                    style = MaterialTheme.typography.bodyMedium
                 )
             }
             if (whitelistEnabled) {
                 Spacer(Modifier.height(6.dp))
                 Text(
                     stringResource(R.string.hero_whitelist_on),
-                    color = Color(0xFFFFD180),
-                    fontSize = 14.sp
+                    color = glass.warnAmber,
+                    style = MaterialTheme.typography.bodyMedium
                 )
             }
-            // 启动中提示：适配启动耗时较长的场景
             if (isStarting) {
                 Spacer(Modifier.height(8.dp))
                 LinearProgressIndicator(
                     progress = { state.startupPhase.progress },
-                    modifier = Modifier.fillMaxWidth(),
-                    color = Color(0xFFFFC857),
-                    trackColor = Color.White.copy(alpha = 0.2f)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(McShape.Pill),
+                    color = glass.warnAmber,
+                    trackColor = glass.glassInput
                 )
                 Spacer(Modifier.height(5.dp))
                 val viPhaseLabel = when (state.startupPhase.label) {
@@ -419,13 +467,13 @@ fun HeroBlock(
                 }
                 Text(
                     "Giai đoạn khởi động: $viPhaseLabel (${(state.startupPhase.progress * 100).toInt()}%)",
-                    color = Color.White.copy(alpha = 0.9f),
-                    fontSize = 14.sp
+                    color = textPrimary,
+                    style = MaterialTheme.typography.bodyMedium.merge(HorizonTabularStyle)
                 )
                 Text(
                     "Chuẩn bị môi trường · Tải thư viện · Khởi chạy Java · Nạp Core · Tạo thế giới · Mở mạng",
-                    color = Color.White.copy(alpha = 0.85f),
-                    fontSize = 12.sp,
+                    color = textSecondary,
+                    style = MaterialTheme.typography.bodySmall,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -434,13 +482,6 @@ fun HeroBlock(
     }
 }
 
-/**
- * Hero 卡片里的内存水平进度条。
- *
- * - 进度 = 已用内存 / 设置的上限（[ServerState.usedMemoryMb] / `maxHeapMb`）；
- * - 最右侧显示「已使用内存 / 设置的上限内存」，如 `2.4 GB / 4 GB`；
- * - 上限未知或为 0 时进度条按 0 处理，只显示数值文本，避免出现除零或满格误导。
- */
 @Composable
 private fun MemoryBar(usedMb: Long, maxMb: Long, running: Boolean) {
     val label = stringResource(R.string.hero_memory)
@@ -455,12 +496,6 @@ private fun MemoryBar(usedMb: Long, maxMb: Long, running: Boolean) {
     HeroMeterBar(label = label, ratio = ratio, valueText = valueText)
 }
 
-/**
- * Hero 卡片里的 CPU 水平进度条（与内存同款外形）。
- *
- * 与内存条唯一的区别是右侧数值为百分比，且**不受服务端运行状态影响**：
- * CPU 是整机读数，服务端没跑也要显示当前占用。
- */
 @Composable
 private fun CpuMeterBar(percent: Int?) {
     val label = stringResource(R.string.hero_cpu)
@@ -469,14 +504,9 @@ private fun CpuMeterBar(percent: Int?) {
     HeroMeterBar(label = label, ratio = ratio, valueText = value?.let { "$it%" } ?: "--")
 }
 
-/**
- * Hero 卡片内「标签 + 水平进度条 + 右侧数值」的通用行。
- *
- * CPU 与内存共用同一外形（原 CPU 的环形条已按需求改为与内存一致的水平条）：
- * 圆角轨道 + 渐变填充，底色针对深色渐变卡片用半透明白，保证在靛蓝背景上仍可辨认。
- */
 @Composable
 private fun HeroMeterBar(label: String, ratio: Float, valueText: String) {
+    val glass = HorizonGlass
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -485,15 +515,15 @@ private fun HeroMeterBar(label: String, ratio: Float, valueText: String) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 label,
-                color = Color.White.copy(alpha = 0.9f),
-                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelMedium,
                 modifier = Modifier.weight(1f)
             )
             Spacer(Modifier.width(8.dp))
             Text(
                 valueText,
-                color = Color.White,
-                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.bodyMedium.merge(HorizonTabularStyle),
                 fontWeight = FontWeight.Medium,
                 textAlign = TextAlign.End,
                 modifier = Modifier.weight(2f)
@@ -504,21 +534,20 @@ private fun HeroMeterBar(label: String, ratio: Float, valueText: String) {
             modifier = Modifier
                 .fillMaxWidth()
                 .height(7.dp)
-                .clip(RoundedCornerShape(4.dp))
-                .background(Color.White.copy(alpha = 0.22f))
+                .clip(McShape.Pill)
+                .background(glass.glassInput)
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth(ratio.coerceIn(0f, 1f))
                     .height(7.dp)
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(Brush.linearGradient(listOf(MintBright, Mint)))
+                    .clip(McShape.Pill)
+                    .background(Brush.horizontalGradient(listOf(glass.liveGreen, glass.skyCyan)))
             )
         }
     }
 }
 
-/** 内存数值格式化：MB 输入，>=1024MB 用 GB 展示（保留一位小数），否则用 MB。 */
 private fun formatMemoryFull(mb: Long): String =
     if (mb >= 1024) String.format(java.util.Locale.US, "%.1f GB", mb / 1024.0) else "${mb} MB"
 
@@ -531,19 +560,17 @@ private fun HeroStat(value: String, label: String, modifier: Modifier = Modifier
     ) {
         Text(
             value,
-            color = Color.White,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Medium
+            color = MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.titleLarge.merge(HorizonTabularStyle)
         )
         Text(
             label,
-            color = Color.White.copy(alpha = 0.9f),
-            fontSize = 12.sp
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.labelMedium
         )
     }
 }
 
-/** 运行时长格式化：秒/分钟/小时 */
 @Composable
 private fun formatUptime(ms: Long): String {
     val totalSec = (ms.coerceAtLeast(0L)) / 1000
@@ -557,12 +584,6 @@ private fun formatUptime(ms: Long): String {
     }
 }
 
-/**
- * 手动刷新的相对时间描述（「刚刚 / N 秒前 / N 分钟前」）。
- *
- * 存在的意义是让「刷新」这个动作**可被观察到**：采集带缓存，数值经常不变，
- * 光看数字无法判断按钮是否生效。
- */
 private fun formatRefreshAgo(refreshAtMs: Long): String {
     val elapsedSec = ((System.currentTimeMillis() - refreshAtMs).coerceAtLeast(0L)) / 1000
     return when {
@@ -573,13 +594,6 @@ private fun formatRefreshAgo(refreshAtMs: Long): String {
     }
 }
 
-/**
- * 通用卡片容器：白底 + 1px 描边 + 极浅投影，圆角与页面边距取自全局令牌。
- *
- * 所有卡片共用同一圆角（[McShape.Card]）、同一边距（[McSpacing.Page]）与同一投影，
- * 这样不同页面上下滚动时卡片边缘始终在同一条竖线上，不会因为某个页面写了 14dp、
- * 另一个页面写了 20dp 而出现整体错位。
- */
 enum class MinecraftArtKind(val titleVi: String, val subtitleVi: String) {
     GRASS("Khối Cỏ (Grass Block)", "Sinh tồn cổ điển"),
     CREEPER("Creeper Xanh", "Biểu tượng Minecraft"),
@@ -692,6 +706,7 @@ fun MinecraftPixelArtIcon(
     modifier: Modifier = Modifier
 ) {
     val bitmap = remember(kind) { cachedPixelArtBitmap(kind) }
+    val glass = HorizonGlass
     androidx.compose.foundation.Image(
         bitmap = bitmap,
         contentDescription = null,
@@ -699,17 +714,11 @@ fun MinecraftPixelArtIcon(
         contentScale = androidx.compose.ui.layout.ContentScale.FillBounds,
         modifier = modifier
             .size(size)
-            .clip(RoundedCornerShape(6.dp))
-            .border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(6.dp))
+            .clip(RoundedCornerShape(7.dp))
+            .border(1.dp, glass.specularTop, RoundedCornerShape(7.dp))
     )
 }
 
-/**
- * Logo thương hiệu chính thức (Official Brand Logo PNG 64x64) cho từng loại Core Minecraft:
- * Fabric, PaperMC, NeoForge, Forge, Purpur, PowerNukkitX, Spigot, CraftBukkit,
- * Quilt, Leaves, Leaf, Velocity, BungeeCord, PocketMine-MP, Allay, Vanilla.
- * Được giải mã 1 lần duy nhất vào bộ nhớ đệm EnumMap<ServerCore, ImageBitmap>, cuộn mượt 120 FPS (0 cấp phát bộ nhớ khi cuộn).
- */
 @Composable
 fun CoreBrandLogo(
     core: com.mineserve.mobile.data.ServerCore,
@@ -743,13 +752,13 @@ fun CoreBrandLogo(
         Box(
             modifier = modifier
                 .size(size)
-                .clip(RoundedCornerShape(9.dp))
+                .clip(RoundedCornerShape(10.dp))
                 .background(
-                    androidx.compose.ui.graphics.Brush.linearGradient(
+                    Brush.linearGradient(
                         listOf(Color(0xFFEA580C), Color(0xFF9A3412))
                     )
                 )
-                .border(1.4.dp, Color(0xFFFB923C), RoundedCornerShape(9.dp)),
+                .border(1.4.dp, Color(0xFFFB923C), RoundedCornerShape(10.dp)),
             contentAlignment = Alignment.Center
         ) {
             Text(
@@ -765,8 +774,8 @@ fun CoreBrandLogo(
             filterQuality = androidx.compose.ui.graphics.FilterQuality.Medium,
             modifier = modifier
                 .size(size)
-                .clip(RoundedCornerShape(9.dp))
-                .border(1.2.dp, borderColor.copy(alpha = 0.72f), RoundedCornerShape(9.dp))
+                .clip(RoundedCornerShape(10.dp))
+                .border(1.2.dp, borderColor.copy(alpha = 0.72f), RoundedCornerShape(10.dp))
         )
     } else {
         MinecraftPixelArtIcon(
@@ -805,7 +814,8 @@ private fun inferCardArtKind(title: String): MinecraftArtKind {
 }
 
 /**
- * Thẻ nội dung thống nhất: nền rõ ràng, tiêu đề vừa và khoảng cách thoáng.
+ * Thẻ kính trong suốt Pure Horizon Glass (McCard):
+ * Dùng `horizonGlassPlate` chuẩn 20dp + viền ánh sáng đỉnh 1dp.
  */
 @Composable
 fun McCard(
@@ -816,59 +826,67 @@ fun McCard(
     content: @Composable () -> Unit
 ) {
     val artKind = remember(title) { inferCardArtKind(title) }
-    Card(
+    val glass = HorizonGlass
+    Box(
         modifier = modifier
             .fillMaxWidth()
             .padding(
                 horizontal = McSpacing.Page,
                 vertical = if (compact) McSpacing.CardGapCompact else McSpacing.CardGap
-            ),
-        shape = McShape.Card,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+            )
+            .horizonGlassPlate(
+                shape = McShape.Card,
+                containerColor = glass.glassCard,
+                borderColor = glass.hairline
+            )
     ) {
-        Column {
-            Column(
-                Modifier.padding(
-                    if (compact) McSpacing.CardInnerCompact else McSpacing.CardInner
-                )
+        Column(
+            Modifier.padding(
+                if (compact) McSpacing.CardInnerCompact else McSpacing.CardInner
+            )
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        MinecraftPixelArtIcon(kind = artKind, size = 20.dp)
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            title,
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.weight(1f, fill = false)
-                        )
-                    }
-                    if (trailing != null) {
-                        Spacer(Modifier.width(8.dp))
-                        trailing.invoke()
-                    }
-                }
-                Spacer(
-                    Modifier.height(
-                        if (compact) McSpacing.CardHeaderCompact else McSpacing.CardHeader
+                    MinecraftPixelArtIcon(kind = artKind, size = 20.dp)
+                    Spacer(Modifier.width(9.dp))
+                    Text(
+                        title,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
-                )
-                content()
+                }
+                if (trailing != null) {
+                    Spacer(Modifier.width(8.dp))
+                    trailing.invoke()
+                }
             }
+            Spacer(
+                Modifier.height(
+                    if (compact) McSpacing.CardHeaderCompact else McSpacing.CardHeader
+                )
+            )
+            content()
         }
     }
 }
 
+private data class StepVisual(
+    val bg: Color,
+    val fg: Color,
+    val border: Color,
+    val symbol: String
+)
+
 /**
- * 步骤行（参考界面 step-row）
+ * Hàng bước khởi tạo / cài đặt với huy hiệu kính phát sáng.
  */
 @Composable
 fun StepRow(
@@ -876,6 +894,7 @@ fun StepRow(
     status: StepStatus,
     tag: String
 ) {
+    val glass = HorizonGlass
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -885,19 +904,20 @@ fun StepRow(
             },
         verticalAlignment = Alignment.CenterVertically
     ) {
-        val (bg, fg, text) = when (status) {
-            StepStatus.Done -> Triple(MintSoft, MaterialTheme.colorScheme.onSecondaryContainer, "✓")
-            StepStatus.Active -> Triple(IndigoSoft, MaterialTheme.colorScheme.onPrimaryContainer, "•")
-            StepStatus.Wait -> Triple(FieldGray, Muted, "○")
+        val visual = when (status) {
+            StepStatus.Done -> StepVisual(glass.liveGreenSoft, glass.liveGreen, glass.liveGreen.copy(alpha = 0.5f), "✓")
+            StepStatus.Active -> StepVisual(glass.accentSoft, glass.accent, glass.accent.copy(alpha = 0.55f), "•")
+            StepStatus.Wait -> StepVisual(glass.glassRow, Muted, glass.hairline, "○")
         }
         Box(
             modifier = Modifier
-                .size(22.dp)
+                .size(24.dp)
                 .clip(CircleShape)
-                .background(bg),
+                .background(visual.bg)
+                .border(1.dp, visual.border, CircleShape),
             contentAlignment = Alignment.Center
         ) {
-            Text(text, color = fg, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Text(visual.symbol, color = visual.fg, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         }
         Spacer(Modifier.size(10.dp))
         Text(
@@ -906,34 +926,41 @@ fun StepRow(
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.weight(1f)
         )
-        Text(tag, color = Muted, style = MaterialTheme.typography.bodySmall)
-    }
-}
-
-/**
- * 进度条（参考界面 progress-track）
- */
-@Composable
-fun ProgressTrack(percent: Int) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(8.dp)
-            .clip(RoundedCornerShape(4.dp))
-            .background(FieldGray)
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth(percent / 100f)
-                .height(8.dp)
-                .clip(RoundedCornerShape(4.dp))
-                .background(MaterialTheme.colorScheme.primary)
+        Text(
+            tag,
+            color = Muted,
+            style = MaterialTheme.typography.bodySmall.merge(HorizonTabularStyle)
         )
     }
 }
 
 /**
- * 圆角分段按钮：参考界面 .seg / .on
+ * Thanh tiến trình kính mờ với dải chuyển sắc Horizon.
+ */
+@Composable
+fun ProgressTrack(percent: Int) {
+    val glass = HorizonGlass
+    val ratio = (percent.coerceIn(0, 100)) / 100f
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(8.dp)
+            .clip(McShape.Pill)
+            .background(glass.glassInput)
+            .border(0.8.dp, glass.hairline, McShape.Pill)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(ratio)
+                .height(8.dp)
+                .clip(McShape.Pill)
+                .background(Brush.horizontalGradient(listOf(glass.accent, glass.skyCyan)))
+        )
+    }
+}
+
+/**
+ * Nút chọn dạng viên thuốc kính (SegPill).
  */
 @Composable
 fun SegPill(
@@ -941,34 +968,44 @@ fun SegPill(
     selected: Boolean,
     modifier: Modifier = Modifier,
     compact: Boolean = false,
-    unselectedBackground: Color = FieldGray,
+    unselectedBackground: Color = HorizonGlass.glassRow,
     onClick: () -> Unit
 ) {
-    Box(
-        modifier = modifier
+    val glass = HorizonGlass
+    val shape = McShape.Chip
+    val pillModifier = if (selected) {
+        modifier
             .heightIn(min = 48.dp)
-            .clip(McShape.Chip)
-            .background(if (selected) MaterialTheme.colorScheme.primary else unselectedBackground)
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.primary, shape)
+            .border(1.dp, glass.specularTop, shape)
+    } else {
+        modifier
+            .heightIn(min = 48.dp)
+            .horizonGlassPlate(
+                shape = shape,
+                containerColor = unselectedBackground,
+                borderColor = glass.hairline
+            )
+    }
+    Box(
+        modifier = pillModifier
             .selectable(selected = selected, role = Role.Tab, onClick = onClick)
             .padding(horizontal = if (compact) 10.dp else 14.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
-            text,
-            color = if (selected) MaterialTheme.colorScheme.onPrimary else Muted,
-            style = MaterialTheme.typography.labelLarge
+            text = text,
+            color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            textAlign = TextAlign.Center
         )
     }
 }
 
 /**
- * 防抖输入框：本地即时编辑 + 300ms 防抖写回外部值，失焦时立即写回。
- *
- * 解决 TextField 直接绑定持久化 StateFlow（如 config）导致的输入延迟与
- * 快速输入文字顺序错乱问题：输入过程完全在本地状态上进行，停顿 300ms
- * 后才把结果回传（快速连续输入只回传最后一次），失焦时立即回传避免丢失。
- *
- * @param sanitize 可选输入清洗函数（如数字框只保留数字），每次输入后应用
+ * Ô nhập liệu chống giật (300ms debounce) tích hợp nền kính mờ `glassInput`.
  */
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
@@ -987,19 +1024,16 @@ fun DebouncedTextField(
     textStyle: TextStyle = MaterialTheme.typography.bodyLarge,
     shape: Shape = McShape.Control
 ) {
+    val glass = HorizonGlass
     var text by remember { mutableStateOf(value) }
     var isFocused by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf(false) }
     val bringIntoViewRequester = remember { BringIntoViewRequester() }
 
-    // 外部值同步：仅在非编辑状态时同步到本地。
-    // 关键：防抖写回后外部 value 的回显更新有延迟，若此时用户已继续输入，
-    // 无条件覆盖会把正在输入的内容重置回旧值（快速输入文字丢失/乱序）。
     LaunchedEffect(value) {
         if (!editing && text != value) text = value
     }
 
-    // 输入停顿 300ms 后写回（连续输入只写回最后一次）
     LaunchedEffect(text) {
         if (text == value) return@LaunchedEffect
         delay(300)
@@ -1009,7 +1043,6 @@ fun DebouncedTextField(
         }
     }
 
-    // 失焦时立即写回，避免切换页面丢失最后输入
     LaunchedEffect(isFocused) {
         if (!isFocused && text != value) {
             onValueChange(text)
@@ -1021,9 +1054,6 @@ fun DebouncedTextField(
         }
     }
 
-    // 组合移除（切页/销毁）时立即回传未写回内容，避免防抖窗口内输入丢失。
-    // value 是普通参数、不是快照状态，DisposableEffect(Unit) 的闭包只会捕获首帧的值，
-    // 因此用 rememberUpdatedState 取最新值作为比较基准，否则退出时会用旧文本覆盖已生效的新值。
     val latestValue by rememberUpdatedState(value)
     DisposableEffect(Unit) {
         onDispose {
@@ -1035,9 +1065,6 @@ fun DebouncedTextField(
         value = text,
         onValueChange = { newText ->
             val next = sanitize?.invoke(newText) ?: newText
-            // 仅当清洗后文本真的变化时才进入编辑态：
-            // 若清洗结果与原文本相同，LaunchedEffect(text) 不会重启，editing 会永久卡在 true，
-            // 导致外部值同步失效、退出时把旧文本写回。
             if (next != text) {
                 text = next
                 editing = true
@@ -1054,37 +1081,54 @@ fun DebouncedTextField(
         maxLines = maxLines,
         keyboardOptions = keyboardOptions,
         textStyle = textStyle,
-        shape = shape
+        shape = shape,
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedContainerColor = glass.glassInput,
+            unfocusedContainerColor = glass.glassInput,
+            disabledContainerColor = glass.glassRow.copy(alpha = 0.45f),
+            focusedBorderColor = glass.accent,
+            unfocusedBorderColor = glass.hairline
+        )
     )
 }
 
-// ── EdgeCube 式网络状态组件 ────────────────────────────────────
-//
-// 借鉴 EdgeCube「网络映射页」的信息组织：状态用胶囊而不是纯文本，地址用带图标与
-// 复制按钮的小卡片，运行统计在位时才出现，失败原因单独成条而不是塞进状态文字里。
-
 /**
- * 状态胶囊：圆角 12dp + 12% alpha 同色底 + 同色文字。
- *
- * 语义色沿用项目既有的三档：运行中 [Mint]、进行中（启动/探测）[Coral]、其余 [Muted]。
- * 调用方负责按状态给色，本组件只负责画。
+ * Viên thuốc trạng thái kính mờ phát sáng với chữ số Tabular (`tnum`).
  */
 @Composable
 fun StatusPill(text: String, color: Color, modifier: Modifier = Modifier) {
-    Box(
+    val glass = HorizonGlass
+    val hasLeadingSymbol = remember(text) {
+        text.any { Character.getType(it) == Character.OTHER_SYMBOL.toInt() }
+    }
+    Row(
         modifier = modifier
-            .clip(McShape.Chip)
-            .background(color.copy(alpha = 0.12f))
-            .padding(horizontal = 10.dp, vertical = 3.dp)
+            .clip(McShape.Pill)
+            .background(color.copy(alpha = if (glass.isLight) 0.14f else 0.18f), McShape.Pill)
+            .border(1.dp, color.copy(alpha = 0.42f), McShape.Pill)
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp)
     ) {
-        Text(text, color = color, style = MaterialTheme.typography.labelMedium)
+        if (!hasLeadingSymbol) {
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .clip(CircleShape)
+                    .background(color)
+            )
+        }
+        Text(
+            text = text,
+            color = color,
+            style = MaterialTheme.typography.labelMedium.merge(HorizonTabularStyle),
+            fontWeight = FontWeight.SemiBold
+        )
     }
 }
 
 /**
- * 公网/局域网地址展示条：图标 + 标题 + 等宽加粗地址 + 一键复制。
- *
- * [value] 为空时不显示复制按钮——没有可复制的内容时留一个禁用按钮只会让人反复点。
+ * Hàng hiển thị & sao chép địa chỉ LAN / Tunnel với mặt kính mờ và số Tabular.
  */
 @Composable
 fun AddressCopyRow(
@@ -1093,32 +1137,44 @@ fun AddressCopyRow(
     onCopy: () -> Unit,
     icon: ImageVector = Icons.Outlined.Public,
     accent: Color = MaterialTheme.colorScheme.primary,
-    containerColor: Color = FieldBg,
+    containerColor: Color = HorizonGlass.glassRow,
     borderColor: Color? = null
 ) {
+    val glass = HorizonGlass
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 48.dp)
-            .clip(McShape.Row)
-            .background(containerColor)
-            .then(
-                if (borderColor != null) Modifier.border(1.dp, borderColor, McShape.Row)
-                else Modifier
+            .heightIn(min = 52.dp)
+            .horizonGlassPlate(
+                shape = McShape.Row,
+                containerColor = containerColor,
+                borderColor = borderColor ?: glass.hairline
             )
-            .padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+            .padding(start = 12.dp, end = 6.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(McIcon.Action))
+        Box(
+            modifier = Modifier
+                .size(34.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(accent.copy(alpha = 0.14f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(McIcon.Action))
+        }
         Spacer(Modifier.size(10.dp))
         Column(Modifier.weight(1f)) {
-            Text(label, color = Muted, style = MaterialTheme.typography.bodyMedium)
+            Text(label, color = Muted, style = MaterialTheme.typography.labelMedium)
             Spacer(Modifier.height(2.dp))
             Text(
                 value,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Medium,
-                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.onSurface,
+                style = HorizonTabularStyle.copy(
+                    fontSize = 15.sp,
+                    lineHeight = 22.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    fontFamily = FontFamily.Monospace
+                ),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -1137,9 +1193,7 @@ fun AddressCopyRow(
 }
 
 /**
- * 单行运行统计：小图标 + 说明文本。
- *
- * 只在隧道真正运行时才调用——未运行时不摆一排「0 B/s」占地方。
+ * Một dòng thông số chạy thực tế dùng chữ số Tabular không nhảy giật.
  */
 @Composable
 fun StatLine(icon: ImageVector, text: String) {
@@ -1151,74 +1205,87 @@ fun StatLine(icon: ImageVector, text: String) {
     ) {
         Icon(icon, contentDescription = null, tint = Muted, modifier = Modifier.size(McIcon.Inline))
         Spacer(Modifier.size(8.dp))
-        Text(text, color = Muted, style = MaterialTheme.typography.bodyMedium)
+        Text(
+            text,
+            color = Muted,
+            style = MaterialTheme.typography.bodyMedium.merge(HorizonTabularStyle)
+        )
     }
 }
 
 /**
- * 前提说明条：info 图标 + 说明文案。
- *
- * 用来讲清「这个功能只在什么条件下有效」，避免用户在不支持的环境下反复尝试。
+ * Thẻ chú thích thông tin nhẹ nhàng bằng kính mờ.
  */
 @Composable
 fun HintNote(text: String, icon: ImageVector = Icons.Outlined.Info) {
+    val glass = HorizonGlass
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(McShape.Row)
-            .background(FieldBg)
-            .padding(12.dp)
+            .horizonGlassPlate(
+                shape = McShape.Row,
+                containerColor = glass.glassRow,
+                borderColor = glass.hairline
+            )
+            .padding(12.dp),
+        verticalAlignment = Alignment.Top
     ) {
-        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(McIcon.Inline))
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = glass.accent,
+            modifier = Modifier
+                .padding(top = 2.dp)
+                .size(McIcon.Inline)
+        )
         Spacer(Modifier.size(8.dp))
         Text(text, color = Muted, style = MaterialTheme.typography.bodyMedium)
     }
 }
 
 /**
- * 失败/警告条：warning 图标 + 原因文案，用 Coral 系配色。
- *
- * 与 [HintNote] 分开是因为「当前出错了」和「使用前需知」的视觉权重不该一样。
+ * Thẻ cảnh báo nổi bật với viền kính Coral phát sáng dịu mắt.
  */
 @Composable
 fun WarnNote(text: String) {
+    val glass = HorizonGlass
+    val fgColor = if (glass.isLight) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurface
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(McShape.Row)
-            .background(MaterialTheme.colorScheme.errorContainer)
-            .padding(12.dp)
+            .horizonGlassPlate(
+                shape = McShape.Row,
+                containerColor = glass.dangerCoralSoft,
+                borderColor = glass.dangerCoral.copy(alpha = 0.48f)
+            )
+            .padding(12.dp),
+        verticalAlignment = Alignment.Top
     ) {
         Icon(
             Icons.Outlined.WarningAmber,
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.onErrorContainer,
-            modifier = Modifier.size(McIcon.Inline)
+            tint = glass.dangerCoral,
+            modifier = Modifier
+                .padding(top = 2.dp)
+                .size(McIcon.Inline)
         )
         Spacer(Modifier.size(8.dp))
-        Text(text, color = MaterialTheme.colorScheme.onErrorContainer, style = MaterialTheme.typography.bodyMedium)
+        Text(text, color = fgColor, style = MaterialTheme.typography.bodyMedium)
     }
 }
 
-/** Cộng đồng MineHost GitHub chính thức */
 private const val QQ_GROUP_URL =
     "https://github.com/buiduchuy2010qn-prog/minehost-android/issues"
 
-/** Địa chỉ repo cộng đồng (dùng để sao chép & hiển thị) */
 private const val QQ_GROUP_NUMBER = "github.com/buiduchuy2010qn-prog/minehost-android"
 
-/** 打开 QQ 加群页面；无浏览器/QQ 时静默失败 */
 private fun openQqGroup(context: android.content.Context) {
     try {
         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(QQ_GROUP_URL)))
     } catch (_: Exception) {
-        // 无可用应用时静默
     }
 }
 
-/**
- * QQ 交流群入口卡片：显示群号并提供一键加群按钮。
- */
 @Composable
 fun QqGroupCard() {
     val context = LocalContext.current
@@ -1238,7 +1305,9 @@ fun QqGroupCard() {
         Button(
             onClick = { openQqGroup(context) },
             shape = McShape.Control,
-            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
         ) {
             Text(
                 stringResource(R.string.s1054),
@@ -1248,20 +1317,17 @@ fun QqGroupCard() {
     }
 }
 
-/**
- * QQ 交流群弹窗：概览页顶部企鹅图标点击后弹出。
- *
- * 显示群号，提供「复制群号」与「一键加群」两个操作。
- */
 @Composable
 fun QqGroupDialog(onDismiss: () -> Unit) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
+    val glass = HorizonGlass
 
     AlertDialog(
         onDismissRequest = onDismiss,
         shape = McShape.Dialog,
-        containerColor = MaterialTheme.colorScheme.surface,
+        containerColor = glass.glassChrome,
+        tonalElevation = 0.dp,
         icon = {
             Icon(
                 painter = painterResource(R.drawable.ic_qq_penguin),
@@ -1284,12 +1350,14 @@ fun QqGroupDialog(onDismiss: () -> Unit) {
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Spacer(Modifier.height(12.dp))
-                // 群号展示块
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(FieldGray)
+                        .horizonGlassPlate(
+                            shape = McShape.Row,
+                            containerColor = glass.glassRow,
+                            borderColor = glass.hairline
+                        )
                         .padding(horizontal = 12.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -1338,23 +1406,6 @@ fun QqGroupDialog(onDismiss: () -> Unit) {
     )
 }
 
-// ══════════════════════════════════════════════════════════════
-// Java 运行环境：来源分组列表
-//
-// 依赖管理页的 Java 板块与概览页「运行环境」弹窗共用这一套渲染，
-// 分组与版本都直接来自 JavaVendor.entries × vendor.versions，
-// 不在这里另抄一份清单 —— 否则两处会各自漂移出「弹窗里能选、依赖页里没有」的错位。
-// ══════════════════════════════════════════════════════════════
-
-/**
- * 来源分组标题：一行标题 + 一句来源说明，右侧折叠箭头。整行可点，点击切换展开。
- *
- * 字体、颜色、圆角与间距沿用原有取值，只多了一个箭头与点击态 ——
- * 折叠控件不应该看起来像另一个东西。
- *
- * 折叠的意义：三个来源的版本行加起来 11 条，默认全展开会把「卸载 / 重装 / 安装」
- * 三键挤到屏幕外，而这三个按钮才是这个板块的主要操作。
- */
 @Composable
 fun RuntimeGroupHeader(
     title: String,
@@ -1369,7 +1420,7 @@ fun RuntimeGroupHeader(
             .heightIn(min = 48.dp)
             .clip(McShape.Row)
             .clickable(enabled = enabled) { onToggle() }
-            .padding(top = 8.dp, start = 4.dp, end = 4.dp, bottom = 2.dp),
+            .padding(top = 8.dp, start = 4.dp, end = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(Modifier.weight(1f)) {
@@ -1381,8 +1432,6 @@ fun RuntimeGroupHeader(
             Text(note, color = Muted, style = MaterialTheme.typography.bodyMedium)
         }
         Icon(
-            // 展开时朝上、折叠时朝下：箭头指向「点下去会发生什么」的相反方向是常态，
-            // 但这里用「当前状态」语义更直观 —— 朝下代表内容被收起。
             imageVector = if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.primary,
@@ -1392,19 +1441,7 @@ fun RuntimeGroupHeader(
 }
 
 /**
- * 分段切换控件：等宽分段 + 滑动高亮块。
- *
- * 项目里原先有四套「同义不同形」的切换控件：插件页与玩家页各写了一遍
- * 「淡蓝轨道 + 蓝色选中块」，环境管理页用 [FilterChip]，PRoot 发行版用另一份
- * 带动画的高亮块。这里收敛成一份实现，所有分段切换都由它渲染，
- * 于是轨道高度、圆角、字号、选中色、切换动画在任意页面都一致。
- *
- * 选中块用 260ms 缓动**滑动**到目标位置而不是瞬移：切换后往往伴随下方内容变化，
- * 有位移过程才容易把「我点了这里」和「下面变了」联系起来。
- *
- * @param options 分段文案（等宽排布，调用方自行带上数量等后缀）
- * @param selectedIndex 当前选中项下标，越界时按 0 处理
- * @param enabled 为假时整条置灰且不响应点击
+ * Thanh chuyển tab trượt mượt trên rãnh kính mờ `glassInput`.
  */
 @Composable
 fun SegmentedTabs(
@@ -1415,14 +1452,18 @@ fun SegmentedTabs(
     onSelect: (Int) -> Unit
 ) {
     if (options.isEmpty()) return
+    val glass = HorizonGlass
     val safeIndex = selectedIndex.coerceIn(0, options.lastIndex)
     val tabHeight = maxOf(48.dp, with(LocalDensity.current) { 36.sp.toDp() } + 12.dp)
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
             .height(tabHeight)
-            .clip(McShape.Chip)
-            .background(FieldGray)
+            .horizonGlassPlate(
+                shape = McShape.Chip,
+                containerColor = glass.glassInput,
+                borderColor = glass.hairline
+            )
             .alpha(if (enabled) 1f else 0.5f)
     ) {
         val segmentWidth = maxWidth / options.size
@@ -1431,15 +1472,15 @@ fun SegmentedTabs(
             animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
             label = "segmented-tabs-highlight"
         )
-        // 高亮块：留 3dp 内边距，所以圆角比轨道小 3dp，视觉上正好同心
         Box(
             modifier = Modifier
                 .offset(x = highlightOffset)
                 .width(segmentWidth)
                 .fillMaxHeight()
                 .padding(3.dp)
-                .clip(RoundedCornerShape(9.dp))
+                .clip(RoundedCornerShape(11.dp))
                 .background(MaterialTheme.colorScheme.primary)
+                .border(1.dp, glass.specularTop, RoundedCornerShape(11.dp))
         )
         Row(Modifier.fillMaxSize()) {
             options.forEachIndexed { index, label ->
@@ -1459,10 +1500,10 @@ fun SegmentedTabs(
                 ) {
                     Text(
                         label,
-                        color = if (isSelected) MaterialTheme.colorScheme.onPrimary else Muted,
-                        fontSize = 14.sp,
-                        lineHeight = 18.sp,
-                        fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,
+                        color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 13.5.sp,
+                        lineHeight = 19.sp,
+                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
                         textAlign = TextAlign.Center,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
@@ -1473,14 +1514,6 @@ fun SegmentedTabs(
     }
 }
 
-/**
- * Ubuntu 发行版胶囊切换控件。
- *
- * 左侧 Ubuntu 20.04、右侧 Ubuntu 22.04；实现完全交给 [SegmentedTabs]，
- * 保证与插件分类、玩家标签等分段切换控件在高度、圆角、配色与滑动动画上完全一致。
- *
- * 版本里用短名（「Ubuntu 20.04」）：一半宽度放不下带代号的显示名。
- */
 @Composable
 fun ProotDistroPillSwitcher(
     selected: ProotDistro,
@@ -1491,7 +1524,6 @@ fun ProotDistroPillSwitcher(
     if (options.isEmpty()) return
     val selectedIndex = options.indexOf(selected).coerceAtLeast(0)
     SegmentedTabs(
-        // 胶囊里用短名（「Ubuntu 20.04」）：一半宽度放不下带代号的显示名
         options = options.map { it.shortName },
         selectedIndex = selectedIndex,
         enabled = enabled,
@@ -1499,31 +1531,18 @@ fun ProotDistroPillSwitcher(
     )
 }
 
-/** 来源的分组标题文案。 */
 fun JavaVendor.groupTitleRes(): Int = when (this) {
     JavaVendor.Termux -> R.string.java_group_termux
     JavaVendor.Fcl -> R.string.java_group_fcl
     JavaVendor.Proot -> R.string.java_group_proot
 }
 
-/** 来源分组标题下的一句说明。 */
 fun JavaVendor.groupNoteRes(): Int = when (this) {
     JavaVendor.Termux -> R.string.java_group_termux_note
     JavaVendor.Fcl -> R.string.java_group_fcl_note
     JavaVendor.Proot -> R.string.java_group_proot_note
 }
 
-/**
- * 版本行的一句补充说明；只有能力上确实有差异的版本才有。
- *
- * - Proot 的 Java 8：只有 focal 提供它，切到 jammy 后这一项会从列表里消失。
- *   不提示的话，用户会以为「装好的 Java 8 丢了」。
- * - Proot 的其他版本：容器内是 glibc 环境，IPv6 兼容层不生效，
- *   且能装哪些版本取决于所选发行版（见 [ProotDistro.availableJavaVersions]）。
- *
- * 注：Java 8 曾挂在 Termux 分组下（那时它已跑在容器里），现已归入 PRoot 分组，
- * 因此不再有「Termux + Java 8」的说明分支。
- */
 private fun javaVersionNoteRes(vendor: JavaVendor, version: JavaVersion): Int? =
     when {
         vendor == JavaVendor.Proot && version == JavaVersion.Java8 -> R.string.java_note_proot_java8
@@ -1531,12 +1550,6 @@ private fun javaVersionNoteRes(vendor: JavaVendor, version: JavaVersion): Int? =
         else -> null
     }
 
-/**
- * 弹窗 / 列表里的单个运行环境版本行：选中态用 Mint 边框 + 淡底。
- *
- * [busy] 为真时右侧的状态文字换成进度圈 —— 只有正在下载解压的那一行会亮起来，
- * 否则用户不知道那个 37–62MB 的进度到底是给谁的。
- */
 @Composable
 fun RuntimeVersionRow(
     label: String,
@@ -1547,17 +1560,27 @@ fun RuntimeVersionRow(
     busy: Boolean = false,
     onClick: () -> Unit
 ) {
-    Row(
-        modifier = Modifier
+    val glass = HorizonGlass
+    val rowModifier = if (selected) {
+        Modifier
             .fillMaxWidth()
+            .padding(vertical = 2.dp)
+            .heightIn(min = 48.dp)
+            .horizonGlassPlate(
+                shape = McShape.Row,
+                containerColor = glass.liveGreenSoft,
+                borderColor = glass.liveGreen,
+                highlighted = false
+            )
+    } else {
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp)
             .heightIn(min = 48.dp)
             .clip(McShape.Row)
-            .background(if (selected) MintSoft else Color.Transparent)
-            .border(
-                width = if (selected) 1.5.dp else 0.dp,
-                color = if (selected) MaterialTheme.colorScheme.secondary else Color.Transparent,
-                shape = McShape.Row
-            )
+    }
+    Row(
+        modifier = rowModifier
             .clickable { onClick() }
             .padding(horizontal = 12.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -1565,43 +1588,31 @@ fun RuntimeVersionRow(
         Column(Modifier.weight(1f)) {
             Text(
                 label,
-                fontSize = 16.sp,
-                fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
-                color = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface
+                style = MaterialTheme.typography.titleSmall.merge(HorizonTabularStyle),
+                color = MaterialTheme.colorScheme.onSurface
             )
             note?.let {
                 Text(it, color = Muted, style = MaterialTheme.typography.bodyMedium)
             }
         }
         if (busy) {
-            CircularProgressIndicator(modifier = Modifier.size(McIcon.Inline), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.primary)
+            CircularProgressIndicator(
+                modifier = Modifier.size(McIcon.Inline),
+                strokeWidth = 2.dp,
+                color = MaterialTheme.colorScheme.primary
+            )
         } else {
             status?.let {
-                Text(it, color = statusColor, style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    it,
+                    color = statusColor,
+                    style = MaterialTheme.typography.labelLarge
+                )
             }
         }
     }
 }
 
-/**
- * Java 运行环境分组列表：三个来源各一段（分组标题 + 组内纯版本号）。
- *
- * @param selected 当前选中项，选中态由 [JavaRuntime]（来源 + 版本）决定，
- *   两套 JDK 的版本号完全重合，只比版本号会串台。
- * @param enabled 为假时不响应点击（安装中 / 服务器运行中）。
- * @param inFlight 正在安装的那一项，只在该行显示进度圈。
- * @param expandedVendors 当前展开的来源集合。**默认空集（全部折叠）**：
- *   三个来源共 11 条版本行，全展开会把「卸载 / 重装 / 安装」三键顶出屏幕，
- *   而这三个按钮才是本板块的主要操作。展开状态由调用方持有，
- *   因为它是界面状态，不该由数据层或 ViewModel 承担。
- * @param onToggleVendor 点击分组标题时切换该来源的展开状态。
- * @param prootDistro PRoot 分类当前选中的发行版。PRoot 分类**必须**按它过滤版本：
- *   `JavaVendor.Proot.versions` 是所有发行版的并集（8/11/17/21），但单个发行版
- *   只提供其中一部分（focal 无 21、jammy 无 8）。若照并集全列出来，
- *   用户会看到 "Java 21" 可点、点了却装不上，属于「列表里出现装不上的项」。
- * @param onDistroChange 切换 PRoot 发行版。必须在**同一次**写入里同时调整版本：
- *   两个发行版的可用版本不同，沿用旧版本会写出装不上的组合。
- */
 @Composable
 fun JavaRuntimeGroupList(
     installed: Set<JavaRuntime>,
@@ -1616,10 +1627,6 @@ fun JavaRuntimeGroupList(
 ) {
     JavaVendor.entries.forEach { vendor ->
         val expanded = vendor in expandedVendors
-        // 折叠时把「已选哪一份」写进说明行：三个分组默认全折叠，而下面的
-        // 「卸载 / 重装 / 安装」三键作用于当前选中项 —— 不标出来的话，
-        // 用户在折叠状态下根本看不出这三个按钮会作用到哪一份 Java 上。
-        // 展开时不需要：选中的那一行有 Mint 高亮边框，已经足够显眼。
         val note = buildString {
             append(stringResource(vendor.groupNoteRes()))
             if (!expanded && selected.vendor == vendor) {
@@ -1640,8 +1647,6 @@ fun JavaRuntimeGroupList(
         ) {
             Column {
                 if (vendor == JavaVendor.Proot) {
-                    // 发行版切换放在版本行之前：它决定下面能列出哪些版本，
-                    // 顺序反了会让人以为「换了发行版版本却没变」是 bug。
                     Spacer(Modifier.height(6.dp))
                     ProotDistroPillSwitcher(
                         selected = prootDistro,
@@ -1650,9 +1655,6 @@ fun JavaRuntimeGroupList(
                     )
                     Spacer(Modifier.height(2.dp))
                 }
-                // PRoot 列全部候选版本（并集），其中当前发行版不提供的置灰 ——
-                // 只看并集会让用户点到一个装不上的版本；只列可用版本又会让用户
-                // 以为应用漏了某个版本。置灰同时满足「看得到」与「点不动」。
                 val versions = vendor.versions
                 versions.forEach { version ->
                     val runtime = JavaRuntime(vendor, version)
@@ -1667,7 +1669,7 @@ fun JavaRuntimeGroupList(
                             isInstalled -> stringResource(R.string.dash_java_installed)
                             else -> stringResource(R.string.env_java_not_installed)
                         },
-                        statusColor = if (isInstalled && !unavailable) MaterialTheme.colorScheme.secondary else Muted,
+                        statusColor = if (isInstalled && !unavailable) HorizonGlass.liveGreen else Muted,
                         selected = runtime == selected,
                         busy = runtime == inFlight,
                         onClick = { if (enabled && !unavailable) onSelect(runtime) }
@@ -1678,29 +1680,20 @@ fun JavaRuntimeGroupList(
     }
 }
 
-/**
- * Hiển thị thông báo phản hồi tức thì (0ms trễ khi spam nhiều cài đặt),
- * tự động hủy thông báo cũ ngay lập tức để hiện thông báo mới nhất.
- */
-suspend fun androidx.compose.material3.SnackbarHostState.showInstantSnackbar(message: String) {
+suspend fun SnackbarHostState.showInstantSnackbar(message: String) {
     currentSnackbarData?.dismiss()
     showSnackbar(
         message = message,
-        duration = androidx.compose.material3.SnackbarDuration.Short
+        duration = SnackbarDuration.Short
     )
 }
 
-/**
- * Thanh thông báo phản hồi nhanh kiểu Minecraft HUD hỗ trợ:
- * 1) Vuốt ngang qua trái/phải để bỏ thông báo ngay lập tức
- * 2) Chạm vào thông báo hoặc nút ✕ để đóng ngay
- * 3) Tự động ẩn nhanh sau 2.2 giây và không bao giờ xếp hàng gây trễ khi bấm liên tục
- */
 @Composable
 fun SwipeableInstantSnackbarHost(
-    hostState: androidx.compose.material3.SnackbarHostState,
+    hostState: SnackbarHostState,
     modifier: Modifier = Modifier
 ) {
+    val glass = HorizonGlass
     val currentData = hostState.currentSnackbarData
     LaunchedEffect(currentData) {
         if (currentData != null) {
@@ -1708,25 +1701,25 @@ fun SwipeableInstantSnackbarHost(
             runCatching { currentData.dismiss() }
         }
     }
-    androidx.compose.material3.SnackbarHost(
+    SnackbarHost(
         hostState = hostState,
         modifier = modifier
     ) { data ->
-        var dragOffsetX by remember(data) { androidx.compose.runtime.mutableFloatStateOf(0f) }
+        var dragOffsetX by remember(data) { mutableFloatStateOf(0f) }
         val isError = data.visuals.message.contains("Lỗi", ignoreCase = true) ||
             data.visuals.message.contains("thất bại", ignoreCase = true) ||
             data.visuals.message.contains("⚠️")
-        val accentColor = if (isError) Coral else Mint
+        val accentColor = if (isError) glass.dangerCoral else glass.liveGreen
 
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 4.dp),
+                .padding(horizontal = 16.dp, vertical = 6.dp),
             contentAlignment = Alignment.Center
         ) {
             Box(
                 modifier = Modifier
-                    .fillMaxWidth(0.92f)
+                    .fillMaxWidth(0.94f)
                     .offset { IntOffset(dragOffsetX.roundToInt(), 0) }
                     .pointerInput(data) {
                         detectHorizontalDragGestures(
@@ -1747,11 +1740,13 @@ fun SwipeableInstantSnackbarHost(
                             }
                         )
                     }
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(Color(0xFF141E19).copy(alpha = 0.94f))
-                    .border(1.dp, accentColor.copy(alpha = 0.85f), RoundedCornerShape(18.dp))
+                    .horizonGlassPlate(
+                        shape = RoundedCornerShape(18.dp),
+                        containerColor = glass.glassChrome,
+                        borderColor = accentColor.copy(alpha = 0.65f)
+                    )
                     .clickable { data.dismiss() }
-                    .padding(horizontal = 11.dp, vertical = 7.dp)
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -1759,11 +1754,11 @@ fun SwipeableInstantSnackbarHost(
                 ) {
                     MinecraftPixelArtIcon(
                         kind = if (isError) MinecraftArtKind.REDSTONE else MinecraftArtKind.GRASS,
-                        size = 16.dp
+                        size = 18.dp
                     )
                     Text(
                         text = data.visuals.message,
-                        color = Color(0xFFF1F8F3),
+                        color = MaterialTheme.colorScheme.onSurface,
                         style = MaterialTheme.typography.bodyMedium,
                         maxLines = 3,
                         overflow = TextOverflow.Ellipsis,
@@ -1773,11 +1768,10 @@ fun SwipeableInstantSnackbarHost(
                         onClick = { data.dismiss() },
                         modifier = Modifier.size(McIcon.Touch)
                     ) {
-                        Text("✕", color = accentColor, fontSize = 18.sp)
+                        Text("✕", color = accentColor, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
         }
     }
 }
-

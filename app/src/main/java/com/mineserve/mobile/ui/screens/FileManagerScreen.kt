@@ -1,41 +1,42 @@
 package com.mineserve.mobile.ui.screens
 
-import androidx.compose.ui.res.stringResource
-import com.mineserve.mobile.R
-
-import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.FolderOpen
+import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.CreateNewFolder
 import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.Folder
-import androidx.compose.material3.IconButton
-import androidx.compose.material.icons.outlined.ArrowUpward
+import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Refresh
@@ -44,9 +45,10 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -65,28 +67,30 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.mineserve.mobile.ui.HeaderBlock
+import com.mineserve.mobile.R
 import com.mineserve.mobile.ui.EmptyHint
+import com.mineserve.mobile.ui.HeaderBlock
 import com.mineserve.mobile.ui.McCard
 import com.mineserve.mobile.ui.McViewModel
-import com.mineserve.mobile.ui.theme.Coral
-import com.mineserve.mobile.ui.theme.Indigo
-import com.mineserve.mobile.ui.theme.IndigoSoft
+import com.mineserve.mobile.ui.theme.HorizonGlass
+import com.mineserve.mobile.ui.theme.HorizonTabularStyle
 import com.mineserve.mobile.ui.theme.McIcon
 import com.mineserve.mobile.ui.theme.McShape
 import com.mineserve.mobile.ui.theme.McSpacing
-import com.mineserve.mobile.ui.theme.Mint
 import com.mineserve.mobile.ui.theme.Muted
+import com.mineserve.mobile.ui.theme.horizonGlassPlate
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import java.io.File
 
 @Composable
 fun FileManagerScreen(vm: McViewModel, onOpenMtGuide: () -> Unit = {}) {
+    val glass = HorizonGlass
     val context = LocalContext.current
     val files by vm.fileList.collectAsState()
     val currentPath by vm.currentPath.collectAsState()
@@ -103,7 +107,7 @@ fun FileManagerScreen(vm: McViewModel, onOpenMtGuide: () -> Unit = {}) {
     var showNewDirDialog by remember { mutableStateOf(false) }
     var newDirName by remember { mutableStateOf("") }
 
-    // SAF 文件选择器
+    // SAF file picker
     val filePickerLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
@@ -113,7 +117,7 @@ fun FileManagerScreen(vm: McViewModel, onOpenMtGuide: () -> Unit = {}) {
         }
     }
 
-    // 导出目标（用户点击的文件/文件夹），CreateDocument 回调用
+    // Export target
     var exportTarget by remember { mutableStateOf<File?>(null) }
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/octet-stream")
@@ -121,7 +125,8 @@ fun FileManagerScreen(vm: McViewModel, onOpenMtGuide: () -> Unit = {}) {
         uri?.let { target -> exportTarget?.let { vm.exportPathToUri(it, target) } }
         exportTarget = null
     }
-    // 整服务器导出选择器
+
+    // Whole server export picker
     val exportServerFileName = stringResource(R.string.s490)
     val exportServerLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/zip")
@@ -138,29 +143,26 @@ fun FileManagerScreen(vm: McViewModel, onOpenMtGuide: () -> Unit = {}) {
         }
     }
 
-    // 首次进入时加载根目录
     LaunchedEffect(isBootstrapped) {
         if (isBootstrapped && currentPath.isEmpty()) {
             vm.loadFilesRoot()
         }
     }
 
-    androidx.compose.material3.Scaffold(
+    Scaffold(
+        containerColor = Color.Transparent,
         snackbarHost = { SnackbarHost(snackbarHostState) },
-        // 嵌套在外层 McApp Scaffold 内：insets 已由外层消费，这里不再重复应用，避免顶部空白/白色遮挡
         contentWindowInsets = WindowInsets(0.dp)
     ) { paddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .background(Color.Transparent)
                 .padding(paddingValues)
         ) {
             HeaderBlock(eyebrow = stringResource(R.string.eyebrow_files), title = stringResource(R.string.s488))
 
-            // 教程 + MT 管理器 + 导出服务器（三个按钮统一收起/展开）。折叠状态用 rememberSaveable 保存，
-            // 避免在组合体内同步读 SharedPreferences 造成首帧主线程读盘。
             var topActionsExpanded by rememberSaveable { mutableStateOf(true) }
-            // 折叠时只保留一行提示，三个入口一起收起，避免误点
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -176,7 +178,7 @@ fun FileManagerScreen(vm: McViewModel, onOpenMtGuide: () -> Unit = {}) {
                         modifier = Modifier.weight(1f)
                     )
                 }
-                androidx.compose.animation.AnimatedVisibility(
+                AnimatedVisibility(
                     visible = topActionsExpanded,
                     modifier = Modifier.weight(1f)
                 ) {
@@ -184,25 +186,29 @@ fun FileManagerScreen(vm: McViewModel, onOpenMtGuide: () -> Unit = {}) {
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-
                         Button(
                             onClick = onOpenMtGuide,
-                            colors = ButtonDefaults.buttonColors(containerColor = Indigo),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = glass.accent,
+                                contentColor = Color.White
+                            ),
                             shape = McShape.ControlCompact,
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text(stringResource(R.string.s489), fontSize = 12.sp, maxLines = 1)
+                            Text(stringResource(R.string.s489), fontSize = 12.sp, maxLines = 1, fontWeight = FontWeight.SemiBold)
                         }
                         OutlinedButton(
                             onClick = { exportServerLauncher.launch(exportServerFileName) },
                             shape = McShape.ControlCompact,
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                            border = BorderStroke(1.dp, glass.hairline),
+                            colors = ButtonDefaults.outlinedButtonColors(containerColor = glass.glassRow),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Icon(Icons.Outlined.FileDownload, contentDescription = null, modifier = Modifier.size(McIcon.Inline))
+                            Icon(Icons.Outlined.FileDownload, contentDescription = null, tint = glass.accent, modifier = Modifier.size(McIcon.Inline))
                             Spacer(Modifier.size(4.dp))
-                            Text(stringResource(R.string.s491), fontSize = 12.sp, color = Indigo, maxLines = 1)
+                            Text(stringResource(R.string.s491), fontSize = 12.sp, color = glass.accent, maxLines = 1, fontWeight = FontWeight.SemiBold)
                         }
                     }
                 }
@@ -219,40 +225,66 @@ fun FileManagerScreen(vm: McViewModel, onOpenMtGuide: () -> Unit = {}) {
                 }
             }
 
-            // 路径导航栏
+            // Thanh điều hướng Breadcrumb Pills mặt kính mờ
             McCard(title = stringResource(R.string.s493)) {
+                val rootFile = vm.fileManagerRoot
+                val rootPath = rootFile.absolutePath
+                val relPath = if (currentPath.startsWith(rootPath)) {
+                    currentPath.removePrefix(rootPath).removePrefix(File.separator)
+                } else {
+                    ""
+                }
+                val segments = remember(relPath) {
+                    relPath.split('/', '\\').filter { it.isNotBlank() }
+                }
+
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    val rootPath = vm.fileManagerRoot.absolutePath
-                    val relPath = if (currentPath.startsWith(rootPath)) {
-                        currentPath.removePrefix(rootPath).removePrefix(File.separator)
-                    } else {
-                        currentPath
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .horizontalScroll(rememberScrollState()),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        val atRoot = segments.isEmpty()
+                        BreadcrumbGlassPill(
+                            label = "🏠 servers",
+                            active = atRoot,
+                            onClick = {
+                                if (!atRoot) vm.loadFiles(rootFile)
+                            }
+                        )
+                        segments.forEachIndexed { idx, seg ->
+                            Text("›", color = Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            val isLast = idx == segments.lastIndex
+                            BreadcrumbGlassPill(
+                                label = seg,
+                                active = isLast,
+                                onClick = {
+                                    if (!isLast) {
+                                        val target = File(rootFile, segments.take(idx + 1).joinToString(File.separator))
+                                        vm.loadFiles(target)
+                                    }
+                                }
+                            )
+                        }
                     }
-                    val displayPath = if (relPath.isEmpty()) "servers/" else "servers/$relPath"
 
-                    Text(
-                        displayPath, color = Muted, fontSize = 11.sp,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
-
-                    // 向上按钮
+                    Spacer(Modifier.width(4.dp))
                     IconButton(onClick = { vm.navigateUp() }, modifier = Modifier.size(McIcon.TouchCompact)) {
-                        Icon(Icons.Outlined.ArrowUpward, stringResource(R.string.s494), tint = Indigo, modifier = Modifier.size(McIcon.Action))
+                        Icon(Icons.Outlined.ArrowUpward, stringResource(R.string.s494), tint = glass.accent, modifier = Modifier.size(McIcon.Action))
                     }
-                    // 刷新按钮
                     IconButton(onClick = { vm.refreshFiles() }, modifier = Modifier.size(McIcon.TouchCompact)) {
-                        Icon(Icons.Outlined.Refresh, stringResource(R.string.s333), tint = Indigo, modifier = Modifier.size(McIcon.Action))
+                        Icon(Icons.Outlined.Refresh, stringResource(R.string.s333), tint = glass.accent, modifier = Modifier.size(McIcon.Action))
                     }
                 }
 
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(10.dp))
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // 返回上级
                     val currentDir = File(currentPath)
                     val parentDir = currentDir.parentFile
                     val canGoUp = parentDir != null &&
@@ -264,7 +296,10 @@ fun FileManagerScreen(vm: McViewModel, onOpenMtGuide: () -> Unit = {}) {
                             parentDir?.let { if (canGoUp) vm.loadFiles(it) }
                         },
                         enabled = canGoUp,
-                        colors = ButtonDefaults.buttonColors(containerColor = Indigo),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = glass.accent,
+                            contentColor = Color.White
+                        ),
                         shape = McShape.ControlCompact,
                         modifier = Modifier.weight(1f)
                     ) {
@@ -274,15 +309,17 @@ fun FileManagerScreen(vm: McViewModel, onOpenMtGuide: () -> Unit = {}) {
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(Modifier.size(4.dp))
-                        Text(stringResource(R.string.s496), color = Color.White, fontSize = 11.sp)
+                        Text(stringResource(R.string.s496), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                     }
 
-                    // 上传文件
                     Button(
                         onClick = {
                             filePickerLauncher.launch(arrayOf("*/*"))
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = Mint),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = glass.liveGreen,
+                            contentColor = Color.White
+                        ),
                         shape = McShape.ControlCompact,
                         modifier = Modifier.weight(1f)
                     ) {
@@ -292,16 +329,18 @@ fun FileManagerScreen(vm: McViewModel, onOpenMtGuide: () -> Unit = {}) {
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(Modifier.size(4.dp))
-                        Text(stringResource(R.string.s497), color = Color.White, fontSize = 11.sp)
+                        Text(stringResource(R.string.s497), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                     }
 
-                    // 新建文件夹
                     Button(
                         onClick = {
                             newDirName = ""
                             showNewDirDialog = true
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = Indigo),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = glass.accent,
+                            contentColor = Color.White
+                        ),
                         shape = McShape.ControlCompact,
                         modifier = Modifier.weight(1f)
                     ) {
@@ -311,14 +350,13 @@ fun FileManagerScreen(vm: McViewModel, onOpenMtGuide: () -> Unit = {}) {
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(Modifier.size(4.dp))
-                        Text(stringResource(R.string.s499), color = Color.White, fontSize = 11.sp)
+                        Text(stringResource(R.string.s499), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
 
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(6.dp))
 
-            // 文件列表
             if (files.isEmpty()) {
                 McCard(title = stringResource(R.string.s500)) {
                     EmptyHint(
@@ -329,7 +367,8 @@ fun FileManagerScreen(vm: McViewModel, onOpenMtGuide: () -> Unit = {}) {
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                    contentPadding = PaddingValues(bottom = 14.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     items(files, key = { it.path }, contentType = { "file-entry" }) { entry ->
                         FileItemRow(
@@ -355,10 +394,11 @@ fun FileManagerScreen(vm: McViewModel, onOpenMtGuide: () -> Unit = {}) {
         }
     }
 
-    // 删除确认对话框
     showDeleteConfirm?.let { fileToDelete ->
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = null },
+            containerColor = glass.glassChrome,
+            shape = McShape.Dialog,
             title = { Text(stringResource(R.string.s401), fontWeight = FontWeight.Bold) },
             text = {
                 val deleteFolderPrefix = stringResource(R.string.s503)
@@ -375,7 +415,8 @@ fun FileManagerScreen(vm: McViewModel, onOpenMtGuide: () -> Unit = {}) {
                         append(irreversibleMsg)
                     },
                     color = Muted,
-                    fontSize = 12.sp
+                    fontSize = 12.sp,
+                    lineHeight = 16.5.sp
                 )
             },
             confirmButton = {
@@ -385,7 +426,7 @@ fun FileManagerScreen(vm: McViewModel, onOpenMtGuide: () -> Unit = {}) {
                         showDeleteConfirm = null
                     }
                 ) {
-                    Text(stringResource(R.string.s339), color = Coral, fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(R.string.s339), color = glass.dangerCoral, fontWeight = FontWeight.SemiBold)
                 }
             },
             dismissButton = {
@@ -398,10 +439,11 @@ fun FileManagerScreen(vm: McViewModel, onOpenMtGuide: () -> Unit = {}) {
         )
     }
 
-    // 新建文件夹对话框
     if (showNewDirDialog) {
         AlertDialog(
             onDismissRequest = { showNewDirDialog = false },
+            containerColor = glass.glassChrome,
+            shape = McShape.Dialog,
             title = { Text(stringResource(R.string.s498), fontWeight = FontWeight.Bold) },
             text = {
                 OutlinedTextField(
@@ -409,6 +451,7 @@ fun FileManagerScreen(vm: McViewModel, onOpenMtGuide: () -> Unit = {}) {
                     onValueChange = { newDirName = it },
                     label = { Text(stringResource(R.string.s506), fontSize = 12.sp) },
                     singleLine = true,
+                    shape = McShape.Control,
                     modifier = Modifier.fillMaxWidth()
                 )
             },
@@ -416,7 +459,6 @@ fun FileManagerScreen(vm: McViewModel, onOpenMtGuide: () -> Unit = {}) {
                 TextButton(
                     onClick = {
                         val name = newDirName.trim()
-                        // 拒绝非法名称：'/' 会静默创建嵌套目录，'..' 可在服务器目录外建目录，首尾空白也一并拒绝
                         val invalid = name.isBlank() || name != newDirName ||
                             name.contains('/') || name.contains('\\') || name.contains("..")
                         if (invalid) {
@@ -429,7 +471,7 @@ fun FileManagerScreen(vm: McViewModel, onOpenMtGuide: () -> Unit = {}) {
                         }
                     }
                 ) {
-                    Text(stringResource(R.string.s507), color = Indigo, fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(R.string.s507), color = glass.accent, fontWeight = FontWeight.SemiBold)
                 }
             },
             dismissButton = {
@@ -444,6 +486,35 @@ fun FileManagerScreen(vm: McViewModel, onOpenMtGuide: () -> Unit = {}) {
 }
 
 @Composable
+private fun BreadcrumbGlassPill(
+    label: String,
+    active: Boolean,
+    onClick: () -> Unit
+) {
+    val glass = HorizonGlass
+    Box(
+        modifier = Modifier
+            .clip(CircleShape)
+            .background(if (active) glass.accentSoft else glass.glassInput)
+            .border(
+                1.dp,
+                if (active) glass.accent.copy(alpha = 0.65f) else glass.hairline,
+                CircleShape
+            )
+            .clickable(enabled = !active) { onClick() }
+            .padding(horizontal = 10.dp, vertical = 5.dp)
+    ) {
+        Text(
+            text = label,
+            fontSize = 11.5.sp,
+            fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+            color = if (active) glass.accent else Muted,
+            maxLines = 1
+        )
+    }
+}
+
+@Composable
 private fun FileItemRow(
     entry: McViewModel.FileEntry,
     onClick: () -> Unit,
@@ -452,32 +523,42 @@ private fun FileItemRow(
     canEdit: Boolean,
     onDelete: () -> Unit
 ) {
+    val glass = HorizonGlass
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .padding(horizontal = McSpacing.Page)
+            .horizonGlassPlate(
+                shape = McShape.Row,
+                containerColor = glass.glassRow,
+                borderColor = glass.hairline
+            )
             .clickable { onClick() }
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // 文件类型图标
         Box(
             modifier = Modifier
-                .size(36.dp)
+                .size(38.dp)
                 .clip(RoundedCornerShape(10.dp))
-                .background(if (entry.isDirectory) Mint.copy(alpha = 0.15f) else IndigoSoft),
+                .background(if (entry.isDirectory) glass.liveGreenSoft else glass.accentSoft)
+                .border(
+                    1.dp,
+                    if (entry.isDirectory) glass.liveGreen.copy(alpha = 0.4f) else glass.accent.copy(alpha = 0.4f),
+                    RoundedCornerShape(10.dp)
+                ),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = if (entry.isDirectory) Icons.Outlined.Folder else Icons.Outlined.Description,
                 contentDescription = null,
-                tint = if (entry.isDirectory) Mint else Indigo,
+                tint = if (entry.isDirectory) glass.liveGreen else glass.accent,
                 modifier = Modifier.size(20.dp)
             )
         }
 
         Spacer(Modifier.size(10.dp))
 
-        // 文件名和信息
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
@@ -488,61 +569,69 @@ private fun FileItemRow(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false)
                 )
-                // 自动功能注释（如 world【主世界存档文件夹】）
                 fileAnnotation(entry)?.let { resId ->
                     val ann = stringResource(resId)
                     Spacer(Modifier.size(6.dp))
-                    Text(
-                        "【$ann】",
-                        color = Muted,
-                        fontSize = 10.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    Box(
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .background(glass.glassInput)
+                            .border(1.dp, glass.hairline, CircleShape)
+                            .padding(horizontal = 6.dp, vertical = 1.dp)
+                    ) {
+                        Text(
+                            ann,
+                            color = Muted,
+                            fontSize = 9.5.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }
+            Spacer(Modifier.height(2.dp))
             Text(
                 if (entry.isDirectory) entry.modifiedText else "${entry.sizeText} · ${entry.modifiedText}",
+                style = HorizonTabularStyle,
                 color = Muted,
                 fontSize = 11.sp,
                 maxLines = 1
             )
         }
 
-        // 导出按钮
         IconButton(onClick = onExport, modifier = Modifier.padding(start = 2.dp).size(McIcon.Touch)) {
             Icon(
                 Icons.Outlined.FileDownload,
                 contentDescription = stringResource(R.string.s335),
-                tint = Indigo,
+                tint = glass.accent,
                 modifier = Modifier.size(McIcon.Action)
             )
         }
 
-        if (canEdit) IconButton(onClick = onEdit, modifier = Modifier.size(McIcon.Touch)) {
-            Icon(Icons.Outlined.Edit, contentDescription = stringResource(R.string.fm_edit_text), tint = Indigo, modifier = Modifier.size(McIcon.Action))
+        if (canEdit) {
+            IconButton(onClick = onEdit, modifier = Modifier.size(McIcon.Touch)) {
+                Icon(
+                    Icons.Outlined.Edit,
+                    contentDescription = stringResource(R.string.fm_edit_text),
+                    tint = glass.accent,
+                    modifier = Modifier.size(McIcon.Action)
+                )
+            }
         }
 
-        // 删除按钮
-        TextButton(
+        IconButton(
             onClick = onDelete,
-            modifier = Modifier.padding(start = 4.dp)
+            modifier = Modifier.size(McIcon.Touch)
         ) {
             Icon(
                 Icons.Outlined.Delete,
                 contentDescription = stringResource(R.string.s339),
-                tint = Coral,
+                tint = glass.dangerCoral,
                 modifier = Modifier.size(McIcon.Action)
             )
         }
     }
 }
-
-// ── 服务器目录文件/文件夹中文功能注释 ────────────────────────────────
-
-/** MT 管理器教程视频（在线播放） */
-private const val TUTORIAL_VIDEO_URL =
-    "https://img.remit.ee/api/file/BAACAgUAAyEGAASHRsPbAAEYWwdqbtydlO6_o-rdvwpJ3O92AfEtHQACbB0AAh7GeVdh2nS2uFg_6T0E.mp4"
 
 private val fileAnnotations = mapOf(
     "server.jar" to R.string.s508,
@@ -583,7 +672,6 @@ private val dirAnnotations = mapOf(
     "world_backup" to R.string.s540
 )
 
-/** 返回文件/文件夹的中文功能注释，未知名称返回 null */
 private fun fileAnnotation(entry: McViewModel.FileEntry): Int? {
     val key = entry.name.lowercase()
     return if (entry.isDirectory) dirAnnotations[key] else fileAnnotations[key]

@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- 深色模式：系统栏图标用浅色，窗口背景用深色 -->
+    <!-- Không gian Tím Hoàng Hôn (Horizon Dusk): hệ thống biểu tượng sáng trên nền kính tối -->
     <style name="Theme.MineServeMobile" parent="android:Theme.Material.NoActionBar">
-        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:windowBackground">@color/window_bg</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar" tools:targetApi="m">false</item>

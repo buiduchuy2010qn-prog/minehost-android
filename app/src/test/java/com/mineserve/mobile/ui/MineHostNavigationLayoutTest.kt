@@ -12,6 +12,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsActions
@@ -24,8 +25,11 @@ import androidx.compose.ui.unit.dp
 import com.mineserve.mobile.ui.screens.AdaptiveActionRow
 import com.mineserve.mobile.ui.screens.HostAction
 import com.mineserve.mobile.ui.screens.HostDisclosure
-import com.mineserve.mobile.ui.theme.McTypography
 import com.mineserve.mobile.ui.theme.EyeCareColorPreset
+import com.mineserve.mobile.ui.theme.HorizonGlassBackdrop
+import com.mineserve.mobile.ui.theme.LocalHorizonGlass
+import com.mineserve.mobile.ui.theme.McTypography
+import com.mineserve.mobile.ui.theme.horizonGlassTokensFor
 import com.mineserve.mobile.ui.theme.mineHostColorScheme
 import java.io.File
 import org.junit.After
@@ -48,20 +52,47 @@ class MineHostNavigationLayoutTest {
     @get:Rule val compose = createEmptyComposeRule()
     private var controller: ActivityController<ComponentActivity>? = null
 
-    private fun show(fontScale: Float = 1f, dark: Boolean = false, content: @Composable () -> Unit) {
+    private fun show(
+        fontScale: Float = 1f,
+        dark: Boolean = false,
+        preset: EyeCareColorPreset = if (dark) EyeCareColorPreset.SoftSlate else EyeCareColorPreset.WarmPaperLight,
+        content: @Composable () -> Unit
+    ) {
+        controller?.let {
+            it.pause().stop().destroy()
+            controller = null
+        }
+        val scheme = mineHostColorScheme(preset)
+        val glass = horizonGlassTokensFor(preset)
         controller = Robolectric.buildActivity(ComponentActivity::class.java).setup()
         controller!!.get().setContent {
-            MaterialTheme(colorScheme = mineHostColorScheme(if (dark) EyeCareColorPreset.SoftSlate else EyeCareColorPreset.WarmPaperLight), typography = McTypography) {
+            MaterialTheme(colorScheme = scheme, typography = McTypography) {
                 val density = LocalDensity.current
-                CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale)) {
-                    Surface(Modifier.fillMaxSize(), content = content)
+                CompositionLocalProvider(
+                    LocalDensity provides Density(density.density, fontScale),
+                    LocalHorizonGlass provides glass
+                ) {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = Color.Transparent,
+                        contentColor = scheme.onSurface
+                    ) {
+                        Box(Modifier.fillMaxSize()) {
+                            HorizonGlassBackdrop()
+                            content()
+                        }
+                    }
                 }
             }
         }
         compose.waitForIdle()
     }
 
-    @After fun closeActivity() { controller?.pause()?.stop()?.destroy() }
+    @After
+    fun closeActivity() {
+        controller?.pause()?.stop()?.destroy()
+        controller = null
+    }
 
     private fun assertTextFits() {
         compose.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsActions.GetTextLayoutResult), useUnmergedTree = true)
@@ -76,7 +107,10 @@ class MineHostNavigationLayoutTest {
                             result.getLineLeft(line) < -1f ||
                             result.getLineRight(line) > result.size.width + 1f ||
                             result.getLineBottom(line) > result.size.height + 1f
-                        assertFalse("Text clipped: ${result.layoutInput.text}; line=$line; bounds=${result.getLineLeft(line)}..${result.getLineRight(line)}; size=${result.size}", clipped)
+                        assertFalse(
+                            "Text clipped: ${result.layoutInput.text}; line=$line; bounds=${result.getLineLeft(line)}..${result.getLineRight(line)}; size=${result.size}",
+                            clipped
+                        )
                     }
                 }
             }
@@ -122,8 +156,14 @@ class MineHostNavigationLayoutTest {
         var selected: McTab? = null
         var selectedTool: SubPage? = null
         show {
-            MineHostNavigation("Máy chủ", "Paper sinh tồn", McTab.Dashboard, null,
-                onTab = { selected = it }, onNavigate = { selectedTool = it }) {
+            MineHostNavigation(
+                "Máy chủ",
+                "Paper sinh tồn",
+                McTab.Dashboard,
+                null,
+                onTab = { selected = it },
+                onNavigate = { selectedTool = it }
+            ) {
                 Text("Nội dung máy chủ")
             }
         }
@@ -179,6 +219,7 @@ class MineHostNavigationLayoutTest {
     }
 
     @Test fun allPalettesKeepBodyAndButtonTextReadable() {
+        assertEquals(5, EyeCareColorPreset.entries.size)
         EyeCareColorPreset.entries.forEach { preset ->
             val scheme = mineHostColorScheme(preset)
             listOf(
@@ -191,8 +232,76 @@ class MineHostNavigationLayoutTest {
                 val a = text.luminance()
                 val b = background.luminance()
                 val ratio = (maxOf(a, b) + 0.05f) / (minOf(a, b) + 0.05f)
-                assertTrue("$preset has insufficient text contrast: $ratio", ratio >= 4.5f)
+                assertTrue("$preset has insufficient text contrast: $ratio", ratio >= 4.8f)
             }
         }
+    }
+
+    @Test fun horizonGlassPresetsRenderCleanlyOnMobile() {
+        var activePreset by mutableStateOf(EyeCareColorPreset.SoftSlate)
+        controller = Robolectric.buildActivity(ComponentActivity::class.java).setup()
+        controller!!.get().setContent {
+            val scheme = mineHostColorScheme(activePreset)
+            val glass = horizonGlassTokensFor(activePreset)
+            MaterialTheme(colorScheme = scheme, typography = McTypography) {
+                CompositionLocalProvider(LocalHorizonGlass provides glass) {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = Color.Transparent,
+                        contentColor = scheme.onSurface
+                    ) {
+                        Box(Modifier.fillMaxSize()) {
+                            HorizonGlassBackdrop()
+                            MineHostNavigation(
+                                title = "Máy chủ",
+                                serverName = "Paper 1.21.4",
+                                tab = McTab.Dashboard,
+                                page = null,
+                                onTab = {},
+                                onNavigate = {},
+                                liveStatusPillText = "🟢 20.0 TPS • 36°C",
+                                liveStatusState = 2
+                            ) {
+                                Column(Modifier.fillMaxSize()) {
+                                    Column(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .padding(top = 8.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        McCard(
+                                            title = "Trạng thái máy chủ",
+                                            trailing = { StatusPill("Online", glass.liveGreen) }
+                                        ) {
+                                            Text(
+                                                "Không gian kính mờ Pure Horizon Glass hiển thị sắc nét dấu tiếng Việt.",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            Spacer(Modifier.height(8.dp))
+                                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                SegPill("Java Mod", selected = true, modifier = Modifier.weight(1f)) {}
+                                                SegPill("Nhân Rust", selected = false, modifier = Modifier.weight(1f)) {}
+                                            }
+                                        }
+                                    }
+                                    MineHostBottomBar(selected = McTab.Dashboard, onSelect = {})
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Chủ đề giao diện").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Mở danh mục").assertIsDisplayed()
+        assertTextFits()
+        screenshot("horizon-dusk-nav-320")
+
+        compose.runOnUiThread { activePreset = EyeCareColorPreset.SakuraGlass }
+        compose.waitForIdle()
+        assertTextFits()
+        screenshot("horizon-sakura-nav-320")
     }
 }

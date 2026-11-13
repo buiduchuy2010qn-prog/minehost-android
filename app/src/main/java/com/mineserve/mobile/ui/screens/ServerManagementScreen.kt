@@ -2,6 +2,8 @@ package com.mineserve.mobile.ui.screens
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,12 +15,14 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
@@ -35,16 +39,17 @@ import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -62,9 +67,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mineserve.mobile.ui.BackBar
+import com.mineserve.mobile.ui.CoreBrandLogo
 import com.mineserve.mobile.ui.HeaderBlock
 import com.mineserve.mobile.ui.HintNote
 import com.mineserve.mobile.ui.McCard
@@ -73,21 +82,48 @@ import com.mineserve.mobile.ui.SegPill
 import com.mineserve.mobile.ui.StatusPill
 import com.mineserve.mobile.ui.SwipeableInstantSnackbarHost
 import com.mineserve.mobile.ui.showInstantSnackbar
-import com.mineserve.mobile.ui.theme.Coral
-import com.mineserve.mobile.ui.theme.CoralSoft
-import com.mineserve.mobile.ui.theme.FieldBg
-import com.mineserve.mobile.ui.theme.Indigo
+import com.mineserve.mobile.ui.theme.HorizonGlass
+import com.mineserve.mobile.ui.theme.HorizonTabularStyle
 import com.mineserve.mobile.ui.theme.IndigoSoft
-import com.mineserve.mobile.ui.theme.Line
 import com.mineserve.mobile.ui.theme.McIcon
 import com.mineserve.mobile.ui.theme.McShape
 import com.mineserve.mobile.ui.theme.McSpacing
-import com.mineserve.mobile.ui.theme.Mint
-import com.mineserve.mobile.ui.theme.MintSoft
 import com.mineserve.mobile.ui.theme.Muted
-import com.mineserve.mobile.ui.theme.TrackBg
+import com.mineserve.mobile.ui.theme.horizonGlassPlate
 import kotlinx.coroutines.flow.collectLatest
 import kotlin.math.roundToInt
+
+@Composable
+private fun glassManagerTextFieldColors() = OutlinedTextFieldDefaults.colors(
+    focusedContainerColor = HorizonGlass.glassInput,
+    unfocusedContainerColor = HorizonGlass.glassInput,
+    disabledContainerColor = HorizonGlass.glassInput.copy(alpha = 0.5f),
+    focusedBorderColor = HorizonGlass.accent,
+    unfocusedBorderColor = HorizonGlass.hairline,
+    cursorColor = HorizonGlass.accent,
+    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+    unfocusedTextColor = MaterialTheme.colorScheme.onSurface
+)
+
+@Composable
+private fun InstanceMetricChip(text: String, accentColor: Color) {
+    val glass = HorizonGlass
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(glass.glassInput)
+            .border(1.dp, accentColor.copy(alpha = 0.28f), RoundedCornerShape(8.dp))
+            .padding(horizontal = 8.dp, vertical = 3.dp)
+    ) {
+        Text(
+            text = text,
+            style = HorizonTabularStyle,
+            color = accentColor,
+            fontSize = 10.5.sp,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -100,6 +136,7 @@ fun ServerManagementScreen(
     onCreateServer: () -> Unit = {},
     onBack: (() -> Unit)? = null
 ) {
+    val glass = HorizonGlass
     val config by vm.config.collectAsState()
     val state by vm.serverState.collectAsState()
     val props by vm.serverProperties.collectAsState()
@@ -139,6 +176,7 @@ fun ServerManagementScreen(
     }
 
     Scaffold(
+        containerColor = Color.Transparent,
         snackbarHost = { SwipeableInstantSnackbarHost(snackbarHostState) },
         contentWindowInsets = WindowInsets(0.dp)
     ) { paddingValues ->
@@ -149,7 +187,7 @@ fun ServerManagementScreen(
                 .verticalScroll(rememberScrollState())
         ) {
             if (onBack != null) {
-                com.mineserve.mobile.ui.BackBar(title = "Quản lý các Server riêng & Cài đặt", onBack = onBack)
+                BackBar(title = "Quản lý các Server riêng & Cài đặt", onBack = onBack)
             } else {
                 HeaderBlock(eyebrow = "MÁY CHỦ", title = "Quản lý các Server riêng & Điều khiển")
             }
@@ -159,7 +197,12 @@ fun ServerManagementScreen(
                 title = "🗂️ Quản Lý Các Server Riêng (${config.installedCores.size} máy chủ)",
                 trailing = {
                     TextButton(onClick = { vm.refreshServerStorage() }) {
-                        Text("🔄 Tính dung lượng", color = Mint, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            "🔄 Tính dung lượng",
+                            color = glass.liveGreen,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
             ) {
@@ -174,7 +217,7 @@ fun ServerManagementScreen(
                 if (config.installedCores.isEmpty()) {
                     Text(
                         "Chưa có server nào. Hãy bấm nút bên dưới để tạo server Minecraft đầu tiên của bạn!",
-                        color = Coral,
+                        color = glass.dangerCoral,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold
                     )
@@ -182,58 +225,107 @@ fun ServerManagementScreen(
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         config.installedCores.forEach { srv ->
                             val isSelected = srv.name == config.activeCoreName
+                            val isLiveThisServer = isSelected && state.isRunning
                             val storage = serverStorageMap[srv.name]
                             val isStorageExpanded = expandedStorageServerName == srv.name
+                            val defaultPortForCore = if (isSelected) serverPort else if (srv.core.isBedrock) 19132 else 25565
+                            val plateBg = when {
+                                isLiveThisServer -> glass.liveGreenSoft
+                                isSelected -> glass.accentSoft
+                                else -> glass.glassRow
+                            }
+                            val plateBorder = when {
+                                isLiveThisServer -> glass.liveGreen.copy(alpha = 0.72f)
+                                isSelected -> glass.accent.copy(alpha = 0.65f)
+                                else -> glass.hairline
+                            }
+
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(if (isSelected) MintSoft else FieldBg)
-                                    .padding(12.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    .horizonGlassPlate(
+                                        shape = RoundedCornerShape(16.dp),
+                                        containerColor = plateBg,
+                                        borderColor = plateBorder,
+                                        highlighted = isSelected
+                                    )
+                                    .padding(13.dp),
+                                verticalArrangement = Arrangement.spacedBy(9.dp)
                             ) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    com.mineserve.mobile.ui.CoreBrandLogo(
+                                    CoreBrandLogo(
                                         core = srv.core,
-                                        size = 40.dp
+                                        size = 42.dp
                                     )
                                     Spacer(Modifier.size(10.dp))
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
                                             Text(
                                                 srv.name,
-                                                fontSize = 14.sp,
+                                                fontSize = 14.5.sp,
                                                 fontWeight = FontWeight.ExtraBold,
-                                                color = if (isSelected) Mint else MaterialTheme.colorScheme.onSurface
+                                                color = when {
+                                                    isLiveThisServer -> glass.liveGreen
+                                                    isSelected -> glass.accent
+                                                    else -> MaterialTheme.colorScheme.onSurface
+                                                },
+                                                modifier = Modifier.weight(1f, fill = false)
                                             )
-                                            Spacer(Modifier.size(6.dp))
                                             StatusPill(
-                                                if (isSelected && state.isRunning) "🟢 Đang chạy"
-                                                else if (isSelected) "✅ Đang chọn"
-                                                else "⚪ Server riêng",
-                                                if (isSelected) Mint else Indigo
+                                                when {
+                                                    isLiveThisServer -> "🟢 Đang chạy"
+                                                    isSelected -> "🟢 Đang chọn"
+                                                    else -> "⚪ Server riêng"
+                                                },
+                                                when {
+                                                    isLiveThisServer -> glass.liveGreen
+                                                    isSelected -> glass.accent
+                                                    else -> Muted
+                                                }
                                             )
                                         }
+                                        Spacer(Modifier.height(2.dp))
                                         Text(
-                                            "${srv.core.displayName} · MC ${srv.version} · Thư mục: ${srv.dirName}",
+                                            "${srv.core.displayName} · Thư mục: ${srv.dirName}",
+                                            style = HorizonTabularStyle,
                                             color = Muted,
                                             fontSize = 11.sp
                                         )
-                                        if (storage != null) {
-                                            Text(
-                                                "💾 Tổng Server: ${vm.formatStorageBytes(storage.totalBytes)} • 🌍 Map (${storage.activeWorldName}): ${vm.formatStorageBytes(storage.worldBytes)} • 🧩 Mod/Plugin: ${vm.formatStorageBytes(storage.modsBytes + storage.pluginsBytes)}",
-                                                color = Indigo,
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.Bold
+                                    }
+                                }
+
+                                // Dải Badge thông số Tabular (Phiên bản, Cổng, Tổng dung lượng, Map, Mod/Plugin)
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    InstanceMetricChip("🎮 MC ${srv.version}", glass.accent)
+                                    InstanceMetricChip(
+                                        "${if (srv.core.isBedrock) "UDP" else "TCP"} :$defaultPortForCore",
+                                        glass.skyCyan
+                                    )
+                                    if (storage != null) {
+                                        InstanceMetricChip("💾 ${vm.formatStorageBytes(storage.totalBytes)}", glass.liveGreen)
+                                        InstanceMetricChip(
+                                            "🌍 ${storage.activeWorldName}: ${vm.formatStorageBytes(storage.worldBytes)}",
+                                            glass.accent
+                                        )
+                                        if (storage.modsBytes + storage.pluginsBytes > 0L) {
+                                            InstanceMetricChip(
+                                                "🧩 Mod/Plugin: ${vm.formatStorageBytes(storage.modsBytes + storage.pluginsBytes)}",
+                                                glass.warnAmber
                                             )
                                         }
                                     }
                                 }
 
-                                // Nút điều khiển từng Server riêng
+                                // Nút điều khiển từng Server riêng (>= 44.dp touch target)
                                 FlowRow(
                                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                                     verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -243,38 +335,60 @@ fun ServerManagementScreen(
                                         Button(
                                             onClick = { vm.setActiveCore(srv.name) },
                                             enabled = !state.isRunning,
-                                            colors = ButtonDefaults.buttonColors(containerColor = Indigo),
-                                            shape = RoundedCornerShape(8.dp)
+                                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                                            shape = RoundedCornerShape(10.dp),
+                                            modifier = Modifier.heightIn(min = 44.dp)
                                         ) {
-                                            Text("▶️ Chọn Server này", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                            Text(
+                                                "▶️ Chọn Server này",
+                                                color = MaterialTheme.colorScheme.onPrimary,
+                                                fontSize = 11.5.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
                                         }
                                     } else {
                                         OutlinedButton(
                                             onClick = { showEditDialog = true },
-                                            shape = RoundedCornerShape(8.dp)
+                                            border = BorderStroke(1.dp, glass.accent),
+                                            shape = RoundedCornerShape(10.dp),
+                                            modifier = Modifier.heightIn(min = 44.dp)
                                         ) {
-                                            Text("✏️ Đổi tên SV", color = Indigo, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                            Text(
+                                                "✏️ Đổi tên SV",
+                                                color = glass.accent,
+                                                fontSize = 11.5.sp,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
                                         }
                                     }
                                     OutlinedButton(
                                         onClick = {
                                             expandedStorageServerName = if (isStorageExpanded) null else srv.name
                                         },
-                                        shape = RoundedCornerShape(8.dp)
+                                        border = BorderStroke(1.dp, glass.liveGreen),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.heightIn(min = 44.dp)
                                     ) {
                                         Text(
-                                            if (isStorageExpanded) "🔼 Ẩn chi tiết tệp Map" else "📂 Xem dung lượng từng tệp Map",
-                                            color = Mint,
-                                            fontSize = 11.sp,
+                                            if (isStorageExpanded) "🔼 Ẩn tệp Map" else "📂 Tệp Map",
+                                            color = glass.liveGreen,
+                                            fontSize = 11.5.sp,
                                             fontWeight = FontWeight.Bold
                                         )
                                     }
                                     if (!isSelected || !state.isRunning) {
                                         OutlinedButton(
                                             onClick = { serverToDelete = srv },
-                                            shape = RoundedCornerShape(8.dp)
+                                            border = BorderStroke(1.dp, glass.dangerCoral),
+                                            shape = RoundedCornerShape(10.dp),
+                                            modifier = Modifier.heightIn(min = 44.dp)
                                         ) {
-                                            Text("🗑️ Xóa SV", color = Coral, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                            Text(
+                                                "🗑️ Xóa SV",
+                                                color = glass.dangerCoral,
+                                                fontSize = 11.5.sp,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
                                         }
                                     }
                                 }
@@ -284,8 +398,11 @@ fun ServerManagementScreen(
                                     Column(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .background(TrackBg)
+                                            .horizonGlassPlate(
+                                                shape = McShape.Row,
+                                                containerColor = glass.glassInput,
+                                                borderColor = glass.hairline
+                                            )
                                             .padding(10.dp),
                                         verticalArrangement = Arrangement.spacedBy(4.dp)
                                     ) {
@@ -293,19 +410,36 @@ fun ServerManagementScreen(
                                             "📊 Chi tiết dung lượng Server '${srv.name}':",
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.ExtraBold,
-                                            color = Indigo
+                                            color = glass.accent
                                         )
-                                        Text("• Tệp Core (${srv.serverFile ?: "server.jar"}): ${vm.formatStorageBytes(storage.coreJarBytes)}", fontSize = 11.sp)
-                                        Text("• Thư mục mods/ & plugins/: ${vm.formatStorageBytes(storage.modsBytes + storage.pluginsBytes)}", fontSize = 11.sp)
-                                        Text("• Thư mục logs/ & crash-reports/: ${vm.formatStorageBytes(storage.logsBytes)}", fontSize = 11.sp)
+                                        Text(
+                                            "• Tệp Core (${srv.serverFile ?: "server.jar"}): ${vm.formatStorageBytes(storage.coreJarBytes)}",
+                                            style = HorizonTabularStyle,
+                                            fontSize = 11.sp
+                                        )
+                                        Text(
+                                            "• Thư mục mods/ & plugins/: ${vm.formatStorageBytes(storage.modsBytes + storage.pluginsBytes)}",
+                                            style = HorizonTabularStyle,
+                                            fontSize = 11.sp
+                                        )
+                                        Text(
+                                            "• Thư mục logs/ & crash-reports/: ${vm.formatStorageBytes(storage.logsBytes)}",
+                                            style = HorizonTabularStyle,
+                                            fontSize = 11.sp
+                                        )
                                         Text(
                                             "🌍 Các tệp & thư mục bên trong Map '${storage.activeWorldName}' (Tổng: ${vm.formatStorageBytes(storage.worldBytes)}):",
+                                            style = HorizonTabularStyle,
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = Mint
+                                            color = glass.liveGreen
                                         )
                                         if (storage.worldFileEntries.isEmpty()) {
-                                            Text("  (Chưa tạo Map — hãy khởi động Server lần đầu để sinh thế giới)", fontSize = 10.sp, color = Muted)
+                                            Text(
+                                                "  (Chưa tạo Map — hãy khởi động Server lần đầu để sinh thế giới)",
+                                                fontSize = 10.sp,
+                                                color = Muted
+                                            )
                                         } else {
                                             storage.worldFileEntries.forEach { entry ->
                                                 val icon = if (entry.isDirectory) "📁" else "📄"
@@ -316,15 +450,17 @@ fun ServerManagementScreen(
                                                 ) {
                                                     Text(
                                                         "$icon ${entry.name}$countNote",
-                                                        fontSize = 10.sp,
+                                                        style = HorizonTabularStyle,
+                                                        fontSize = 10.5.sp,
                                                         color = MaterialTheme.colorScheme.onSurface,
                                                         modifier = Modifier.weight(1f)
                                                     )
                                                     Text(
                                                         vm.formatStorageBytes(entry.sizeBytes),
-                                                        fontSize = 10.sp,
+                                                        style = HorizonTabularStyle,
+                                                        fontSize = 10.5.sp,
                                                         fontWeight = FontWeight.Bold,
-                                                        color = Indigo
+                                                        color = glass.accent
                                                     )
                                                 }
                                             }
@@ -336,18 +472,25 @@ fun ServerManagementScreen(
                     }
                 }
 
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(12.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Button(
                         onClick = onCreateServer,
-                        colors = ButtonDefaults.buttonColors(containerColor = Mint),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.weight(1f)
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp)
                     ) {
-                        Text("➕ Tạo Thêm Server Riêng Mới (Nhiều Phiên Bản)", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            "➕ Tạo Thêm Server Riêng Mới (Nhiều Phiên Bản)",
+                            color = MaterialTheme.colorScheme.onSecondary,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
                     }
                 }
             }
@@ -358,7 +501,12 @@ fun ServerManagementScreen(
                 trailing = {
                     if (trashedServers.isNotEmpty()) {
                         TextButton(onClick = { confirmEmptyTrash = true }) {
-                            Text("🧹 Dọn sạch thùng rác", color = Coral, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text(
+                                "🧹 Dọn sạch thùng rác",
+                                color = glass.dangerCoral,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
                 }
@@ -373,7 +521,7 @@ fun ServerManagementScreen(
                 if (trashedServers.isEmpty()) {
                     Text(
                         "✅ Thùng rác hiện đang trống (không tốn dung lượng bộ nhớ).",
-                        color = Mint,
+                        color = glass.liveGreen,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold
                     )
@@ -383,10 +531,13 @@ fun ServerManagementScreen(
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(CoralSoft)
-                                    .padding(10.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                                    .horizonGlassPlate(
+                                        shape = RoundedCornerShape(14.dp),
+                                        containerColor = glass.dangerCoralSoft,
+                                        borderColor = glass.dangerCoral.copy(alpha = 0.45f)
+                                    )
+                                    .padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
@@ -396,17 +547,18 @@ fun ServerManagementScreen(
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
                                             "🗂️ ${item.name}",
-                                            fontSize = 13.sp,
+                                            fontSize = 13.5.sp,
                                             fontWeight = FontWeight.ExtraBold,
                                             color = MaterialTheme.colorScheme.onSurface
                                         )
                                         Text(
                                             "${item.coreName} · MC ${item.version} · Dung lượng: ${vm.formatStorageBytes(item.sizeBytes)}",
+                                            style = HorizonTabularStyle,
                                             color = Muted,
                                             fontSize = 11.sp
                                         )
                                     }
-                                    StatusPill("⏳ Còn ${item.daysRemaining} ngày", Coral)
+                                    StatusPill("⏳ Còn ${item.daysRemaining} ngày", glass.dangerCoral)
                                 }
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
@@ -415,18 +567,33 @@ fun ServerManagementScreen(
                                     Button(
                                         onClick = { vm.restoreTrashedServer(item.trashId) },
                                         enabled = !state.isRunning,
-                                        colors = ButtonDefaults.buttonColors(containerColor = Mint),
-                                        shape = RoundedCornerShape(8.dp),
-                                        modifier = Modifier.weight(1f)
+                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .heightIn(min = 44.dp)
                                     ) {
-                                        Text("♻️ Khôi phục Server", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        Text(
+                                            "♻️ Khôi phục Server",
+                                            color = MaterialTheme.colorScheme.onSecondary,
+                                            fontSize = 11.5.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
                                     }
                                     OutlinedButton(
                                         onClick = { trashItemToPurge = item },
-                                        shape = RoundedCornerShape(8.dp),
-                                        modifier = Modifier.weight(1f)
+                                        border = BorderStroke(1.dp, glass.dangerCoral),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .heightIn(min = 44.dp)
                                     ) {
-                                        Text("🔥 Xóa vĩnh viễn (Dọn sạch)", color = Coral, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        Text(
+                                            "🔥 Xóa vĩnh viễn",
+                                            color = glass.dangerCoral,
+                                            fontSize = 11.5.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
                                     }
                                 }
                             }
@@ -446,19 +613,20 @@ fun ServerManagementScreen(
                         Text(
                             active?.name ?: "Chưa chọn máy chủ",
                             fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (active == null) Coral else MaterialTheme.colorScheme.onSurface
+                            fontWeight = FontWeight.ExtraBold,
+                            color = if (active == null) glass.dangerCoral else MaterialTheme.colorScheme.onSurface
                         )
                         Text(
                             active?.let { "${it.core.displayName} · MC ${it.version} · Cổng $serverPort" }
                                 ?: "Hãy vào mục Tải xuống để tải Core hoặc nhập máy chủ có sẵn",
+                            style = HorizonTabularStyle,
                             color = Muted,
                             fontSize = 11.sp
                         )
                     }
                     StatusPill(
-                        if (state.isRunning) "Đang chạy" else "Đang dừng",
-                        if (state.isRunning) Mint else Muted
+                        if (state.isRunning) "🟢 Đang chạy" else "⚪ Đang dừng",
+                        if (state.isRunning) glass.liveGreen else Muted
                     )
                 }
 
@@ -467,14 +635,14 @@ fun ServerManagementScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    StatusPill("🔭 Tầm nhìn: $loadedViewDist Chunk (~${loadedViewDist * 16}m)", Indigo)
-                    StatusPill("⚡ Mô phỏng: $loadedSimDist Chunk", Indigo)
+                    StatusPill("🔭 Tầm nhìn: $loadedViewDist Chunk (~${loadedViewDist * 16}m)", glass.accent)
+                    StatusPill("⚡ Mô phỏng: $loadedSimDist Chunk", glass.accent)
                     StatusPill(
                         if (loadedCracked) "🔓 Cho phép Cracked/Offline" else "🔐 Chỉ Bản quyền (Online)",
-                        if (loadedCracked) Mint else Coral
+                        if (loadedCracked) glass.liveGreen else glass.dangerCoral
                     )
                     if (state.isRunning) {
-                        StatusPill("👥 Online: ${onlinePlayers.size} người", Mint)
+                        StatusPill("👥 Online: ${onlinePlayers.size} người", glass.liveGreen)
                     }
                 }
 
@@ -483,45 +651,62 @@ fun ServerManagementScreen(
                     if (!state.isRunning) {
                         Button(
                             onClick = { vm.startServer() },
-                            colors = ButtonDefaults.buttonColors(containerColor = Mint),
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.fillMaxWidth()
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 48.dp)
                         ) {
-                            Icon(Icons.Outlined.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                            Icon(
+                                Icons.Outlined.PlayArrow,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSecondary,
+                                modifier = Modifier.size(18.dp)
+                            )
                             Spacer(Modifier.size(6.dp))
-                            Text("Khởi động máy chủ ngay", color = Color.White, fontWeight = FontWeight.Bold)
+                            Text(
+                                "Khởi động máy chủ ngay",
+                                color = MaterialTheme.colorScheme.onSecondary,
+                                fontWeight = FontWeight.ExtraBold
+                            )
                         }
                     } else {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(
                                 onClick = { vm.sendCommand("save-all") },
-                                colors = ButtonDefaults.buttonColors(containerColor = Indigo),
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                                 shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 46.dp)
                             ) {
-                                Icon(Icons.Outlined.Save, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                Icon(Icons.Outlined.Save, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.size(4.dp))
-                                Text("Lưu Map", color = Color.White, fontSize = 12.sp)
+                                Text("Lưu Map", color = MaterialTheme.colorScheme.onPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                             }
                             Button(
                                 onClick = { vm.restartServer() },
-                                colors = ButtonDefaults.buttonColors(containerColor = Indigo),
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                                 shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 46.dp)
                             ) {
-                                Icon(Icons.Outlined.Refresh, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                Icon(Icons.Outlined.Refresh, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.size(4.dp))
-                                Text("Khởi động lại", color = Color.White, fontSize = 12.sp)
+                                Text("Khởi động lại", color = MaterialTheme.colorScheme.onPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                             }
                             Button(
                                 onClick = { vm.stopServer() },
-                                colors = ButtonDefaults.buttonColors(containerColor = Coral),
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                                 shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 46.dp)
                             ) {
-                                Icon(Icons.Outlined.Stop, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                Icon(Icons.Outlined.Stop, contentDescription = null, tint = MaterialTheme.colorScheme.onError, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.size(4.dp))
-                                Text("Dừng", color = Color.White, fontSize = 12.sp)
+                                Text("Dừng", color = MaterialTheme.colorScheme.onError, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -546,10 +731,10 @@ fun ServerManagementScreen(
                             Icon(
                                 if (showQuickTuner) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
                                 contentDescription = null,
-                                tint = Indigo,
+                                tint = glass.accent,
                                 modifier = Modifier.size(16.dp)
                             )
-                            Text(if (showQuickTuner) "Thu gọn" else "Mở rộng", color = Indigo, fontSize = 11.sp)
+                            Text(if (showQuickTuner) "Thu gọn" else "Mở rộng", color = glass.accent, fontSize = 11.sp)
                         }
                     }
 
@@ -560,10 +745,16 @@ fun ServerManagementScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("Tầm nhìn hiển thị (view-distance):", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                            Text(
+                                "Tầm nhìn hiển thị (view-distance):",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.weight(1f)
+                            )
                             Text(
                                 "$viewDistDraft Chunk (~${viewDistDraft * 16} ô)",
-                                color = Mint,
+                                style = HorizonTabularStyle,
+                                color = glass.liveGreen,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold
                             )
@@ -593,7 +784,11 @@ fun ServerManagementScreen(
                             onValueChange = { viewDistDraft = it.roundToInt().coerceIn(4, 32) },
                             valueRange = 4f..32f,
                             steps = 27,
-                            colors = SliderDefaults.colors(thumbColor = Indigo, activeTrackColor = Indigo)
+                            colors = SliderDefaults.colors(
+                                thumbColor = glass.accent,
+                                activeTrackColor = glass.accent,
+                                inactiveTrackColor = glass.glassInput
+                            )
                         )
 
                         if (active.core.isBedrock != true) {
@@ -603,8 +798,19 @@ fun ServerManagementScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("Khoảng cách mô phỏng (simulation-distance):", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                                Text("$simDistDraft Chunk", color = Indigo, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Text(
+                                    "Khoảng cách mô phỏng (simulation-distance):",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(
+                                    "$simDistDraft Chunk",
+                                    style = HorizonTabularStyle,
+                                    color = glass.accent,
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
                             Spacer(Modifier.height(6.dp))
                             FlowRow(
@@ -629,10 +835,17 @@ fun ServerManagementScreen(
 
                         Spacer(Modifier.height(10.dp))
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizonGlassPlate(
+                                    shape = McShape.Row,
+                                    containerColor = glass.glassRow,
+                                    borderColor = glass.hairline
+                                )
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
+                            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                                 Text(
                                     "Cho phép người chơi Cracked / Không bản quyền",
                                     fontSize = 12.sp,
@@ -647,7 +860,10 @@ fun ServerManagementScreen(
                             Switch(
                                 checked = crackedDraft,
                                 onCheckedChange = { crackedDraft = it },
-                                colors = SwitchDefaults.colors(checkedThumbColor = Indigo, checkedTrackColor = IndigoSoft)
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = glass.accent,
+                                    checkedTrackColor = IndigoSoft
+                                )
                             )
                         }
 
@@ -665,13 +881,18 @@ fun ServerManagementScreen(
                                         onlineMode = !crackedDraft
                                     )
                                 },
-                                colors = ButtonDefaults.buttonColors(containerColor = if (isQuickSaved) Mint else Indigo),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isQuickSaved) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary
+                                ),
                                 shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 46.dp)
                             ) {
                                 Text(
                                     if (isQuickSaved) "✅ Đã lưu cấu hình ($viewDistDraft Chunk)" else "💾 Lưu cấu hình nhanh ($viewDistDraft Chunk)",
-                                    color = Color.White,
+                                    style = HorizonTabularStyle,
+                                    color = if (isQuickSaved) MaterialTheme.colorScheme.onSecondary else MaterialTheme.colorScheme.onPrimary,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 12.sp
                                 )
@@ -686,9 +907,16 @@ fun ServerManagementScreen(
                                             autoRestartIfRunning = true
                                         )
                                     },
-                                    shape = RoundedCornerShape(10.dp)
+                                    border = BorderStroke(1.dp, glass.accent),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.heightIn(min = 46.dp)
                                 ) {
-                                    Text("Lưu & Khởi động lại", color = Indigo, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        "Lưu & Khởi động lại",
+                                        color = glass.accent,
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
                                 }
                             }
                         }
@@ -709,7 +937,7 @@ fun ServerManagementScreen(
                 Modifier
                     .fillMaxWidth()
                     .padding(horizontal = McSpacing.Page)
-                    .padding(top = 4.dp, bottom = 16.dp),
+                    .padding(top = 4.dp, bottom = 18.dp),
                 verticalArrangement = Arrangement.spacedBy(McSpacing.CardGap)
             ) {
                 ManagementEntry(
@@ -748,7 +976,7 @@ fun ServerManagementScreen(
                 if (active?.core?.isBedrock == true) {
                     Text(
                         "PowerNukkitX (Bedrock) không sử dụng server-icon.png của Java Edition.",
-                        color = Coral,
+                        color = glass.warnAmber,
                         fontSize = 11.sp,
                         modifier = Modifier.padding(horizontal = 2.dp)
                     )
@@ -784,9 +1012,13 @@ fun ServerManagementScreen(
                         vm.deleteCore(targetSrv.name)
                         serverToDelete = null
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Coral)
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
-                    Text("Chuyển vào Thùng rác (30 ngày)", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(
+                        "Chuyển vào Thùng rác (30 ngày)",
+                        color = MaterialTheme.colorScheme.onError,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             },
             dismissButton = {
@@ -812,9 +1044,13 @@ fun ServerManagementScreen(
                         vm.permanentlyDeleteTrashedServer(targetTrash.trashId)
                         trashItemToPurge = null
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Coral)
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
-                    Text("🔥 Xóa vĩnh viễn & Dọn sạch", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(
+                        "🔥 Xóa vĩnh viễn & Dọn sạch",
+                        color = MaterialTheme.colorScheme.onError,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             },
             dismissButton = {
@@ -840,9 +1076,13 @@ fun ServerManagementScreen(
                         vm.emptyServerTrash()
                         confirmEmptyTrash = false
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Coral)
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
-                    Text("🧹 Dọn sạch tất cả", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(
+                        "🧹 Dọn sạch tất cả",
+                        color = MaterialTheme.colorScheme.onError,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             },
             dismissButton = {
@@ -862,6 +1102,7 @@ private fun EditServerInfoDialog(
     currentCore: com.mineserve.mobile.data.ServerCore,
     onDismiss: () -> Unit
 ) {
+    val glass = HorizonGlass
     var name by remember { mutableStateOf(currentName) }
     var version by remember { mutableStateOf(currentVersion) }
     var selectedCore by remember { mutableStateOf(currentCore) }
@@ -878,6 +1119,8 @@ private fun EditServerInfoDialog(
                     onValueChange = { name = it },
                     label = { Text("Tên hiển thị") },
                     singleLine = true,
+                    shape = McShape.Row,
+                    colors = glassManagerTextFieldColors(),
                     modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
@@ -885,6 +1128,8 @@ private fun EditServerInfoDialog(
                     onValueChange = { version = it },
                     label = { Text("Phiên bản hiển thị") },
                     singleLine = true,
+                    shape = McShape.Row,
+                    colors = glassManagerTextFieldColors(),
                     modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
@@ -893,7 +1138,7 @@ private fun EditServerInfoDialog(
                     readOnly = true,
                     label = { Text("Loại Core máy chủ") },
                     trailingIcon = {
-                        androidx.compose.material3.IconButton(onClick = { coreMenuExpanded = !coreMenuExpanded }) {
+                        IconButton(onClick = { coreMenuExpanded = !coreMenuExpanded }) {
                             Icon(
                                 if (coreMenuExpanded) Icons.Outlined.KeyboardArrowUp else Icons.Outlined.KeyboardArrowDown,
                                 contentDescription = null
@@ -901,14 +1146,16 @@ private fun EditServerInfoDialog(
                         }
                     },
                     singleLine = true,
+                    shape = McShape.Row,
+                    colors = glassManagerTextFieldColors(),
                     modifier = Modifier.fillMaxWidth()
                 )
-                androidx.compose.material3.DropdownMenu(
+                DropdownMenu(
                     expanded = coreMenuExpanded,
                     onDismissRequest = { coreMenuExpanded = false }
                 ) {
                     com.mineserve.mobile.data.ServerCore.values().forEach { core ->
-                        androidx.compose.material3.DropdownMenuItem(
+                        DropdownMenuItem(
                             text = {
                                 Text(
                                     core.displayName + if (core == currentCore) " (Hiện tại)" else "",
@@ -924,19 +1171,19 @@ private fun EditServerInfoDialog(
                 }
                 Text(
                     "Tên và số phiên bản chỉ thay đổi nhãn hiển thị, không làm thay đổi tệp JAR thực tế.",
-                    color = Coral,
+                    color = glass.warnAmber,
                     fontSize = 11.sp
                 )
                 if (selectedCore != currentCore) {
                     Text(
                         "Lưu ý: Đổi loại Core sẽ thay đổi cách ứng dụng truyền tham số khởi động và nhận diện thư mục mods/ hoặc plugins/. Hãy chọn đúng với Core thực tế.",
-                        color = Coral,
+                        color = glass.dangerCoral,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold
                     )
                 }
                 error?.let {
-                    Text(it, color = Coral, fontSize = 11.sp)
+                    Text(it, color = glass.dangerCoral, fontSize = 11.sp)
                 }
             }
         },
@@ -944,7 +1191,7 @@ private fun EditServerInfoDialog(
             TextButton(onClick = {
                 val problem = vm.updateServerDisplayInfo(currentName, name, version, selectedCore)
                 if (problem == null) onDismiss() else error = problem
-            }) { Text("Lưu", color = Indigo, fontWeight = FontWeight.SemiBold) }
+            }) { Text("Lưu", color = glass.accent, fontWeight = FontWeight.SemiBold) }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Hủy") }
@@ -953,26 +1200,46 @@ private fun EditServerInfoDialog(
 }
 
 @Composable
-private fun ManagementEntry(title: String, description: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
-    Card(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        shape = McShape.Card,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-        border = BorderStroke(1.dp, Line)
+private fun ManagementEntry(
+    title: String,
+    description: String,
+    icon: ImageVector,
+    onClick: () -> Unit
+) {
+    val glass = HorizonGlass
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizonGlassPlate(
+                shape = McShape.Card,
+                containerColor = glass.glassCard,
+                borderColor = glass.hairline
+            )
+            .clickable(onClick = onClick)
+            .padding(McSpacing.CardInner),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            Modifier.padding(McSpacing.CardInner),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(glass.accentSoft)
+                .border(1.dp, glass.accent.copy(alpha = 0.35f), RoundedCornerShape(12.dp)),
+            contentAlignment = Alignment.Center
         ) {
-            Icon(icon, contentDescription = null, tint = Indigo, modifier = Modifier.size(McIcon.Item))
-            Column(Modifier.weight(1f)) {
-                Text(title, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                Text(description, color = Muted, fontSize = 11.sp, lineHeight = 16.sp)
-            }
+            Icon(icon, contentDescription = null, tint = glass.accent, modifier = Modifier.size(McIcon.Item))
         }
+        Column(Modifier.weight(1f)) {
+            Text(title, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
+            Text(description, color = Muted, fontSize = 11.sp, lineHeight = 15.5.sp)
+        }
+        Icon(
+            Icons.Outlined.ChevronRight,
+            contentDescription = null,
+            tint = Muted,
+            modifier = Modifier.size(18.dp)
+        )
     }
 }
 
@@ -984,6 +1251,7 @@ private fun ServerCommandAndSettingsGuideCard(
     isRunning: Boolean,
     onlinePlayers: List<String>
 ) {
+    val glass = HorizonGlass
     var selectedSection by remember { mutableIntStateOf(0) }
     var targetPlayer by remember(onlinePlayers) {
         mutableStateOf(onlinePlayers.firstOrNull().orEmpty())
@@ -1008,7 +1276,6 @@ private fun ServerCommandAndSettingsGuideCard(
         )
         Spacer(Modifier.height(10.dp))
 
-        // ── 3 Tab chuyển mục rõ ràng ──
         FlowRow(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
@@ -1034,23 +1301,26 @@ private fun ServerCommandAndSettingsGuideCard(
 
         when (selectedSection) {
             0 -> {
-                // ── TAB 0: SỬA LỖI ĐĂNG NHẬP & CÀI ĐẶT SERVER.PROPERTIES ──
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    // 1. Sửa lỗi "Không thể đăng nhập: Phiên chơi không hợp lệ"
+                    val crackedReady = isCrackedAllowed && isSecureProfileOff
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(if (isCrackedAllowed && isSecureProfileOff) MintSoft else CoralSoft)
+                            .horizonGlassPlate(
+                                shape = RoundedCornerShape(14.dp),
+                                containerColor = if (crackedReady) glass.liveGreenSoft else glass.dangerCoralSoft,
+                                borderColor = if (crackedReady) glass.liveGreen.copy(alpha = 0.55f) else glass.dangerCoral.copy(alpha = 0.55f),
+                                highlighted = true
+                            )
                             .padding(12.dp)
                     ) {
                         Text(
-                            if (isCrackedAllowed && isSecureProfileOff) {
+                            if (crackedReady) {
                                 "✅ Đã bật Chế độ Cracked / Offline — Mọi tài khoản đều vào được!"
                             } else {
                                 "⚠️ Sửa lỗi: 'Không thể đăng nhập: Phiên chơi không hợp lệ'"
                             },
-                            color = if (isCrackedAllowed && isSecureProfileOff) Mint else Coral,
+                            color = if (crackedReady) glass.liveGreen else glass.dangerCoral,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -1075,14 +1345,16 @@ private fun ServerCommandAndSettingsGuideCard(
                                         autoRestartIfRunning = true
                                     )
                                 },
-                                colors = ButtonDefaults.buttonColors(containerColor = Mint),
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
                                 shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 44.dp)
                             ) {
                                 Text(
                                     if (isRunning) "🛠️ Sửa lỗi & Tự khởi động lại ngay"
                                     else "🛠️ Bật Cracked (Sửa lỗi ngay)",
-                                    color = Color.White,
+                                    color = MaterialTheme.colorScheme.onSecondary,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -1095,18 +1367,19 @@ private fun ServerCommandAndSettingsGuideCard(
                                         autoRestartIfRunning = true
                                     )
                                 },
-                                shape = RoundedCornerShape(10.dp)
+                                border = BorderStroke(1.dp, glass.accent),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.heightIn(min = 44.dp)
                             ) {
-                                Text("🔒 Chỉ Bản quyền", color = Indigo, fontSize = 11.sp)
+                                Text("🔒 Chỉ Bản quyền", color = glass.accent, fontSize = 11.sp)
                             }
                         }
                     }
 
-                    // 2. Mở khóa vùng Hồi sinh (spawn-protection)
                     ExplainedSettingBox(
                         title = "🛡️ Khóa bảo vệ khu vực Hồi sinh (spawn-protection)",
                         currentStatus = if (spawnProt <= 0) "Đang MỞ KHÓA (0 ô — Ai cũng đập/xây được)" else "Đang KHÓA $spawnProt ô quanh điểm xuất hiện",
-                        statusColor = if (spawnProt <= 0) Mint else Coral,
+                        statusColor = if (spawnProt <= 0) glass.liveGreen else glass.dangerCoral,
                         explanation = "Mặc định Minecraft khóa 16 ô vuông quanh điểm xuất hiện đầu tiên khiến bạn bè mới vào (chưa được cấp OP) không thể chặt cây hay đặt khối. Hãy chọn 'Mở khóa (0 ô)' để bạn bè đập/xây được ngay!",
                         primaryLabel = "🔓 Mở khóa (0 ô)",
                         primarySelected = spawnProt <= 0,
@@ -1116,11 +1389,10 @@ private fun ServerCommandAndSettingsGuideCard(
                         onSecondary = { vm.applyQuickServerConfig(spawnProtection = 16, autoRestartIfRunning = false) }
                     )
 
-                    // 3. Cho phép Bay & Chống Kick nhầm (allow-flight)
                     ExplainedSettingBox(
                         title = "🕊️ Cho phép Bay & Chống Kick nhầm (allow-flight)",
                         currentStatus = if (allowFlight) "Đang BẬT (Không bị kick khi bay/lag)" else "Đang TẮT (Dễ bị kick khi bay/lag)",
-                        statusColor = if (allowFlight) Mint else Coral,
+                        statusColor = if (allowFlight) glass.liveGreen else glass.dangerCoral,
                         explanation = "Khi mạng 4G lag, cưỡi thú, dùng cánh Elytra hoặc cài Mod bay, máy chủ mặc định dễ đuổi nhầm người chơi với lỗi 'Flying is not enabled on this server'. Bật mục này sẽ khắc phục hoàn toàn!",
                         primaryLabel = "✅ Cho phép Bay (true)",
                         primarySelected = allowFlight,
@@ -1130,11 +1402,10 @@ private fun ServerCommandAndSettingsGuideCard(
                         onSecondary = { vm.applyQuickServerConfig(allowFlight = false) }
                     )
 
-                    // 4. Khối lệnh Command Block (enable-command-block)
                     ExplainedSettingBox(
                         title = "🧱 Khối Lệnh (enable-command-block)",
                         currentStatus = if (commandBlock) "Đang BẬT (Dùng được Command Block)" else "Đang TẮT",
-                        statusColor = if (commandBlock) Mint else Muted,
+                        statusColor = if (commandBlock) glass.liveGreen else Muted,
                         explanation = "Bắt buộc phải BẬT nếu bạn tải Map phiêu lưu, Map Parkour, Map giải đố hoặc Map có sẵn hệ thống nút bấm dịch chuyển / cửa hàng bằng lệnh.",
                         primaryLabel = "✅ Bật Khối Lệnh",
                         primarySelected = commandBlock,
@@ -1144,11 +1415,10 @@ private fun ServerCommandAndSettingsGuideCard(
                         onSecondary = { vm.applyQuickServerConfig(enableCommandBlock = false) }
                     )
 
-                    // 5. Đánh nhau giữa người chơi (pvp)
                     ExplainedSettingBox(
                         title = "⚔️ Đánh nhau giữa người chơi (pvp)",
                         currentStatus = if (pvpEnabled) "Đang BẬT (Đánh nhau mất máu)" else "Đang TẮT (Hòa bình, không đánh trúng nhau)",
-                        statusColor = if (pvpEnabled) Indigo else Mint,
+                        statusColor = if (pvpEnabled) glass.accent else glass.liveGreen,
                         explanation = "Quy định người chơi có thể dùng kiếm/cung gây sát thương lên nhau hay không. Tắt đi nếu bạn muốn cùng bạn bè đi đánh quái mà không sợ chém nhầm nhau.",
                         primaryLabel = "⚔️ Bật Đánh Nhau",
                         primarySelected = pvpEnabled,
@@ -1158,11 +1428,10 @@ private fun ServerCommandAndSettingsGuideCard(
                         onSecondary = { vm.applyQuickServerConfig(pvp = false) }
                     )
 
-                    // 6. Danh sách trắng (white-list)
                     ExplainedSettingBox(
                         title = "📋 Danh sách trắng bảo vệ phòng (white-list)",
                         currentStatus = if (whitelistEnabled) "Đang BẬT (Chỉ người trong danh sách mới vào được)" else "Đang TẮT (Ai có địa chỉ cũng vào được)",
-                        statusColor = if (whitelistEnabled) Mint else Indigo,
+                        statusColor = if (whitelistEnabled) glass.liveGreen else glass.accent,
                         explanation = "Khi BẬT, chỉ những tên nhân vật được bạn thêm bằng lệnh '/whitelist add <tên>' (hoặc có OP) mới vào được máy chủ. Rất hữu ích khi công khai địa chỉ nhưng muốn chặn người lạ.",
                         primaryLabel = "🛡️ Bật Whitelist",
                         primarySelected = whitelistEnabled,
@@ -1178,15 +1447,21 @@ private fun ServerCommandAndSettingsGuideCard(
                         }
                     )
 
-                    // 7. Chế độ chơi mặc định & Độ khó
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(FieldBg)
-                            .padding(10.dp)
+                            .horizonGlassPlate(
+                                shape = McShape.Row,
+                                containerColor = glass.glassRow,
+                                borderColor = glass.hairline
+                            )
+                            .padding(11.dp)
                     ) {
-                        Text("🎮 Chế độ chơi mặc định (gamemode) & Độ khó (difficulty):", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            "🎮 Chế độ chơi mặc định (gamemode) & Độ khó (difficulty):",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                         Spacer(Modifier.height(2.dp))
                         Text(
                             "Áp dụng cho người chơi mới vào thế giới. Nếu chọn 'Bình yên (Peaceful)', quái vật thù địch sẽ không sinh ra và máu tự hồi đầy.",
@@ -1241,20 +1516,31 @@ private fun ServerCommandAndSettingsGuideCard(
                     if (isRunning) {
                         Button(
                             onClick = { vm.restartServer() },
-                            colors = ButtonDefaults.buttonColors(containerColor = Indigo),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                             shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 46.dp)
                         ) {
-                            Icon(Icons.Outlined.Refresh, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                            Icon(
+                                Icons.Outlined.Refresh,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(16.dp)
+                            )
                             Spacer(Modifier.size(6.dp))
-                            Text("🔄 Khởi động lại máy chủ để áp dụng mọi thay đổi server.properties", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text(
+                                "🔄 Khởi động lại máy chủ để áp dụng mọi thay đổi server.properties",
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
                 }
             }
 
             1 -> {
-                // ── TAB 1: LUẬT THẾ GIỚI (/GAMERULE) — CHẠY NGAY TRONG GAME ──
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (!isRunning) {
                         HintNote("💡 Lưu ý: Máy chủ hiện đang dừng. Hãy khởi động máy chủ trước khi bấm các nút Luật Thế Giới (/gamerule) bên dưới để lệnh chạy trực tiếp vào game!")
@@ -1359,16 +1645,22 @@ private fun ServerCommandAndSettingsGuideCard(
             }
 
             else -> {
-                // ── TAB 2: LỆNH QUẢN TRỊ NGƯỜI CHƠI (OP / CHẾ ĐỘ CHƠI / DỊCH CHUYỂN) ──
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(FieldBg)
-                            .padding(10.dp)
+                            .horizonGlassPlate(
+                                shape = McShape.Row,
+                                containerColor = glass.glassRow,
+                                borderColor = glass.hairline
+                            )
+                            .padding(11.dp)
                     ) {
-                        Text("👤 Bước 1: Chọn hoặc nhập tên nhân vật trong game:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            "👤 Bước 1: Chọn hoặc nhập tên nhân vật trong game:",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                         Spacer(Modifier.height(4.dp))
                         if (onlinePlayers.isNotEmpty()) {
                             FlowRow(
@@ -1390,6 +1682,8 @@ private fun ServerCommandAndSettingsGuideCard(
                             onValueChange = { targetPlayer = it },
                             label = { Text("Tên nhân vật (VD: Steve hoặc @a cho tất cả)", fontSize = 11.sp) },
                             singleLine = true,
+                            shape = McShape.Row,
+                            colors = glassManagerTextFieldColors(),
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
@@ -1424,11 +1718,18 @@ private fun ServerCommandAndSettingsGuideCard(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(FieldBg)
-                            .padding(10.dp)
+                            .horizonGlassPlate(
+                                shape = McShape.Row,
+                                containerColor = glass.glassRow,
+                                borderColor = glass.hairline
+                            )
+                            .padding(11.dp)
                     ) {
-                        Text("🎨 Đổi chế độ chơi cho '$effectiveTarget' (/gamemode):", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            "🎨 Đổi chế độ chơi cho '$effectiveTarget' (/gamemode):",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                         Text(
                             "• Sáng tạo (Creative): Bất tử, bay tự do và lấy vô hạn mọi vật phẩm.\n" +
                                 "• Sinh tồn (Survival): Có thanh máu, thanh thức ăn và tự khai thác tài nguyên.\n" +
@@ -1451,9 +1752,11 @@ private fun ServerCommandAndSettingsGuideCard(
                                 OutlinedButton(
                                     onClick = { vm.sendCommand("gamemode $gm $effectiveTarget") },
                                     enabled = isRunning,
-                                    shape = RoundedCornerShape(8.dp)
+                                    border = BorderStroke(1.dp, glass.accent.copy(alpha = 0.55f)),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.heightIn(min = 42.dp)
                                 ) {
-                                    Text(label, color = Indigo, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                    Text(label, color = glass.accent, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                                 }
                             }
                         }
@@ -1503,16 +1806,26 @@ private fun ExplainedSettingBox(
     secondarySelected: Boolean,
     onSecondary: () -> Unit
 ) {
+    val glass = HorizonGlass
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(FieldBg)
-            .padding(10.dp)
+            .horizonGlassPlate(
+                shape = McShape.Row,
+                containerColor = glass.glassRow,
+                borderColor = glass.hairline
+            )
+            .padding(11.dp)
     ) {
         Text(title, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(2.dp))
-        Text(currentStatus, color = statusColor, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+        Text(
+            currentStatus,
+            style = HorizonTabularStyle,
+            color = statusColor,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold
+        )
         Spacer(Modifier.height(4.dp))
         Text(explanation, color = Muted, fontSize = 10.sp, lineHeight = 14.sp)
         Spacer(Modifier.height(8.dp))
@@ -1520,22 +1833,26 @@ private fun ExplainedSettingBox(
             Button(
                 onClick = onPrimary,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = if (primarySelected) Indigo else TrackBg,
-                    contentColor = if (primarySelected) Color.White else Indigo
+                    containerColor = if (primarySelected) MaterialTheme.colorScheme.primary else glass.glassInput,
+                    contentColor = if (primarySelected) MaterialTheme.colorScheme.onPrimary else glass.accent
                 ),
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.weight(1f)
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = 44.dp)
             ) {
                 Text(primaryLabel, fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }
             Button(
                 onClick = onSecondary,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = if (secondarySelected) Indigo else TrackBg,
-                    contentColor = if (secondarySelected) Color.White else Indigo
+                    containerColor = if (secondarySelected) MaterialTheme.colorScheme.primary else glass.glassInput,
+                    contentColor = if (secondarySelected) MaterialTheme.colorScheme.onPrimary else glass.accent
                 ),
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.weight(1f)
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = 44.dp)
             ) {
                 Text(secondaryLabel, fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }
@@ -1554,15 +1871,25 @@ private fun GameruleExplainBox(
     onEnable: () -> Unit,
     onDisable: () -> Unit
 ) {
+    val glass = HorizonGlass
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(FieldBg)
-            .padding(10.dp)
+            .horizonGlassPlate(
+                shape = McShape.Row,
+                containerColor = glass.glassRow,
+                borderColor = glass.hairline
+            )
+            .padding(11.dp)
     ) {
         Text(title, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-        Text("Lệnh gốc: $commandSyntax", color = Indigo, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+        Text(
+            "Lệnh gốc: $commandSyntax",
+            fontFamily = FontFamily.Monospace,
+            color = glass.accent,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.SemiBold
+        )
         Spacer(Modifier.height(4.dp))
         Text(explanation, color = Muted, fontSize = 10.sp, lineHeight = 14.sp)
         Spacer(Modifier.height(8.dp))
@@ -1570,19 +1897,29 @@ private fun GameruleExplainBox(
             Button(
                 onClick = onEnable,
                 enabled = isRunning,
-                colors = ButtonDefaults.buttonColors(containerColor = Mint),
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.weight(1f)
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = 44.dp)
             ) {
-                Text(enableLabel, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    enableLabel,
+                    color = MaterialTheme.colorScheme.onSecondary,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
             }
             OutlinedButton(
                 onClick = onDisable,
                 enabled = isRunning,
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.weight(1f)
+                border = BorderStroke(1.dp, glass.accent.copy(alpha = 0.55f)),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = 44.dp)
             ) {
-                Text(disableLabel, color = Indigo, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                Text(disableLabel, color = glass.accent, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
             }
         }
     }

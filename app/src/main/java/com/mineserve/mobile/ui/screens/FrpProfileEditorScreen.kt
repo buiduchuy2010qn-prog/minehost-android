@@ -1,9 +1,8 @@
 package com.mineserve.mobile.ui.screens
 
-import androidx.compose.ui.res.stringResource
-import com.mineserve.mobile.R
-
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,6 +20,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -45,12 +45,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mineserve.mobile.R
 import com.mineserve.mobile.data.FrpProfile
 import com.mineserve.mobile.data.FrpProfileKind
 import com.mineserve.mobile.data.FrpProfiles
@@ -63,34 +65,17 @@ import com.mineserve.mobile.ui.McCard
 import com.mineserve.mobile.ui.McViewModel
 import com.mineserve.mobile.ui.SegPill
 import com.mineserve.mobile.ui.WarnNote
-import com.mineserve.mobile.ui.theme.Coral
-import com.mineserve.mobile.ui.theme.Indigo
-import com.mineserve.mobile.ui.theme.IndigoSoft
+import com.mineserve.mobile.ui.theme.HorizonGlass
+import com.mineserve.mobile.ui.theme.HorizonTabularStyle
 import com.mineserve.mobile.ui.theme.McShape
-import com.mineserve.mobile.ui.theme.Mint
+import com.mineserve.mobile.ui.theme.McSpacing
 import com.mineserve.mobile.ui.theme.Muted
+import com.mineserve.mobile.ui.theme.horizonGlassPlate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
 
-/**
- * FRP 配置编辑页（全屏子页面）。
- *
- * ## 为什么是全屏页而不是弹窗
- *
- * 一份配置的字段量不小：名称、类型、以及三种类型各有自己的输入 +
- * 「拉取隧道列表 → 选中一条 → 可能还要新建隧道」。塞进对话框会得到一个
- * 需要内部滚动的窄条，选项一多就互相遮挡；全屏页能像正常表单那样排布。
- *
- * ## 三种类型对应三份已存在的后端
- *
- * [FrpProfileKind] 只决定「存哪些字段」，启动时由 [FrpProfiles.applyTo]
- * 投影给既有的 FrpBackend / SakuraFrpBackend / MeFrpBackend —— 本页不引入
- * 任何新的运行逻辑，只是把原先散在设置区里的输入搬到能保存多份的地方。
- *
- * @param profileId 要编辑的配置 id；null 表示新建。
- */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun FrpProfileEditorScreen(
@@ -98,13 +83,12 @@ fun FrpProfileEditorScreen(
     profileId: String?,
     onBack: () -> Unit
 ) {
+    val glass = HorizonGlass
     val config by vm.config.collectAsState()
     val all = config.frpProfiles
     val original = all.firstOrNull { it.id == profileId }
     val isNew = original == null
 
-    // 新配置在这里就把 id 定下来：之后无论保存几次、改几次名，它都是同一份配置，
-    // 不会因为「还没保存所以没有 id」而重复新增。
     val draftId = remember(profileId) { original?.id ?: UUID.randomUUID().toString() }
 
     var name by remember(profileId) {
@@ -118,18 +102,10 @@ fun FrpProfileEditorScreen(
     var error by remember(profileId) { mutableStateOf<String?>(null) }
     var confirmDelete by remember(profileId) { mutableStateOf(false) }
 
-    /**
-     * 切换类型时同步默认名。
-     *
-     * 只在「名称还是当前类型的自动默认名」时才覆盖 —— 用户自己起的名字
-     * （哪怕和默认名撞了）一律不碰，否则切一下类型就把人写的名字冲掉了。
-     */
     fun changeKind(next: FrpProfileKind) {
         val wasAuto = name.isBlank() || name == FrpProfiles.defaultName(kind, all)
         kind = next
         if (wasAuto) name = FrpProfiles.defaultName(next, all)
-        // 类型变了，之前选中的隧道属于上一个平台，必须清掉：
-        // 否则会把 A 平台的隧道 id 送到 B 平台，启动时必然失败。
         tunnelId = ""
         tunnelLabel = ""
         error = null
@@ -146,12 +122,13 @@ fun FrpProfileEditorScreen(
     )
 
     Scaffold(
-        // 嵌套在外层 Scaffold 内：insets 已由外层消费，避免顶部重复留白
+        containerColor = Color.Transparent,
         contentWindowInsets = WindowInsets(0.dp)
     ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .background(Color.Transparent)
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
         ) {
@@ -162,7 +139,6 @@ fun FrpProfileEditorScreen(
                 onBack = onBack
             )
 
-            // ── 名称与类型 ────────────────────────────────────
             McCard(title = stringResource(R.string.net_frp_edit_section_basic)) {
                 DebouncedTextField(
                     value = name,
@@ -170,10 +146,9 @@ fun FrpProfileEditorScreen(
                     label = { Text(stringResource(R.string.net_frp_edit_name)) },
                     placeholder = { Text(stringResource(R.string.net_frp_edit_name_hint)) },
                     singleLine = true,
+                    shape = McShape.Control,
                     modifier = Modifier.fillMaxWidth()
                 )
-                // 重名只提醒不拦截：两台机器叫同一个名字是合理的，
-                // 真正的唯一标识是 id，不是名字。
                 if (FrpProfiles.isNameTaken(name, all, draftId)) {
                     Spacer(Modifier.height(6.dp))
                     WarnNote(stringResource(R.string.net_frp_edit_name_dup))
@@ -182,7 +157,9 @@ fun FrpProfileEditorScreen(
                 Spacer(Modifier.height(14.dp))
                 Text(
                     stringResource(R.string.net_frp_edit_kind),
-                    color = Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold
+                    color = Muted,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold
                 )
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -207,21 +184,21 @@ fun FrpProfileEditorScreen(
                 }
             }
 
-            // ── 类型专属内容 ──────────────────────────────────
             when (kind) {
                 FrpProfileKind.CustomToml -> McCard(title = stringResource(R.string.s599)) {
                     DebouncedTextField(
                         value = configText,
                         onValueChange = { configText = it },
                         placeholder = { Text(stringResource(R.string.s600)) },
+                        textStyle = HorizonTabularStyle.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
                         minLines = 6,
                         maxLines = 14,
+                        shape = McShape.Control,
                         modifier = Modifier.fillMaxWidth()
                     )
                     Spacer(Modifier.height(6.dp))
                     HintNote(stringResource(R.string.s601))
                     Spacer(Modifier.height(4.dp))
-                    // 端口提示里带上真源端口：自建 frp 最容易填错的就是这里
                     HintNote(stringResource(R.string.net_frp_edit_toml_note, serverPortOf(vm)))
                 }
 
@@ -275,13 +252,12 @@ fun FrpProfileEditorScreen(
                 }
             }
 
-            // ── 校验提示 + 操作 ───────────────────────────────
             error?.let {
                 Spacer(Modifier.height(4.dp))
-                Box(Modifier.padding(horizontal = 14.dp)) { WarnNote(it) }
+                Box(Modifier.padding(horizontal = McSpacing.Page)) { WarnNote(it) }
             }
 
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(6.dp))
             Button(
                 onClick = {
                     val draft = currentDraft()
@@ -293,25 +269,30 @@ fun FrpProfileEditorScreen(
                         onBack()
                     }
                 },
-                colors = ButtonDefaults.buttonColors(containerColor = Indigo),
-                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = glass.accent,
+                    contentColor = Color.White
+                ),
+                shape = McShape.Control,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 14.dp)
+                    .padding(horizontal = McSpacing.Page)
             ) {
-                Text(stringResource(R.string.net_frp_edit_save), color = Color.White)
+                Text(stringResource(R.string.net_frp_edit_save), color = Color.White, fontWeight = FontWeight.Bold)
             }
 
             if (!isNew) {
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(
                     onClick = { confirmDelete = true },
-                    shape = RoundedCornerShape(12.dp),
+                    shape = McShape.Control,
+                    border = BorderStroke(1.dp, glass.dangerCoral.copy(alpha = 0.5f)),
+                    colors = ButtonDefaults.outlinedButtonColors(containerColor = glass.dangerCoralSoft),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 14.dp)
+                        .padding(horizontal = McSpacing.Page)
                 ) {
-                    Text(stringResource(R.string.net_frp_edit_delete), color = Coral)
+                    Text(stringResource(R.string.net_frp_edit_delete), color = glass.dangerCoral, fontWeight = FontWeight.SemiBold)
                 }
             }
 
@@ -322,6 +303,8 @@ fun FrpProfileEditorScreen(
     if (confirmDelete) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
+            containerColor = glass.glassChrome,
+            shape = McShape.Dialog,
             title = { Text(stringResource(R.string.net_frp_delete_title), fontSize = 16.sp, fontWeight = FontWeight.SemiBold) },
             text = { Text(stringResource(R.string.net_frp_delete_message, name), fontSize = 13.sp) },
             confirmButton = {
@@ -331,7 +314,7 @@ fun FrpProfileEditorScreen(
                         vm.deleteFrpProfile(draftId)
                         onBack()
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Coral),
+                    colors = ButtonDefaults.buttonColors(containerColor = glass.dangerCoral, contentColor = Color.White),
                     shape = McShape.Control
                 ) { Text(stringResource(R.string.net_frp_dialog_delete)) }
             },
@@ -342,11 +325,8 @@ fun FrpProfileEditorScreen(
     }
 }
 
-/** 取端口真源。集中一处，避免页面里到处写 subscribe。 */
 @Composable
 private fun serverPortOf(vm: McViewModel): Int = vm.serverPort.collectAsState().value
-
-// ── 通用输入 ──────────────────────────────────────────────────
 
 @Composable
 private fun TokenField(token: String, onTokenChange: (String) -> Unit, hint: String) {
@@ -356,22 +336,11 @@ private fun TokenField(token: String, onTokenChange: (String) -> Unit, hint: Str
         label = { Text(stringResource(R.string.net_frp_edit_token)) },
         placeholder = { Text(hint) },
         singleLine = true,
+        shape = McShape.Control,
         modifier = Modifier.fillMaxWidth()
     )
 }
 
-// ── SakuraFrp 隧道选择 ────────────────────────────────────────
-
-/**
- * SakuraFrp 隧道列表 + 新建隧道。
- *
- * 沿用原有实现（SakuraFrpApi 的四个接口 + 节点选择弹窗），只是把选中结果
- * 从「写进全局配置的 sakuraTunnelId」改成「回报给本页草稿」——
- * 好处是没保存前不会污染当前生效的配置。
- *
- * `remember(token)` 刻意以令牌为键：令牌一改就整体作废，避免把上一个账号的
- * 隧道显示成当前令牌可用的隧道（那样用户会选中一条自己无权启动的隧道）。
- */
 @Composable
 private fun SakuraTunnelSection(
     token: String,
@@ -379,6 +348,7 @@ private fun SakuraTunnelSection(
     defaultPort: Int,
     onSelect: (SakuraFrpApi.Tunnel) -> Unit
 ) {
+    val glass = HorizonGlass
     val scope = rememberCoroutineScope()
     var account by remember(token) { mutableStateOf<SakuraFrpApi.Account?>(null) }
     var tunnels by remember(token) { mutableStateOf<List<SakuraFrpApi.Tunnel>>(emptyList()) }
@@ -389,7 +359,6 @@ private fun SakuraTunnelSection(
 
     fun refresh(withNodes: Boolean) {
         if (token.isBlank() || loading) return
-        // scope 是 Main 作用域：网络请求切到 IO，Compose 状态只在 Main 线程赋值
         scope.launch {
             loading = true
             message = ""
@@ -414,15 +383,15 @@ private fun SakuraTunnelSection(
             Button(
                 onClick = { refresh(withNodes = false) },
                 enabled = token.isNotBlank() && !loading,
-                colors = ButtonDefaults.buttonColors(containerColor = Indigo),
-                shape = RoundedCornerShape(10.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = glass.accent, contentColor = Color.White),
+                shape = McShape.ControlCompact,
                 modifier = Modifier.weight(1f)
             ) {
                 if (loading) {
                     CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
                     Spacer(Modifier.size(6.dp))
                 }
-                Text(stringResource(R.string.net_frp_edit_fetch), fontSize = 12.sp)
+                Text(stringResource(R.string.net_frp_edit_fetch), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             }
             OutlinedButton(
                 onClick = {
@@ -430,13 +399,17 @@ private fun SakuraTunnelSection(
                     showCreate = true
                 },
                 enabled = token.isNotBlank() && !loading,
-                shape = RoundedCornerShape(10.dp)
-            ) { Text(stringResource(R.string.net_frp_edit_create_tunnel), fontSize = 12.sp) }
+                border = BorderStroke(1.dp, glass.hairline),
+                colors = ButtonDefaults.outlinedButtonColors(containerColor = glass.glassRow),
+                shape = McShape.ControlCompact
+            ) {
+                Text(stringResource(R.string.net_frp_edit_create_tunnel), fontSize = 12.sp, color = glass.accent, fontWeight = FontWeight.SemiBold)
+            }
         }
 
         if (message.isNotBlank()) {
             Spacer(Modifier.height(6.dp))
-            Text(message, color = Coral, fontSize = 11.sp)
+            Text(message, color = glass.dangerCoral, fontSize = 11.sp)
         }
 
         account?.let { acc ->
@@ -448,7 +421,9 @@ private fun SakuraTunnelSection(
                     acc.group,
                     "${tunnels.size}" + (acc.maxTunnels?.let { "/$it" } ?: "")
                 ),
-                color = Muted, fontSize = 11.sp
+                style = HorizonTabularStyle,
+                color = Muted,
+                fontSize = 11.sp
             )
         }
 
@@ -457,20 +432,23 @@ private fun SakuraTunnelSection(
             Text(stringResource(R.string.net_frp_edit_empty_sakura), color = Muted, fontSize = 11.sp)
         }
 
-        tunnels.forEach { t ->
-            TunnelRow(
-                selected = t.id == selectedTunnelId,
-                online = t.online,
-                title = t.name + if (t.id == selectedTunnelId) stringResource(R.string.net_frp_edit_selected) else "",
-                subtitle = FrpProfiles.tunnelLabel(
-                    nodeName = t.nodeId,
-                    type = t.type,
-                    localIp = t.localIp,
-                    localPort = t.localPort,
-                    remote = t.remoteAddress.ifBlank { t.remotePort?.toString().orEmpty() }
-                ),
-                onClick = { onSelect(t) }
-            )
+        Spacer(Modifier.height(6.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            tunnels.forEach { t ->
+                TunnelRow(
+                    selected = t.id == selectedTunnelId,
+                    online = t.online,
+                    title = t.name + if (t.id == selectedTunnelId) stringResource(R.string.net_frp_edit_selected) else "",
+                    subtitle = FrpProfiles.tunnelLabel(
+                        nodeName = t.nodeId,
+                        type = t.type,
+                        localIp = t.localIp,
+                        localPort = t.localPort,
+                        remote = t.remoteAddress.ifBlank { t.remotePort?.toString().orEmpty() }
+                    ),
+                    onClick = { onSelect(t) }
+                )
+            }
         }
     }
 
@@ -500,20 +478,13 @@ private fun SakuraTunnelSection(
     }
 }
 
-// ── ME Frp 隧道选择 ───────────────────────────────────────────
-
-/**
- * ME Frp 隧道列表。
- *
- * 平台不提供「建隧道」接口，隧道只能在其网站上创建，所以这里没有新建按钮，
- * 空列表时给出可执行的指引而不是一个点了会失败的按钮。
- */
 @Composable
 private fun MeFrpTunnelSection(
     token: String,
     selectedTunnelId: String,
     onSelect: (MeFrpApi.Proxy) -> Unit
 ) {
+    val glass = HorizonGlass
     val scope = rememberCoroutineScope()
     var account by remember(token) { mutableStateOf<MeFrpApi.Account?>(null) }
     var proxies by remember(token) { mutableStateOf<List<MeFrpApi.Proxy>>(emptyList()) }
@@ -542,20 +513,20 @@ private fun MeFrpTunnelSection(
         Button(
             onClick = { refresh() },
             enabled = token.isNotBlank() && !loading,
-            colors = ButtonDefaults.buttonColors(containerColor = Indigo),
-            shape = RoundedCornerShape(10.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = glass.accent, contentColor = Color.White),
+            shape = McShape.ControlCompact,
             modifier = Modifier.fillMaxWidth()
         ) {
             if (loading) {
                 CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
                 Spacer(Modifier.size(6.dp))
             }
-            Text(stringResource(R.string.net_frp_edit_fetch), fontSize = 12.sp)
+            Text(stringResource(R.string.net_frp_edit_fetch), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
         }
 
         if (message.isNotBlank()) {
             Spacer(Modifier.height(6.dp))
-            Text(message, color = Coral, fontSize = 11.sp)
+            Text(message, color = glass.dangerCoral, fontSize = 11.sp)
         }
 
         account?.let { acc ->
@@ -567,7 +538,9 @@ private fun MeFrpTunnelSection(
                     acc.group,
                     "${proxies.size}" + (acc.maxTunnels?.let { "/$it" } ?: "")
                 ),
-                color = Muted, fontSize = 11.sp
+                style = HorizonTabularStyle,
+                color = Muted,
+                fontSize = 11.sp
             )
         }
 
@@ -576,25 +549,27 @@ private fun MeFrpTunnelSection(
             Text(stringResource(R.string.net_frp_edit_empty_me), color = Muted, fontSize = 11.sp)
         }
 
-        proxies.forEach { p ->
-            TunnelRow(
-                selected = p.id == selectedTunnelId,
-                online = p.online,
-                title = p.name + if (p.id == selectedTunnelId) stringResource(R.string.net_frp_edit_selected) else "",
-                subtitle = FrpProfiles.tunnelLabel(
-                    nodeName = p.nodeName,
-                    type = p.type,
-                    localIp = p.localIp,
-                    localPort = p.localPort,
-                    remote = p.remoteAddress.ifBlank { p.remotePort?.toString().orEmpty() }
-                ),
-                onClick = { onSelect(p) }
-            )
+        Spacer(Modifier.height(6.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            proxies.forEach { p ->
+                TunnelRow(
+                    selected = p.id == selectedTunnelId,
+                    online = p.online,
+                    title = p.name + if (p.id == selectedTunnelId) stringResource(R.string.net_frp_edit_selected) else "",
+                    subtitle = FrpProfiles.tunnelLabel(
+                        nodeName = p.nodeName,
+                        type = p.type,
+                        localIp = p.localIp,
+                        localPort = p.localPort,
+                        remote = p.remoteAddress.ifBlank { p.remotePort?.toString().orEmpty() }
+                    ),
+                    onClick = { onSelect(p) }
+                )
+            }
         }
     }
 }
 
-/** 隧道列表的一行：在线指示灯 + 名称 + 摘要。加了截断，长 IPv6 地址不会撑破卡片。 */
 @Composable
 private fun TunnelRow(
     selected: Boolean,
@@ -603,41 +578,55 @@ private fun TunnelRow(
     subtitle: String,
     onClick: () -> Unit
 ) {
+    val glass = HorizonGlass
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(if (selected) IndigoSoft else Color.Transparent)
+            .horizonGlassPlate(
+                shape = McShape.Row,
+                containerColor = if (selected) glass.accentSoft else glass.glassRow,
+                borderColor = if (selected) glass.accent else glass.hairline,
+                highlighted = selected
+            )
             .clickable { onClick() }
-            .padding(horizontal = 10.dp, vertical = 8.dp),
+            .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
-            Modifier
-                .size(8.dp)
-                .background(if (online) Mint else Muted, CircleShape)
-        )
+            modifier = Modifier
+                .size(16.dp)
+                .clip(CircleShape)
+                .background(if (online) glass.liveGreenSoft else Color.Transparent),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                Modifier
+                    .size(8.dp)
+                    .background(if (online) glass.liveGreen else Muted, CircleShape)
+            )
+        }
         Spacer(Modifier.width(8.dp))
         Column(Modifier.weight(1f)) {
             Text(
                 title,
                 fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+                color = if (selected) glass.accent else Color.Unspecified,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+            Spacer(Modifier.height(2.dp))
             Text(
                 subtitle,
+                style = HorizonTabularStyle,
                 color = Muted,
-                fontSize = 10.sp,
+                fontSize = 10.5.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
         }
     }
 }
-
-// ── SakuraFrp 新建隧道弹窗 ────────────────────────────────────
 
 @Composable
 private fun SakuraCreateTunnelDialog(
@@ -646,6 +635,7 @@ private fun SakuraCreateTunnelDialog(
     onDismiss: () -> Unit,
     onConfirm: (node: SakuraFrpApi.Node, name: String, type: String, port: Int) -> Unit
 ) {
+    val glass = HorizonGlass
     var selectedNode by remember { mutableStateOf(nodes.firstOrNull { it.online }) }
     var nodeMenu by remember { mutableStateOf(false) }
     var name by remember { mutableStateOf("Minexa") }
@@ -655,11 +645,13 @@ private fun SakuraCreateTunnelDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = glass.glassChrome,
+        shape = McShape.Dialog,
         title = { Text(stringResource(R.string.net_frp_edit_sakura_title), fontSize = 16.sp, fontWeight = FontWeight.SemiBold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (nodes.isEmpty()) {
-                    Text(stringResource(R.string.net_frp_edit_sakura_node_empty), color = Coral, fontSize = 11.sp)
+                    Text(stringResource(R.string.net_frp_edit_sakura_node_empty), color = glass.dangerCoral, fontSize = 11.sp)
                 }
                 Box {
                     OutlinedTextField(
@@ -669,6 +661,7 @@ private fun SakuraCreateTunnelDialog(
                         readOnly = true,
                         label = { Text(stringResource(R.string.net_frp_edit_sakura_node)) },
                         singleLine = true,
+                        shape = McShape.Control,
                         modifier = Modifier.fillMaxWidth()
                     )
                     Box(
@@ -698,6 +691,7 @@ private fun SakuraCreateTunnelDialog(
                     onValueChange = { name = it },
                     label = { Text(stringResource(R.string.net_frp_edit_sakura_name)) },
                     singleLine = true,
+                    shape = McShape.Control,
                     modifier = Modifier.fillMaxWidth()
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -705,7 +699,7 @@ private fun SakuraCreateTunnelDialog(
                         FilterChip(
                             selected = type == t,
                             onClick = { type = t },
-                            label = { Text(t.uppercase()) }
+                            label = { Text(t.uppercase(), fontWeight = FontWeight.SemiBold) }
                         )
                     }
                 }
@@ -713,7 +707,9 @@ private fun SakuraCreateTunnelDialog(
                     value = portText,
                     onValueChange = { portText = it.filter(Char::isDigit).take(5) },
                     label = { Text(stringResource(R.string.net_frp_edit_sakura_port)) },
+                    textStyle = HorizonTabularStyle.copy(fontSize = 14.sp),
                     singleLine = true,
+                    shape = McShape.Control,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -726,9 +722,9 @@ private fun SakuraCreateTunnelDialog(
                     onConfirm(node, name.ifBlank { "Minexa" }, type, port ?: defaultPort)
                 },
                 enabled = selectedNode != null && port != null && name.isNotBlank(),
-                colors = ButtonDefaults.buttonColors(containerColor = Indigo),
+                colors = ButtonDefaults.buttonColors(containerColor = glass.accent, contentColor = Color.White),
                 shape = McShape.Control
-            ) { Text(stringResource(R.string.net_frp_edit_sakura_create)) }
+            ) { Text(stringResource(R.string.net_frp_edit_sakura_create), fontWeight = FontWeight.SemiBold) }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.s402)) }

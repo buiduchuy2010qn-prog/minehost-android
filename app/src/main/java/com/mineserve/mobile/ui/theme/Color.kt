@@ -4,70 +4,70 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
-// ── Bảng màu Sáng Giấy Ấm Dịu Mắt (Warm Paper Light) ──────────────────────
-val LightBg = Color(0xFFF5F7FA)
+// ── BlockWay Crystal Ice Light (Băng Tinh Khiết) ────────────────────────────
+val LightBg = Color(0xFFF2F7FE)
 val LightCard = Color(0xFFFFFFFF)
-val LightInk = Color(0xFF172033)
-val LightMuted = Color(0xFF596579)
-val LightLine = Color(0xFFDCE2EC)
-val LightOutline = Color(0xFF7D899C)
+val LightInk = Color(0xFF0F1D33)
+val LightMuted = Color(0xFF3E506B)
+val LightLine = Color(0xFFCBD9ED)
+val LightOutline = Color(0xFF6B809E)
 
-// Màu nhấn chính: Xanh Lam Đá Dịu Mắt (Nord Calm Sky-Blue) thay cho xanh lục neon chói mắt
-val Indigo = Color(0xFF4F86E8)
-val IndigoDark = Color(0xFF2D56A6)
-val LightIndigo = Color(0xFF3559D9)
-val LightIndigoDark = Color(0xFF2544AA)
-val LightIndigoSoft = Color(0xFFEBF0FF)
+// Màu nhấn chính: Horizon Violet-Blue & Crystal Cobalt
+val Indigo = Color(0xFF7C66FF)
+val IndigoDark = Color(0xFF4C35CC)
+val LightIndigo = Color(0xFF1D4ED8)
+val LightIndigoDark = Color(0xFF0F296B)
+val LightIndigoSoft = Color(0xFFDBEAFE)
 
-// Màu nhấn phụ: Xanh Ngọc Bích Trầm (Muted Sage) cho trạng thái Đang chạy / Đã cài
-val Mint = Color(0xFF3E9B74)
-val LightMint = Color(0xFF247A54)
-val LightMintSoft = Color(0xFFE2F5EC)
-val MintBright = Color(0xFF6BC497)
+// Màu nhấn phụ: Live Emerald (Trạng thái Đang chạy / Đã cài)
+val Mint = Color(0xFF34D399)
+val LightMint = Color(0xFF136F4C)
+val LightMintSoft = Color(0xFFD8F5E8)
+val MintBright = Color(0xFF5CE698)
 
-// Màu cảnh báo dịu mắt (Soft Rose-Coral)
-val Coral = Color(0xFFD95C5C)
+// Màu cảnh báo dịu mắt (Horizon Rose-Coral)
+val Coral = Color(0xFFFB7185)
 val LightCoral = Color(0xFFB42318)
 val LightCoralSoft = Color(0xFFFCE8E8)
 
-val LightFieldGray = Color(0xFFF0F3F8)
+val LightFieldGray = Color(0xFFE6EFFB)
 
-// ── Bảng màu Tối Xanh Đá Nord Dịu Mắt (Soft Slate Dark - Mặc định) ────────
-val DarkBg = Color(0xFF181C24)
-val DarkCard = Color(0xFF212733)
-val DarkInk = Color(0xFFE6ECF5)
-val DarkMuted = Color(0xFFA7B4C8)
-val DarkLine = Color(0xFF313A4B)
-val DarkOutline = Color(0xFF718099)
-val DarkIndigoSoft = Color(0xFF233454)
-val DarkMintSoft = Color(0xFF1E3A31)
-val DarkCoralSoft = Color(0xFF3F262A)
-val DarkFieldGray = Color(0xFF283040)
+// ── BlockWay Horizon Dusk Dark (Tím Hoàng Hôn - Mặc định) ───────────────────
+val DarkBg = Color(0xFF0E0D1E)
+val DarkCard = Color(0xFF1A1730)
+val DarkInk = Color(0xFFF2EFFB)
+val DarkMuted = Color(0xFFC5BEE0)
+val DarkLine = Color(0xFF38315C)
+val DarkOutline = Color(0xFF837AA8)
+val DarkIndigoSoft = Color(0xFF312463)
+val DarkMintSoft = Color(0xFF163B2A)
+val DarkCoralSoft = Color(0xFF471E32)
+val DarkFieldGray = Color(0xFF262142)
 
-// ── Bảng màu Đêm Ấm Giảm Ánh Sáng Xanh (Warm Mocha Eye-Care) ──────────────
-val WarmDarkBg = Color(0xFF1C1917)
-val WarmDarkCard = Color(0xFF26221F)
-val WarmDarkInk = Color(0xFFEDE6DF)
-val WarmDarkMuted = Color(0xFFB8ACA0)
-val WarmDarkLine = Color(0xFF3B3530)
-val WarmDarkFieldGray = Color(0xFF302B27)
+// ── BlockWay Rust Obsidian Warm Dark (Đêm Cam Rust) ─────────────────────────
+val WarmDarkBg = Color(0xFF140E0C)
+val WarmDarkCard = Color(0xFF211714)
+val WarmDarkInk = Color(0xFFF7ECE6)
+val WarmDarkMuted = Color(0xFFD6BEB2)
+val WarmDarkLine = Color(0xFF45312A)
+val WarmDarkFieldGray = Color(0xFF30221D)
 
-// ── Container色阶 ──────────────────────────────────────────────────────
+// ── Bậc nền Surface Container ───────────────────────────────────────────────
 val LightContainerLowest = Color(0xFFFFFFFF)
-val LightContainerLow = Color(0xFFF7F9FC)
-val LightContainer = Color(0xFFF2F5FA)
-val LightContainerHigh = Color(0xFFECF0F7)
-val LightContainerHighest = Color(0xFFE5EAF2)
-val LightSurfaceDim = Color(0xFFE2E7F0)
+val LightContainerLow = Color(0xFFF7FAFF)
+val LightContainer = Color(0xFFEEF5FE)
+val LightContainerHigh = Color(0xFFE6EFFB)
+val LightContainerHighest = Color(0xFFDCE8F8)
+val LightSurfaceDim = Color(0xFFD9E6F7)
 val LightSurfaceBright = Color(0xFFFFFFFF)
 
-val DarkContainerLowest = Color(0xFF141820)
-val DarkContainerLow = Color(0xFF1C212B)
-val DarkContainer = Color(0xFF212733)
-val DarkContainerHigh = Color(0xFF283040)
-val DarkContainerHighest = Color(0xFF313A4B)
-val DarkSurfaceDim = Color(0xFF181C24)
-val DarkSurfaceBright = Color(0xFF364052)
+val DarkContainerLowest = Color(0xFF090915)
+val DarkContainerLow = Color(0xFF131126)
+val DarkContainer = Color(0xFF1A1730)
+val DarkContainerHigh = Color(0xFF262142)
+val DarkContainerHighest = Color(0xFF322C54)
+val DarkSurfaceDim = Color(0xFF0E0D1E)
+val DarkSurfaceBright = Color(0xFF3A3361)
 
 val Bg: Color @Composable get() = MaterialTheme.colorScheme.background
 val Card: Color @Composable get() = MaterialTheme.colorScheme.surface
