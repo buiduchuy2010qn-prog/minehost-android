@@ -159,11 +159,12 @@ internal val mineHostMainTabs = listOf(
 internal fun MineHostBottomBar(selected: McTab?, onSelect: (McTab) -> Unit) {
     val largeLabels = LocalDensity.current.fontScale > 1.3f
     val glass = HorizonGlass
+    val dockSidePad = if (largeLabels) 3.dp else 10.dp
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .windowInsetsPadding(NavigationBarDefaults.windowInsets)
-            .padding(horizontal = if (largeLabels) 3.dp else 10.dp, bottom = 8.dp)
+            .padding(start = dockSidePad, end = dockSidePad, bottom = 8.dp)
             .horizonGlassPlate(
                 shape = RoundedCornerShape(24.dp),
                 containerColor = glass.glassChrome,
