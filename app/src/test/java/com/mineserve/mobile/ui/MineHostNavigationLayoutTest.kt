@@ -279,7 +279,10 @@ class MineHostNavigationLayoutTest {
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
                                             Spacer(Modifier.height(8.dp))
-                                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
                                                 SegPill("Java Mod", selected = true, modifier = Modifier.weight(1f)) {}
                                                 SegPill("Nhân Rust", selected = false, modifier = Modifier.weight(1f)) {}
                                             }

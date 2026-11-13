@@ -289,7 +289,8 @@ fun EmptyHint(icon: ImageVector, text: String, modifier: Modifier = Modifier) {
             text = text,
             color = Muted,
             style = MaterialTheme.typography.bodyLarge,
-            textAlign = TextAlign.Center
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth()
         )
     }
 }
@@ -998,8 +999,7 @@ fun SegPill(
             text = text,
             color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.labelLarge,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-            textAlign = TextAlign.Center
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
         )
     }
 }
@@ -1500,6 +1500,7 @@ fun SegmentedTabs(
                 ) {
                     Text(
                         label,
+                        modifier = Modifier.fillMaxWidth(),
                         color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 13.5.sp,
                         lineHeight = 19.sp,
