@@ -13,10 +13,14 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -65,11 +69,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mineserve.mobile.R
+import com.mineserve.mobile.ui.ApplyHorizonDialogBlur
+import com.mineserve.mobile.ui.LocalHorizonChromePadding
 import com.mineserve.mobile.ui.LocalMineHostChrome
 import com.mineserve.mobile.ui.McViewModel
 import com.mineserve.mobile.ui.theme.HorizonGlass
 import com.mineserve.mobile.ui.theme.Ink
 import com.mineserve.mobile.ui.theme.McIcon
+import com.mineserve.mobile.ui.theme.McShape
 import com.mineserve.mobile.ui.theme.McSpacing
 import com.mineserve.mobile.ui.theme.Muted
 import com.mineserve.mobile.ui.theme.horizonGlassPlate
@@ -98,6 +105,7 @@ fun LogsScreen(vm: McViewModel, onBack: () -> Unit) {
     val glass = HorizonGlass
     val isLightGlass = glass.isLight
     val sharedChrome = LocalMineHostChrome.current
+    val chromePad = LocalHorizonChromePadding.current
 
     val logPrefs = remember { context.getSharedPreferences("log_prefs", Context.MODE_PRIVATE) }
     var logLocalized by remember { mutableStateOf(logPrefs.getBoolean("localize", true)) }
@@ -152,16 +160,26 @@ fun LogsScreen(vm: McViewModel, onBack: () -> Unit) {
     }
 
     val viewportBg = if (isLightGlass) {
-        Color(0xFFF3F8FF).copy(alpha = 0.88f)
+        Color.White.copy(alpha = 0.44f)
     } else {
-        Color(0xFF0D0C1D).copy(alpha = 0.76f)
+        Color(0xFF0B0A1A).copy(alpha = 0.34f)
     }
     val viewportBorder = if (isLightGlass) glass.hairline else glass.specularTop
+    val imeBottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
+    val bottomInset = if (sharedChrome) {
+        maxOf(chromePad.calculateBottomPadding(), imeBottom) + 8.dp
+    } else {
+        maxOf(WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding(), imeBottom) + 8.dp
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .then(if (sharedChrome) Modifier else Modifier.statusBarsPadding())
+            .then(
+                if (sharedChrome) Modifier.padding(top = chromePad.calculateTopPadding())
+                else Modifier.statusBarsPadding()
+            )
+            .padding(bottom = bottomInset)
     ) {
         // Thanh tiêu đề Kính Mờ (Frosted Top Header)
         Row(
@@ -529,7 +547,13 @@ fun LogsScreen(vm: McViewModel, onBack: () -> Unit) {
     if (showLogSettings) {
         AlertDialog(
             onDismissRequest = { showLogSettings = false },
-            title = { Text(stringResource(R.string.ui_log_localize), fontSize = 15.sp, fontWeight = FontWeight.SemiBold) },
+            containerColor = glass.glassChrome,
+            shape = McShape.Dialog,
+            tonalElevation = 0.dp,
+            title = {
+                ApplyHorizonDialogBlur()
+                Text(stringResource(R.string.ui_log_localize), fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            },
             text = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {

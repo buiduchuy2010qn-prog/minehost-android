@@ -129,9 +129,15 @@ fun HeaderBlock(
 ) {
     val glass = HorizonGlass
     if (LocalMineHostChrome.current) {
+        val chromeTop = if (statusBarPadding) {
+            LocalHorizonChromePadding.current.calculateTopPadding()
+        } else {
+            0.dp
+        }
         Row(
             modifier = modifier
                 .fillMaxWidth()
+                .padding(top = chromeTop)
                 .padding(horizontal = McSpacing.Page, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
@@ -200,10 +206,12 @@ fun HeaderBlock(
 @Composable
 fun BackBar(title: String, onBack: () -> Unit) {
     val hasChrome = LocalMineHostChrome.current
+    val chromeTop = if (hasChrome) LocalHorizonChromePadding.current.calculateTopPadding() else 0.dp
     val glass = HorizonGlass
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .padding(top = chromeTop)
             .background(if (hasChrome) Color.Transparent else glass.glassChrome)
     ) {
         Row(
@@ -320,7 +328,7 @@ fun HeroBlock(
             .padding(horizontal = McSpacing.Page, vertical = 8.dp)
             .horizonGlassPlate(
                 shape = McShape.Card,
-                containerColor = glass.glassCardStrong,
+                containerColor = glass.glassCard,
                 borderColor = glass.hairline,
                 highlighted = state.isRunning
             )
@@ -1337,6 +1345,7 @@ fun QqGroupDialog(onDismiss: () -> Unit) {
             )
         },
         title = {
+            ApplyHorizonDialogBlur()
             Text(
                 stringResource(R.string.s1051),
                 style = MaterialTheme.typography.titleLarge

@@ -69,19 +69,17 @@ import com.mineserve.mobile.data.JavaRuntime
 import com.mineserve.mobile.data.JavaVendor
 import com.mineserve.mobile.data.JavaVersion
 import com.mineserve.mobile.data.ServerCore
+import com.mineserve.mobile.ui.ApplyHorizonDialogBlur
 import com.mineserve.mobile.ui.BackBar
 import com.mineserve.mobile.ui.HeaderBlock
+import com.mineserve.mobile.ui.LocalHorizonChromePadding
 import com.mineserve.mobile.ui.McCard
 import com.mineserve.mobile.ui.McViewModel
 import com.mineserve.mobile.ui.SegPill
 import com.mineserve.mobile.ui.showInstantSnackbar
-import com.mineserve.mobile.ui.theme.Coral
 import com.mineserve.mobile.ui.theme.HorizonGlass
 import com.mineserve.mobile.ui.theme.HorizonTabularStyle
-import com.mineserve.mobile.ui.theme.Indigo
-import com.mineserve.mobile.ui.theme.IndigoSoft
 import com.mineserve.mobile.ui.theme.McShape
-import com.mineserve.mobile.ui.theme.Mint
 import com.mineserve.mobile.ui.theme.Muted
 import com.mineserve.mobile.ui.theme.horizonGlassPlate
 import kotlinx.coroutines.flow.collectLatest
@@ -122,6 +120,7 @@ fun DownloadScreen(
 ) {
     val context = LocalContext.current
     val glass = HorizonGlass
+    val chromePad = LocalHorizonChromePadding.current
     val config by vm.config.collectAsState()
     val serverState by vm.serverState.collectAsState()
     val isBootstrapped by vm.isBootstrapped.collectAsState()
@@ -331,11 +330,6 @@ fun DownloadScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            if (onBack != null) {
-                BackBar(title = stringResource(R.string.s450), onBack = onBack)
-            } else {
-                HeaderBlock(eyebrow = stringResource(R.string.eyebrow_download), title = stringResource(R.string.s450))
-            }
             val gamemodeLabelVi = when (flexibleGamemode) {
                 "creative" -> "🎨 Sáng tạo"
                 "adventure" -> "🗺️ Phiêu lưu"
@@ -346,6 +340,13 @@ fun DownloadScreen(
             LazyColumn(
                 modifier = Modifier.weight(1f)
             ) {
+                item(key = "creator_header") {
+                    if (onBack != null) {
+                        BackBar(title = stringResource(R.string.s450), onBack = onBack)
+                    } else {
+                        HeaderBlock(eyebrow = stringResource(R.string.eyebrow_download), title = stringResource(R.string.s450))
+                    }
+                }
                 item(key = "easy_3step_creator") {
                     val isRustSelected = config.selectedCore == ServerCore.Pumpkin
                     val isBedrockGroupSelected = config.selectedCore.isBedrock
@@ -2435,7 +2436,7 @@ fun DownloadScreen(
                                         enabled = !isDownloadingCore && effectiveCoreName.isNotBlank() && !exactNameExists && !crossplayBlocked,
                                         colors = ButtonDefaults.buttonColors(
                                             containerColor = if (exactNameExists) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary,
-                                            disabledContainerColor = if (exactNameExists) glass.liveGreenSoft else IndigoSoft
+                                            disabledContainerColor = if (exactNameExists) glass.liveGreenSoft else glass.accentSoft
                                         ),
                                         shape = McShape.Control,
                                         modifier = Modifier
@@ -2478,8 +2479,8 @@ fun DownloadScreen(
                                             .fillMaxWidth()
                                             .horizonGlassPlate(
                                                 shape = McShape.Row,
-                                                containerColor = glass.glassChrome,
-                                                borderColor = glass.hairline
+                                                containerColor = if (glass.isLight) Color.White.copy(alpha = 0.44f) else Color(0xFF0B0A1A).copy(alpha = 0.34f),
+                                                borderColor = if (glass.isLight) glass.hairline else glass.specularTop
                                             )
                                             .padding(10.dp),
                                         verticalArrangement = Arrangement.spacedBy(3.dp)
@@ -2501,7 +2502,7 @@ fun DownloadScreen(
                 }
 
                 item(key = "bottom_spacer") {
-                    Spacer(Modifier.height(18.dp))
+                    Spacer(Modifier.height(chromePad.calculateBottomPadding() + 28.dp))
                 }
             }
 
@@ -2512,7 +2513,11 @@ fun DownloadScreen(
                     (Regex("^\\d+(\\.\\d+)+.*$").matches(trimmedModal) || trimmedModal in availableVersions)
                 AlertDialog(
                     onDismissRequest = { showVersionPickerModal = false },
+                    containerColor = glass.glassChrome,
+                    shape = McShape.Dialog,
+                    tonalElevation = 0.dp,
                     title = {
+                        ApplyHorizonDialogBlur()
                         Text(
                             if (usesCoreVersion) "📱 Lướt chọn & Cài nhanh Minecraft PE / Bedrock"
                             else "☕ Lướt chọn & Cài nhanh Minecraft (${config.selectedCore.displayName})",
@@ -2873,7 +2878,13 @@ fun DownloadScreen(
             pendingDeleteCore?.let { core ->
                 AlertDialog(
                     onDismissRequest = { pendingDeleteCore = null },
-                    title = { Text(stringResource(R.string.dl_core_delete_title), fontWeight = FontWeight.Bold) },
+                    containerColor = glass.glassChrome,
+                    shape = McShape.Dialog,
+                    tonalElevation = 0.dp,
+                    title = {
+                        ApplyHorizonDialogBlur()
+                        Text(stringResource(R.string.dl_core_delete_title), fontWeight = FontWeight.Bold)
+                    },
                     text = {
                         Text(
                             stringResource(R.string.dl_core_delete_content, core.name),
@@ -2897,7 +2908,13 @@ fun DownloadScreen(
             if (showImportDialog) {
                 AlertDialog(
                     onDismissRequest = { if (!importingServer) { showImportDialog = false; pendingImport = null } },
-                    title = { Text("Nhập server có sẵn") },
+                    containerColor = glass.glassChrome,
+                    shape = McShape.Dialog,
+                    tonalElevation = 0.dp,
+                    title = {
+                        ApplyHorizonDialogBlur()
+                        Text("Nhập server có sẵn")
+                    },
                     text = {
                         Column {
                             Text(

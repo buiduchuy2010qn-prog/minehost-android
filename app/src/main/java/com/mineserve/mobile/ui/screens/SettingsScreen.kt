@@ -40,6 +40,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.platform.LocalContext
@@ -54,6 +55,7 @@ import com.mineserve.mobile.data.AptMirror
 import com.mineserve.mobile.data.DownloadMirror
 import com.mineserve.mobile.ui.DebouncedTextField
 import com.mineserve.mobile.ui.HeaderBlock
+import com.mineserve.mobile.ui.LocalHorizonChromePadding
 import com.mineserve.mobile.ui.McCard
 import com.mineserve.mobile.ui.McViewModel
 import com.mineserve.mobile.ui.SegPill
@@ -66,10 +68,12 @@ import com.mineserve.mobile.ui.theme.McShape
 import com.mineserve.mobile.ui.theme.Muted
 import com.mineserve.mobile.ui.theme.horizonGlassPlate
 import com.mineserve.mobile.ui.theme.horizonGlassTokensFor
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 private data class PresetSwatchMeta(
-    val skyColor: Color,
+    val skyTopColor: Color,
+    val skyHorizonColor: Color,
     val glowColor: Color,
     val subtitleVi: String
 )
@@ -82,9 +86,14 @@ private fun swatchMetaFor(preset: EyeCareColorPreset): PresetSwatchMeta {
         EyeCareColorPreset.WarmMocha -> "Đêm cam Rust ấm áp"
         EyeCareColorPreset.SakuraGlass -> "Sương mai anh đào trong trẻo"
         EyeCareColorPreset.WarmPaperLight -> "Băng pha lê sáng rõ ban ngày"
+        EyeCareColorPreset.MojangEmerald -> "Lục bảo Mojang cổ điển"
+        EyeCareColorPreset.ModrinthMint -> "Ngọc bích Modrinth tươi mát"
+        EyeCareColorPreset.FeatherSky -> "Xanh băng Feather thanh thoát"
+        EyeCareColorPreset.CherryDark -> "Đêm anh đào huyền ảo"
     }
     return PresetSwatchMeta(
-        skyColor = tokens.skyMid,
+        skyTopColor = tokens.skyTop,
+        skyHorizonColor = tokens.horizonGlow,
         glowColor = tokens.accent,
         subtitleVi = subtitle
     )
@@ -97,178 +106,260 @@ fun SettingsScreen(vm: McViewModel, onNavigate: (SubPage) -> Unit = {}) {
     val context = LocalContext.current
     val lastCheckResult by vm.lastUpdateCheckResult.collectAsState()
     val glass = HorizonGlass
+    val chromePad = LocalHorizonChromePadding.current
 
     LaunchedEffect(context) {
         AppUiSettings.ensureLoaded(context)
     }
     val activePreset by AppUiSettings.colorPreset.collectAsState()
+    val activeGlassOpacity by AppUiSettings.glassOpacity.collectAsState()
     val activeFontScale by AppUiSettings.fontScale.collectAsState()
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Transparent)
+            .verticalScroll(rememberScrollState())
     ) {
         HeaderBlock(
             eyebrow = stringResource(R.string.eyebrow_settings),
             title = stringResource(R.string.s186)
         )
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .verticalScroll(rememberScrollState())
-        ) {
-            // ── Flagship: BlockWay Pure Horizon Glass Studio ──
-            McCard(title = "🎨 Xưởng Giao Diện Pure Horizon Glass") {
-                Text(
-                    "Chọn bảng màu kính trong suốt chuẩn BlockWay và tinh chỉnh cỡ chữ tiếng Việt theo thói quen cầm điện thoại của bạn.",
-                    color = Muted,
-                    fontSize = 12.sp,
-                    lineHeight = 17.5.sp
-                )
-                Spacer(Modifier.height(12.dp))
 
-                // 2-column responsive visual swatch grid iterating all EyeCareColorPreset.entries
-                val rows = remember { EyeCareColorPreset.entries.chunked(2) }
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    rows.forEach { pair ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            pair.forEach { preset ->
-                                val selected = preset == activePreset
-                                val meta = swatchMetaFor(preset)
-                                PresetSwatchTile(
-                                    preset = preset,
-                                    meta = meta,
-                                    selected = selected,
-                                    onClick = { AppUiSettings.setColorPreset(context, preset) },
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
-                            if (pair.size == 1) {
-                                Spacer(Modifier.weight(1f))
-                            }
+        // ── Flagship: BlockWay Pure Horizon Glass Studio ──
+        McCard(title = "🎨 Xưởng Giao Diện Pure Horizon Glass") {
+            Text(
+                "Chọn 1 trong 9 bảng màu bầu trời BlockWay Horizon, chỉnh độ trong suốt mặt kính trực tiếp và cỡ chữ tiếng Việt theo ý thích.",
+                color = Muted,
+                fontSize = 12.sp,
+                lineHeight = 17.5.sp
+            )
+            Spacer(Modifier.height(12.dp))
+
+            // 2-column responsive visual swatch grid iterating all 9 EyeCareColorPreset.entries
+            val rows = remember { EyeCareColorPreset.entries.chunked(2) }
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                rows.forEach { pair ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        pair.forEach { preset ->
+                            val selected = preset == activePreset
+                            val meta = swatchMetaFor(preset)
+                            PresetSwatchTile(
+                                preset = preset,
+                                meta = meta,
+                                selected = selected,
+                                onClick = { AppUiSettings.setColorPreset(context, preset) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        if (pair.size == 1) {
+                            Spacer(Modifier.weight(1f))
                         }
                     }
                 }
+            }
 
-                Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(14.dp))
 
-                // Font Scale Studio Sub-Plate (90% – 125%) + Live Vietnamese Sample Preview
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizonGlassPlate(
-                            shape = McShape.Row,
-                            containerColor = glass.glassRow,
-                            borderColor = glass.hairline
-                        )
-                        .padding(12.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            "🔤 Tỷ lệ cỡ chữ hiển thị",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Box(
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .background(glass.accentSoft)
-                                .border(1.dp, glass.accent.copy(alpha = 0.45f), CircleShape)
-                                .padding(horizontal = 10.dp, vertical = 3.dp)
-                        ) {
-                            Text(
-                                "${(activeFontScale * 100f).roundToInt()}%",
-                                style = HorizonTabularStyle,
-                                color = glass.accent,
-                                fontSize = 11.5.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-
-                    Slider(
-                        value = activeFontScale,
-                        onValueChange = { AppUiSettings.setFontScale(context, it) },
-                        valueRange = 0.90f..1.25f,
-                        colors = SliderDefaults.colors(
-                            thumbColor = glass.accent,
-                            activeTrackColor = glass.accent,
-                            inactiveTrackColor = glass.hairline
-                        ),
-                        modifier = Modifier.fillMaxWidth()
+            // Live Glass Transparency Studio Sub-Plate (14% – 52%)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizonGlassPlate(
+                        shape = McShape.Row,
+                        containerColor = glass.glassRow,
+                        borderColor = glass.hairline
                     )
-
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        listOf(
-                            0.92f to "92% Gọn",
-                            1.00f to "100%",
-                            1.04f to "104% Chuẩn",
-                            1.12f to "112% Rõ",
-                            1.20f to "120% Lớn"
-                        ).forEach { (scaleVal, label) ->
-                            val isCurrentScale = kotlin.math.abs(activeFontScale - scaleVal) < 0.015f
-                            SegPill(
-                                text = label,
-                                selected = isCurrentScale,
-                                compact = true,
-                                onClick = { AppUiSettings.setFontScale(context, scaleVal) }
-                            )
-                        }
-                    }
-
-                    Spacer(Modifier.height(10.dp))
-
-                    // Live Vietnamese typography & tabular preview plate
-                    Column(
+                    .padding(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        "🔮 Độ trong suốt mặt kính (Pure Horizon Glass)",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f).padding(end = 8.dp)
+                    )
+                    Box(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(glass.glassInput)
-                            .border(1.dp, glass.hairline, RoundedCornerShape(12.dp))
-                            .padding(10.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                            .clip(CircleShape)
+                            .background(glass.accentSoft)
+                            .border(1.dp, glass.accent.copy(alpha = 0.45f), CircleShape)
+                            .padding(horizontal = 10.dp, vertical = 3.dp)
                     ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                "Xem trước hiển thị tiếng Việt",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = glass.accent
-                            )
-                            Text(
-                                "🟢 20.0 TPS · 1,024 MB",
-                                style = HorizonTabularStyle,
-                                fontSize = 10.5.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = glass.liveGreen
-                            )
-                        }
                         Text(
-                            "Trải nghiệm quản trị máy chủ Minecraft trên điện thoại sắc nét, thoáng mắt, không dính dấu tiếng Việt (ệ, ử, ẫ, ộ).",
-                            fontSize = 12.sp,
-                            lineHeight = 17.5.sp,
-                            color = MaterialTheme.colorScheme.onSurface
+                            "${(activeGlassOpacity * 100f).roundToInt()}%",
+                            style = HorizonTabularStyle,
+                            color = glass.accent,
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Kéo sang trái (14%–18%) để nhìn xuyên thấu bầu trời sao & ráng chiều rõ nhất; kéo sang phải (38%–52%) khi cần nền thẻ đậm hơn ngoài nắng.",
+                    color = Muted,
+                    fontSize = 11.sp,
+                    lineHeight = 15.5.sp
+                )
+
+                Slider(
+                    value = activeGlassOpacity,
+                    onValueChange = { AppUiSettings.setGlassOpacity(context, it) },
+                    valueRange = 0.14f..0.52f,
+                    colors = SliderDefaults.colors(
+                        thumbColor = glass.accent,
+                        activeTrackColor = glass.accent,
+                        inactiveTrackColor = glass.hairline
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    listOf(
+                        0.16f to "✨ Pha lê Siêu Trong 16%",
+                        0.26f to "🌌 Chuẩn Horizon 26%",
+                        0.42f to "🛡️ Kính Mờ Đậm 42%"
+                    ).forEach { (opacityVal, label) ->
+                        val isCurrentOpacity = abs(activeGlassOpacity - opacityVal) < 0.02f
+                        SegPill(
+                            text = label,
+                            selected = isCurrentOpacity,
+                            compact = true,
+                            onClick = { AppUiSettings.setGlassOpacity(context, opacityVal) }
                         )
                     }
                 }
             }
+
+            Spacer(Modifier.height(12.dp))
+
+            // Font Scale Studio Sub-Plate (90% – 125%) + Live Vietnamese Sample Preview
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizonGlassPlate(
+                        shape = McShape.Row,
+                        containerColor = glass.glassRow,
+                        borderColor = glass.hairline
+                    )
+                    .padding(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        "🔤 Tỷ lệ cỡ chữ hiển thị",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Box(
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .background(glass.accentSoft)
+                            .border(1.dp, glass.accent.copy(alpha = 0.45f), CircleShape)
+                            .padding(horizontal = 10.dp, vertical = 3.dp)
+                    ) {
+                        Text(
+                            "${(activeFontScale * 100f).roundToInt()}%",
+                            style = HorizonTabularStyle,
+                            color = glass.accent,
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                Slider(
+                    value = activeFontScale,
+                    onValueChange = { AppUiSettings.setFontScale(context, it) },
+                    valueRange = 0.90f..1.25f,
+                    colors = SliderDefaults.colors(
+                        thumbColor = glass.accent,
+                        activeTrackColor = glass.accent,
+                        inactiveTrackColor = glass.hairline
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    listOf(
+                        0.92f to "92% Gọn",
+                        1.00f to "100%",
+                        1.04f to "104% Chuẩn",
+                        1.12f to "112% Rõ",
+                        1.20f to "120% Lớn"
+                    ).forEach { (scaleVal, label) ->
+                        val isCurrentScale = abs(activeFontScale - scaleVal) < 0.015f
+                        SegPill(
+                            text = label,
+                            selected = isCurrentScale,
+                            compact = true,
+                            onClick = { AppUiSettings.setFontScale(context, scaleVal) }
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(10.dp))
+
+                // Live Vietnamese typography & tabular preview plate
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(glass.glassInput)
+                        .border(1.dp, glass.hairline, RoundedCornerShape(12.dp))
+                        .padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "Xem trước hiển thị tiếng Việt",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = glass.accent
+                        )
+                        Text(
+                            "🟢 20.0 TPS · 1,024 MB",
+                            style = HorizonTabularStyle,
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = glass.liveGreen
+                        )
+                    }
+                    Text(
+                        "Trải nghiệm quản trị máy chủ Minecraft trên điện thoại sắc nét, thoáng mắt, không dính dấu tiếng Việt (ệ, ử, ẫ, ộ).",
+                        fontSize = 12.sp,
+                        lineHeight = 17.5.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+        }
 
             // JVM 内存上限
             McCard(title = stringResource(R.string.s1003)) {
@@ -570,8 +661,7 @@ fun SettingsScreen(vm: McViewModel, onNavigate: (SubPage) -> Unit = {}) {
                 }
             }
 
-            Spacer(Modifier.height(24.dp))
-        }
+            Spacer(Modifier.height(chromePad.calculateBottomPadding() + 28.dp))
     }
 }
 
@@ -613,7 +703,11 @@ private fun PresetSwatchTile(
                     )
             ) {
                 Canvas(modifier = Modifier.fillMaxSize()) {
-                    drawRect(color = meta.skyColor)
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(meta.skyTopColor, meta.skyHorizonColor)
+                        )
+                    )
                     val lowerTriangle = Path().apply {
                         moveTo(size.width, 0f)
                         lineTo(size.width, size.height)

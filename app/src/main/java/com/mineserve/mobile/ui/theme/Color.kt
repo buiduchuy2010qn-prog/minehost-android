@@ -52,6 +52,12 @@ val WarmDarkMuted = Color(0xFFD6BEB2)
 val WarmDarkLine = Color(0xFF45312A)
 val WarmDarkFieldGray = Color(0xFF30221D)
 
+// ── BlockWay Mojang / Modrinth / Feather / Cherry Accent Tokens ─────────────
+val MojangGreen = Color(0xFF22C55E)
+val ModrinthTeal = Color(0xFF10B981)
+val FeatherCyan = Color(0xFF0EA5E9)
+val CherryRose = Color(0xFFEC4899)
+
 // ── Bậc nền Surface Container ───────────────────────────────────────────────
 val LightContainerLowest = Color(0xFFFFFFFF)
 val LightContainerLow = Color(0xFFF7FAFF)

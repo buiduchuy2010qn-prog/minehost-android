@@ -11,10 +11,14 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -52,16 +56,18 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mineserve.mobile.R
 import com.mineserve.mobile.data.JavaServerPerformance
+import com.mineserve.mobile.ui.ApplyHorizonDialogBlur
 import com.mineserve.mobile.ui.BackBar
 import com.mineserve.mobile.ui.DebouncedTextField
 import com.mineserve.mobile.ui.HeaderBlock
 import com.mineserve.mobile.ui.HintNote
+import com.mineserve.mobile.ui.LocalHorizonChromePadding
+import com.mineserve.mobile.ui.LocalMineHostChrome
 import com.mineserve.mobile.ui.McCard
 import com.mineserve.mobile.ui.McViewModel
 import com.mineserve.mobile.ui.SegPill
 import com.mineserve.mobile.ui.theme.HorizonGlass
 import com.mineserve.mobile.ui.theme.HorizonTabularStyle
-import com.mineserve.mobile.ui.theme.IndigoSoft
 import com.mineserve.mobile.ui.theme.McShape
 import com.mineserve.mobile.ui.theme.McSpacing
 import com.mineserve.mobile.ui.theme.Muted
@@ -543,6 +549,8 @@ private fun ViewDistanceBoosterCard(
 @Composable
 fun JavaPropertiesScreen(vm: McViewModel, onBack: () -> Unit, showBackBar: Boolean = true) {
     val glass = HorizonGlass
+    val chromePad = LocalHorizonChromePadding.current
+    val sharedChrome = LocalMineHostChrome.current
     val loaded by vm.serverProperties.collectAsState()
     val propertiesExist by vm.serverPropertiesExist.collectAsState()
     val serverState by vm.serverState.collectAsState()
@@ -567,34 +575,32 @@ fun JavaPropertiesScreen(vm: McViewModel, onBack: () -> Unit, showBackBar: Boole
     }
 
     if (propertiesExist == false) {
-        Column(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+        ) {
             header()
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .verticalScroll(rememberScrollState())
-            ) {
-                HeaderBlock(
-                    eyebrow = stringResource(R.string.eyebrow_properties),
-                    title = stringResource(R.string.s997),
-                    statusBarPadding = !showBackBar
-                )
-                val activeCore = config.installedCores.find { it.name == config.activeCoreName }
-                Text(
-                    stringResource(R.string.s998, activeCore?.name ?: stringResource(R.string.s999)),
-                    color = Muted,
-                    fontSize = 10.5.sp,
-                    modifier = Modifier.padding(horizontal = McSpacing.Page)
-                )
-                Spacer(Modifier.height(12.dp))
-                PropertiesNotGeneratedCard(
-                    isRunning = serverState.isRunning,
-                    onStartServer = { vm.startServer() },
-                    onRefresh = { vm.loadServerProperties() },
-                    onCreateDefaultNow = { vm.generateDefaultServerProperties() }
-                )
-                Spacer(Modifier.height(16.dp))
-            }
+            HeaderBlock(
+                eyebrow = stringResource(R.string.eyebrow_properties),
+                title = stringResource(R.string.s997),
+                statusBarPadding = !showBackBar
+            )
+            val activeCore = config.installedCores.find { it.name == config.activeCoreName }
+            Text(
+                stringResource(R.string.s998, activeCore?.name ?: stringResource(R.string.s999)),
+                color = Muted,
+                fontSize = 10.5.sp,
+                modifier = Modifier.padding(horizontal = McSpacing.Page)
+            )
+            Spacer(Modifier.height(12.dp))
+            PropertiesNotGeneratedCard(
+                isRunning = serverState.isRunning,
+                onStartServer = { vm.startServer() },
+                onRefresh = { vm.loadServerProperties() },
+                onCreateDefaultNow = { vm.generateDefaultServerProperties() }
+            )
+            Spacer(Modifier.height(chromePad.calculateBottomPadding() + 28.dp))
         }
         return
     }
@@ -626,13 +632,13 @@ fun JavaPropertiesScreen(vm: McViewModel, onBack: () -> Unit, showBackBar: Boole
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        header()
+    Box(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
-                .weight(1f)
+                .fillMaxSize()
                 .verticalScroll(rememberScrollState())
         ) {
+            header()
             HeaderBlock(
                 eyebrow = stringResource(R.string.eyebrow_properties),
                 title = stringResource(R.string.s997),
@@ -781,19 +787,27 @@ fun JavaPropertiesScreen(vm: McViewModel, onBack: () -> Unit, showBackBar: Boole
                     }
                 }
             }
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(chromePad.calculateBottomPadding() + 92.dp))
         }
 
         val isSaved = props.isNotEmpty() && props == loaded
+        val imeBottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
+        val saveBottom = if (sharedChrome) {
+            maxOf(chromePad.calculateBottomPadding(), imeBottom) + 10.dp
+        } else {
+            maxOf(WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding(), imeBottom) + 10.dp
+        }
         Box(
             modifier = Modifier
+                .align(Alignment.BottomCenter)
                 .fillMaxWidth()
+                .padding(start = McSpacing.Page, end = McSpacing.Page, top = 6.dp, bottom = saveBottom)
                 .horizonGlassPlate(
-                    shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+                    shape = RoundedCornerShape(22.dp),
                     containerColor = glass.glassChrome,
-                    borderColor = glass.hairline
+                    borderColor = glass.specularTop.copy(alpha = 0.42f)
                 )
-                .padding(horizontal = McSpacing.Page, vertical = 10.dp)
+                .padding(horizontal = 12.dp, vertical = 10.dp)
         ) {
             Button(
                 onClick = {
@@ -824,7 +838,13 @@ fun JavaPropertiesScreen(vm: McViewModel, onBack: () -> Unit, showBackBar: Boole
     if (showRestartDialog) {
         AlertDialog(
             onDismissRequest = { showRestartDialog = false },
-            title = { Text(stringResource(R.string.s581), fontWeight = FontWeight.Bold) },
+            containerColor = glass.glassChrome,
+            shape = McShape.Dialog,
+            tonalElevation = 0.dp,
+            title = {
+                ApplyHorizonDialogBlur()
+                Text(stringResource(R.string.s581), fontWeight = FontWeight.Bold)
+            },
             text = { Text(stringResource(R.string.s1001)) },
             confirmButton = {
                 TextButton(onClick = {
@@ -891,7 +911,7 @@ private fun PropertySwitch(
             enabled = enabled,
             colors = SwitchDefaults.colors(
                 checkedThumbColor = glass.accent,
-                checkedTrackColor = IndigoSoft
+                checkedTrackColor = glass.accentSoft
             )
         )
     }
@@ -1194,7 +1214,12 @@ fun PropertiesScreen(vm: McViewModel, onBack: () -> Unit, showBackBar: Boolean =
 @Composable
 private fun PropertiesEmptyScreen(onBack: () -> Unit, showBackBar: Boolean) {
     val glass = HorizonGlass
-    Column(Modifier.fillMaxSize()) {
+    val chromePad = LocalHorizonChromePadding.current
+    Column(
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+    ) {
         if (showBackBar) BackBar(title = stringResource(R.string.props_back_title), onBack = onBack)
         HeaderBlock(stringResource(R.string.props_eyebrow), stringResource(R.string.props_back_title), statusBarPadding = !showBackBar)
         Spacer(Modifier.height(8.dp))
@@ -1219,6 +1244,7 @@ private fun PropertiesEmptyScreen(onBack: () -> Unit, showBackBar: Boolean) {
                 }
             }
         }
+        Spacer(Modifier.height(chromePad.calculateBottomPadding() + 28.dp))
     }
 }
 
@@ -1315,6 +1341,8 @@ private fun PropertiesNotGeneratedCard(
 @Composable
 private fun PowerNukkitXPropertiesScreen(vm: McViewModel, onBack: () -> Unit, showBackBar: Boolean = true) {
     val glass = HorizonGlass
+    val chromePad = LocalHorizonChromePadding.current
+    val sharedChrome = LocalMineHostChrome.current
     val loaded by vm.serverProperties.collectAsState()
     val propertiesExist by vm.serverPropertiesExist.collectAsState()
     val state by vm.serverState.collectAsState()
@@ -1324,27 +1352,33 @@ private fun PowerNukkitXPropertiesScreen(vm: McViewModel, onBack: () -> Unit, sh
     LaunchedEffect(loaded) { props = loaded }
 
     if (propertiesExist == false) {
-        Column(Modifier.fillMaxSize()) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+        ) {
             if (showBackBar) BackBar(title = stringResource(R.string.props_pnx_back), onBack = onBack)
-            Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-                HeaderBlock("POWERNUKKITX", stringResource(R.string.props_pnx_title), statusBarPadding = !showBackBar)
-                Spacer(Modifier.height(12.dp))
-                PropertiesNotGeneratedCard(
-                    isRunning = state.isRunning,
-                    onStartServer = { vm.startServer() },
-                    onRefresh = { vm.loadServerProperties() },
-                    desc = stringResource(R.string.props_pnx_not_generated_desc),
-                    hint = stringResource(R.string.props_pnx_not_generated_hint)
-                )
-                Spacer(Modifier.height(16.dp))
-            }
+            HeaderBlock("POWERNUKKITX", stringResource(R.string.props_pnx_title), statusBarPadding = !showBackBar)
+            Spacer(Modifier.height(12.dp))
+            PropertiesNotGeneratedCard(
+                isRunning = state.isRunning,
+                onStartServer = { vm.startServer() },
+                onRefresh = { vm.loadServerProperties() },
+                desc = stringResource(R.string.props_pnx_not_generated_desc),
+                hint = stringResource(R.string.props_pnx_not_generated_hint)
+            )
+            Spacer(Modifier.height(chromePad.calculateBottomPadding() + 28.dp))
         }
         return
     }
 
-    Column(Modifier.fillMaxSize()) {
-        if (showBackBar) BackBar(title = stringResource(R.string.props_pnx_back), onBack = onBack)
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+    Box(Modifier.fillMaxSize()) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+        ) {
+            if (showBackBar) BackBar(title = stringResource(R.string.props_pnx_back), onBack = onBack)
             HeaderBlock("POWERNUKKITX", stringResource(R.string.props_pnx_title), statusBarPadding = !showBackBar)
             Text(
                 stringResource(R.string.props_pnx_source),
@@ -1374,17 +1408,25 @@ private fun PowerNukkitXPropertiesScreen(vm: McViewModel, onBack: () -> Unit, sh
             McCard(title = stringResource(R.string.props_advanced), compact = true) {
                 Text(stringResource(R.string.props_advanced_hint), color = Muted, fontSize = 11.sp)
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(chromePad.calculateBottomPadding() + 92.dp))
+        }
+        val imeBottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
+        val saveBottom = if (sharedChrome) {
+            maxOf(chromePad.calculateBottomPadding(), imeBottom) + 10.dp
+        } else {
+            maxOf(WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding(), imeBottom) + 10.dp
         }
         Box(
             modifier = Modifier
+                .align(Alignment.BottomCenter)
                 .fillMaxWidth()
+                .padding(start = McSpacing.Page, end = McSpacing.Page, top = 6.dp, bottom = saveBottom)
                 .horizonGlassPlate(
-                    shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+                    shape = RoundedCornerShape(22.dp),
                     containerColor = glass.glassChrome,
-                    borderColor = glass.hairline
+                    borderColor = glass.specularTop.copy(alpha = 0.42f)
                 )
-                .padding(horizontal = McSpacing.Page, vertical = 10.dp)
+                .padding(horizontal = 12.dp, vertical = 10.dp)
         ) {
             Button(
                 onClick = { if (state.isRunning) restartConfirm = true else vm.saveServerProperties(props) },
@@ -1404,7 +1446,13 @@ private fun PowerNukkitXPropertiesScreen(vm: McViewModel, onBack: () -> Unit, sh
     }
     if (restartConfirm) AlertDialog(
         onDismissRequest = { restartConfirm = false },
-        title = { Text(stringResource(R.string.props_save), fontWeight = FontWeight.Bold) },
+        containerColor = glass.glassChrome,
+        shape = McShape.Dialog,
+        tonalElevation = 0.dp,
+        title = {
+            ApplyHorizonDialogBlur()
+            Text(stringResource(R.string.props_save), fontWeight = FontWeight.Bold)
+        },
         text = { Text(stringResource(R.string.props_save_running)) },
         confirmButton = {
             TextButton(onClick = { restartConfirm = false; vm.saveServerProperties(props) }) {

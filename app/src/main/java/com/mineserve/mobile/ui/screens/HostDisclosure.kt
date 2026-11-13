@@ -59,7 +59,7 @@ internal fun HostDisclosure(
             .fillMaxWidth()
             .horizonGlassPlate(
                 shape = McShape.Card,
-                containerColor = if (expanded) glass.glassCardStrong else glass.glassRow,
+                containerColor = if (expanded) glass.glassCard else glass.glassRow,
                 borderColor = glass.hairline,
                 highlighted = expanded
             )
@@ -94,7 +94,7 @@ internal fun HostDisclosure(
                     modifier = Modifier
                         .size(32.dp)
                         .clip(CircleShape)
-                        .background(if (expanded) glass.accentSoft else glass.glassCard),
+                        .background(if (expanded) glass.accentSoft else glass.glassRow),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(

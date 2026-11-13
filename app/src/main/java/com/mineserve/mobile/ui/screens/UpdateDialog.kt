@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mineserve.mobile.BuildConfig
 import com.mineserve.mobile.R
+import com.mineserve.mobile.ui.ApplyHorizonDialogBlur
 import com.mineserve.mobile.ui.McViewModel
 import com.mineserve.mobile.ui.McViewModel.UpdateUiState
 import com.mineserve.mobile.ui.theme.HorizonGlass
@@ -133,9 +134,13 @@ fun UpdateDialog(vm: McViewModel) {
     when (val current = state) {
         UpdateUiState.Checking -> AlertDialog(
             onDismissRequest = vm::dismissUpdateDialog,
-            modifier = Modifier.border(1.dp, glass.specularTop, McShape.Dialog),
+            modifier = Modifier.horizonGlassPlate(
+                shape = McShape.Dialog,
+                containerColor = glass.glassChrome,
+                borderColor = glass.specularTop
+            ),
             shape = McShape.Dialog,
-            containerColor = glass.glassChrome,
+            containerColor = Color.Transparent,
             tonalElevation = 0.dp,
             title = {
                 UpdateDialogHeader(
@@ -147,6 +152,7 @@ fun UpdateDialog(vm: McViewModel) {
                 )
             },
             text = {
+                ApplyHorizonDialogBlur()
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -182,9 +188,13 @@ fun UpdateDialog(vm: McViewModel) {
 
         is UpdateUiState.Available -> AlertDialog(
             onDismissRequest = vm::skipCurrentUpdate,
-            modifier = Modifier.border(1.dp, glass.specularTop, McShape.Dialog),
+            modifier = Modifier.horizonGlassPlate(
+                shape = McShape.Dialog,
+                containerColor = glass.glassChrome,
+                borderColor = glass.specularTop
+            ),
             shape = McShape.Dialog,
-            containerColor = glass.glassChrome,
+            containerColor = Color.Transparent,
             tonalElevation = 0.dp,
             title = {
                 UpdateDialogHeader(
@@ -196,6 +206,7 @@ fun UpdateDialog(vm: McViewModel) {
                 )
             },
             text = {
+                ApplyHorizonDialogBlur()
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -277,7 +288,11 @@ fun UpdateDialog(vm: McViewModel) {
                 OutlinedButton(
                     onClick = vm::skipCurrentUpdate,
                     shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.dp, glass.hairline)
+                    border = BorderStroke(1.dp, glass.hairline),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        containerColor = glass.glassRow,
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    )
                 ) {
                     Text("Bỏ qua", fontWeight = FontWeight.Medium)
                 }
@@ -289,9 +304,13 @@ fun UpdateDialog(vm: McViewModel) {
             val pct = (clamped * 100).toInt()
             AlertDialog(
                 onDismissRequest = vm::dismissUpdateDialog,
-                modifier = Modifier.border(1.dp, glass.specularTop, McShape.Dialog),
+                modifier = Modifier.horizonGlassPlate(
+                    shape = McShape.Dialog,
+                    containerColor = glass.glassChrome,
+                    borderColor = glass.specularTop
+                ),
                 shape = McShape.Dialog,
-                containerColor = glass.glassChrome,
+                containerColor = Color.Transparent,
                 tonalElevation = 0.dp,
                 title = {
                     UpdateDialogHeader(
@@ -303,6 +322,7 @@ fun UpdateDialog(vm: McViewModel) {
                     )
                 },
                 text = {
+                    ApplyHorizonDialogBlur()
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -360,9 +380,13 @@ fun UpdateDialog(vm: McViewModel) {
 
         is UpdateUiState.Downloaded -> AlertDialog(
             onDismissRequest = vm::skipCurrentUpdate,
-            modifier = Modifier.border(1.dp, glass.specularTop, McShape.Dialog),
+            modifier = Modifier.horizonGlassPlate(
+                shape = McShape.Dialog,
+                containerColor = glass.glassChrome,
+                borderColor = glass.specularTop
+            ),
             shape = McShape.Dialog,
-            containerColor = glass.glassChrome,
+            containerColor = Color.Transparent,
             tonalElevation = 0.dp,
             title = {
                 UpdateDialogHeader(
@@ -374,6 +398,7 @@ fun UpdateDialog(vm: McViewModel) {
                 )
             },
             text = {
+                ApplyHorizonDialogBlur()
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -416,7 +441,11 @@ fun UpdateDialog(vm: McViewModel) {
                 OutlinedButton(
                     onClick = vm::skipCurrentUpdate,
                     shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.dp, glass.hairline)
+                    border = BorderStroke(1.dp, glass.hairline),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        containerColor = glass.glassRow,
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    )
                 ) {
                     Text("Bỏ qua", fontWeight = FontWeight.Medium)
                 }
@@ -425,9 +454,13 @@ fun UpdateDialog(vm: McViewModel) {
 
         is UpdateUiState.Failed -> AlertDialog(
             onDismissRequest = vm::dismissUpdateDialog,
-            modifier = Modifier.border(1.dp, glass.specularTop, McShape.Dialog),
+            modifier = Modifier.horizonGlassPlate(
+                shape = McShape.Dialog,
+                containerColor = glass.glassChrome,
+                borderColor = glass.specularTop
+            ),
             shape = McShape.Dialog,
-            containerColor = glass.glassChrome,
+            containerColor = Color.Transparent,
             tonalElevation = 0.dp,
             title = {
                 UpdateDialogHeader(
@@ -438,6 +471,7 @@ fun UpdateDialog(vm: McViewModel) {
                 )
             },
             text = {
+                ApplyHorizonDialogBlur()
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()

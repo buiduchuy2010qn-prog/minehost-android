@@ -291,7 +291,7 @@ fun PeVersionPicker(
                     .fillMaxWidth()
                     .horizonGlassPlate(
                         shape = RoundedCornerShape(12.dp),
-                        containerColor = glass.glassCard,
+                        containerColor = glass.glassRow,
                         borderColor = glass.hairline
                     )
                     .padding(10.dp),
@@ -397,9 +397,13 @@ fun PeVersionPicker(
 
         AlertDialog(
             onDismissRequest = { showPickerModal = false },
-            modifier = Modifier.border(1.dp, glass.specularTop, McShape.Dialog),
+            modifier = Modifier.horizonGlassPlate(
+                shape = McShape.Dialog,
+                containerColor = glass.glassChrome,
+                borderColor = glass.specularTop
+            ),
             shape = McShape.Dialog,
-            containerColor = glass.glassChrome,
+            containerColor = Color.Transparent,
             tonalElevation = 0.dp,
             title = {
                 Text(
@@ -409,6 +413,7 @@ fun PeVersionPicker(
                 )
             },
             text = {
+                ApplyHorizonDialogBlur()
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedTextField(
                         value = modalQuery,
@@ -574,7 +579,11 @@ fun PeVersionPicker(
                 OutlinedButton(
                     onClick = { showPickerModal = false },
                     shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.dp, glass.hairline)
+                    border = BorderStroke(1.dp, glass.hairline),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        containerColor = glass.glassRow,
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    )
                 ) {
                     Text("Đóng", fontWeight = FontWeight.Medium)
                 }
@@ -679,9 +688,11 @@ fun CrossplayCompatCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(10.dp))
-                .background(glass.glassRow.copy(alpha = if (glass.isLight) 0.65f else 0.45f))
-                .border(1.dp, glass.hairline, RoundedCornerShape(10.dp))
+                .horizonGlassPlate(
+                    shape = RoundedCornerShape(10.dp),
+                    containerColor = glass.glassRow,
+                    borderColor = glass.hairline
+                )
                 .padding(horizontal = 10.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
@@ -787,7 +798,11 @@ fun CrossplayCompatCard(
                         onClick = onRetry,
                         shape = RoundedCornerShape(10.dp),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                        border = BorderStroke(1.dp, glass.hairline)
+                        border = BorderStroke(1.dp, glass.hairline),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = glass.glassRow,
+                            contentColor = MaterialTheme.colorScheme.onSurface
+                        )
                     ) {
                         Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.size(5.dp))

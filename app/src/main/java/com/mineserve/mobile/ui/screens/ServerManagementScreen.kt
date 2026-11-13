@@ -72,10 +72,12 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mineserve.mobile.ui.ApplyHorizonDialogBlur
 import com.mineserve.mobile.ui.BackBar
 import com.mineserve.mobile.ui.CoreBrandLogo
 import com.mineserve.mobile.ui.HeaderBlock
 import com.mineserve.mobile.ui.HintNote
+import com.mineserve.mobile.ui.LocalHorizonChromePadding
 import com.mineserve.mobile.ui.McCard
 import com.mineserve.mobile.ui.McViewModel
 import com.mineserve.mobile.ui.SegPill
@@ -84,7 +86,6 @@ import com.mineserve.mobile.ui.SwipeableInstantSnackbarHost
 import com.mineserve.mobile.ui.showInstantSnackbar
 import com.mineserve.mobile.ui.theme.HorizonGlass
 import com.mineserve.mobile.ui.theme.HorizonTabularStyle
-import com.mineserve.mobile.ui.theme.IndigoSoft
 import com.mineserve.mobile.ui.theme.McIcon
 import com.mineserve.mobile.ui.theme.McShape
 import com.mineserve.mobile.ui.theme.McSpacing
@@ -137,6 +138,7 @@ fun ServerManagementScreen(
     onBack: (() -> Unit)? = null
 ) {
     val glass = HorizonGlass
+    val chromePad = LocalHorizonChromePadding.current
     val config by vm.config.collectAsState()
     val state by vm.serverState.collectAsState()
     val props by vm.serverProperties.collectAsState()
@@ -862,7 +864,7 @@ fun ServerManagementScreen(
                                 onCheckedChange = { crackedDraft = it },
                                 colors = SwitchDefaults.colors(
                                     checkedThumbColor = glass.accent,
-                                    checkedTrackColor = IndigoSoft
+                                    checkedTrackColor = glass.accentSoft
                                 )
                             )
                         }
@@ -937,7 +939,7 @@ fun ServerManagementScreen(
                 Modifier
                     .fillMaxWidth()
                     .padding(horizontal = McSpacing.Page)
-                    .padding(top = 4.dp, bottom = 18.dp),
+                    .padding(top = 4.dp, bottom = chromePad.calculateBottomPadding() + 28.dp),
                 verticalArrangement = Arrangement.spacedBy(McSpacing.CardGap)
             ) {
                 ManagementEntry(
@@ -998,7 +1000,13 @@ fun ServerManagementScreen(
     serverToDelete?.let { targetSrv ->
         AlertDialog(
             onDismissRequest = { serverToDelete = null },
-            title = { Text("🗑️ Chuyển Server '${targetSrv.name}' vào Thùng rác?", fontWeight = FontWeight.Bold) },
+            containerColor = glass.glassChrome,
+            shape = McShape.Dialog,
+            tonalElevation = 0.dp,
+            title = {
+                ApplyHorizonDialogBlur()
+                Text("🗑️ Chuyển Server '${targetSrv.name}' vào Thùng rác?", fontWeight = FontWeight.Bold)
+            },
             text = {
                 Text(
                     "Toàn bộ tệp của Server '${targetSrv.name}' (bao gồm Map, Mod và cấu hình trong thư mục ${targetSrv.dirName}) sẽ được chuyển vào Thùng rác và lưu giữ an toàn trong 30 ngày.\n\n" +
@@ -1032,7 +1040,13 @@ fun ServerManagementScreen(
     trashItemToPurge?.let { targetTrash ->
         AlertDialog(
             onDismissRequest = { trashItemToPurge = null },
-            title = { Text("🔥 Xóa vĩnh viễn & Dọn sạch '${targetTrash.name}'?", fontWeight = FontWeight.Bold) },
+            containerColor = glass.glassChrome,
+            shape = McShape.Dialog,
+            tonalElevation = 0.dp,
+            title = {
+                ApplyHorizonDialogBlur()
+                Text("🔥 Xóa vĩnh viễn & Dọn sạch '${targetTrash.name}'?", fontWeight = FontWeight.Bold)
+            },
             text = {
                 Text(
                     "Toàn bộ Map, Mod, Plugin, bộ nhớ đệm và tệp của Server '${targetTrash.name}' (${vm.formatStorageBytes(targetTrash.sizeBytes)}) sẽ bị xóa sạch vĩnh viễn khỏi bộ nhớ máy và KHÔNG THỂ khôi phục lại. Bạn có chắc chắn không?"
@@ -1064,7 +1078,13 @@ fun ServerManagementScreen(
     if (confirmEmptyTrash) {
         AlertDialog(
             onDismissRequest = { confirmEmptyTrash = false },
-            title = { Text("🧹 Dọn sạch toàn bộ Thùng rác?", fontWeight = FontWeight.Bold) },
+            containerColor = glass.glassChrome,
+            shape = McShape.Dialog,
+            tonalElevation = 0.dp,
+            title = {
+                ApplyHorizonDialogBlur()
+                Text("🧹 Dọn sạch toàn bộ Thùng rác?", fontWeight = FontWeight.Bold)
+            },
             text = {
                 Text(
                     "Tất cả ${trashedServers.size} Server trong Thùng rác sẽ bị xóa vĩnh viễn và dọn sạch 100% khỏi bộ nhớ thiết bị. Thao tác này không thể hoàn tác!"
@@ -1111,7 +1131,13 @@ private fun EditServerInfoDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Sửa thông tin máy chủ", fontSize = 16.sp, fontWeight = FontWeight.SemiBold) },
+        containerColor = glass.glassChrome,
+        shape = McShape.Dialog,
+        tonalElevation = 0.dp,
+        title = {
+            ApplyHorizonDialogBlur()
+            Text("Sửa thông tin máy chủ", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+        },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(

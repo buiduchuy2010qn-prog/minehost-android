@@ -53,8 +53,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mineserve.mobile.BuildConfig
 import com.mineserve.mobile.data.ServerCore
 import com.mineserve.mobile.data.StartupPhase
+import com.mineserve.mobile.ui.ApplyHorizonDialogBlur
 import com.mineserve.mobile.ui.CoreBrandLogo
 import com.mineserve.mobile.ui.CrossplayCompatCard
+import com.mineserve.mobile.ui.LocalHorizonChromePadding
 import com.mineserve.mobile.ui.LocalMineHostChrome
 import com.mineserve.mobile.ui.McViewModel
 import com.mineserve.mobile.ui.MinecraftArtKind
@@ -118,6 +120,44 @@ private fun glassTextFieldColors() = OutlinedTextFieldDefaults.colors(
 )
 
 @Composable
+private fun glassOutlinedButtonColors(
+    contentColor: Color = MaterialTheme.colorScheme.onSurface
+) = ButtonDefaults.outlinedButtonColors(
+    containerColor = HorizonGlass.glassRow,
+    contentColor = contentColor,
+    disabledContainerColor = HorizonGlass.glassRow.copy(alpha = HorizonGlass.glassRow.alpha * 0.5f),
+    disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+)
+
+@Composable
+private fun glassFilterChipColors() = FilterChipDefaults.filterChipColors(
+    containerColor = HorizonGlass.glassRow,
+    labelColor = MaterialTheme.colorScheme.onSurface,
+    iconColor = horizonAccentInk(),
+    selectedContainerColor = HorizonGlass.accentSoft,
+    selectedLabelColor = horizonAccentInk(),
+    selectedLeadingIconColor = horizonAccentInk()
+)
+
+@Composable
+private fun glassFilterChipBorder(selected: Boolean, enabled: Boolean = true) =
+    FilterChipDefaults.filterChipBorder(
+        enabled = enabled,
+        selected = selected,
+        borderColor = HorizonGlass.hairline,
+        selectedBorderColor = HorizonGlass.accent.copy(alpha = 0.65f),
+        borderWidth = 1.dp,
+        selectedBorderWidth = 1.dp
+    )
+
+@Composable
+private fun glassSliderColors() = SliderDefaults.colors(
+    thumbColor = HorizonGlass.accent,
+    activeTrackColor = HorizonGlass.accent,
+    inactiveTrackColor = HorizonGlass.hairline
+)
+
+@Composable
 internal fun HostPage(
     title: String,
     subtitle: String,
@@ -126,12 +166,18 @@ internal fun HostPage(
     content: LazyListScope.() -> Unit
 ) {
     val sharedChrome = LocalMineHostChrome.current
+    val chromePad = LocalHorizonChromePadding.current
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Transparent),
         state = listState,
-        contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 40.dp),
+        contentPadding = PaddingValues(
+            start = 14.dp,
+            end = 14.dp,
+            top = chromePad.calculateTopPadding() + 8.dp,
+            bottom = chromePad.calculateBottomPadding() + 28.dp
+        ),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item(key = "heading") {
@@ -588,6 +634,7 @@ fun MineHostOverview(
                                     onClick = { vm.skipCurrentUpdate() },
                                     shape = RoundedCornerShape(12.dp),
                                     border = BorderStroke(1.dp, glass.hairline),
+                                    colors = glassOutlinedButtonColors(),
                                     modifier = Modifier.weight(1f)
                                 ) {
                                     Text("Bỏ qua", fontWeight = FontWeight.Medium)
@@ -730,19 +777,24 @@ fun MineHostOverview(
                     else -> glass.accentSoft
                 }
 
+                val cockpitAmbientAlpha = if (
+                    state.isRunning || stopping || state.startupPhase == StartupPhase.Failed
+                ) 0.14f else 0.06f
+
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .horizonGlassPlate(
                             shape = McShape.Card,
-                            containerColor = glass.glassCardStrong,
+                            containerColor = glass.glassCard,
                             borderColor = cockpitBorderColor,
                             highlighted = state.isRunning
                         )
                         .background(
-                            Brush.verticalGradient(
-                                colors = listOf(cockpitAmbientTop.copy(alpha = 0.55f), Color.Transparent)
-                            )
+                            brush = Brush.verticalGradient(
+                                colors = listOf(cockpitAmbientTop.copy(alpha = cockpitAmbientAlpha), Color.Transparent)
+                            ),
+                            shape = McShape.Card
                         )
                         .padding(15.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -1080,7 +1132,10 @@ fun MineHostOverview(
                                     onClick = { vm.openLatestCrashReport { navigate(SubPage.CrashReports) } },
                                     shape = RoundedCornerShape(11.dp),
                                     border = BorderStroke(1.dp, glass.dangerCoral.copy(alpha = 0.55f)),
-                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = coralInk),
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        containerColor = glass.dangerCoralSoft,
+                                        contentColor = coralInk
+                                    ),
                                     modifier = Modifier.weight(1.2f)
                                 ) {
                                     Text("🔍 Phân tích lỗi sập", fontWeight = FontWeight.SemiBold)
@@ -1089,6 +1144,7 @@ fun MineHostOverview(
                                     onClick = onConsole,
                                     shape = RoundedCornerShape(11.dp),
                                     border = BorderStroke(1.dp, glass.hairline),
+                                    colors = glassOutlinedButtonColors(),
                                     modifier = Modifier.weight(1f)
                                 ) {
                                     Text("📜 Mở nhật ký", fontWeight = FontWeight.Medium)
@@ -1104,7 +1160,7 @@ fun MineHostOverview(
                                 .fillMaxWidth()
                                 .horizonGlassPlate(
                                     shape = McShape.Row,
-                                    containerColor = Color(0xFFEA580C).copy(alpha = if (glass.isLight) 0.12f else 0.18f),
+                                    containerColor = Color(0xFFEA580C).copy(alpha = if (glass.isLight) 0.10f else 0.13f),
                                     borderColor = rustInk.copy(alpha = 0.48f)
                                 )
                                 .padding(horizontal = 12.dp, vertical = 10.dp),
@@ -1136,6 +1192,7 @@ fun MineHostOverview(
                                 },
                                 enabled = !state.isRunning && !liveTask.active,
                                 border = BorderStroke(1.dp, rustInk.copy(alpha = 0.55f)),
+                                colors = glassOutlinedButtonColors(rustInk),
                                 shape = RoundedCornerShape(11.dp),
                                 contentPadding = PaddingValues(horizontal = 11.dp, vertical = 6.dp)
                             ) {
@@ -1476,6 +1533,7 @@ fun MineHostOverview(
                                 valueRange = 512f..heapLimit.toFloat(),
                                 steps = ((heapLimit - 512) / 256 - 1).coerceAtLeast(0),
                                 enabled = !state.isRunning && !busy,
+                                colors = glassSliderColors(),
                                 onValueChangeFinished = {
                                     vm.setAutoHeap(false)
                                     vm.setMaxHeap((heap.toInt() / 256) * 256)
@@ -1675,6 +1733,7 @@ fun MineHostOverview(
                             enabled = !installingMissingDeps,
                             shape = RoundedCornerShape(11.dp),
                             border = BorderStroke(1.dp, glass.hairline),
+                            colors = glassOutlinedButtonColors(),
                             modifier = Modifier.weight(1f)
                         ) {
                             Text("📥 Chỉ tải thư viện", fontWeight = FontWeight.Medium)
@@ -1910,6 +1969,7 @@ fun MineHostOverview(
                                         onClick = { showPastePlayitKeyDialog = true },
                                         shape = RoundedCornerShape(11.dp),
                                         border = BorderStroke(1.dp, glass.hairline),
+                                        colors = glassOutlinedButtonColors(),
                                         modifier = Modifier.weight(1f)
                                     ) {
                                         Text("🔑 Dán Secret Key", fontWeight = FontWeight.Medium)
@@ -1928,6 +1988,7 @@ fun MineHostOverview(
                                             onClick = { vm.refreshPlayitTunnel() },
                                             shape = RoundedCornerShape(11.dp),
                                             border = BorderStroke(1.dp, glass.hairline),
+                                            colors = glassOutlinedButtonColors(),
                                             modifier = Modifier.weight(1f)
                                         ) {
                                             Text("🔄 Làm mới", fontWeight = FontWeight.Medium)
@@ -1937,6 +1998,7 @@ fun MineHostOverview(
                                         onClick = { showPastePlayitKeyDialog = true },
                                         shape = RoundedCornerShape(11.dp),
                                         border = BorderStroke(1.dp, glass.hairline),
+                                        colors = glassOutlinedButtonColors(),
                                         modifier = Modifier.weight(1f)
                                     ) {
                                         Text("🔑 Dán Key", fontWeight = FontWeight.Medium)
@@ -1945,7 +2007,10 @@ fun MineHostOverview(
                                         onClick = { vm.stopPlayitTunnel() },
                                         shape = RoundedCornerShape(11.dp),
                                         border = BorderStroke(1.dp, glass.dangerCoral.copy(alpha = 0.5f)),
-                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = coralInk),
+                                        colors = ButtonDefaults.outlinedButtonColors(
+                                            containerColor = glass.dangerCoralSoft,
+                                            contentColor = coralInk
+                                        ),
                                         modifier = Modifier.weight(0.85f)
                                     ) {
                                         Text("⏹️ Tắt", fontWeight = FontWeight.Medium)
@@ -2046,6 +2111,7 @@ fun MineHostOverview(
                                         },
                                         shape = RoundedCornerShape(11.dp),
                                         border = BorderStroke(1.dp, glass.hairline),
+                                        colors = glassOutlinedButtonColors(),
                                         modifier = Modifier.weight(1f)
                                     ) {
                                         Text(
@@ -2064,6 +2130,7 @@ fun MineHostOverview(
                                         },
                                         shape = RoundedCornerShape(11.dp),
                                         border = BorderStroke(1.dp, glass.hairline),
+                                        colors = glassOutlinedButtonColors(),
                                         modifier = Modifier.weight(1f)
                                     ) {
                                         Text(
@@ -2212,6 +2279,7 @@ fun MineHostOverview(
                                         },
                                         shape = RoundedCornerShape(11.dp),
                                         border = BorderStroke(1.dp, glass.hairline),
+                                        colors = glassOutlinedButtonColors(),
                                         modifier = Modifier.weight(1f)
                                     ) {
                                         Text(
@@ -2250,6 +2318,7 @@ fun MineHostOverview(
                                         },
                                         shape = RoundedCornerShape(11.dp),
                                         border = BorderStroke(1.dp, glass.hairline),
+                                        colors = glassOutlinedButtonColors(),
                                         modifier = Modifier.weight(1f)
                                     ) {
                                         Text(
@@ -2335,6 +2404,7 @@ fun MineHostOverview(
                             },
                             shape = RoundedCornerShape(12.dp),
                             border = BorderStroke(1.dp, glass.hairline),
+                            colors = glassOutlinedButtonColors(),
                             modifier = Modifier.weight(1f).heightIn(min = 48.dp)
                         ) {
                             Text("Chép tin mời", fontWeight = FontWeight.Medium)
@@ -2427,6 +2497,7 @@ fun MineHostOverview(
                                 enabled = !connectionCheckRunning,
                                 shape = RoundedCornerShape(11.dp),
                                 border = BorderStroke(1.dp, glass.hairline),
+                                colors = glassOutlinedButtonColors(),
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Text(
@@ -2438,6 +2509,7 @@ fun MineHostOverview(
                                 onClick = { vm.copyRedactedDiagnostics(context) },
                                 shape = RoundedCornerShape(11.dp),
                                 border = BorderStroke(1.dp, glass.hairline),
+                                colors = glassOutlinedButtonColors(),
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Text("📋 Xuất chẩn đoán", fontWeight = FontWeight.Medium)
@@ -2459,6 +2531,7 @@ fun MineHostOverview(
                             },
                             shape = RoundedCornerShape(11.dp),
                             border = BorderStroke(1.dp, glass.hairline),
+                            colors = glassOutlinedButtonColors(),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text("📤 Chia sẻ văn bản mời qua ứng dụng khác", fontWeight = FontWeight.Medium)
@@ -2535,10 +2608,13 @@ fun MineHostOverview(
                                 verticalArrangement = Arrangement.spacedBy(6.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
+                                val chip1Enabled = !stopping && (!isPureRust || !state.isRunning)
                                 FilterChip(
                                     selected = isOriginalJava,
                                     onClick = { vm.selectOriginalJavaEngineOneTap() },
-                                    enabled = !stopping && (!isPureRust || !state.isRunning),
+                                    enabled = chip1Enabled,
+                                    colors = glassFilterChipColors(),
+                                    border = glassFilterChipBorder(isOriginalJava, chip1Enabled),
                                     label = {
                                         Text(
                                             text = "☕ 1. Java Nguyên Bản (Full Mod)",
@@ -2549,7 +2625,9 @@ fun MineHostOverview(
                                 FilterChip(
                                     selected = isJavaRustTurbo,
                                     onClick = { vm.toggleRustJvmTurboMode(true) },
-                                    enabled = !stopping && (!isPureRust || !state.isRunning),
+                                    enabled = chip1Enabled,
+                                    colors = glassFilterChipColors(),
+                                    border = glassFilterChipBorder(isJavaRustTurbo, chip1Enabled),
                                     label = {
                                         Text(
                                             text = "⚡ 2. Java + Rust Turbo (-35% RAM)",
@@ -2557,12 +2635,15 @@ fun MineHostOverview(
                                         )
                                     }
                                 )
+                                val chip3Enabled = !state.isRunning && !stopping
                                 FilterChip(
                                     selected = isPureRust,
                                     onClick = {
                                         if (!isPureRust) vm.enableNativeRustEngineOneTap()
                                     },
-                                    enabled = !state.isRunning && !stopping,
+                                    enabled = chip3Enabled,
+                                    colors = glassFilterChipColors(),
+                                    border = glassFilterChipBorder(isPureRust, chip3Enabled),
                                     label = {
                                         Text(
                                             text = if (rustEngineStatus.isNativeBinaryInstalled || isPureRust) {
@@ -2677,6 +2758,7 @@ fun MineHostOverview(
                             valueRange = 512f..heapLimit.toFloat(),
                             steps = ((heapLimit - 512) / 256 - 1).coerceAtLeast(0),
                             enabled = !state.isRunning && !busy,
+                            colors = glassSliderColors(),
                             onValueChangeFinished = {
                                 vm.setAutoHeap(false)
                                 vm.setMaxHeap((heap.toInt() / 256) * 256)
@@ -2697,6 +2779,7 @@ fun MineHostOverview(
                             onClick = { navigate(SubPage.Plugins) },
                             shape = RoundedCornerShape(11.dp),
                             border = BorderStroke(1.dp, glass.hairline),
+                            colors = glassOutlinedButtonColors(),
                             modifier = Modifier.weight(1f)
                         ) {
                             Text(
@@ -2739,6 +2822,7 @@ fun MineHostOverview(
                                 onClick = { vm.scanWorldLagHotspotsOneTap() },
                                 shape = RoundedCornerShape(11.dp),
                                 border = BorderStroke(1.dp, glass.hairline),
+                                colors = glassOutlinedButtonColors(),
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Text("🔍 Quét điểm nóng", fontWeight = FontWeight.SemiBold)
@@ -2752,6 +2836,7 @@ fun MineHostOverview(
                                     },
                                     shape = RoundedCornerShape(11.dp),
                                     border = BorderStroke(1.dp, glass.hairline),
+                                    colors = glassOutlinedButtonColors(),
                                     modifier = Modifier.weight(1f)
                                 ) {
                                     Text("📍 Chép lệnh TP", fontWeight = FontWeight.Medium)
@@ -2772,6 +2857,10 @@ fun MineHostOverview(
                                 enabled = state.isRunning,
                                 shape = RoundedCornerShape(11.dp),
                                 border = BorderStroke(1.dp, glass.liveGreen.copy(alpha = 0.5f)),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    containerColor = glass.liveGreenSoft,
+                                    contentColor = greenInk
+                                ),
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Text("🛡️ Dọn quái lag (Giữ dân làng)", fontWeight = FontWeight.SemiBold)
@@ -2809,6 +2898,7 @@ fun MineHostOverview(
                                 onClick = { vm.runCountdownClearGroundItems(countdownSec = 0) },
                                 shape = RoundedCornerShape(11.dp),
                                 border = BorderStroke(1.dp, glass.hairline),
+                                colors = glassOutlinedButtonColors(),
                                 modifier = Modifier.weight(0.85f)
                             ) {
                                 Text("⚡ Dọn ngay", fontWeight = FontWeight.Medium)
@@ -2819,6 +2909,7 @@ fun MineHostOverview(
                                 onClick = { vm.clearHostileLagMobsAndGc() },
                                 shape = RoundedCornerShape(11.dp),
                                 border = BorderStroke(1.dp, glass.hairline),
+                                colors = glassOutlinedButtonColors(),
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Text("🧟 Dọn quái & lưu Map", fontWeight = FontWeight.Medium)
@@ -2862,6 +2953,10 @@ fun MineHostOverview(
                             onClick = { vm.applyUltraLiteLowRamMode() },
                             shape = RoundedCornerShape(11.dp),
                             border = BorderStroke(1.dp, glass.liveGreen.copy(alpha = 0.5f)),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = glass.liveGreenSoft,
+                                contentColor = greenInk
+                            ),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(
@@ -2875,6 +2970,7 @@ fun MineHostOverview(
                                 enabled = !isTogglingOptPack && !stopping,
                                 shape = RoundedCornerShape(11.dp),
                                 border = BorderStroke(1.dp, glass.hairline),
+                                colors = glassOutlinedButtonColors(),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Text(
@@ -2887,6 +2983,7 @@ fun MineHostOverview(
                                 enabled = !installingMissingDeps,
                                 shape = RoundedCornerShape(11.dp),
                                 border = BorderStroke(1.dp, glass.hairline),
+                                colors = glassOutlinedButtonColors(),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Text(
@@ -2915,7 +3012,10 @@ fun MineHostOverview(
                                     enabled = !state.isRunning && !stopping,
                                     shape = RoundedCornerShape(11.dp),
                                     border = BorderStroke(1.dp, glass.warnAmber),
-                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = amberInk),
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        containerColor = glass.warnAmberSoft,
+                                        contentColor = amberInk
+                                    ),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Text(
@@ -3135,6 +3235,7 @@ fun MineHostOverview(
                                 onClick = { vm.runCountdownServerRestart(countdownSec = 30) },
                                 shape = RoundedCornerShape(11.dp),
                                 border = BorderStroke(1.dp, glass.hairline),
+                                colors = glassOutlinedButtonColors(),
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Text("🔄 Khởi động lại (30s)", fontWeight = FontWeight.Medium)
@@ -3221,6 +3322,7 @@ fun MineHostOverview(
                                         onClick = { vm.applyInGameScoreboardPresetOneTap("off") },
                                         shape = RoundedCornerShape(11.dp),
                                         border = BorderStroke(1.dp, glass.hairline),
+                                        colors = glassOutlinedButtonColors(),
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Text("🧹 Ẩn bảng điểm Scoreboard", fontWeight = FontWeight.Medium)
@@ -3255,9 +3357,12 @@ fun MineHostOverview(
                                         "purple" to "🟣 Tím",
                                         "pink" to "🩷 Hồng"
                                     ).forEach { (cId, cLabel) ->
+                                        val isColSel = selectedColor == cId
                                         FilterChip(
-                                            selected = selectedColor == cId,
+                                            selected = isColSel,
                                             onClick = { selectedColor = cId },
+                                            colors = glassFilterChipColors(),
+                                            border = glassFilterChipBorder(isColSel),
                                             label = { Text(cLabel, fontWeight = FontWeight.SemiBold) }
                                         )
                                     }
@@ -3278,6 +3383,7 @@ fun MineHostOverview(
                                             onClick = { vm.applyInGameBossBarOneTap(bossInput, selectedColor, false) },
                                             shape = RoundedCornerShape(11.dp),
                                             border = BorderStroke(1.dp, glass.hairline),
+                                            colors = glassOutlinedButtonColors(),
                                             modifier = Modifier.weight(0.85f)
                                         ) {
                                             Text("🧹 Ẩn BossBar", fontWeight = FontWeight.Medium)
@@ -3372,6 +3478,7 @@ fun MineHostOverview(
                                         onClick = { vm.applyQuickWorldEnvironment(cmd, desc) },
                                         shape = RoundedCornerShape(10.dp),
                                         border = BorderStroke(1.dp, glass.hairline),
+                                        colors = glassOutlinedButtonColors(),
                                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                                     ) {
                                         Text(lbl, fontWeight = FontWeight.Medium)
@@ -3388,12 +3495,14 @@ fun MineHostOverview(
                                     onClick = { vm.applyQuickWorldEnvironment("weather rain", "Trời Mưa") },
                                     shape = RoundedCornerShape(10.dp),
                                     border = BorderStroke(1.dp, glass.hairline),
+                                    colors = glassOutlinedButtonColors(),
                                     modifier = Modifier.weight(1f)
                                 ) { Text("🌧️ Gọi mưa", fontWeight = FontWeight.Medium) }
                                 OutlinedButton(
                                     onClick = { vm.applyQuickWorldEnvironment("weather thunder", "Sấm Sét") },
                                     shape = RoundedCornerShape(10.dp),
                                     border = BorderStroke(1.dp, glass.hairline),
+                                    colors = glassOutlinedButtonColors(),
                                     modifier = Modifier.weight(1f)
                                 ) { Text("⛈️ Sấm sét", fontWeight = FontWeight.Medium) }
                             }
@@ -3425,6 +3534,7 @@ fun MineHostOverview(
                                     onClick = { navigate(SubPage.WorldManage) },
                                     shape = RoundedCornerShape(11.dp),
                                     border = BorderStroke(1.dp, glass.hairline),
+                                    colors = glassOutlinedButtonColors(),
                                     modifier = Modifier.weight(1f)
                                 ) {
                                     Text("🌍 Kho Seed đẹp & Kiểu Map", fontWeight = FontWeight.Medium)
@@ -3442,6 +3552,7 @@ fun MineHostOverview(
                                     onClick = { navigate(SubPage.Plugins) },
                                     shape = RoundedCornerShape(11.dp),
                                     border = BorderStroke(1.dp, glass.hairline),
+                                    colors = glassOutlinedButtonColors(),
                                     modifier = Modifier.weight(1f)
                                 ) {
                                     Text("🎨 Gói Việt hóa & Quặng sáng", fontWeight = FontWeight.Medium)
@@ -3497,6 +3608,7 @@ fun MineHostOverview(
                                 onClick = { vm.applyQuickWorldBorder(1000, "Chuẩn Nhẹ (1.000 ô)") },
                                 shape = RoundedCornerShape(11.dp),
                                 border = BorderStroke(1.dp, glass.hairline),
+                                colors = glassOutlinedButtonColors(),
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Text("🧱 1.000 ô (Chuẩn)", style = MaterialTheme.typography.labelLarge.merge(HorizonTabularStyle), fontWeight = FontWeight.Medium)
@@ -3507,6 +3619,7 @@ fun MineHostOverview(
                                 onClick = { vm.applyQuickWorldBorder(2500, "Rộng Vừa (2.500 ô)") },
                                 shape = RoundedCornerShape(11.dp),
                                 border = BorderStroke(1.dp, glass.hairline),
+                                colors = glassOutlinedButtonColors(),
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Text("🧱 2.500 ô (Rộng)", style = MaterialTheme.typography.labelLarge.merge(HorizonTabularStyle), fontWeight = FontWeight.Medium)
@@ -3515,6 +3628,7 @@ fun MineHostOverview(
                                 onClick = { vm.applyQuickWorldBorder(29999984, "Mở Khóa Biên Giới") },
                                 shape = RoundedCornerShape(11.dp),
                                 border = BorderStroke(1.dp, glass.hairline),
+                                colors = glassOutlinedButtonColors(),
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Text("🔓 Mở biên giới", fontWeight = FontWeight.Medium)
@@ -3543,9 +3657,12 @@ fun MineHostOverview(
                                 val statusDot = if (kp.isOnline) "🟢" else "🕒"
                                 val opCrown = if (kp.isOp) " 👑" else ""
                                 val wlShield = if (kp.isWhitelisted) " 🛡️" else ""
+                                val kpSelected = selectedTargetPlayer.equals(kp.name, ignoreCase = true)
                                 FilterChip(
-                                    selected = selectedTargetPlayer.equals(kp.name, ignoreCase = true),
+                                    selected = kpSelected,
                                     onClick = { selectedTargetPlayer = kp.name },
+                                    colors = glassFilterChipColors(),
+                                    border = glassFilterChipBorder(kpSelected),
                                     label = {
                                         Text(
                                             text = "$statusDot ${kp.name}$opCrown$wlShield",
@@ -3559,6 +3676,11 @@ fun MineHostOverview(
                                     vm.refreshOnlinePlayers()
                                     vm.refreshPlayers()
                                 },
+                                colors = AssistChipDefaults.assistChipColors(
+                                    containerColor = glass.glassRow,
+                                    labelColor = MaterialTheme.colorScheme.onSurface
+                                ),
+                                border = BorderStroke(1.dp, glass.hairline),
                                 label = { Text("🔄 Làm mới") }
                             )
                         }
@@ -3582,6 +3704,7 @@ fun MineHostOverview(
                                 onClick = { vm.quickPlayerAction(selectedTargetPlayer, "deop") },
                                 shape = RoundedCornerShape(11.dp),
                                 border = BorderStroke(1.dp, glass.hairline),
+                                colors = glassOutlinedButtonColors(),
                                 modifier = Modifier.weight(1f)
                             ) { Text("🚫 Gỡ quyền OP", fontWeight = FontWeight.Medium) }
                         }
@@ -3590,12 +3713,14 @@ fun MineHostOverview(
                                 onClick = { vm.quickPlayerAction(selectedTargetPlayer, "whitelist_add") },
                                 shape = RoundedCornerShape(11.dp),
                                 border = BorderStroke(1.dp, glass.hairline),
+                                colors = glassOutlinedButtonColors(),
                                 modifier = Modifier.weight(1f)
                             ) { Text("🛡️ Thêm Whitelist", fontWeight = FontWeight.Medium) }
                             OutlinedButton(
                                 onClick = { vm.quickPlayerAction(selectedTargetPlayer, "kick") },
                                 shape = RoundedCornerShape(11.dp),
                                 border = BorderStroke(1.dp, glass.hairline),
+                                colors = glassOutlinedButtonColors(),
                                 modifier = Modifier.weight(1f)
                             ) { Text("👢 Đuổi ra (Kick)", fontWeight = FontWeight.Medium) }
                         }
@@ -3609,6 +3734,10 @@ fun MineHostOverview(
                                 onClick = { vm.quickPlayerAction(selectedTargetPlayer, "starter_kit") },
                                 shape = RoundedCornerShape(11.dp),
                                 border = BorderStroke(1.dp, glass.accent.copy(alpha = 0.45f)),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    containerColor = glass.accentSoft,
+                                    contentColor = accentInk
+                                ),
                                 modifier = Modifier.weight(1f)
                             ) { Text("🎁 Tặng Starter Kit", fontWeight = FontWeight.SemiBold) }
                         }
@@ -3617,12 +3746,14 @@ fun MineHostOverview(
                                 onClick = { vm.quickPlayerAction(selectedTargetPlayer, "gm_survival") },
                                 shape = RoundedCornerShape(11.dp),
                                 border = BorderStroke(1.dp, glass.hairline),
+                                colors = glassOutlinedButtonColors(),
                                 modifier = Modifier.weight(1f)
                             ) { Text("🗡️ Chế độ Sinh tồn", fontWeight = FontWeight.Medium) }
                             OutlinedButton(
                                 onClick = { vm.quickPlayerAction(selectedTargetPlayer, "gm_creative") },
                                 shape = RoundedCornerShape(11.dp),
                                 border = BorderStroke(1.dp, glass.hairline),
+                                colors = glassOutlinedButtonColors(),
                                 modifier = Modifier.weight(1f)
                             ) { Text("🧱 Chế độ Sáng tạo", fontWeight = FontWeight.Medium) }
                         }
@@ -3631,12 +3762,14 @@ fun MineHostOverview(
                                 onClick = { vm.quickPlayerAction(selectedTargetPlayer, "gm_spectator") },
                                 shape = RoundedCornerShape(11.dp),
                                 border = BorderStroke(1.dp, glass.hairline),
+                                colors = glassOutlinedButtonColors(),
                                 modifier = Modifier.weight(1f)
                             ) { Text("👻 Chế độ Khán giả", fontWeight = FontWeight.Medium) }
                             OutlinedButton(
                                 onClick = { vm.quickPlayerAction(selectedTargetPlayer, "tp_spawn") },
                                 shape = RoundedCornerShape(11.dp),
                                 border = BorderStroke(1.dp, glass.hairline),
+                                colors = glassOutlinedButtonColors(),
                                 modifier = Modifier.weight(1f)
                             ) { Text("📍 Dịch chuyển về Spawn", fontWeight = FontWeight.Medium) }
                         }
@@ -3662,12 +3795,15 @@ fun MineHostOverview(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             motdPresets.forEach { (label, rawMotd) ->
+                                val motdSel = customMotdText == rawMotd
                                 FilterChip(
-                                    selected = customMotdText == rawMotd,
+                                    selected = motdSel,
                                     onClick = {
                                         customMotdText = rawMotd
                                         vm.applyVisualMotdPreset(rawMotd, label)
                                     },
+                                    colors = glassFilterChipColors(),
+                                    border = glassFilterChipBorder(motdSel),
                                     label = { Text(label, fontWeight = FontWeight.Medium) }
                                 )
                             }
@@ -3706,6 +3842,7 @@ fun MineHostOverview(
                             onClick = { showOledBlackScreen = true },
                             shape = RoundedCornerShape(11.dp),
                             border = BorderStroke(1.dp, glass.hairline),
+                            colors = glassOutlinedButtonColors(),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text("🌙 Mở màn hình đen khi treo server", fontWeight = FontWeight.SemiBold)
@@ -3857,6 +3994,10 @@ fun MineHostOverview(
                             enabled = state.isRunning,
                             shape = RoundedCornerShape(11.dp),
                             border = BorderStroke(1.dp, glass.accent.copy(alpha = 0.45f)),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = glass.accentSoft,
+                                contentColor = accentInk
+                            ),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text("✨ Áp dụng đổi Skin ngay (/skin set)", fontWeight = FontWeight.SemiBold)
@@ -3887,15 +4028,20 @@ fun MineHostOverview(
                                 knownPlayers.forEach { kp ->
                                     val dot = if (kp.isOnline) "🟢" else "🕒"
                                     val crown = if (kp.isOp) " 👑" else ""
+                                    val vipSel = vipTargetPlayer.equals(kp.name, ignoreCase = true)
                                     FilterChip(
-                                        selected = vipTargetPlayer.equals(kp.name, ignoreCase = true),
+                                        selected = vipSel,
                                         onClick = { vipTargetPlayer = kp.name },
+                                        colors = glassFilterChipColors(),
+                                        border = glassFilterChipBorder(vipSel),
                                         label = { Text("$dot ${kp.name}$crown", fontWeight = FontWeight.Medium) }
                                     )
                                 }
                                 FilterChip(
                                     selected = vipGlowing,
                                     onClick = { vipGlowing = !vipGlowing },
+                                    colors = glassFilterChipColors(),
+                                    border = glassFilterChipBorder(vipGlowing),
                                     label = { Text("✨ Phát sáng", fontWeight = FontWeight.Medium) }
                                 )
                             }
@@ -3923,6 +4069,7 @@ fun MineHostOverview(
                                             enabled = state.isRunning,
                                             shape = RoundedCornerShape(11.dp),
                                             border = BorderStroke(1.dp, glass.hairline),
+                                            colors = glassOutlinedButtonColors(),
                                             modifier = Modifier.weight(1f)
                                         ) {
                                             Text(rLabel, fontWeight = FontWeight.SemiBold)
@@ -3951,6 +4098,10 @@ fun MineHostOverview(
                                     enabled = state.isRunning,
                                     shape = RoundedCornerShape(11.dp),
                                     border = BorderStroke(1.dp, glass.accent.copy(alpha = 0.45f)),
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        containerColor = glass.accentSoft,
+                                        contentColor = accentInk
+                                    ),
                                     modifier = Modifier.weight(1f)
                                 ) {
                                     Text("⚡ Đào nhanh (5p)", fontWeight = FontWeight.SemiBold)
@@ -3962,6 +4113,7 @@ fun MineHostOverview(
                                     enabled = state.isRunning,
                                     shape = RoundedCornerShape(11.dp),
                                     border = BorderStroke(1.dp, glass.hairline),
+                                    colors = glassOutlinedButtonColors(),
                                     modifier = Modifier.weight(1f)
                                 ) {
                                     Text("✨ Mưa +30 cấp EXP", fontWeight = FontWeight.Medium)
@@ -3971,6 +4123,7 @@ fun MineHostOverview(
                                     enabled = state.isRunning,
                                     shape = RoundedCornerShape(11.dp),
                                     border = BorderStroke(1.dp, glass.hairline),
+                                    colors = glassOutlinedButtonColors(),
                                     modifier = Modifier.weight(1f)
                                 ) {
                                     Text("🌕 Đêm thử thách", fontWeight = FontWeight.Medium)
@@ -4002,6 +4155,7 @@ fun MineHostOverview(
                                     enabled = state.isRunning,
                                     shape = RoundedCornerShape(11.dp),
                                     border = BorderStroke(1.dp, glass.hairline),
+                                    colors = glassOutlinedButtonColors(),
                                     modifier = Modifier.weight(0.85f)
                                 ) {
                                     Text("🟢 Mở Sinh tồn", fontWeight = FontWeight.Medium)
@@ -4032,6 +4186,7 @@ fun MineHostOverview(
                                         enabled = state.isRunning,
                                         shape = RoundedCornerShape(11.dp),
                                         border = BorderStroke(1.dp, glass.hairline),
+                                        colors = glassOutlinedButtonColors(),
                                         modifier = Modifier.weight(1f)
                                     ) {
                                         Text(sLabel, fontWeight = FontWeight.SemiBold)
@@ -4073,9 +4228,12 @@ fun MineHostOverview(
                             ) {
                                 knownPlayers.forEach { kp ->
                                     val dot = if (kp.isOnline) "🟢" else "🕒"
+                                    val warpSel = warpTargetPlayer.equals(kp.name, ignoreCase = true)
                                     FilterChip(
-                                        selected = warpTargetPlayer.equals(kp.name, ignoreCase = true),
+                                        selected = warpSel,
                                         onClick = { warpTargetPlayer = kp.name },
+                                        colors = glassFilterChipColors(),
+                                        border = glassFilterChipBorder(warpSel),
                                         label = { Text("$dot ${kp.name}", fontWeight = FontWeight.Medium) }
                                     )
                                 }
@@ -4099,6 +4257,7 @@ fun MineHostOverview(
                                             enabled = state.isRunning,
                                             shape = RoundedCornerShape(11.dp),
                                             border = BorderStroke(1.dp, glass.hairline),
+                                            colors = glassOutlinedButtonColors(),
                                             modifier = Modifier.weight(1f)
                                         ) {
                                             Text(
@@ -4173,6 +4332,10 @@ fun MineHostOverview(
                                 },
                                 shape = RoundedCornerShape(11.dp),
                                 border = BorderStroke(1.dp, glass.accent.copy(alpha = 0.45f)),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    containerColor = glass.accentSoft,
+                                    contentColor = accentInk
+                                ),
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Text("➕ Lưu mốc tọa độ", fontWeight = FontWeight.SemiBold)
@@ -4230,9 +4393,12 @@ fun MineHostOverview(
                                     30 to "💤 Sau 30 phút",
                                     60 to "💤 Sau 60 phút"
                                 ).forEach { (mins, label) ->
+                                    val sleepSel = autoSleepIdleMinutes == mins
                                     FilterChip(
-                                        selected = autoSleepIdleMinutes == mins,
+                                        selected = sleepSel,
                                         onClick = { vm.setAutoSleepIdleMinutes(mins) },
+                                        colors = glassFilterChipColors(),
+                                        border = glassFilterChipBorder(sleepSel),
                                         label = { Text(label, fontWeight = FontWeight.Medium) }
                                     )
                                 }
@@ -4250,12 +4416,15 @@ fun MineHostOverview(
                                     knownPlayers.forEach { kp ->
                                         val dot = if (kp.isOnline) "🟢" else "🕒"
                                         val crown = if (kp.isOp) " 👑" else ""
+                                        val admSel = adminNameInput.equals(kp.name, ignoreCase = true)
                                         FilterChip(
-                                            selected = adminNameInput.equals(kp.name, ignoreCase = true),
+                                            selected = admSel,
                                             onClick = {
                                                 adminNameInput = kp.name
                                                 vm.saveOpGuardConfig(kp.name, opGuardEnabled)
                                             },
+                                            colors = glassFilterChipColors(),
+                                            border = glassFilterChipBorder(admSel),
                                             label = { Text("$dot ${kp.name}$crown", fontWeight = FontWeight.Medium) }
                                         )
                                     }
@@ -4416,6 +4585,7 @@ fun MineHostOverview(
                                 onClick = { vm.applyUltraLiteLowRamMode() },
                                 shape = RoundedCornerShape(11.dp),
                                 border = BorderStroke(1.dp, glass.hairline),
+                                colors = glassOutlinedButtonColors(),
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Text("⚡ Bật chế độ máy RAM ít", fontWeight = FontWeight.SemiBold)
@@ -4430,12 +4600,17 @@ fun MineHostOverview(
     if (showPastePlayitKeyDialog) {
         AlertDialog(
             onDismissRequest = { showPastePlayitKeyDialog = false },
-            modifier = Modifier.border(1.dp, glass.specularTop, McShape.Dialog),
+            modifier = Modifier.horizonGlassPlate(
+                shape = McShape.Dialog,
+                containerColor = glass.glassChrome,
+                borderColor = glass.specularTop
+            ),
             shape = McShape.Dialog,
-            containerColor = glass.glassChrome,
+            containerColor = Color.Transparent,
             tonalElevation = 0.dp,
             title = { Text("🔑 Dán Secret Key Playit.gg", fontWeight = FontWeight.SemiBold) },
             text = {
+                ApplyHorizonDialogBlur()
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
                         text = "Sao chép mã Secret Key (64 ký tự hex) từ trang Agent trên playit.gg và dán vào bên dưới để kết nối trực tiếp:",
@@ -4461,6 +4636,7 @@ fun MineHostOverview(
                             },
                             shape = RoundedCornerShape(11.dp),
                             border = BorderStroke(1.dp, glass.hairline),
+                            colors = glassOutlinedButtonColors(),
                             modifier = Modifier.weight(1f)
                         ) {
                             Text("📋 Dán từ bộ nhớ tạm")
@@ -4474,6 +4650,7 @@ fun MineHostOverview(
                                 },
                                 shape = RoundedCornerShape(11.dp),
                                 border = BorderStroke(1.dp, glass.hairline),
+                                colors = glassOutlinedButtonColors(),
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Text("♻️ Tạo mã Claim mới")
@@ -4508,14 +4685,19 @@ fun MineHostOverview(
         val selectedProfile = com.mineserve.mobile.server.ProHostFeatures.resolveRustProfile(quickRustProfileId)
         AlertDialog(
             onDismissRequest = { showRustQuickCreateDialog = false },
-            modifier = Modifier.border(1.dp, glass.specularTop, McShape.Dialog),
+            modifier = Modifier.horizonGlassPlate(
+                shape = McShape.Dialog,
+                containerColor = glass.glassChrome,
+                borderColor = glass.specularTop
+            ),
             shape = McShape.Dialog,
-            containerColor = glass.glassChrome,
+            containerColor = Color.Transparent,
             tonalElevation = 0.dp,
             title = {
                 Text("🦀 Tạo Server Rust Thuần (0% Java)", fontWeight = FontWeight.SemiBold)
             },
             text = {
+                ApplyHorizonDialogBlur()
                 Column(
                     modifier = Modifier.verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -4591,9 +4773,12 @@ fun MineHostOverview(
                     Text("2. Chế độ chơi:", fontWeight = FontWeight.SemiBold)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         listOf("survival" to "🌱 Sinh tồn", "creative" to "🎨 Sáng tạo", "hardcore" to "💀 Siêu khó").forEach { (gmKey, gmLbl) ->
+                            val gmSel = quickRustGamemode == gmKey
                             FilterChip(
-                                selected = quickRustGamemode == gmKey,
+                                selected = gmSel,
                                 onClick = { quickRustGamemode = gmKey },
+                                colors = glassFilterChipColors(),
+                                border = glassFilterChipBorder(gmSel),
                                 label = { Text(gmLbl) }
                             )
                         }
@@ -4634,12 +4819,17 @@ fun MineHostOverview(
     if (showRustVersionSwitchDialog) {
         AlertDialog(
             onDismissRequest = { showRustVersionSwitchDialog = false },
-            modifier = Modifier.border(1.dp, glass.specularTop, McShape.Dialog),
+            modifier = Modifier.horizonGlassPlate(
+                shape = McShape.Dialog,
+                containerColor = glass.glassChrome,
+                borderColor = glass.specularTop
+            ),
             shape = McShape.Dialog,
-            containerColor = glass.glassChrome,
+            containerColor = Color.Transparent,
             tonalElevation = 0.dp,
             title = { Text("🔄 Đổi phiên bản Server Rust", fontWeight = FontWeight.SemiBold) },
             text = {
+                ApplyHorizonDialogBlur()
                 Column(
                     modifier = Modifier.verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -4719,9 +4909,13 @@ fun MineHostOverview(
     confirm?.let { action ->
         AlertDialog(
             onDismissRequest = { confirm = null },
-            modifier = Modifier.border(1.dp, glass.specularTop, McShape.Dialog),
+            modifier = Modifier.horizonGlassPlate(
+                shape = McShape.Dialog,
+                containerColor = glass.glassChrome,
+                borderColor = glass.specularTop
+            ),
             shape = McShape.Dialog,
-            containerColor = glass.glassChrome,
+            containerColor = Color.Transparent,
             tonalElevation = 0.dp,
             title = {
                 Text(
@@ -4730,6 +4924,7 @@ fun MineHostOverview(
                 )
             },
             text = {
+                ApplyHorizonDialogBlur()
                 Text(
                     text = "Người chơi đang online sẽ tạm ngắt kết nối. MineHost sẽ gửi lệnh lưu thế giới (save-all) trước khi dừng.",
                     style = MaterialTheme.typography.bodyMedium,
@@ -5111,6 +5306,7 @@ fun MineHostRemote(vm: McViewModel, onBack: () -> Unit) {
                             enabled = tokenInput.isNotBlank() && (chatInput.isNotBlank() || savedChatId.isNotBlank()) && !task.active,
                             shape = RoundedCornerShape(12.dp),
                             border = BorderStroke(1.dp, glass.hairline),
+                            colors = glassOutlinedButtonColors(),
                             modifier = Modifier.weight(1f).heightIn(min = 48.dp)
                         ) {
                             Text("🎛️ Gửi bảng 10 nút")
@@ -5120,6 +5316,7 @@ fun MineHostRemote(vm: McViewModel, onBack: () -> Unit) {
                             enabled = tokenInput.isNotBlank() && (chatInput.isNotBlank() || savedChatId.isNotBlank()) && !task.active,
                             shape = RoundedCornerShape(12.dp),
                             border = BorderStroke(1.dp, glass.hairline),
+                            colors = glassOutlinedButtonColors(),
                             modifier = Modifier.weight(1f).heightIn(min = 48.dp)
                         ) {
                             Text("📨 Gửi ảnh trạng thái")
@@ -5240,6 +5437,7 @@ fun MineHostRemote(vm: McViewModel, onBack: () -> Unit) {
                             enabled = webhookInput.isNotBlank() && !task.active,
                             shape = RoundedCornerShape(12.dp),
                             border = BorderStroke(1.dp, glass.hairline),
+                            colors = glassOutlinedButtonColors(),
                             modifier = Modifier.weight(1f).heightIn(min = 48.dp)
                         ) {
                             Text("Gửi thử", fontWeight = FontWeight.Medium)
@@ -5323,6 +5521,7 @@ fun MineHostRemote(vm: McViewModel, onBack: () -> Unit) {
                             },
                             shape = RoundedCornerShape(12.dp),
                             border = BorderStroke(1.dp, glass.hairline),
+                            colors = glassOutlinedButtonColors(),
                             modifier = Modifier.weight(1f).heightIn(min = 48.dp)
                         ) {
                             Text("🔄 Đổi mã 6 số")
@@ -5334,6 +5533,7 @@ fun MineHostRemote(vm: McViewModel, onBack: () -> Unit) {
                             },
                             shape = RoundedCornerShape(12.dp),
                             border = BorderStroke(1.dp, glass.hairline),
+                            colors = glassOutlinedButtonColors(),
                             modifier = Modifier.weight(1f).heightIn(min = 48.dp)
                         ) {
                             Text("📋 Chép mã PIN")
@@ -5362,6 +5562,7 @@ fun MineHostRemote(vm: McViewModel, onBack: () -> Unit) {
                                 },
                                 shape = RoundedCornerShape(12.dp),
                                 border = BorderStroke(1.dp, glass.hairline),
+                                colors = glassOutlinedButtonColors(),
                                 modifier = Modifier.weight(1f).heightIn(min = 48.dp)
                             ) {
                                 Text("Sao chép URL")
@@ -5417,6 +5618,7 @@ fun MineHostManage(vm: McViewModel, navigate: (SubPage) -> Unit) {
     val autoUploadDriveOnStop by vm.autoUploadDriveOnStop.collectAsStateWithLifecycle()
     val fontScale by AppUiSettings.fontScale.collectAsStateWithLifecycle()
     val colorPreset by AppUiSettings.colorPreset.collectAsStateWithLifecycle()
+    val glassOpacity by AppUiSettings.glassOpacity.collectAsStateWithLifecycle()
 
     HostPage(
         title = "Cài đặt & Công cụ",
@@ -5592,6 +5794,60 @@ fun MineHostManage(vm: McViewModel, navigate: (SubPage) -> Unit) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
+                        text = "🔮 Độ trong suốt mặt kính (Pure Horizon Glass)",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = "${(glassOpacity * 100).toInt()}%",
+                        style = MaterialTheme.typography.labelLarge.merge(HorizonTabularStyle),
+                        fontWeight = FontWeight.SemiBold,
+                        color = accentInk
+                    )
+                }
+                AdaptiveActionRow {
+                    listOf(
+                        0.16f to "✨ Pha lê 16%",
+                        0.26f to "🌌 Chuẩn 26%",
+                        0.42f to "🛡️ Kính Đậm 42%"
+                    ).forEach { (opVal, opLabel) ->
+                        val isOpSel = kotlin.math.abs(glassOpacity - opVal) < 0.03f
+                        OutlinedButton(
+                            onClick = { AppUiSettings.setGlassOpacity(context, opVal) },
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(
+                                if (isOpSel) 1.2.dp else 1.dp,
+                                if (isOpSel) glass.accent else glass.hairline
+                            ),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = if (isOpSel) glass.accentSoft else glass.glassRow,
+                                contentColor = if (isOpSel) accentInk else MaterialTheme.colorScheme.onSurface
+                            ),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(
+                                text = opLabel,
+                                style = MaterialTheme.typography.labelMedium.merge(HorizonTabularStyle),
+                                fontWeight = if (isOpSel) FontWeight.SemiBold else FontWeight.Medium
+                            )
+                        }
+                    }
+                }
+                Slider(
+                    value = glassOpacity,
+                    onValueChange = { AppUiSettings.setGlassOpacity(context, it) },
+                    valueRange = 0.14f..0.52f,
+                    colors = glassSliderColors()
+                )
+
+                HorizontalDivider(color = glass.hairline)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
                         text = "Cỡ chữ toàn ứng dụng",
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.SemiBold
@@ -5719,6 +5975,7 @@ fun MineHostManage(vm: McViewModel, navigate: (SubPage) -> Unit) {
                         onClick = { uri.openUri("https://github.com/buiduchuy2010qn-prog/minehost-android/releases") },
                         shape = RoundedCornerShape(12.dp),
                         border = BorderStroke(1.dp, glass.hairline),
+                        colors = glassOutlinedButtonColors(),
                         modifier = Modifier.weight(1f)
                     ) {
                         Text("GitHub Releases", fontWeight = FontWeight.Medium)
@@ -5737,6 +5994,7 @@ fun MineHostManage(vm: McViewModel, navigate: (SubPage) -> Unit) {
                             },
                             shape = RoundedCornerShape(11.dp),
                             border = BorderStroke(1.dp, glass.hairline),
+                            colors = glassOutlinedButtonColors(),
                             modifier = Modifier.weight(1f)
                         ) {
                             Text("Nhật ký lỗi app", fontWeight = FontWeight.Medium)
@@ -5745,6 +6003,7 @@ fun MineHostManage(vm: McViewModel, navigate: (SubPage) -> Unit) {
                             onClick = { showPrivacyModal = true },
                             shape = RoundedCornerShape(11.dp),
                             border = BorderStroke(1.dp, glass.hairline),
+                            colors = glassOutlinedButtonColors(),
                             modifier = Modifier.weight(1f)
                         ) {
                             Text("Quyền riêng tư", fontWeight = FontWeight.Medium)
@@ -5779,12 +6038,17 @@ fun MineHostManage(vm: McViewModel, navigate: (SubPage) -> Unit) {
                 if (showCrashLogModal) {
                     AlertDialog(
                         onDismissRequest = { showCrashLogModal = false },
-                        modifier = Modifier.border(1.dp, glass.specularTop, McShape.Dialog),
+                        modifier = Modifier.horizonGlassPlate(
+                            shape = McShape.Dialog,
+                            containerColor = glass.glassChrome,
+                            borderColor = glass.specularTop
+                        ),
                         shape = McShape.Dialog,
-                        containerColor = glass.glassChrome,
+                        containerColor = Color.Transparent,
                         tonalElevation = 0.dp,
                         title = { Text("🛠️ Nhật ký lỗi ứng dụng", fontWeight = FontWeight.SemiBold) },
                         text = {
+                            ApplyHorizonDialogBlur()
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -5826,12 +6090,17 @@ fun MineHostManage(vm: McViewModel, navigate: (SubPage) -> Unit) {
                 if (showPrivacyModal) {
                     AlertDialog(
                         onDismissRequest = { showPrivacyModal = false },
-                        modifier = Modifier.border(1.dp, glass.specularTop, McShape.Dialog),
+                        modifier = Modifier.horizonGlassPlate(
+                            shape = McShape.Dialog,
+                            containerColor = glass.glassChrome,
+                            borderColor = glass.specularTop
+                        ),
                         shape = McShape.Dialog,
-                        containerColor = glass.glassChrome,
+                        containerColor = Color.Transparent,
                         tonalElevation = 0.dp,
                         title = { Text("⚖️ Chính sách quyền riêng tư & Giấy phép", fontWeight = FontWeight.SemiBold) },
                         text = {
+                            ApplyHorizonDialogBlur()
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -6169,9 +6438,12 @@ fun MineHostCrossplay(vm: McViewModel, onBack: () -> Unit) {
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     presetCrossVersions.forEach { (ver, tag) ->
+                        val isSel = selectedCrossVer == ver
                         FilterChip(
-                            selected = selectedCrossVer == ver,
+                            selected = isSel,
                             onClick = { selectedCrossVer = ver },
+                            colors = glassFilterChipColors(),
+                            border = glassFilterChipBorder(isSel),
                             label = {
                                 Text(
                                     text = "$ver ($tag)",
@@ -6357,6 +6629,7 @@ fun MineHostCrossplay(vm: McViewModel, onBack: () -> Unit) {
                                 },
                                 shape = RoundedCornerShape(11.dp),
                                 border = BorderStroke(1.dp, glass.hairline),
+                                colors = glassOutlinedButtonColors(),
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Text("📋 Chép địa chỉ PE", fontWeight = FontWeight.Medium)

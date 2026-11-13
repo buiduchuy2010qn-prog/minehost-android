@@ -86,8 +86,10 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
 import com.mineserve.mobile.R
 import com.mineserve.mobile.server.PlayerManager
+import com.mineserve.mobile.ui.ApplyHorizonDialogBlur
 import com.mineserve.mobile.ui.EmptyHint
 import com.mineserve.mobile.ui.HeaderBlock
+import com.mineserve.mobile.ui.LocalHorizonChromePadding
 import com.mineserve.mobile.ui.McCard
 import com.mineserve.mobile.ui.McViewModel
 import com.mineserve.mobile.ui.SegmentedTabs
@@ -162,6 +164,7 @@ fun PlayersScreen(
     onPlayerTools: () -> Unit = {}
 ) {
     val glass = HorizonGlass
+    val chromePad = LocalHorizonChromePadding.current
     val serverState by vm.serverState.collectAsState()
     val ops by vm.ops.collectAsState()
     val whitelist by vm.whitelist.collectAsState()
@@ -215,29 +218,23 @@ fun PlayersScreen(
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                HeaderBlock(
-                    eyebrow = stringResource(R.string.eyebrow_players),
-                    title = stringResource(R.string.s672),
-                    modifier = Modifier.weight(1f)
-                )
-                IconButton(
-                    onClick = { showHistory = true },
-                    modifier = Modifier
-                        .padding(end = 8.dp)
-                        .size(McIcon.Touch)
-                ) {
-                    Icon(
-                        Icons.Outlined.History,
-                        contentDescription = stringResource(R.string.s673),
-                        tint = glass.accent,
-                        modifier = Modifier.size(McIcon.Item)
-                    )
+            HeaderBlock(
+                eyebrow = stringResource(R.string.eyebrow_players),
+                title = stringResource(R.string.s672),
+                trailing = {
+                    IconButton(
+                        onClick = { showHistory = true },
+                        modifier = Modifier.size(McIcon.Touch)
+                    ) {
+                        Icon(
+                            Icons.Outlined.History,
+                            contentDescription = stringResource(R.string.s673),
+                            tint = glass.accent,
+                            modifier = Modifier.size(McIcon.Item)
+                        )
+                    }
                 }
-            }
+            )
 
             // Lối tắt công cụ Skin, danh hiệu & bảo vệ OP dạng viên thuốc mặt kính mờ
             Box(
@@ -385,7 +382,7 @@ fun PlayersScreen(
                     onShowDetail = { detailInitialTab = 0; detailPlayer = DetailInfo.Banned(it) }
                 )
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(chromePad.calculateBottomPadding() + 28.dp))
         }
     }
 
@@ -514,7 +511,9 @@ private fun PlayerHistoryDialog(
         onDismissRequest = onDismiss,
         containerColor = glass.glassChrome,
         shape = McShape.Dialog,
+        tonalElevation = 0.dp,
         title = {
+            ApplyHorizonDialogBlur()
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Outlined.History, contentDescription = null, tint = glass.accent, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.size(8.dp))
@@ -632,7 +631,11 @@ private fun PlayerHistoryDialog(
             onDismissRequest = { clearConfirm = false },
             containerColor = glass.glassChrome,
             shape = McShape.Dialog,
-            title = { Text(stringResource(R.string.player_clear_title), fontWeight = FontWeight.Bold) },
+            tonalElevation = 0.dp,
+            title = {
+                ApplyHorizonDialogBlur()
+                Text(stringResource(R.string.player_clear_title), fontWeight = FontWeight.Bold)
+            },
             text = { Text(stringResource(R.string.player_clear_hint), fontSize = 12.5.sp) },
             confirmButton = {
                 TextButton(onClick = { onClear(); clearConfirm = false }) {
@@ -1335,7 +1338,11 @@ private fun PersistentPlayerHistorySection(
             onDismissRequest = { pendingDeletePlayer = null },
             containerColor = glass.glassChrome,
             shape = McShape.Dialog,
-            title = { Text("Xóa lịch sử của「$targetPlayer」?", fontWeight = FontWeight.Bold) },
+            tonalElevation = 0.dp,
+            title = {
+                ApplyHorizonDialogBlur()
+                Text("Xóa lịch sử của「$targetPlayer」?", fontWeight = FontWeight.Bold)
+            },
             text = {
                 Text(
                     "Bản ghi lịch sử tham gia của「$targetPlayer」trong ứng dụng sẽ bị xóa.\n\n" +
@@ -1367,7 +1374,11 @@ private fun PersistentPlayerHistorySection(
             onDismissRequest = { confirmClearAll = false },
             containerColor = glass.glassChrome,
             shape = McShape.Dialog,
-            title = { Text("Xóa toàn bộ lịch sử người chơi?", fontWeight = FontWeight.Bold) },
+            tonalElevation = 0.dp,
+            title = {
+                ApplyHorizonDialogBlur()
+                Text("Xóa toàn bộ lịch sử người chơi?", fontWeight = FontWeight.Bold)
+            },
             text = {
                 Text(
                     "Toàn bộ danh sách lịch sử người chơi của server này trong ứng dụng sẽ được làm trống.\n\n" +
@@ -1948,9 +1959,11 @@ private fun PlayerDetailDialog(
         onDismissRequest = onDismiss,
         containerColor = glass.glassChrome,
         shape = McShape.Dialog,
+        tonalElevation = 0.dp,
         properties = DialogProperties(usePlatformDefaultWidth = false),
         modifier = Modifier.fillMaxWidth(0.95f),
         title = {
+            ApplyHorizonDialogBlur()
             Row(verticalAlignment = Alignment.CenterVertically) {
                 MinecraftPlayerAvatar(name = playerName, isOnline = isPlayerOnline || activity?.active == true, size = 36.dp)
                 Spacer(Modifier.size(10.dp))
@@ -2236,7 +2249,11 @@ private fun PlayerDetailDialog(
             onDismissRequest = { confirmDeleteThisPlayer = false },
             containerColor = glass.glassChrome,
             shape = McShape.Dialog,
-            title = { Text("Xóa lịch sử của「$targetName」?", fontWeight = FontWeight.Bold) },
+            tonalElevation = 0.dp,
+            title = {
+                ApplyHorizonDialogBlur()
+                Text("Xóa lịch sử của「$targetName」?", fontWeight = FontWeight.Bold)
+            },
             text = {
                 Text(
                     "Bản ghi lịch sử tham gia của「$targetName」trong ứng dụng sẽ bị xóa. Dữ liệu nhân vật và túi đồ trong thế giới (world/playerdata) KHÔNG bị ảnh hưởng.",
@@ -2322,7 +2339,7 @@ fun MinecraftPlayerAvatar(
                     .align(Alignment.BottomEnd)
                     .size(11.dp)
                     .clip(CircleShape)
-                    .background(glass.glassCardStrong)
+                    .background(glass.glassCard)
                     .padding(1.5.dp)
                     .clip(CircleShape)
                     .background(if (isOnline) glass.liveGreen else Muted)

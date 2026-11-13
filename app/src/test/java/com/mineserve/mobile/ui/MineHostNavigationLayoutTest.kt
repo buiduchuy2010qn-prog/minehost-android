@@ -5,7 +5,10 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material3.*
@@ -15,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.*
@@ -26,6 +30,7 @@ import com.mineserve.mobile.ui.screens.AdaptiveActionRow
 import com.mineserve.mobile.ui.screens.HostAction
 import com.mineserve.mobile.ui.screens.HostDisclosure
 import com.mineserve.mobile.ui.theme.EyeCareColorPreset
+import com.mineserve.mobile.ui.theme.HorizonGlass
 import com.mineserve.mobile.ui.theme.HorizonGlassBackdrop
 import com.mineserve.mobile.ui.theme.LocalHorizonGlass
 import com.mineserve.mobile.ui.theme.McTypography
@@ -130,6 +135,114 @@ class MineHostNavigationLayoutTest {
         }
     }
 
+    @Composable
+    private fun HorizonMobileScrollablePreview(scrollState: ScrollState) {
+        val glass = HorizonGlass
+        MineHostNavigation(
+            title = "Máy chủ",
+            serverName = "Paper 1.21.4",
+            tab = McTab.Dashboard,
+            page = null,
+            onTab = {},
+            onNavigate = {},
+            liveStatusPillText = "🟢 20.0 TPS • 36°C",
+            liveStatusState = 2
+        ) {
+            val navChrome = LocalHorizonChromePadding.current
+            Scaffold(
+                containerColor = Color.Transparent,
+                contentWindowInsets = WindowInsets(0.dp),
+                bottomBar = { MineHostBottomBar(selected = McTab.Dashboard, onSelect = {}) }
+            ) { scaffoldPadding ->
+                val fullChrome = PaddingValues(
+                    top = navChrome.calculateTopPadding(),
+                    bottom = maxOf(navChrome.calculateBottomPadding(), scaffoldPadding.calculateBottomPadding())
+                )
+                CompositionLocalProvider(LocalHorizonChromePadding provides fullChrome) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .testTag("horizon-scroll-viewport")
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .verticalScroll(scrollState)
+                                .padding(
+                                    top = fullChrome.calculateTopPadding() + 6.dp,
+                                    bottom = fullChrome.calculateBottomPadding() + 20.dp
+                                ),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            McCard(
+                                title = "Trạng thái máy chủ",
+                                trailing = { StatusPill("Online", glass.liveGreen) }
+                            ) {
+                                Text(
+                                    "Không gian kính pha lê Pure Horizon Glass xuyên thấu bầu trời sao và hoàng hôn.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    SegPill("Java Mod", selected = true, modifier = Modifier.weight(1f)) {}
+                                    SegPill("Nhân Rust", selected = false, modifier = Modifier.weight(1f)) {}
+                                }
+                            }
+                            McCard(
+                                title = "Kết nối LAN & Playit",
+                                trailing = { StatusPill("25565", glass.skyCyan) }
+                            ) {
+                                HintNote("Đồng bộ tự động cổng Java PC (TCP) và Bedrock PE (UDP 19132).")
+                            }
+                            McCard(
+                                title = "Hiệu năng & Nhiệt độ",
+                                trailing = { StatusPill("36°C", glass.liveGreen) }
+                            ) {
+                                ProgressTrack(percent = 44)
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    "RAM 2.2 / 5.0 GB • TPS 20.0 ổn định trên nhân ARM64.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            McCard(
+                                title = "Sao lưu đám mây Telegram",
+                                trailing = { StatusPill("Tự động", glass.accent) }
+                            ) {
+                                Text(
+                                    "Cuộn mượt trực tiếp phía dưới viên thuốc kính đỉnh và thanh dock kính nổi đáy.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            McCard(
+                                title = "Kho Mod & Plugin Modrinth",
+                                trailing = { StatusPill("18 gói", glass.liveGreen) }
+                            ) {
+                                HintNote("Tự động kiểm tra thư viện Fabric API và dọn xung đột phiên bản 1.21.4.")
+                            }
+                            McCard(
+                                title = "Nhật ký Console trực tiếp",
+                                trailing = { StatusPill("Live", glass.skyCyan) }
+                            ) {
+                                Text(
+                                    "[Server thread/INFO]: Done (3.42s)! Mặt kính trong suốt nhìn rõ sao đêm và dãy núi Horizon.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     @Test fun fiveTabsKeepConsoleSecondAndEveryPageHasATitle() {
         assertEquals(5, mineHostMainTabs.size)
         assertEquals(5, mineHostMainTabs.map { it.first }.distinct().size)
@@ -219,7 +332,13 @@ class MineHostNavigationLayoutTest {
     }
 
     @Test fun allPalettesKeepBodyAndButtonTextReadable() {
-        assertEquals(5, EyeCareColorPreset.entries.size)
+        assertEquals(9, EyeCareColorPreset.entries.size)
+        val defaultGlass = horizonGlassTokensFor(EyeCareColorPreset.SoftSlate)
+        assertEquals(15, defaultGlass.skyStops.size)
+        assertTrue(defaultGlass.glassCard.alpha <= 0.30f)
+        assertTrue(defaultGlass.glassChrome.alpha <= 0.38f)
+        assertTrue(defaultGlass.glassRow.alpha <= 0.14f)
+
         EyeCareColorPreset.entries.forEach { preset ->
             val scheme = mineHostColorScheme(preset)
             listOf(
@@ -232,7 +351,7 @@ class MineHostNavigationLayoutTest {
                 val a = text.luminance()
                 val b = background.luminance()
                 val ratio = (maxOf(a, b) + 0.05f) / (minOf(a, b) + 0.05f)
-                assertTrue("$preset has insufficient text contrast: $ratio", ratio >= 4.8f)
+                assertTrue("$preset has insufficient text contrast: $ratio", ratio >= 5.0f)
             }
         }
     }
@@ -243,6 +362,7 @@ class MineHostNavigationLayoutTest {
         controller!!.get().setContent {
             val scheme = mineHostColorScheme(activePreset)
             val glass = horizonGlassTokensFor(activePreset)
+            val scrollState = rememberScrollState(0)
             MaterialTheme(colorScheme = scheme, typography = McTypography) {
                 CompositionLocalProvider(LocalHorizonGlass provides glass) {
                     Surface(
@@ -252,45 +372,7 @@ class MineHostNavigationLayoutTest {
                     ) {
                         Box(Modifier.fillMaxSize()) {
                             HorizonGlassBackdrop()
-                            MineHostNavigation(
-                                title = "Máy chủ",
-                                serverName = "Paper 1.21.4",
-                                tab = McTab.Dashboard,
-                                page = null,
-                                onTab = {},
-                                onNavigate = {},
-                                liveStatusPillText = "🟢 20.0 TPS • 36°C",
-                                liveStatusState = 2
-                            ) {
-                                Column(Modifier.fillMaxSize()) {
-                                    Column(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .padding(top = 8.dp),
-                                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        McCard(
-                                            title = "Trạng thái máy chủ",
-                                            trailing = { StatusPill("Online", glass.liveGreen) }
-                                        ) {
-                                            Text(
-                                                "Không gian kính mờ Pure Horizon Glass hiển thị sắc nét dấu tiếng Việt.",
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                            Spacer(Modifier.height(8.dp))
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                            ) {
-                                                SegPill("Java Mod", selected = true, modifier = Modifier.weight(1f)) {}
-                                                SegPill("Nhân Rust", selected = false, modifier = Modifier.weight(1f)) {}
-                                            }
-                                        }
-                                    }
-                                    MineHostBottomBar(selected = McTab.Dashboard, onSelect = {})
-                                }
-                            }
+                            HorizonMobileScrollablePreview(scrollState = scrollState)
                         }
                     }
                 }
@@ -299,6 +381,8 @@ class MineHostNavigationLayoutTest {
         compose.waitForIdle()
         compose.onNodeWithContentDescription("Chủ đề giao diện").assertIsDisplayed()
         compose.onNodeWithContentDescription("Mở danh mục").assertIsDisplayed()
+        val viewportBounds = compose.onNodeWithTag("horizon-scroll-viewport").fetchSemanticsNode().boundsInRoot
+        assertEquals(0f, viewportBounds.top, 0.5f)
         assertTextFits()
         screenshot("horizon-dusk-nav-320")
 
@@ -306,5 +390,37 @@ class MineHostNavigationLayoutTest {
         compose.waitForIdle()
         assertTextFits()
         screenshot("horizon-sakura-nav-320")
+    }
+
+    @Test
+    @Config(qualifiers = "w360dp-h780dp-xhdpi")
+    fun horizonScrolledGlassProvesTrueTransparency() {
+        var capturedScroll: ScrollState? = null
+        controller = Robolectric.buildActivity(ComponentActivity::class.java).setup()
+        controller!!.get().setContent {
+            val scheme = mineHostColorScheme(EyeCareColorPreset.SoftSlate)
+            val glass = horizonGlassTokensFor(EyeCareColorPreset.SoftSlate)
+            val initialScrollPx = with(LocalDensity.current) { 56.dp.roundToPx() }
+            val scrollState = rememberScrollState(initial = initialScrollPx)
+            capturedScroll = scrollState
+            MaterialTheme(colorScheme = scheme, typography = McTypography) {
+                CompositionLocalProvider(LocalHorizonGlass provides glass) {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = Color.Transparent,
+                        contentColor = scheme.onSurface
+                    ) {
+                        Box(Modifier.fillMaxSize()) {
+                            HorizonGlassBackdrop()
+                            HorizonMobileScrollablePreview(scrollState = scrollState)
+                        }
+                    }
+                }
+            }
+        }
+        compose.waitForIdle()
+        assertTrue("Expected non-zero scroll behind glass chrome", (capturedScroll?.value ?: 0) > 0)
+        assertTextFits()
+        screenshot("horizon-scrolled-glass-360")
     }
 }

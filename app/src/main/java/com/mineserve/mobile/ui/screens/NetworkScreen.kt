@@ -83,10 +83,12 @@ import com.mineserve.mobile.data.TunnelState
 import com.mineserve.mobile.data.TunnelStatus
 import com.mineserve.mobile.server.tunnel.StunDiagnostics
 import com.mineserve.mobile.ui.AddressCopyRow
+import com.mineserve.mobile.ui.ApplyHorizonDialogBlur
 import com.mineserve.mobile.ui.BackBar
 import com.mineserve.mobile.ui.DebouncedTextField
 import com.mineserve.mobile.ui.HeaderBlock
 import com.mineserve.mobile.ui.HintNote
+import com.mineserve.mobile.ui.LocalHorizonChromePadding
 import com.mineserve.mobile.ui.McCard
 import com.mineserve.mobile.ui.McViewModel
 import com.mineserve.mobile.ui.PlayConnectionMode
@@ -116,6 +118,7 @@ fun NetworkScreen(
     onOpenFrpEditor: (String?) -> Unit = {}
 ) {
     val glass = HorizonGlass
+    val chromePad = LocalHorizonChromePadding.current
     val config by vm.config.collectAsState()
     val serverPort by vm.serverPort.collectAsState()
     val lanIp by vm.lanIp.collectAsState()
@@ -276,7 +279,7 @@ fun NetworkScreen(
                 }
             }
 
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(chromePad.calculateBottomPadding() + 28.dp))
         }
     }
 }
@@ -1216,7 +1219,11 @@ private fun FrpProfilePickerDialog(
         onDismissRequest = onDismiss,
         containerColor = glass.glassChrome,
         shape = McShape.Dialog,
-        title = { Text(stringResource(R.string.net_frp_dialog_title), fontSize = 16.sp, fontWeight = FontWeight.SemiBold) },
+        tonalElevation = 0.dp,
+        title = {
+            ApplyHorizonDialogBlur()
+            Text(stringResource(R.string.net_frp_dialog_title), fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+        },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -1301,7 +1308,11 @@ private fun FrpProfilePickerDialog(
             onDismissRequest = { pendingDelete = null },
             containerColor = glass.glassChrome,
             shape = McShape.Dialog,
-            title = { Text(stringResource(R.string.net_frp_delete_title), fontSize = 16.sp, fontWeight = FontWeight.SemiBold) },
+            tonalElevation = 0.dp,
+            title = {
+                ApplyHorizonDialogBlur()
+                Text(stringResource(R.string.net_frp_delete_title), fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+            },
             text = { Text(stringResource(R.string.net_frp_delete_message, target.name), fontSize = 13.sp) },
             confirmButton = {
                 Button(
@@ -1546,7 +1557,7 @@ private fun TunnelLogPreview(
     playitState: PlayitUiState
 ) {
     val glass = HorizonGlass
-    val codePlateBg = if (glass.isLight) glass.glassCardStrong else Color(0xFF0D0C1D).copy(alpha = 0.80f)
+    val codePlateBg = if (glass.isLight) Color.White.copy(alpha = 0.44f) else Color(0xFF0B0A1A).copy(alpha = 0.34f)
     val tunnelLogs: List<String> = remember(consoleLines, playitState.recentLogs) {
         val fromConsole = consoleLines.filter { it.contains("[tunnel]") }
         if (fromConsole.isNotEmpty()) fromConsole
@@ -1636,7 +1647,9 @@ private fun TunnelLogPreview(
             onDismissRequest = { showFullLog = false },
             containerColor = glass.glassChrome,
             shape = McShape.Dialog,
+            tonalElevation = 0.dp,
             title = {
+                ApplyHorizonDialogBlur()
                 Text(stringResource(R.string.s618, tunnelLogs.size), style = HorizonTabularStyle, fontWeight = FontWeight.Bold)
             },
             text = {

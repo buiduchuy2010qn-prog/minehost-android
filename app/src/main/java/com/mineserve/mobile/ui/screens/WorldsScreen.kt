@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.sp
 import com.mineserve.mobile.server.ExternalBackupStore
 import com.mineserve.mobile.server.ProHostFeatures
 import com.mineserve.mobile.server.Worlds
+import com.mineserve.mobile.ui.ApplyHorizonDialogBlur
 import com.mineserve.mobile.ui.McViewModel
 import com.mineserve.mobile.ui.theme.HorizonGlass
 import com.mineserve.mobile.ui.theme.HorizonTabularStyle
@@ -317,7 +318,7 @@ fun WorldsScreen(
                     .fillMaxWidth()
                     .horizonGlassPlate(
                         shape = RoundedCornerShape(20.dp),
-                        containerColor = glass.glassCardStrong,
+                        containerColor = glass.glassCard,
                         borderColor = glass.liveGreen.copy(alpha = 0.65f),
                         highlighted = true
                     )
@@ -670,7 +671,7 @@ fun WorldsScreen(
                                     .fillMaxWidth()
                                     .horizonGlassPlate(
                                         shape = RoundedCornerShape(18.dp),
-                                        containerColor = if (isCurrentlyActivePack) glass.glassCardStrong else glass.glassRow,
+                                        containerColor = if (isCurrentlyActivePack) glass.liveGreenSoft else glass.glassRow,
                                         borderColor = if (isCurrentlyActivePack) glass.liveGreen.copy(alpha = 0.65f) else glass.hairline,
                                         highlighted = isCurrentlyActivePack
                                     )
@@ -1112,7 +1113,7 @@ fun WorldsScreen(
                             .fillMaxWidth()
                             .horizonGlassPlate(
                                 shape = RoundedCornerShape(18.dp),
-                                containerColor = if (world.isActive) glass.glassCardStrong else glass.glassCard,
+                                containerColor = glass.glassCard,
                                 borderColor = if (world.isActive) glass.liveGreen.copy(alpha = 0.65f) else glass.hairline,
                                 highlighted = world.isActive
                             )
@@ -1232,7 +1233,7 @@ fun WorldsScreen(
                             .fillMaxWidth()
                             .horizonGlassPlate(
                                 shape = RoundedCornerShape(20.dp),
-                                containerColor = glass.glassCardStrong,
+                                containerColor = glass.glassCard,
                                 borderColor = if (world.isActive) glass.liveGreen.copy(alpha = 0.65f) else glass.accent.copy(alpha = 0.45f),
                                 highlighted = world.isActive
                             )
@@ -1737,7 +1738,13 @@ fun WorldsScreen(
         val folder = modeSpec?.folderName.orEmpty()
         AlertDialog(
             onDismissRequest = { pendingPlayableMode = null },
-            title = { Text("Xác nhận dùng Pack: $title?", fontWeight = FontWeight.SemiBold) },
+            containerColor = glass.glassChrome,
+            shape = McShape.Dialog,
+            tonalElevation = 0.dp,
+            title = {
+                ApplyHorizonDialogBlur()
+                Text("Xác nhận dùng Pack: $title?", fontWeight = FontWeight.SemiBold)
+            },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Column(
@@ -1791,7 +1798,13 @@ fun WorldsScreen(
     pendingPresetWorld?.takeIf { supportsJavaWorldCreation }?.let { request ->
         AlertDialog(
             onDismissRequest = { pendingPresetWorld = null },
-            title = { Text("Tạo map '${request.name.ifBlank { "world_new" }}'?") },
+            containerColor = glass.glassChrome,
+            shape = McShape.Dialog,
+            tonalElevation = 0.dp,
+            title = {
+                ApplyHorizonDialogBlur()
+                Text("Tạo map '${request.name.ifBlank { "world_new" }}'?")
+            },
             text = {
                 Text(
                     "Kiểu địa hình: ${request.label}. " +
@@ -1824,7 +1837,13 @@ fun WorldsScreen(
     pendingImportArchive?.let { item ->
         AlertDialog(
             onDismissRequest = { pendingImportArchive = null },
-            title = { Text("Sử dụng tệp '${item.displayTitle}'?", fontWeight = FontWeight.SemiBold) },
+            containerColor = glass.glassChrome,
+            shape = McShape.Dialog,
+            tonalElevation = 0.dp,
+            title = {
+                ApplyHorizonDialogBlur()
+                Text("Sử dụng tệp '${item.displayTitle}'?", fontWeight = FontWeight.SemiBold)
+            },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
@@ -1880,7 +1899,13 @@ fun WorldsScreen(
     pendingDeleteArchive?.let { item ->
         AlertDialog(
             onDismissRequest = { pendingDeleteArchive = null },
-            title = { Text("Xóa tệp này khỏi điện thoại?", fontWeight = FontWeight.SemiBold) },
+            containerColor = glass.glassChrome,
+            shape = McShape.Dialog,
+            tonalElevation = 0.dp,
+            title = {
+                ApplyHorizonDialogBlur()
+                Text("Xóa tệp này khỏi điện thoại?", fontWeight = FontWeight.SemiBold)
+            },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(item.displayTitle, fontWeight = FontWeight.SemiBold, color = glass.accent)
@@ -1917,7 +1942,13 @@ fun WorldsScreen(
         val selectedBytes = localArchives.filter { it.path in selectedPaths }.sumOf { it.sizeBytes }
         AlertDialog(
             onDismissRequest = { confirmBatchDelete = false },
-            title = { Text("Xóa ${selectedPaths.size} tệp đã chọn?", fontWeight = FontWeight.SemiBold) },
+            containerColor = glass.glassChrome,
+            shape = McShape.Dialog,
+            tonalElevation = 0.dp,
+            title = {
+                ApplyHorizonDialogBlur()
+                Text("Xóa ${selectedPaths.size} tệp đã chọn?", fontWeight = FontWeight.SemiBold)
+            },
             text = {
                 Text(
                     "Bạn có chắc chắn muốn xóa vĩnh viễn ${selectedPaths.size} tệp Map / Bản sao lưu đã chọn khỏi điện thoại?\n\n" +
@@ -1945,7 +1976,13 @@ fun WorldsScreen(
     if (confirmCleanupAllAuto) {
         AlertDialog(
             onDismissRequest = { confirmCleanupAllAuto = false },
-            title = { Text("Xóa tất cả bản sao lưu tự động?", fontWeight = FontWeight.SemiBold) },
+            containerColor = glass.glassChrome,
+            shape = McShape.Dialog,
+            tonalElevation = 0.dp,
+            title = {
+                ApplyHorizonDialogBlur()
+                Text("Xóa tất cả bản sao lưu tự động?", fontWeight = FontWeight.SemiBold)
+            },
             text = {
                 Text(
                     "Sẽ xóa toàn bộ ${autoBackupItems.size} bản sao lưu tự động trên điện thoại và giải phóng ${Worlds.formatSize(autoBackupBytes)}.\n\n" +
@@ -1971,7 +2008,13 @@ fun WorldsScreen(
     deleteDirectTarget?.let { world ->
         AlertDialog(
             onDismissRequest = { deleteDirectTarget = null },
-            title = { Text("Xóa hẳn thế giới '${world.name}' khỏi máy?", fontWeight = FontWeight.SemiBold) },
+            containerColor = glass.glassChrome,
+            shape = McShape.Dialog,
+            tonalElevation = 0.dp,
+            title = {
+                ApplyHorizonDialogBlur()
+                Text("Xóa hẳn thế giới '${world.name}' khỏi máy?", fontWeight = FontWeight.SemiBold)
+            },
             text = {
                 Text(
                     "Thao tác này sẽ xóa vĩnh viễn thư mục thế giới '${world.name}' (kèm chiều Nether & The End) khỏi máy mà KHÔNG tạo thêm tệp ZIP sao lưu.\n\n" +
@@ -2002,7 +2045,13 @@ fun WorldsScreen(
     deleteOtherServerWorldTarget?.let { item ->
         AlertDialog(
             onDismissRequest = { deleteOtherServerWorldTarget = null },
-            title = { Text("Xóa thế giới '${item.worldName}' của Server '${item.serverName}'?", fontWeight = FontWeight.SemiBold) },
+            containerColor = glass.glassChrome,
+            shape = McShape.Dialog,
+            tonalElevation = 0.dp,
+            title = {
+                ApplyHorizonDialogBlur()
+                Text("Xóa thế giới '${item.worldName}' của Server '${item.serverName}'?", fontWeight = FontWeight.SemiBold)
+            },
             text = {
                 Text(
                     "Sẽ xóa vĩnh viễn thế giới '${item.worldName}' trong Server '${item.serverName}' (${item.coreDisplay} ${item.mcVersion}).\n\n" +
@@ -2030,7 +2079,13 @@ fun WorldsScreen(
     pendingFolderUri?.let { uri ->
         AlertDialog(
             onDismissRequest = { pendingFolderUri = null },
-            title = { Text("Nhập thế giới từ Thư mục", fontWeight = FontWeight.SemiBold) },
+            containerColor = glass.glassChrome,
+            shape = McShape.Dialog,
+            tonalElevation = 0.dp,
+            title = {
+                ApplyHorizonDialogBlur()
+                Text("Nhập thế giới từ Thư mục", fontWeight = FontWeight.SemiBold)
+            },
             text = {
                 Column {
                     Text(
@@ -2070,7 +2125,13 @@ fun WorldsScreen(
     renameTarget?.let { world ->
         AlertDialog(
             onDismissRequest = { renameTarget = null },
-            title = { Text("Đổi tên thế giới '${world.name}'", fontWeight = FontWeight.SemiBold) },
+            containerColor = glass.glassChrome,
+            shape = McShape.Dialog,
+            tonalElevation = 0.dp,
+            title = {
+                ApplyHorizonDialogBlur()
+                Text("Đổi tên thế giới '${world.name}'", fontWeight = FontWeight.SemiBold)
+            },
             text = {
                 Column {
                     Text(
@@ -2110,7 +2171,11 @@ fun WorldsScreen(
     healthReport?.let { report ->
         AlertDialog(
             onDismissRequest = { vm.clearWorldHealthReport() },
+            containerColor = glass.glassChrome,
+            shape = McShape.Dialog,
+            tonalElevation = 0.dp,
             title = {
+                ApplyHorizonDialogBlur()
                 Text(
                     report.summaryTitle,
                     fontSize = 15.sp,
@@ -2142,7 +2207,13 @@ fun WorldsScreen(
     activate?.let { world ->
         AlertDialog(
             onDismissRequest = { activate = null },
-            title = { Text("Xác nhận chuyển sang Map '${world.name}'?", fontWeight = FontWeight.SemiBold) },
+            containerColor = glass.glassChrome,
+            shape = McShape.Dialog,
+            tonalElevation = 0.dp,
+            title = {
+                ApplyHorizonDialogBlur()
+                Text("Xác nhận chuyển sang Map '${world.name}'?", fontWeight = FontWeight.SemiBold)
+            },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Column(
@@ -2192,7 +2263,13 @@ fun WorldsScreen(
     reset?.let { world ->
         AlertDialog(
             onDismissRequest = { reset = null },
-            title = { Text("Sao lưu & Đặt lại '${world.name}'?", fontWeight = FontWeight.SemiBold) },
+            containerColor = glass.glassChrome,
+            shape = McShape.Dialog,
+            tonalElevation = 0.dp,
+            title = {
+                ApplyHorizonDialogBlur()
+                Text("Sao lưu & Đặt lại '${world.name}'?", fontWeight = FontWeight.SemiBold)
+            },
             text = {
                 Text("Ứng dụng sẽ tạo bản sao lưu ZIP trước khi đặt lại '${world.name}' cùng Nether và The End. Lần bật máy chủ tiếp theo sẽ tạo thế giới mới. Nếu sao lưu thất bại, thao tác đặt lại sẽ bị hủy.")
             },

@@ -102,25 +102,20 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mineserve.mobile.data.ServerCore
 import com.mineserve.mobile.server.PluginManager
-import com.mineserve.mobile.ui.HeaderBlock
+import com.mineserve.mobile.ui.ApplyHorizonDialogBlur
 import com.mineserve.mobile.ui.EmptyHint
+import com.mineserve.mobile.ui.HeaderBlock
+import com.mineserve.mobile.ui.LocalHorizonChromePadding
 import com.mineserve.mobile.ui.McCard
 import com.mineserve.mobile.ui.McViewModel
 import com.mineserve.mobile.ui.SegmentedTabs
 import com.mineserve.mobile.ui.SwipeableInstantSnackbarHost
 import com.mineserve.mobile.ui.showInstantSnackbar
-import com.mineserve.mobile.ui.theme.Coral
-import com.mineserve.mobile.ui.theme.CoralSoft
-import com.mineserve.mobile.ui.theme.FieldGray
 import com.mineserve.mobile.ui.theme.HorizonGlass
 import com.mineserve.mobile.ui.theme.HorizonTabularStyle
-import com.mineserve.mobile.ui.theme.Indigo
-import com.mineserve.mobile.ui.theme.IndigoSoft
 import com.mineserve.mobile.ui.theme.McIcon
 import com.mineserve.mobile.ui.theme.McShape
 import com.mineserve.mobile.ui.theme.McSpacing
-import com.mineserve.mobile.ui.theme.Mint
-import com.mineserve.mobile.ui.theme.MintSoft
 import com.mineserve.mobile.ui.theme.Muted
 import com.mineserve.mobile.ui.theme.horizonGlassPlate
 import kotlinx.coroutines.flow.collectLatest
@@ -379,6 +374,7 @@ private fun KhoModDescriptionBlock(
 @Composable
 fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
     val glass = HorizonGlass
+    val chromePad = LocalHorizonChromePadding.current
     // Nạp mô tả tiếng Việt + Server/Client của danh mục 56 mod để mod ĐÃ CÀI cũng hiện đúng thông tin
     remember {
         vm.userScreenshot56ModItems().forEach {
@@ -413,7 +409,11 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
             onDismissRequest = {},
             containerColor = glass.glassChrome,
             shape = McShape.Dialog,
-            title = { Text("📦 Đang xử lý & giải mã gói Mod...", fontSize = 15.sp, fontWeight = FontWeight.Bold) },
+            tonalElevation = 0.dp,
+            title = {
+                ApplyHorizonDialogBlur()
+                Text("📦 Đang xử lý & giải mã gói Mod...", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     LinearProgressIndicator(
@@ -433,7 +433,11 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
             onDismissRequest = { vm.clearModImportReport() },
             containerColor = glass.glassChrome,
             shape = McShape.Dialog,
-            title = { Text("🎉 Kết quả Giải mã & Cài đặt Mod", fontSize = 15.sp, fontWeight = FontWeight.Bold) },
+            tonalElevation = 0.dp,
+            title = {
+                ApplyHorizonDialogBlur()
+                Text("🎉 Kết quả Giải mã & Cài đặt Mod", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            },
             text = {
                 Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                     Text(lastModImportReport ?: "", fontSize = 12.sp, lineHeight = 18.sp, style = HorizonTabularStyle)
@@ -455,7 +459,11 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
             onDismissRequest = {},
             containerColor = glass.glassChrome,
             shape = McShape.Dialog,
-            title = { Text(stringResource(R.string.ui_installing), fontSize = 16.sp, fontWeight = FontWeight.Bold) },
+            tonalElevation = 0.dp,
+            title = {
+                ApplyHorizonDialogBlur()
+                Text(stringResource(R.string.ui_installing), fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            },
             text = {
                 Column {
                     Text(p.pluginId, fontSize = 13.sp, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -595,6 +603,7 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
         ) {
+            HeaderBlock(eyebrow = stringResource(R.string.eyebrow_plugins), title = stringResource(R.string.s750))
             if (isPowerNukkitX) {
                 Text(
                     stringResource(R.string.pl_pnx_mods_hint),
@@ -604,7 +613,6 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
                 )
             }
-            HeaderBlock(eyebrow = stringResource(R.string.eyebrow_plugins), title = stringResource(R.string.s750))
 
             Box(
                 modifier = Modifier
@@ -1685,7 +1693,7 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
                     }
                 }
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(chromePad.calculateBottomPadding() + 28.dp))
         }
     }
 
@@ -1707,7 +1715,11 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
             onDismissRequest = { pendingModDelete = null },
             containerColor = glass.glassChrome,
             shape = McShape.Dialog,
-            title = { Text(stringResource(R.string.s768), fontWeight = FontWeight.Bold) },
+            tonalElevation = 0.dp,
+            title = {
+                ApplyHorizonDialogBlur()
+                Text(stringResource(R.string.s768), fontWeight = FontWeight.Bold)
+            },
             text = {
                 Text(
                     stringResource(R.string.s769, mod.baseName),
@@ -2159,7 +2171,11 @@ private fun DeletePluginDialog(
         onDismissRequest = onDismiss,
         containerColor = glass.glassChrome,
         shape = McShape.Dialog,
-        title = { Text(stringResource(R.string.s803), fontWeight = FontWeight.Bold) },
+        tonalElevation = 0.dp,
+        title = {
+            ApplyHorizonDialogBlur()
+            Text(stringResource(R.string.s803), fontWeight = FontWeight.Bold)
+        },
         text = {
             Column {
                 Text(stringResource(R.string.s804), fontSize = 13.sp, lineHeight = 18.sp)
@@ -2238,7 +2254,9 @@ private fun PluginDetailDialog(
         onDismissRequest = onDismiss,
         containerColor = glass.glassChrome,
         shape = McShape.Dialog,
+        tonalElevation = 0.dp,
         title = {
+            ApplyHorizonDialogBlur()
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Outlined.Extension, contentDescription = null, tint = glass.accent, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.size(8.dp))
@@ -2741,7 +2759,9 @@ private fun ModsTab(
             onDismissRequest = { pendingModToggle = null },
             containerColor = glass.glassChrome,
             shape = McShape.Dialog,
+            tonalElevation = 0.dp,
             title = {
+                ApplyHorizonDialogBlur()
                 Text(
                     if (willEnable) "🟢 Xác nhận BẬT Mod '${targetMod.baseName}'?"
                     else "⚠️ Cảnh báo trước khi TẮT Mod '${targetMod.baseName}'?",
@@ -2797,7 +2817,9 @@ private fun ModsTab(
             onDismissRequest = { pendingBulkModAction = null },
             containerColor = glass.glassChrome,
             shape = McShape.Dialog,
+            tonalElevation = 0.dp,
             title = {
+                ApplyHorizonDialogBlur()
                 Text(
                     when (bulkAction) {
                         "disable_all" -> "⚠️ Cảnh báo trước khi TẮT TOÀN BỘ MOD?"
@@ -3021,7 +3043,9 @@ private fun ModsTab(
                 onDismissRequest = { versionMenuOpen = false },
                 containerColor = glass.glassChrome,
                 shape = McShape.Dialog,
+                tonalElevation = 0.dp,
                 title = {
+                    ApplyHorizonDialogBlur()
                     Text(
                         "🎮 Lướt chọn hoặc nhập tay phiên bản Game",
                         fontSize = 15.sp,
@@ -3210,12 +3234,11 @@ private fun ModsTab(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(glass.glassRow)
-                            .border(
-                                width = 1.dp,
-                                color = if (isInstalled) glass.liveGreen.copy(alpha = 0.55f) else glass.hairline,
-                                shape = RoundedCornerShape(12.dp)
+                            .horizonGlassPlate(
+                                shape = RoundedCornerShape(14.dp),
+                                containerColor = glass.glassRow,
+                                borderColor = if (isInstalled) glass.liveGreen.copy(alpha = 0.55f) else glass.hairline,
+                                highlighted = isInstalled
                             )
                             .clickable { detailHit = hit }
                             .padding(horizontal = 11.dp, vertical = 9.dp),
@@ -3532,12 +3555,11 @@ private fun PluginModrinthCard(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(glass.glassRow)
-                            .border(
-                                width = 1.dp,
-                                color = if (isInstalled) glass.liveGreen.copy(alpha = 0.55f) else glass.hairline,
-                                shape = RoundedCornerShape(12.dp)
+                            .horizonGlassPlate(
+                                shape = RoundedCornerShape(14.dp),
+                                containerColor = glass.glassRow,
+                                borderColor = if (isInstalled) glass.liveGreen.copy(alpha = 0.55f) else glass.hairline,
+                                highlighted = isInstalled
                             )
                             .clickable { detailHit = hit }
                             .padding(horizontal = 11.dp, vertical = 9.dp),
@@ -3701,7 +3723,9 @@ private fun ModrinthDetailDialog(hit: PluginManager.ModrinthHit?, isPlugin: Bool
         onDismissRequest = onDismiss,
         containerColor = glass.glassChrome,
         shape = McShape.Dialog,
+        tonalElevation = 0.dp,
         title = {
+            ApplyHorizonDialogBlur()
             Row(verticalAlignment = Alignment.CenterVertically) {
                 ModrinthIcon(h.icon_url, size = 34.dp)
                 Spacer(Modifier.size(10.dp))
@@ -4050,7 +4074,9 @@ private fun ModPackDecoderAndTransferCard(
                 onDismissRequest = { showPackVerPickerModal = false },
                 containerColor = glass.glassChrome,
                 shape = McShape.Dialog,
+                tonalElevation = 0.dp,
                 title = {
+                    ApplyHorizonDialogBlur()
                     Text(
                         "🌐 Lướt chọn hoặc nhập tay phiên bản tải Mod",
                         fontSize = 15.sp,
@@ -4707,7 +4733,9 @@ private fun ModPackDecoderAndTransferCard(
             onDismissRequest = { pendingCatalogModToggle = null },
             containerColor = glass.glassChrome,
             shape = McShape.Dialog,
+            tonalElevation = 0.dp,
             title = {
+                ApplyHorizonDialogBlur()
                 Text(
                     if (willEnable) "🟢 Xác nhận BẬT Mod '${catalogItem.title}'?"
                     else "⚠️ Cảnh báo trước khi TẮT Mod '${catalogItem.title}'?",
@@ -4774,7 +4802,11 @@ private fun ModPackDecoderAndTransferCard(
             onDismissRequest = { showServerTransferDialog = false },
             containerColor = glass.glassChrome,
             shape = McShape.Dialog,
-            title = { Text("🔄 Chuyển Mod & Config Từ Server Khác", fontSize = 15.sp, fontWeight = FontWeight.Bold) },
+            tonalElevation = 0.dp,
+            title = {
+                ApplyHorizonDialogBlur()
+                Text("🔄 Chuyển Mod & Config Từ Server Khác", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            },
             text = {
                 Column(
                     modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -4836,7 +4868,9 @@ private fun ModPackDecoderAndTransferCard(
             onDismissRequest = { showAutoPackConfirmDialog = false },
             containerColor = glass.glassChrome,
             shape = McShape.Dialog,
+            tonalElevation = 0.dp,
             title = {
+                ApplyHorizonDialogBlur()
                 Text(
                     if (downloaded56Count >= all56Items.size) {
                         "✓ Đã Cài Đủ 56/56 Mod (MC $effectiveMcVer)"

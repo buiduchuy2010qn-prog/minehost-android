@@ -1,5 +1,7 @@
 package com.mineserve.mobile.ui
 
+import android.os.Build
+import android.view.WindowManager
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.tween
@@ -16,7 +18,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -25,6 +28,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -68,9 +72,12 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -82,8 +89,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.paneTitle
@@ -91,9 +100,12 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 import com.mineserve.mobile.ui.theme.AppUiSettings
 import com.mineserve.mobile.ui.theme.EyeCareColorPreset
 import com.mineserve.mobile.ui.theme.HorizonGlass
@@ -107,6 +119,34 @@ import kotlin.math.roundToInt
 /** Lets page headers yield their large title to the shared app bar. */
 val LocalMineHostChrome = staticCompositionLocalOf { false }
 
+/**
+ * Inset safe-zone for the floating Top Glass Capsule and Floating Bottom Glass Dock
+ * so full-bleed scrollable pages start cleanly below/above the chrome and glide behind it on scroll.
+ */
+val LocalHorizonChromePadding = compositionLocalOf { PaddingValues(0.dp) }
+
+/**
+ * Enables real Android 12+ (API 31+) hardware Gaussian window blur behind translucent Horizon dialogs & drawers.
+ * Safe no-op on Android < 12 and Robolectric JVM unit tests.
+ */
+@Composable
+fun ApplyHorizonDialogBlur(blurRadius: Int = 56) {
+    val view = LocalView.current
+    DisposableEffect(view, blurRadius) {
+        if (Build.VERSION.SDK_INT >= 31) {
+            runCatching {
+                val dialogWindow = (view.parent as? DialogWindowProvider)?.window
+                dialogWindow?.apply {
+                    addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+                    setBackgroundBlurRadius(blurRadius)
+                    setDimAmount(0.20f)
+                }
+            }
+        }
+        onDispose { }
+    }
+}
+
 internal val mineHostMainTabs = listOf(
     McTab.Dashboard to "Máy chủ",
     McTab.Terminal to "Console",
@@ -119,25 +159,20 @@ internal val mineHostMainTabs = listOf(
 internal fun MineHostBottomBar(selected: McTab?, onSelect: (McTab) -> Unit) {
     val largeLabels = LocalDensity.current.fontScale > 1.3f
     val glass = HorizonGlass
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .background(glass.glassChrome)
+            .windowInsetsPadding(NavigationBarDefaults.windowInsets)
+            .padding(horizontal = if (largeLabels) 3.dp else 10.dp, bottom = 8.dp)
+            .horizonGlassPlate(
+                shape = RoundedCornerShape(24.dp),
+                containerColor = glass.glassChrome,
+                borderColor = glass.specularTop.copy(alpha = 0.40f)
+            )
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(1.dp)
-                .background(
-                    Brush.horizontalGradient(
-                        listOf(glass.hairline, glass.specularTop, glass.hairline)
-                    )
-                )
-        )
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .windowInsetsPadding(NavigationBarDefaults.windowInsets)
                 .height(IntrinsicSize.Min)
                 .selectableGroup(),
             horizontalArrangement = Arrangement.spacedBy(0.dp)
@@ -150,14 +185,14 @@ internal fun MineHostBottomBar(selected: McTab?, onSelect: (McTab) -> Unit) {
                         .fillMaxHeight()
                         .selectable(active, role = Role.Tab, onClick = { onSelect(destination) })
                         .semantics { contentDescription = label }
-                        .heightIn(min = 72.dp)
-                        .padding(vertical = 8.dp),
+                        .heightIn(min = 66.dp)
+                        .padding(vertical = 7.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                    verticalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(width = 48.dp, height = 28.dp)
+                            .size(width = if (largeLabels) 42.dp else 46.dp, height = 26.dp)
                             .then(
                                 if (active) {
                                     Modifier.horizonGlassPlate(
@@ -175,7 +210,7 @@ internal fun MineHostBottomBar(selected: McTab?, onSelect: (McTab) -> Unit) {
                         Icon(
                             imageVector = destination.icon,
                             contentDescription = null,
-                            modifier = Modifier.size(22.dp),
+                            modifier = Modifier.size(21.dp),
                             tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -183,6 +218,7 @@ internal fun MineHostBottomBar(selected: McTab?, onSelect: (McTab) -> Unit) {
                         text = if (largeLabels && destination == McTab.Terminal) "Lệnh" else label,
                         modifier = Modifier.fillMaxWidth(),
                         style = MaterialTheme.typography.labelMedium,
+                        letterSpacing = if (largeLabels) (-0.2).sp else TextUnit.Unspecified,
                         color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center
                     )
@@ -255,6 +291,20 @@ internal fun MineHostNavigation(
     content: @Composable () -> Unit
 ) {
     val glass = HorizonGlass
+    val density = LocalDensity.current
+    val outerChrome = LocalHorizonChromePadding.current
+    val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    var measuredTopPx by remember { mutableIntStateOf(0) }
+    val computedTopPadding = if (measuredTopPx > 0) {
+        with(density) { measuredTopPx.toDp() }
+    } else {
+        statusTop + 74.dp
+    }
+    val providedChromePadding = PaddingValues(
+        top = maxOf(outerChrome.calculateTopPadding(), computedTopPadding),
+        bottom = outerChrome.calculateBottomPadding()
+    )
+
     var menuOpen by rememberSaveable { mutableStateOf(false) }
     var themeStudioOpen by rememberSaveable { mutableStateOf(false) }
     var searchQuery by rememberSaveable { mutableStateOf("") }
@@ -270,111 +320,118 @@ internal fun MineHostNavigation(
         action()
     }
 
-    CompositionLocalProvider(LocalMineHostChrome provides true) {
-        Column(Modifier.fillMaxSize()) {
-            // Thanh đỉnh kính mờ Pure Horizon Glass (trải liền mạch dưới thanh trạng thái)
-            Column(
+    Box(Modifier.fillMaxSize()) {
+        // Full-bleed content layer from y=0 to bottom so cards scroll right behind floating glass capsules!
+        CompositionLocalProvider(
+            LocalMineHostChrome provides true,
+            LocalHorizonChromePadding provides providedChromePadding
+        ) {
+            Box(Modifier.fillMaxSize()) {
+                content()
+            }
+        }
+
+        // Floating Rounded Top Glass Capsule (Pure Horizon Glass)
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .onSizeChanged { measuredTopPx = it.height }
+                .statusBarsPadding()
+                .padding(horizontal = 10.dp, vertical = 6.dp)
+                .horizonGlassPlate(
+                    shape = RoundedCornerShape(22.dp),
+                    containerColor = glass.glassChrome,
+                    borderColor = glass.specularTop.copy(alpha = 0.42f)
+                )
+        ) {
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(glass.glassChrome)
+                    .heightIn(min = 58.dp)
+                    .padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Row(
+                Column(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .statusBarsPadding()
-                        .heightIn(min = 58.dp)
-                        .padding(start = 16.dp, end = 10.dp, top = 6.dp, bottom = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        .weight(1f)
+                        .padding(vertical = 2.dp),
+                    verticalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(vertical = 2.dp),
-                        verticalArrangement = Arrangement.spacedBy(3.dp)
-                    ) {
-                        Text(
-                            text = title,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        if (!liveStatusPillText.isNullOrBlank()) {
-                            val (pillBg, pillFg, pillBorder) = when (liveStatusState) {
-                                2 -> Triple(glass.liveGreenSoft, glass.liveGreen, glass.liveGreen.copy(alpha = 0.48f))
-                                1 -> Triple(glass.skyCyan.copy(alpha = 0.16f), glass.skyCyan, glass.skyCyan.copy(alpha = 0.48f))
-                                3 -> Triple(glass.warnAmberSoft, glass.warnAmber, glass.warnAmber.copy(alpha = 0.50f))
-                                else -> Triple(glass.glassRow, MaterialTheme.colorScheme.onSurfaceVariant, glass.hairline)
-                            }
-                            Box(
-                                modifier = Modifier
-                                    .clip(McShape.Pill)
-                                    .background(pillBg, McShape.Pill)
-                                    .border(1.dp, pillBorder, McShape.Pill)
-                                    .then(
-                                        if (onLiveStatusClick != null) {
-                                            Modifier.clickable(role = Role.Button, onClick = onLiveStatusClick)
-                                        } else {
-                                            Modifier
-                                        }
-                                    )
-                                    .padding(horizontal = 10.dp, vertical = 3.dp)
-                            ) {
-                                Text(
-                                    text = liveStatusPillText,
-                                    style = MaterialTheme.typography.labelMedium.merge(HorizonTabularStyle),
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = pillFg
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    if (!liveStatusPillText.isNullOrBlank()) {
+                        val (pillBg, pillFg, pillBorder) = when (liveStatusState) {
+                            2 -> Triple(glass.liveGreenSoft, glass.liveGreen, glass.liveGreen.copy(alpha = 0.48f))
+                            1 -> Triple(glass.skyCyan.copy(alpha = 0.16f), glass.skyCyan, glass.skyCyan.copy(alpha = 0.48f))
+                            3 -> Triple(glass.warnAmberSoft, glass.warnAmber, glass.warnAmber.copy(alpha = 0.50f))
+                            else -> Triple(glass.glassRow, MaterialTheme.colorScheme.onSurfaceVariant, glass.hairline)
+                        }
+                        Box(
+                            modifier = Modifier
+                                .clip(McShape.Pill)
+                                .background(pillBg, McShape.Pill)
+                                .border(1.dp, pillBorder, McShape.Pill)
+                                .then(
+                                    if (onLiveStatusClick != null) {
+                                        Modifier.clickable(role = Role.Button, onClick = onLiveStatusClick)
+                                    } else {
+                                        Modifier
+                                    }
                                 )
-                            }
+                                .padding(horizontal = 10.dp, vertical = 3.dp)
+                        ) {
+                            Text(
+                                text = liveStatusPillText,
+                                style = MaterialTheme.typography.labelMedium.merge(HorizonTabularStyle),
+                                fontWeight = FontWeight.SemiBold,
+                                color = pillFg
+                            )
                         }
                     }
-
-                    IconButton(
-                        onClick = { themeStudioOpen = true },
-                        modifier = Modifier
-                            .size(44.dp)
-                            .horizonGlassPlate(
-                                shape = McShape.Pill,
-                                containerColor = glass.glassRow,
-                                borderColor = glass.hairline
-                            )
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Palette,
-                            contentDescription = "Chủ đề giao diện",
-                            tint = glass.accent,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    IconButton(
-                        onClick = { menuOpen = true },
-                        modifier = Modifier
-                            .size(48.dp)
-                            .horizonGlassPlate(
-                                shape = McShape.Pill,
-                                containerColor = glass.glassRow,
-                                borderColor = glass.hairline
-                            )
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Menu,
-                            contentDescription = "Mở danh mục",
-                            tint = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
                 }
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(1.dp)
-                        .background(glass.hairline)
-                )
-            }
 
-            Box(Modifier.weight(1f)) { content() }
+                IconButton(
+                    onClick = { themeStudioOpen = true },
+                    modifier = Modifier
+                        .size(44.dp)
+                        .horizonGlassPlate(
+                            shape = McShape.Pill,
+                            containerColor = glass.glassRow,
+                            borderColor = glass.hairline
+                        )
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Palette,
+                        contentDescription = "Chủ đề giao diện",
+                        tint = glass.accent,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                IconButton(
+                    onClick = { menuOpen = true },
+                    modifier = Modifier
+                        .size(48.dp)
+                        .horizonGlassPlate(
+                            shape = McShape.Pill,
+                            containerColor = glass.glassRow,
+                            borderColor = glass.hairline
+                        )
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Menu,
+                        contentDescription = "Mở danh mục",
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            }
         }
     }
 
@@ -382,18 +439,19 @@ internal fun MineHostNavigation(
         HorizonThemeStudioDialog(onDismiss = { themeStudioOpen = false })
     }
 
-    // Bảng danh mục trượt cạnh phải bằng kính mờ Pure Horizon Glass
+    // Bảng danh mục trượt cạnh phải bằng kính mờ Pure Horizon Glass + Android 12+ Window Blur
     if (menuVisibility.currentState || menuVisibility.targetState) {
         Dialog(
             onDismissRequest = { menuOpen = false },
             properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
         ) {
+            ApplyHorizonDialogBlur(blurRadius = 56)
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val panelWidth = minOf(maxWidth * 0.92f, 380.dp)
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(Color.Black.copy(alpha = if (glass.isLight) 0.34f else 0.56f))
+                        .background(Color.Black.copy(alpha = if (glass.isLight) 0.16f else 0.24f))
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
@@ -422,7 +480,7 @@ internal fun MineHostNavigation(
                                 .horizonGlassPlate(
                                     shape = drawerShape,
                                     containerColor = glass.glassChrome,
-                                    borderColor = glass.specularTop
+                                    borderColor = glass.specularTop.copy(alpha = 0.50f)
                                 )
                                 .safeDrawingPadding()
                         ) {
@@ -669,21 +727,24 @@ private fun HorizonThemeStudioDialog(onDismiss: () -> Unit) {
     val glass = HorizonGlass
     val currentPreset by AppUiSettings.colorPreset.collectAsState()
     val currentFontScale by AppUiSettings.fontScale.collectAsState()
+    val currentGlassOpacity by AppUiSettings.glassOpacity.collectAsState()
 
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
+        ApplyHorizonDialogBlur(blurRadius = 56)
         Box(
             modifier = Modifier
-                .fillMaxWidth(0.92f)
-                .widthIn(max = 400.dp)
+                .fillMaxWidth(0.94f)
+                .widthIn(max = 410.dp)
+                .heightIn(max = 650.dp)
                 .horizonGlassPlate(
                     shape = McShape.Dialog,
                     containerColor = glass.glassChrome,
-                    borderColor = glass.specularTop
+                    borderColor = glass.specularTop.copy(alpha = 0.55f)
                 )
-                .padding(horizontal = 18.dp, vertical = 16.dp)
+                .padding(horizontal = 16.dp, vertical = 14.dp)
         ) {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -700,7 +761,7 @@ private fun HorizonThemeStudioDialog(onDismiss: () -> Unit) {
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "Chọn không gian kính mờ & cỡ chữ tức thì",
+                            text = "9 bầu trời BlockWay • Pha lê trong suốt & cỡ chữ",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -714,16 +775,90 @@ private fun HorizonThemeStudioDialog(onDismiss: () -> Unit) {
                     }
                 }
 
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Thanh chỉnh Độ trong suốt mặt kính (Pure Horizon Glass)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizonGlassPlate(
+                            shape = McShape.Row,
+                            containerColor = glass.glassRow,
+                            borderColor = glass.hairline
+                        )
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Độ trong suốt mặt kính",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "${(currentGlassOpacity * 100).roundToInt()}%",
+                            style = MaterialTheme.typography.labelLarge.merge(HorizonTabularStyle),
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Slider(
+                        value = currentGlassOpacity,
+                        onValueChange = { AppUiSettings.setGlassOpacity(context, it) },
+                        valueRange = 0.14f..0.52f
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf(
+                            Triple(0.15f, "Pha lê 15%", 1f),
+                            Triple(0.26f, "Chuẩn Horizon 26%", 1.38f),
+                            Triple(0.45f, "Kính đậm 45%", 1f)
+                        ).forEach { (targetOpacity, text, weightVal) ->
+                            val isNear = abs(currentGlassOpacity - targetOpacity) < 0.03f
+                            Box(
+                                modifier = Modifier
+                                    .weight(weightVal)
+                                    .heightIn(min = 38.dp)
+                                    .horizonGlassPlate(
+                                        shape = McShape.ControlCompact,
+                                        containerColor = if (isNear) glass.accentSoft else glass.glassRow,
+                                        borderColor = if (isNear) glass.accent else glass.hairline,
+                                        highlighted = isNear
+                                    )
+                                    .clickable { AppUiSettings.setGlassOpacity(context, targetOpacity) }
+                                    .padding(horizontal = 6.dp, vertical = 5.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = text,
+                                    style = MaterialTheme.typography.labelSmall.merge(HorizonTabularStyle),
+                                    color = if (isNear) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontWeight = if (isNear) FontWeight.SemiBold else FontWeight.Medium,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Danh sách đủ 9 chủ đề kính BlockWay Horizon
+                Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                     EyeCareColorPreset.entries.forEach { preset ->
                         val active = preset == currentPreset
                         val pGlass = remember(preset) { horizonGlassTokensFor(preset) }
                         val desc = when (preset) {
-                            EyeCareColorPreset.SoftSlate -> "Kính tối ánh tím cực quang mặc định"
-                            EyeCareColorPreset.BlockWayDark -> "Kính xanh đại dương ban đêm dịu mắt"
-                            EyeCareColorPreset.WarmMocha -> "Kính hổ phách ấm giảm ánh sáng xanh"
-                            EyeCareColorPreset.SakuraGlass -> "Kính sáng hoa anh đào trong trẻo"
-                            EyeCareColorPreset.WarmPaperLight -> "Kính sáng băng tinh khiết ngoài trời"
+                            EyeCareColorPreset.SoftSlate -> "Hoàng hôn tím cam có sao & núi Horizon mặc định"
+                            EyeCareColorPreset.BlockWayDark -> "Đêm trăng xanh lam pha lê dịu mắt"
+                            EyeCareColorPreset.WarmMocha -> "Đêm hổ phách cam Rust ấm áp giảm mỏi mắt"
+                            EyeCareColorPreset.SakuraGlass -> "Bình minh hoa anh đào hồng phấn trong trẻo"
+                            EyeCareColorPreset.WarmPaperLight -> "Băng tinh khiết xanh mây sáng rõ ban ngày"
+                            EyeCareColorPreset.MojangEmerald -> "Rừng đêm ngọc lục bảo Mojang cổ điển"
+                            EyeCareColorPreset.ModrinthMint -> "Tinh thể xanh bạc hà Modrinth hiện đại"
+                            EyeCareColorPreset.FeatherSky -> "Bầu trời đêm xanh băng Feather thanh thoát"
+                            EyeCareColorPreset.CherryDark -> "Đêm anh đào tím hồng Cherry huyền ảo"
                         }
                         Row(
                             modifier = Modifier
@@ -737,7 +872,7 @@ private fun HorizonThemeStudioDialog(onDismiss: () -> Unit) {
                                 .clickable(role = Role.RadioButton) {
                                     AppUiSettings.setColorPreset(context, preset)
                                 }
-                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                                .padding(horizontal = 12.dp, vertical = 9.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
@@ -747,7 +882,7 @@ private fun HorizonThemeStudioDialog(onDismiss: () -> Unit) {
                                     .clip(CircleShape)
                                     .background(
                                         Brush.linearGradient(
-                                            listOf(pGlass.skyTop, pGlass.horizonGlow, pGlass.accent)
+                                            listOf(pGlass.skyTop, pGlass.skyMid, pGlass.horizonGlow, pGlass.accent)
                                         )
                                     )
                                     .border(1.dp, pGlass.specularTop, CircleShape)

@@ -60,6 +60,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mineserve.mobile.data.JavaServerPerformance
+import com.mineserve.mobile.ui.ApplyHorizonDialogBlur
+import com.mineserve.mobile.ui.LocalHorizonChromePadding
 import com.mineserve.mobile.ui.LocalMineHostChrome
 import com.mineserve.mobile.ui.McViewModel
 import com.mineserve.mobile.ui.TerminalLogTone
@@ -67,6 +69,7 @@ import com.mineserve.mobile.ui.TerminalSessionType
 import com.mineserve.mobile.ui.theme.HorizonGlass
 import com.mineserve.mobile.ui.theme.HorizonTabularStyle
 import com.mineserve.mobile.ui.theme.Ink
+import com.mineserve.mobile.ui.theme.McShape
 import com.mineserve.mobile.ui.theme.Muted
 import com.mineserve.mobile.ui.theme.horizonGlassPlate
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -225,6 +228,7 @@ fun TerminalScreen(vm: McViewModel) {
     val context = LocalContext.current
     val glass = HorizonGlass
     val sharedChrome = LocalMineHostChrome.current
+    val chromePad = LocalHorizonChromePadding.current
 
     var input by remember(activeId) { mutableStateOf("") }
     var commandHistory by remember { mutableStateOf(listOf<String>()) }
@@ -348,16 +352,21 @@ fun TerminalScreen(vm: McViewModel) {
         containerColor = Color.Transparent,
         contentWindowInsets = WindowInsets(0.dp),
         bottomBar = {
+            val imeBottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
+            val dockBottom = if (sharedChrome) {
+                maxOf(chromePad.calculateBottomPadding(), imeBottom) + 6.dp
+            } else {
+                maxOf(WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding(), imeBottom) + 6.dp
+            }
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                    .padding(start = 10.dp, end = 10.dp, top = 6.dp, bottom = dockBottom)
                     .horizonGlassPlate(
                         shape = RoundedCornerShape(22.dp),
                         containerColor = glass.glassChrome,
-                        borderColor = glass.specularTop
+                        borderColor = glass.specularTop.copy(alpha = 0.42f)
                     )
-                    .imePadding()
                     .padding(horizontal = 10.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -442,7 +451,10 @@ fun TerminalScreen(vm: McViewModel) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .then(if (sharedChrome) Modifier else Modifier.statusBarsPadding())
+                .then(
+                    if (sharedChrome) Modifier.padding(top = chromePad.calculateTopPadding())
+                    else Modifier.statusBarsPadding()
+                )
                 .padding(terminalPadding)
                 .padding(horizontal = 10.dp, vertical = 6.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -806,11 +818,11 @@ fun TerminalScreen(vm: McViewModel) {
                 }
             }
 
-            // ── 4. Khung hiển thị Nhật Ký Console Kính Mờ Sâu (Deep Frosted Terminal Viewport) ──
+            // ── 4. Khung hiển thị Nhật Ký Console Kính Trong Suốt Horizon (True Translucent Terminal Glass) ──
             val viewportBg = if (glass.isLight) {
-                Color(0xFFF3F8FF).copy(alpha = 0.88f)
+                Color.White.copy(alpha = 0.44f)
             } else {
-                Color(0xFF0D0C1D).copy(alpha = 0.76f)
+                Color(0xFF0B0A1A).copy(alpha = 0.34f)
             }
             val viewportBorder = if (glass.isLight) glass.hairline else glass.specularTop
 
@@ -869,7 +881,13 @@ fun TerminalScreen(vm: McViewModel) {
 
         AlertDialog(
             onDismissRequest = { showViewDistDialog = false },
-            title = { Text("🔭 Cấu hình nhẹ 6 / 4 chunk", fontWeight = FontWeight.SemiBold, fontSize = 16.sp) },
+            containerColor = glass.glassChrome,
+            shape = McShape.Dialog,
+            tonalElevation = 0.dp,
+            title = {
+                ApplyHorizonDialogBlur()
+                Text("🔭 Cấu hình nhẹ 6 / 4 chunk", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+            },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
@@ -921,7 +939,13 @@ fun TerminalScreen(vm: McViewModel) {
         var msgText by remember { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { showBroadcastDialog = false },
-            title = { Text("📢 Phát Thông Báo Toàn Máy Chủ", fontWeight = FontWeight.SemiBold, fontSize = 16.sp) },
+            containerColor = glass.glassChrome,
+            shape = McShape.Dialog,
+            tonalElevation = 0.dp,
+            title = {
+                ApplyHorizonDialogBlur()
+                Text("📢 Phát Thông Báo Toàn Máy Chủ", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+            },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Nhập nội dung thông báo muốn gửi tới tất cả người chơi đang online:", fontSize = 12.5.sp)
@@ -971,7 +995,13 @@ fun TerminalScreen(vm: McViewModel) {
         }
         AlertDialog(
             onDismissRequest = { showPlayerToolDialog = false },
-            title = { Text("👑 Công Cụ Cấp Quyền & Quản Trị Người Chơi 1 Chạm", fontWeight = FontWeight.SemiBold, fontSize = 15.sp) },
+            containerColor = glass.glassChrome,
+            shape = McShape.Dialog,
+            tonalElevation = 0.dp,
+            title = {
+                ApplyHorizonDialogBlur()
+                Text("👑 Công Cụ Cấp Quyền & Quản Trị Người Chơi 1 Chạm", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+            },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("⚡ Chọn nhanh người chơi trong Server (1 chạm — Không cần nhập tay):", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
@@ -1092,7 +1122,13 @@ fun TerminalScreen(vm: McViewModel) {
 
     if (showSettings) AlertDialog(
         onDismissRequest = { showSettings = false },
-        title = { Text("Cài đặt bảng điều khiển", fontWeight = FontWeight.SemiBold) },
+        containerColor = glass.glassChrome,
+        shape = McShape.Dialog,
+        tonalElevation = 0.dp,
+        title = {
+            ApplyHorizonDialogBlur()
+            Text("Cài đặt bảng điều khiển", fontWeight = FontWeight.SemiBold)
+        },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(
@@ -1141,7 +1177,13 @@ fun TerminalScreen(vm: McViewModel) {
     pendingDangerousCommand?.let { command ->
         AlertDialog(
             onDismissRequest = { pendingDangerousCommand = null },
-            title = { Text("Xác nhận chạy lệnh quan trọng", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold) },
+            containerColor = glass.glassChrome,
+            shape = McShape.Dialog,
+            tonalElevation = 0.dp,
+            title = {
+                ApplyHorizonDialogBlur()
+                Text("Xác nhận chạy lệnh quan trọng", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)
+            },
             text = { Text("Lệnh này có thể dừng máy chủ, xóa thực thể hoặc tắt Whitelist:\n\n$command") },
             dismissButton = {
                 TextButton(onClick = { pendingDangerousCommand = null }) { Text("Hủy") }

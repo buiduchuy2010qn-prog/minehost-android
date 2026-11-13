@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.heightIn
@@ -19,6 +20,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -84,7 +86,8 @@ enum class SubPage {
 
 /**
  * Gốc ứng dụng Pure Horizon Glass:
- * Lớp nền bầu trời hoàng hôn `HorizonGlassBackdrop` trải xuyên suốt phía sau toàn bộ mặt kính.
+ * Lớp nền bầu trời hoàng hôn có sao & núi `HorizonGlassBackdrop` trải xuyên suốt từ y=0 tới đáy,
+ * nội dung cuộn mượt trực tiếp bên dưới viên thuốc kính đỉnh và thanh dock kính nổi đáy.
  */
 @Composable
 fun McApp() {
@@ -218,6 +221,7 @@ fun McApp() {
             onQuickTelegramBackup = { vm.backupCurrentWorldToTelegramOneTap() },
             enableQuickSearch = true
         ) {
+            val navChrome = LocalHorizonChromePadding.current
             Scaffold(
                 containerColor = Color.Transparent,
                 contentColor = MaterialTheme.colorScheme.onBackground,
@@ -235,169 +239,173 @@ fun McApp() {
                         onSelect = { tab = it; showLogs = false; subPage = null }
                     )
                 }
-            ) { padding ->
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding)
-                ) {
-                    val page = Triple(showLogs, subPage, tab)
-                    pageState.SaveableStateProvider("${config.activeCoreName}:${page.first}:${page.second}:${page.third}") {
-                        when {
-                            page.first -> LogsScreen(vm = vm, onBack = { showLogs = false })
-                            page.second != null -> {
-                                when (page.second) {
-                                    SubPage.Properties -> PropertiesScreen(vm = vm, onBack = { subPage = null })
-                                    SubPage.Network -> NetworkScreen(
-                                        vm = vm,
-                                        onBack = { subPage = null },
-                                        onOpenFrpEditor = { id ->
-                                            editFrpProfileId = id.orEmpty()
-                                            subPage = SubPage.FrpProfileEditor
+            ) { scaffoldPadding ->
+                val fullChromePadding = PaddingValues(
+                    top = navChrome.calculateTopPadding(),
+                    bottom = maxOf(navChrome.calculateBottomPadding(), scaffoldPadding.calculateBottomPadding())
+                )
+                CompositionLocalProvider(LocalHorizonChromePadding provides fullChromePadding) {
+                    // Full-bleed Box (NO .padding(scaffoldPadding) clip!) so cards scroll right behind
+                    // both the Floating Top Glass Capsule and the Floating Bottom Glass Dock!
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        val page = Triple(showLogs, subPage, tab)
+                        pageState.SaveableStateProvider("${config.activeCoreName}:${page.first}:${page.second}:${page.third}") {
+                            when {
+                                page.first -> LogsScreen(vm = vm, onBack = { showLogs = false })
+                                page.second != null -> {
+                                    when (page.second) {
+                                        SubPage.Properties -> PropertiesScreen(vm = vm, onBack = { subPage = null })
+                                        SubPage.Network -> NetworkScreen(
+                                            vm = vm,
+                                            onBack = { subPage = null },
+                                            onOpenFrpEditor = { id ->
+                                                editFrpProfileId = id.orEmpty()
+                                                subPage = SubPage.FrpProfileEditor
+                                            }
+                                        )
+                                        SubPage.FrpProfileEditor -> FrpProfileEditorScreen(
+                                            vm = vm,
+                                            profileId = editFrpProfileId.ifBlank { null },
+                                            onBack = { subPage = SubPage.Network }
+                                        )
+                                        SubPage.Backup -> BackupScreen(vm = vm, onBack = { subPage = null })
+                                        SubPage.WorldManage -> WorldsScreen(
+                                            vm = vm,
+                                            onBack = { subPage = null },
+                                            onImport = { navigateTo(SubPage.WorldImport) },
+                                            onWorldRules = { navigateTo(SubPage.WorldRules) }
+                                        )
+                                        SubPage.WorldImport -> WorldImportScreen(
+                                            vm = vm,
+                                            onBack = ::returnFromWorldImport,
+                                            onWorlds = ::returnFromWorldImport
+                                        )
+                                        SubPage.DownloadHelp -> DownloadHelpScreen(vm = vm, onBack = { subPage = null })
+                                        SubPage.MtGuide -> MtGuideScreen(onBack = {
+                                            subPage = if (mtGuideFromFiles) SubPage.Files else null
+                                        })
+                                        SubPage.KeepAlive -> KeepAliveScreen(vm = vm, onBack = { subPage = null })
+                                        SubPage.OpLevelGuide -> OpLevelGuideScreen(
+                                            onBack = { subPage = null },
+                                            onNavigateProperties = { subPage = SubPage.Properties },
+                                            onNavigatePlugins = { navigateTo(SubPage.Plugins) }
+                                        )
+                                        SubPage.Diagnostics -> DiagnosticsScreen(vm = vm, onBack = { subPage = null })
+                                        SubPage.Plugins -> PluginsScreen(vm = vm, onAddonTools = { navigateTo(SubPage.AddonTools) })
+                                        SubPage.ServerIcon -> ServerIconScreen(vm = vm, onBack = { subPage = null })
+                                        SubPage.CrashReports -> CrashReportsScreen(
+                                            vm = vm,
+                                            onBack = { subPage = null },
+                                            onGoToJavaInstall = {
+                                                envManagerTab = 0
+                                                subPage = SubPage.EnvManager
+                                            },
+                                            onGoToModManager = {
+                                                subPage = null
+                                                tab = McTab.Download
+                                            },
+                                            onGoToDiagnostics = {
+                                                subPage = SubPage.Diagnostics
+                                            }
+                                        )
+                                        SubPage.WidgetSettings -> WidgetSettingsScreen(onBack = { subPage = null })
+                                        SubPage.EnvManager -> EnvManagerScreen(vm = vm, initialTab = envManagerTab, onBack = { subPage = null })
+                                        SubPage.Mcp -> McpScreen(vm = vm, onBack = { subPage = null })
+                                        SubPage.Ftp -> FtpScreen(vm = vm, onBack = { subPage = null })
+                                        SubPage.Automation -> AutomationScreen(vm = vm, onBack = { subPage = null })
+                                        SubPage.More -> MoreScreen(
+                                            onNetwork = { subPage = SubPage.Network },
+                                            onBackup = { subPage = SubPage.Backup },
+                                            onDiagnostics = { subPage = SubPage.Diagnostics },
+                                            onKeepAlive = { subPage = SubPage.KeepAlive },
+                                            onHelp = { subPage = SubPage.DownloadHelp },
+                                            onCrashReports = { subPage = SubPage.CrashReports },
+                                            onWidgetSettings = { subPage = SubPage.WidgetSettings },
+                                            onMcp = { subPage = SubPage.Mcp },
+                                            onFtp = { subPage = SubPage.Ftp },
+                                            onAutomation = { subPage = SubPage.Automation }
+                                        )
+                                        SubPage.Cores -> DownloadScreen(vm, onShowDownloadHelp = { subPage = SubPage.DownloadHelp }, onBack = { subPage = null })
+                                        SubPage.ServerList -> ServerManagementScreen(
+                                            vm,
+                                            onPlugins = { subPage = null; tab = McTab.Download },
+                                            onProperties = { subPage = SubPage.Properties },
+                                            onIcon = { subPage = SubPage.ServerIcon },
+                                            onWorlds = { navigateTo(SubPage.WorldManage) },
+                                            onCreateServer = { subPage = SubPage.Cores },
+                                            onBack = { subPage = null }
+                                        )
+                                        SubPage.PlayerList -> PlayersScreen(
+                                            vm,
+                                            onNavigateProperties = { subPage = SubPage.Properties },
+                                            onNavigateOpGuide = { subPage = SubPage.OpLevelGuide },
+                                            onPlayerTools = { navigateTo(SubPage.PlayerTools) }
+                                        )
+                                        SubPage.AppSettings -> SettingsScreen(vm, onNavigate = ::navigateTo)
+                                        SubPage.Crossplay -> MineHostCrossplay(vm = vm, onBack = { subPage = null })
+                                        SubPage.Files -> ToolSubPage(onBack = { subPage = null }) {
+                                            FileManagerScreen(vm = vm, onOpenMtGuide = {
+                                                mtGuideFromFiles = true
+                                                subPage = SubPage.MtGuide
+                                            })
                                         }
+                                        SubPage.Console -> ToolSubPage(onBack = { subPage = null }) {
+                                            TerminalScreen(vm = vm)
+                                        }
+                                        SubPage.Remote -> MineHostRemote(vm = vm, onBack = { subPage = null })
+                                        SubPage.Performance -> MineHostPerformance(
+                                            vm = vm,
+                                            onBack = { subPage = null },
+                                            navigate = ::navigateTo
+                                        )
+                                        SubPage.WorldRules, SubPage.PlayerTools, SubPage.AddonTools -> MineHostOverview(
+                                            vm = vm,
+                                            navigate = ::navigateTo,
+                                            onConsole = { navigateTo(SubPage.Console) },
+                                            section = when (page.second) {
+                                                SubPage.WorldRules -> 2
+                                                SubPage.PlayerTools -> 4
+                                                else -> 5
+                                            },
+                                            onBack = { subPage = null }
+                                        )
+                                        null -> {}
+                                    }
+                                }
+                                else -> when (page.third) {
+                                    McTab.Dashboard -> MineHostOverview(
+                                        vm,
+                                        navigate = ::navigateTo,
+                                        onConsole = { navigateTo(SubPage.Console) }
                                     )
-                                    SubPage.FrpProfileEditor -> FrpProfileEditorScreen(
+                                    McTab.Worlds -> WorldsScreen(
                                         vm = vm,
-                                        profileId = editFrpProfileId.ifBlank { null },
-                                        onBack = { subPage = SubPage.Network }
-                                    )
-                                    SubPage.Backup -> BackupScreen(vm = vm, onBack = { subPage = null })
-                                    SubPage.WorldManage -> WorldsScreen(
-                                        vm = vm,
-                                        onBack = { subPage = null },
+                                        onBack = { tab = McTab.Dashboard },
                                         onImport = { navigateTo(SubPage.WorldImport) },
                                         onWorldRules = { navigateTo(SubPage.WorldRules) }
                                     )
-                                    SubPage.WorldImport -> WorldImportScreen(
+                                    McTab.Download -> PluginsScreen(vm = vm, onAddonTools = { navigateTo(SubPage.AddonTools) })
+                                    McTab.ServerManagement -> ServerManagementScreen(
                                         vm = vm,
-                                        onBack = ::returnFromWorldImport,
-                                        onWorlds = ::returnFromWorldImport
-                                    )
-                                    SubPage.DownloadHelp -> DownloadHelpScreen(vm = vm, onBack = { subPage = null })
-                                    SubPage.MtGuide -> MtGuideScreen(onBack = {
-                                        subPage = if (mtGuideFromFiles) SubPage.Files else null
-                                    })
-                                    SubPage.KeepAlive -> KeepAliveScreen(vm = vm, onBack = { subPage = null })
-                                    SubPage.OpLevelGuide -> OpLevelGuideScreen(
-                                        onBack = { subPage = null },
-                                        onNavigateProperties = { subPage = SubPage.Properties },
-                                        onNavigatePlugins = { navigateTo(SubPage.Plugins) }
-                                    )
-                                    SubPage.Diagnostics -> DiagnosticsScreen(vm = vm, onBack = { subPage = null })
-                                    SubPage.Plugins -> PluginsScreen(vm = vm, onAddonTools = { navigateTo(SubPage.AddonTools) })
-                                    SubPage.ServerIcon -> ServerIconScreen(vm = vm, onBack = { subPage = null })
-                                    SubPage.CrashReports -> CrashReportsScreen(
-                                        vm = vm,
-                                        onBack = { subPage = null },
-                                        onGoToJavaInstall = {
-                                            envManagerTab = 0
-                                            subPage = SubPage.EnvManager
-                                        },
-                                        onGoToModManager = {
-                                            subPage = null
-                                            tab = McTab.Download
-                                        },
-                                        onGoToDiagnostics = {
-                                            subPage = SubPage.Diagnostics
-                                        }
-                                    )
-                                    SubPage.WidgetSettings -> WidgetSettingsScreen(onBack = { subPage = null })
-                                    SubPage.EnvManager -> EnvManagerScreen(vm = vm, initialTab = envManagerTab, onBack = { subPage = null })
-                                    SubPage.Mcp -> McpScreen(vm = vm, onBack = { subPage = null })
-                                    SubPage.Ftp -> FtpScreen(vm = vm, onBack = { subPage = null })
-                                    SubPage.Automation -> AutomationScreen(vm = vm, onBack = { subPage = null })
-                                    SubPage.More -> MoreScreen(
-                                        onNetwork = { subPage = SubPage.Network },
-                                        onBackup = { subPage = SubPage.Backup },
-                                        onDiagnostics = { subPage = SubPage.Diagnostics },
-                                        onKeepAlive = { subPage = SubPage.KeepAlive },
-                                        onHelp = { subPage = SubPage.DownloadHelp },
-                                        onCrashReports = { subPage = SubPage.CrashReports },
-                                        onWidgetSettings = { subPage = SubPage.WidgetSettings },
-                                        onMcp = { subPage = SubPage.Mcp },
-                                        onFtp = { subPage = SubPage.Ftp },
-                                        onAutomation = { subPage = SubPage.Automation }
-                                    )
-                                    SubPage.Cores -> DownloadScreen(vm, onShowDownloadHelp = { subPage = SubPage.DownloadHelp }, onBack = { subPage = null })
-                                    SubPage.ServerList -> ServerManagementScreen(
-                                        vm,
                                         onPlugins = { subPage = null; tab = McTab.Download },
                                         onProperties = { subPage = SubPage.Properties },
                                         onIcon = { subPage = SubPage.ServerIcon },
                                         onWorlds = { navigateTo(SubPage.WorldManage) },
-                                        onCreateServer = { subPage = SubPage.Cores },
-                                        onBack = { subPage = null }
+                                        onCreateServer = { subPage = SubPage.Cores }
                                     )
-                                    SubPage.PlayerList -> PlayersScreen(
-                                        vm,
+                                    McTab.Players -> PlayersScreen(
+                                        vm = vm,
                                         onNavigateProperties = { subPage = SubPage.Properties },
                                         onNavigateOpGuide = { subPage = SubPage.OpLevelGuide },
                                         onPlayerTools = { navigateTo(SubPage.PlayerTools) }
                                     )
-                                    SubPage.AppSettings -> SettingsScreen(vm, onNavigate = ::navigateTo)
-                                    SubPage.Crossplay -> MineHostCrossplay(vm = vm, onBack = { subPage = null })
-                                    SubPage.Files -> ToolSubPage(onBack = { subPage = null }) {
-                                        FileManagerScreen(vm = vm, onOpenMtGuide = {
-                                            mtGuideFromFiles = true
-                                            subPage = SubPage.MtGuide
-                                        })
-                                    }
-                                    SubPage.Console -> ToolSubPage(onBack = { subPage = null }) {
-                                        TerminalScreen(vm = vm)
-                                    }
-                                    SubPage.Remote -> MineHostRemote(vm = vm, onBack = { subPage = null })
-                                    SubPage.Performance -> MineHostPerformance(
-                                        vm = vm,
-                                        onBack = { subPage = null },
-                                        navigate = ::navigateTo
-                                    )
-                                    SubPage.WorldRules, SubPage.PlayerTools, SubPage.AddonTools -> MineHostOverview(
-                                        vm = vm,
-                                        navigate = ::navigateTo,
-                                        onConsole = { navigateTo(SubPage.Console) },
-                                        section = when (page.second) {
-                                            SubPage.WorldRules -> 2
-                                            SubPage.PlayerTools -> 4
-                                            else -> 5
-                                        },
-                                        onBack = { subPage = null }
-                                    )
-                                    null -> {}
+                                    McTab.Files -> FileManagerScreen(vm = vm, onOpenMtGuide = {
+                                        mtGuideFromFiles = false
+                                        subPage = SubPage.MtGuide
+                                    })
+                                    McTab.Terminal -> TerminalScreen(vm = vm)
+                                    McTab.Settings -> MineHostManage(vm = vm, navigate = ::navigateTo)
                                 }
-                            }
-                            else -> when (page.third) {
-                                McTab.Dashboard -> MineHostOverview(
-                                    vm,
-                                    navigate = ::navigateTo,
-                                    onConsole = { navigateTo(SubPage.Console) }
-                                )
-                                McTab.Worlds -> WorldsScreen(
-                                    vm = vm,
-                                    onBack = { tab = McTab.Dashboard },
-                                    onImport = { navigateTo(SubPage.WorldImport) },
-                                    onWorldRules = { navigateTo(SubPage.WorldRules) }
-                                )
-                                McTab.Download -> PluginsScreen(vm = vm, onAddonTools = { navigateTo(SubPage.AddonTools) })
-                                McTab.ServerManagement -> ServerManagementScreen(
-                                    vm = vm,
-                                    onPlugins = { subPage = null; tab = McTab.Download },
-                                    onProperties = { subPage = SubPage.Properties },
-                                    onIcon = { subPage = SubPage.ServerIcon },
-                                    onWorlds = { navigateTo(SubPage.WorldManage) },
-                                    onCreateServer = { subPage = SubPage.Cores }
-                                )
-                                McTab.Players -> PlayersScreen(
-                                    vm = vm,
-                                    onNavigateProperties = { subPage = SubPage.Properties },
-                                    onNavigateOpGuide = { subPage = SubPage.OpLevelGuide },
-                                    onPlayerTools = { navigateTo(SubPage.PlayerTools) }
-                                )
-                                McTab.Files -> FileManagerScreen(vm = vm, onOpenMtGuide = {
-                                    mtGuideFromFiles = false
-                                    subPage = SubPage.MtGuide
-                                })
-                                McTab.Terminal -> TerminalScreen(vm = vm)
-                                McTab.Settings -> MineHostManage(vm = vm, navigate = ::navigateTo)
                             }
                         }
                     }
@@ -413,6 +421,7 @@ fun McApp() {
                         containerColor = glass.glassChrome,
                         tonalElevation = 0.dp,
                         title = {
+                            ApplyHorizonDialogBlur()
                             Text(
                                 text = "Minecraft EULA",
                                 style = MaterialTheme.typography.titleLarge,
@@ -484,7 +493,12 @@ fun McApp() {
 @Composable
 private fun ToolSubPage(onBack: () -> Unit, content: @Composable () -> Unit) {
     val glass = HorizonGlass
-    Column(modifier = Modifier.fillMaxSize()) {
+    val chromePad = LocalHorizonChromePadding.current
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(top = chromePad.calculateTopPadding())
+    ) {
         TextButton(
             onClick = onBack,
             modifier = Modifier
@@ -500,7 +514,14 @@ private fun ToolSubPage(onBack: () -> Unit, content: @Composable () -> Unit) {
             Text("Quay lại", modifier = Modifier.padding(start = 8.dp))
         }
         Box(modifier = Modifier.weight(1f)) {
-            content()
+            CompositionLocalProvider(
+                LocalHorizonChromePadding provides PaddingValues(
+                    top = 0.dp,
+                    bottom = chromePad.calculateBottomPadding()
+                )
+            ) {
+                content()
+            }
         }
     }
 }
