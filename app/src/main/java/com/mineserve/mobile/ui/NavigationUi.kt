@@ -77,7 +77,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -89,7 +88,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
@@ -295,16 +293,20 @@ internal fun MineHostNavigation(
     val density = LocalDensity.current
     val outerChrome = LocalHorizonChromePadding.current
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    var measuredTopPx by remember { mutableIntStateOf(0) }
-    val computedTopPadding = if (measuredTopPx > 0) {
-        with(density) { measuredTopPx.toDp() }
-    } else {
-        statusTop + 74.dp
-    }
-    val providedChromePadding = PaddingValues(
-        top = maxOf(outerChrome.calculateTopPadding(), computedTopPadding),
-        bottom = outerChrome.calculateBottomPadding()
+    val hasStatusPill = !liveStatusPillText.isNullOrBlank()
+    val capsuleBodyHeight = maxOf(
+        58.dp,
+        with(density) { 28.sp.toDp() } +
+            (if (hasStatusPill) with(density) { 18.sp.toDp() } + 10.dp else 0.dp) +
+            16.dp
     )
+    val computedTopPadding = statusTop + capsuleBodyHeight + 12.dp
+    val providedChromePadding = remember(outerChrome, computedTopPadding) {
+        PaddingValues(
+            top = maxOf(outerChrome.calculateTopPadding(), computedTopPadding),
+            bottom = outerChrome.calculateBottomPadding()
+        )
+    }
 
     var menuOpen by rememberSaveable { mutableStateOf(false) }
     var themeStudioOpen by rememberSaveable { mutableStateOf(false) }
@@ -337,7 +339,6 @@ internal fun MineHostNavigation(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
-                .onSizeChanged { measuredTopPx = it.height }
                 .statusBarsPadding()
                 .padding(horizontal = 10.dp, vertical = 6.dp)
                 .horizonGlassPlate(

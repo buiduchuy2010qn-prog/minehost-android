@@ -1114,10 +1114,12 @@ fun MineServeMobileTheme(
     val colorPreset by AppUiSettings.colorPreset.collectAsState()
     val glassOpacity by AppUiSettings.glassOpacity.collectAsState()
     val baseDensity = LocalDensity.current
-    val scaledDensity = Density(
-        density = baseDensity.density,
-        fontScale = baseDensity.fontScale * fontScaleMultiplier.coerceIn(0.90f, 1.25f)
-    )
+    val scaledDensity = remember(baseDensity.density, baseDensity.fontScale, fontScaleMultiplier) {
+        Density(
+            density = baseDensity.density,
+            fontScale = baseDensity.fontScale * fontScaleMultiplier.coerceIn(0.90f, 1.25f)
+        )
+    }
 
     val activeColorScheme = mineHostColorScheme(colorPreset)
     val activeGlass = remember(colorPreset, glassOpacity) {

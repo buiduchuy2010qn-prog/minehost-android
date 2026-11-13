@@ -73,8 +73,11 @@ class MineHostNavigationLayoutTest {
         controller!!.get().setContent {
             MaterialTheme(colorScheme = scheme, typography = McTypography) {
                 val density = LocalDensity.current
+                val scaledDensity = remember(density.density, fontScale) {
+                    Density(density.density, fontScale)
+                }
                 CompositionLocalProvider(
-                    LocalDensity provides Density(density.density, fontScale),
+                    LocalDensity provides scaledDensity,
                     LocalHorizonGlass provides glass
                 ) {
                     Surface(
