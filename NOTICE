@@ -1,2 +1,33 @@
-Minexa is licensed under the GNU General Public License, version 3.0
-or later. See LICENSE for the full license text.
+# LEGAL NOTICE & OPEN-SOURCE ATTRIBUTION (MINEHOST PRO)
+
+## 🇬🇧 English Notice (Pursuant to GNU GPL v3.0 Section 5 & Section 7)
+
+### 1. Copyright & Upstream Attribution
+* **Original Upstream Base:** **[Minexa](https://github.com/lovehutaocute/Minexa)** — Licensed under the **GNU General Public License v3.0 or later (`GPL-3.0-or-later`)**.
+* **Derivative Work & Major Enhancements (`MineHost Pro v3.x`):**
+  * **Copyright (C) 2026 Bùi Đức Huy (`@buiduchuy2010qn-prog`)** — [buiduchuy2010qn-prog/minehost-android](https://github.com/buiduchuy2010qn-prog/minehost-android)
+  * Pursuant to **Section 5(a) of the GNU GPL v3.0**, notice is hereby given that this repository contains substantial modifications introduced in **2026**, including the **Pure Horizon Crystal Glass Mobile UI**, **3-Engine Architecture (`Java Original` • `Java + Rust Turbo` • `Pumpkin Native Rust ARM64`)**, **1-Tap Crossplay (`GeyserMC` + `Floodgate`)**, **Smart Mod Doctor**, **Telegram Cloud Backup**, **Web Remote `:8585`**, and **Thermal/Battery Guard**.
+
+### 2. License Grant
+This program is free software: you can redistribute it and/or modify it under the terms of the **GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version (`GPL-3.0-or-later`)**. See **[LICENSE](LICENSE)** for the full license text.
+
+### 3. On-Demand Runtime & Ecosystem Credits (Separate Processes / Public APIs)
+MineHost Pro downloads or orchestrates user-selected server engines and tools as separate processes, each governed by its own upstream license:
+* **[Pumpkin](https://github.com/Pumpkin-MC/Pumpkin)** — Native Rust Minecraft Server (`MIT License` / `GPL-3.0` compatible).
+* **[GeyserMC](https://github.com/GeyserMC/Geyser) & [Floodgate](https://github.com/GeyserMC/Floodgate)** — Java/Bedrock Crossplay bridge (`MIT License`).
+* **FCL / Pojav / OpenJDK Android ARM64 Runtimes** — `GNU GPL v2.0 with Classpath Exception`.
+* **PaperMC, Purpur, Fabric, Forge, NeoForge, Modrinth API & Playit.gg** — downloaded directly from official distribution channels at runtime on user request.
+
+### 4. Trademark & Non-Affiliation Disclaimer
+> **NOT AN OFFICIAL MINECRAFT PRODUCT. NOT APPROVED BY OR ASSOCIATED WITH MOJANG OR MICROSOFT.**
+> Minecraft is a registered trademark of Mojang Synergies AB / Microsoft Corporation. Users must accept the official [Minecraft EULA](https://www.minecraft.net/en-us/eula) before starting any Minecraft server.
+
+---
+
+## 🇻🇳 Thông Báo Pháp Lý & Ghi Công Mã Nguồn Mở (Tiếng Việt — Chuẩn GNU GPL-3.0)
+
+1. **Nguồn kế thừa & Thông báo sửa đổi (Mục 5a GPL-3.0):**
+   - Kế thừa nền tảng runtime mở từ dự án **[Minexa](https://github.com/lovehutaocute/Minexa)** (`GNU GPL-3.0-or-later`).
+   - Toàn bộ kiến trúc nâng cấp **MineHost Pro (`2026`)** — bao gồm giao diện kính pha lê **Pure Horizon Glass**, bộ 3 nhân máy chủ (**Java Mod • Java Turbo • Pumpkin Rust ARM64**), tự động hóa Crossplay PC+PE, Smart Mod Doctor, Web Remote và Sao lưu Telegram — thuộc bản quyền sửa đổi **`Copyright (C) 2026 Bùi Đức Huy (@buiduchuy2010qn-prog)`**, phát hành mở trọn vẹn theo giấy phép **[GNU GPL-3.0-or-later](LICENSE)**.
+2. **Cam kết Quyền riêng tư:** Không thu thập dữ liệu cá nhân, không quảng cáo, không trình theo dõi (**[PRIVACY.md](PRIVACY.md)**).
+3. **Miễn trừ Nhãn hiệu:** Đây là dự án mã nguồn mở độc lập, không phải sản phẩm chính thức của Minecraft và không liên kết với Mojang Synergies AB hay Microsoft Corporation.
