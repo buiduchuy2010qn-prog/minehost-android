@@ -13,7 +13,7 @@ This program is free software: you can redistribute it and/or modify it under th
 
 ### 3. On-Demand Runtime & Ecosystem Credits (Separate Processes / Public APIs)
 MineHost Pro downloads or orchestrates user-selected server engines and tools as separate processes, each governed by its own upstream license:
-* **[Pumpkin](https://github.com/Pumpkin-MC/Pumpkin)** — Native Rust Minecraft Server (`MIT License` / `GPL-3.0` compatible).
+* **[Pumpkin](https://github.com/Pumpkin-MC/Pumpkin)** — Native Rust Minecraft Server (GNU GPL-3.0 License).
 * **[GeyserMC](https://github.com/GeyserMC/Geyser) & [Floodgate](https://github.com/GeyserMC/Floodgate)** — Java/Bedrock Crossplay bridge (`MIT License`).
 * **FCL / Pojav / OpenJDK Android ARM64 Runtimes** — `GNU GPL v2.0 with Classpath Exception`.
 * **PaperMC, Purpur, Fabric, Forge, NeoForge, Modrinth API & Playit.gg** — downloaded directly from official distribution channels at runtime on user request.
