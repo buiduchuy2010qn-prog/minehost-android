@@ -13,6 +13,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -46,6 +47,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
@@ -53,6 +55,8 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.WarningAmber
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -157,11 +161,6 @@ fun HeaderBlock(
             )
             Spacer(Modifier.height(3.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                MinecraftPixelArtIcon(
-                    kind = remember(title) { inferCardArtKind(title) },
-                    size = 24.dp
-                )
-                Spacer(Modifier.width(10.dp))
                 Text(
                     text = title,
                     color = MaterialTheme.colorScheme.onBackground,
@@ -176,13 +175,13 @@ fun HeaderBlock(
     }
 }
 
-/** 子页面统一返回栏：白底延伸到状态栏后面（状态栏透明）+ 返回按钮 + 标题 */
+/** 子页面统一返回栏：状态栏透明适配 + 返回按钮 + 标题 */
 @Composable
 fun BackBar(title: String, onBack: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface)
+            .background(MaterialTheme.colorScheme.background)
     ) {
         Row(
             modifier = Modifier
@@ -193,7 +192,7 @@ fun BackBar(title: String, onBack: () -> Unit) {
         ) {
             IconButton(onClick = onBack, modifier = Modifier.size(McIcon.Touch)) {
                 Icon(
-                    Icons.AutoMirrored.Outlined.ArrowBack,
+                    Icons.AutoMirrored.Rounded.ArrowBack,
                     contentDescription = stringResource(R.string.s404),
                     tint = MaterialTheme.colorScheme.onBackground,
                     modifier = Modifier.size(McIcon.Item)
@@ -208,6 +207,10 @@ fun BackBar(title: String, onBack: () -> Unit) {
                 modifier = Modifier.weight(1f).padding(start = 8.dp)
             )
         }
+        androidx.compose.material3.HorizontalDivider(
+            thickness = 0.5.dp,
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+        )
     }
 }
 
@@ -281,11 +284,6 @@ fun HeroBlock(
                     modifier = Modifier.weight(1f, fill = false),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    MinecraftPixelArtIcon(
-                        kind = if (state.isRunning) MinecraftArtKind.CREEPER else MinecraftArtKind.GRASS,
-                        size = 22.dp
-                    )
-                    Spacer(Modifier.size(8.dp))
                     // 状态指示点：启动中橙色，运行中亮绿，未运行半透明白
                     Box(
                         modifier = Modifier
@@ -739,25 +737,7 @@ fun CoreBrandLogo(
             com.mineserve.mobile.data.ServerCore.Unknown -> Color(0xFF64748B)
         }
     }
-    if (core == com.mineserve.mobile.data.ServerCore.Pumpkin) {
-        Box(
-            modifier = modifier
-                .size(size)
-                .clip(RoundedCornerShape(9.dp))
-                .background(
-                    androidx.compose.ui.graphics.Brush.linearGradient(
-                        listOf(Color(0xFFEA580C), Color(0xFF9A3412))
-                    )
-                )
-                .border(1.4.dp, Color(0xFFFB923C), RoundedCornerShape(9.dp)),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = "🦀",
-                fontSize = (size.value * 0.52f).sp
-            )
-        }
-    } else if (officialBitmap != null) {
+    if (officialBitmap != null) {
         androidx.compose.foundation.Image(
             bitmap = officialBitmap,
             contentDescription = core.displayName,
@@ -765,15 +745,25 @@ fun CoreBrandLogo(
             filterQuality = androidx.compose.ui.graphics.FilterQuality.Medium,
             modifier = modifier
                 .size(size)
-                .clip(RoundedCornerShape(9.dp))
-                .border(1.2.dp, borderColor.copy(alpha = 0.72f), RoundedCornerShape(9.dp))
+                .clip(RoundedCornerShape(10.dp))
+                .border(1.dp, borderColor.copy(alpha = 0.65f), RoundedCornerShape(10.dp))
         )
     } else {
-        MinecraftPixelArtIcon(
-            kind = MinecraftArtKind.GRASS,
-            size = size,
+        Box(
             modifier = modifier
-        )
+                .size(size)
+                .clip(RoundedCornerShape(10.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                .border(1.dp, borderColor.copy(alpha = 0.55f), RoundedCornerShape(10.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Dns,
+                contentDescription = core.displayName,
+                tint = borderColor,
+                modifier = Modifier.size(size * 0.54f)
+            )
+        }
     }
 }
 
@@ -815,7 +805,6 @@ fun McCard(
     compact: Boolean = false,
     content: @Composable () -> Unit
 ) {
-    val artKind = remember(title) { inferCardArtKind(title) }
     Card(
         modifier = modifier
             .fillMaxWidth()
@@ -825,6 +814,7 @@ fun McCard(
             ),
         shape = McShape.Card,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column {
@@ -838,19 +828,12 @@ fun McCard(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        MinecraftPixelArtIcon(kind = artKind, size = 20.dp)
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            title,
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.weight(1f, fill = false)
-                        )
-                    }
+                    Text(
+                        title,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
                     if (trailing != null) {
                         Spacer(Modifier.width(8.dp))
                         trailing.invoke()
@@ -1421,17 +1404,17 @@ fun SegmentedTabs(
         modifier = modifier
             .fillMaxWidth()
             .height(tabHeight)
-            .clip(McShape.Chip)
+            .clip(McShape.Control)
             .background(FieldGray)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f), McShape.Control)
             .alpha(if (enabled) 1f else 0.5f)
     ) {
         val segmentWidth = maxWidth / options.size
         val highlightOffset by animateDpAsState(
             targetValue = segmentWidth * safeIndex,
-            animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
+            animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing),
             label = "segmented-tabs-highlight"
         )
-        // 高亮块：留 3dp 内边距，所以圆角比轨道小 3dp，视觉上正好同心
         Box(
             modifier = Modifier
                 .offset(x = highlightOffset)
@@ -1460,9 +1443,8 @@ fun SegmentedTabs(
                     Text(
                         label,
                         color = if (isSelected) MaterialTheme.colorScheme.onPrimary else Muted,
-                        fontSize = 14.sp,
-                        lineHeight = 18.sp,
-                        fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
                         textAlign = TextAlign.Center,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis

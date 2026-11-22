@@ -174,7 +174,12 @@ fun PlayersScreen(
     val playerHistory by vm.playerHistory.collectAsState()
     val knownPlayers by vm.knownServerPlayers.collectAsState()
     val config by vm.config.collectAsState()
-    val isBootstrapped by vm.isBootstrapped.collectAsState()
+    val termuxBootstrapped by vm.isBootstrapped.collectAsState()
+    val rustEngineStatus by vm.rustEngineStatus.collectAsState()
+    val activeCore = config.installedCores.find { it.name == config.activeCoreName }
+    val envReady = termuxBootstrapped ||
+        activeCore?.core == com.mineserve.mobile.data.ServerCore.Pumpkin ||
+        rustEngineStatus.isNativeRustEnabled
     val activitySummaries = remember(playerHistory, onlinePlayers, serverState.isRunning) {
         vm.playerActivitySummaries()
     }
@@ -191,8 +196,8 @@ fun PlayersScreen(
 
     // 进入页面/切换核心/服务器启动状态变化时刷新 OP/白名单/封禁列表
     // （服务器启动完成后 ops.json 等才会生成，故监听 isRunning）
-    LaunchedEffect(isBootstrapped, config.activeCoreName, serverState.isRunning) {
-        if (isBootstrapped && config.activeCoreName != null) {
+    LaunchedEffect(envReady, config.activeCoreName, serverState.isRunning) {
+        if (envReady && config.activeCoreName != null) {
             vm.refreshPlayers()
         }
     }
@@ -204,7 +209,6 @@ fun PlayersScreen(
     LaunchedEffect(Unit) { vm.messageFlow.collectLatest { snackbarHostState.showInstantSnackbar(it) } }
 
             val isRunning = serverState.isRunning
-            val activeCore = config.installedCores.find { it.name == config.activeCoreName }
 
     Scaffold(
         snackbarHost = { SwipeableInstantSnackbarHost(snackbarHostState) },
@@ -248,7 +252,7 @@ fun PlayersScreen(
             // ── 服务器状态横幅 ──
             ServerStatusBanner(
                 isRunning = isRunning,
-                isBootstrapped = isBootstrapped,
+                isBootstrapped = envReady,
                 hasActiveCore = activeCore != null,
                 onlineCount = if (isRunning) onlinePlayers.size.coerceAtLeast(serverState.onlinePlayers) else 0,
                 maxPlayers = serverState.maxPlayers,

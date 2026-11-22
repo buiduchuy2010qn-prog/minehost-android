@@ -1,6 +1,14 @@
 package com.mineserve.mobile.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,6 +20,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.ui.unit.dp
+import com.mineserve.mobile.ui.theme.McMotion
+import com.mineserve.mobile.ui.theme.isReducedMotionEnabled
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.SnackbarHostState
@@ -177,10 +187,10 @@ fun McApp() {
     val livePillText = when {
         serverState.isRunning && serverState.startupPhase == com.mineserve.mobile.data.StartupPhase.Ready -> {
             val tpsLabel = if (serverState.tps > 0.0) String.format(java.util.Locale.US, "%.1f", serverState.tps) else "20.0"
-            "🟢 ${tpsLabel} TPS • ${tempInt}°C"
+            "${tpsLabel} TPS · ${tempInt}°C"
         }
-        serverState.isRunning -> "⚡ Đang mở..."
-        config.activeCoreName != null -> "⚪ Tắt • ${tempInt}°C"
+        serverState.isRunning -> "Đang mở"
+        config.activeCoreName != null -> "Dừng · ${tempInt}°C"
         else -> null
     }
     val livePillState = when {
@@ -190,13 +200,13 @@ fun McApp() {
         else -> 0
     }
     val engineBadge = when {
-        rustEngineStatus.isNativeRustEnabled -> "🦀 Nhân Rust Thuần"
-        rustEngineStatus.isRustJvmTurboEnabled -> "⚡ Java + Rust Turbo"
-        else -> "☕ Java Nguyên Bản"
+        rustEngineStatus.isNativeRustEnabled -> "Rust Thuần"
+        rustEngineStatus.isRustJvmTurboEnabled -> "Java + Rust Turbo"
+        else -> "Java Gốc"
     }
     val drawerSummary = if (config.activeCoreName != null) {
-        val runBadge = if (serverState.isRunning) "🟢 Online (${serverState.onlinePlayers}/${serverState.maxPlayers})" else "⚪ Đang dừng"
-        "$runBadge • $engineBadge • Pin ${thermalInfo.batteryPercent}%"
+        val runBadge = if (serverState.isRunning) "Online (${serverState.onlinePlayers}/${serverState.maxPlayers})" else "Đang dừng"
+        "$runBadge · $engineBadge · Pin ${thermalInfo.batteryPercent}%"
     } else null
 
     MineHostNavigation(
@@ -236,13 +246,33 @@ fun McApp() {
             )
         }
     ) { padding ->
-        Box(
+        val currentRoute = Triple(showLogs, subPage, tab)
+        val reducedMotion = remember(appContext) { isReducedMotionEnabled(appContext) }
+        AnimatedContent(
+            targetState = currentRoute,
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
-                .padding(padding)
-        ) {
-            val page = Triple(showLogs, subPage, tab)
+                .padding(padding),
+            contentKey = { "${it.first}:${it.second}:${it.third}" },
+            transitionSpec = {
+                if (reducedMotion) {
+                    fadeIn(tween(120)) togetherWith fadeOut(tween(100))
+                } else if (targetState.second != null && initialState.second == null) {
+                    (slideInHorizontally(tween(McMotion.NormalMs, easing = McMotion.StandardEasing)) { it / 5 } +
+                        fadeIn(tween(McMotion.FastMs))) togetherWith
+                        fadeOut(tween(120))
+                } else if (targetState.second == null && initialState.second != null) {
+                    fadeIn(tween(McMotion.FastMs)) togetherWith
+                        (slideOutHorizontally(tween(McMotion.FastMs, easing = McMotion.StandardEasing)) { it / 5 } +
+                            fadeOut(tween(McMotion.FastMs)))
+                } else {
+                    (fadeIn(tween(180)) + slideInVertically(tween(180)) { it / 48 }) togetherWith
+                        fadeOut(tween(110))
+                }
+            },
+            label = "minehost_route_transition"
+        ) { page ->
             pageState.SaveableStateProvider("${config.activeCoreName}:${page.first}:${page.second}:${page.third}") {
             when {
                 page.first -> LogsScreen(vm = vm, onBack = { showLogs = false })

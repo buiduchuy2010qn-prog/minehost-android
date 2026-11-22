@@ -28,6 +28,10 @@ import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.rounded.CleaningServices
+import androidx.compose.material.icons.rounded.Group
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
@@ -59,24 +63,27 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mineserve.mobile.ui.LocalMineHostChrome
 import com.mineserve.mobile.ui.McViewModel
 import com.mineserve.mobile.ui.TerminalLogTone
 import com.mineserve.mobile.ui.TerminalSessionType
+import com.mineserve.mobile.ui.theme.JetBrainsMonoFamily
+import com.mineserve.mobile.ui.theme.mineHostColors
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlin.math.roundToInt
 
 private enum class CmdCategory(val title: String) {
-    ProTools("⚡ Công cụ Pro"),
-    WeatherTime("🌤️ Thời tiết & Giờ"),
-    ModeDiff("🎮 Chế độ & Độ khó"),
-    Gamerules("🛡️ Luật Thế Giới"),
-    Admin("👥 Quản trị")
+    ProTools("Công cụ Pro"),
+    WeatherTime("Thời tiết & Giờ"),
+    ModeDiff("Chế độ & Độ khó"),
+    Gamerules("Luật thế giới"),
+    Admin("Quản trị")
 }
 
 private enum class LogFilterMode(val label: String) {
     All("Tất cả"),
-    ErrorsAndWarns("⚠️ Lỗi & Cảnh báo"),
-    PlayerAndCmd("👤 Người chơi & Lệnh")
+    ErrorsAndWarns("Lỗi & Cảnh báo"),
+    PlayerAndCmd("Người chơi & Lệnh")
 }
 
 private data class QuickMcCommand(
@@ -216,6 +223,8 @@ fun TerminalScreen(vm: McViewModel) {
     val activeMcVersion = activeCore?.version ?: config.mcVersion
     val activeSupportsPlugins = activeCore?.core?.supportsPlugins == true
     val context = LocalContext.current
+    val semanticColors = MaterialTheme.mineHostColors
+    val sharedChrome = LocalMineHostChrome.current
 
     var input by remember(activeId) { mutableStateOf("") }
     var commandHistory by remember { mutableStateOf(listOf<String>()) }
@@ -336,13 +345,13 @@ fun TerminalScreen(vm: McViewModel) {
     }
 
     Scaffold(
-        containerColor = Color(0xFF121419),
+        containerColor = semanticColors.terminalBg,
         contentWindowInsets = WindowInsets(0.dp),
         bottomBar = {
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFF181B22))
+                    .background(semanticColors.terminalSurface)
                     .imePadding()
                     .padding(start = 12.dp, top = 8.dp, end = 12.dp, bottom = 10.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -405,8 +414,8 @@ fun TerminalScreen(vm: McViewModel) {
         Column(
             Modifier
                 .fillMaxSize()
-                .background(Color(0xFF121419))
-                .statusBarsPadding()
+                .background(semanticColors.terminalBg)
+                .let { if (sharedChrome) it else it.statusBarsPadding() }
                 .padding(terminalPadding)
         ) {
             // ── 1. Thanh tiêu đề & Trạng thái trực tiếp (Tách 2 hàng chống bó chữ dọc) ──
@@ -506,10 +515,17 @@ fun TerminalScreen(vm: McViewModel) {
                             .background(Color(0xFF222B3B))
                             .clickable { showPlayerToolDialog = true }
                             .padding(horizontal = 8.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Group,
+                            contentDescription = null,
+                            tint = Color(0xFF89B4FA),
+                            modifier = Modifier.size(13.dp)
+                        )
                         Text(
-                            "👥 ${onlinePlayers.size} người online",
+                            "${onlinePlayers.size} người online",
                             color = Color(0xFF89B4FA),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold,
@@ -523,10 +539,17 @@ fun TerminalScreen(vm: McViewModel) {
                             .background(Color(0xFF2A243B))
                             .clickable { showViewDistDialog = true }
                             .padding(horizontal = 8.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Visibility,
+                            contentDescription = null,
+                            tint = Color(0xFFCBA6F7),
+                            modifier = Modifier.size(13.dp)
+                        )
                         Text(
-                            "🔭 $currentViewDist Chunk",
+                            "$currentViewDist Chunk",
                             color = Color(0xFFCBA6F7),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold,
@@ -540,10 +563,17 @@ fun TerminalScreen(vm: McViewModel) {
                             .background(Color(0xFF1E3238))
                             .clickable { vm.cleanRamNow() }
                             .padding(horizontal = 8.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
+                        Icon(
+                            imageVector = Icons.Rounded.CleaningServices,
+                            contentDescription = null,
+                            tint = Color(0xFF80DEEA),
+                            modifier = Modifier.size(13.dp)
+                        )
                         Text(
-                            "🧹 Dọn RAM",
+                            "Dọn RAM",
                             color = Color(0xFF80DEEA),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
@@ -705,17 +735,17 @@ fun TerminalScreen(vm: McViewModel) {
                         if (selectedCategory == CmdCategory.ProTools) {
                             AssistChip(
                                 onClick = { showViewDistDialog = true },
-                                label = { Text("🔭 Cấu hình nhẹ ($currentViewDist Chunk)", fontSize = 11.sp, color = Color(0xFFA6E3A1)) },
+                                label = { Text("Cấu hình nhẹ ($currentViewDist Chunk)", fontSize = 11.sp, color = Color(0xFFA6E3A1)) },
                                 colors = AssistChipDefaults.assistChipColors(containerColor = Color(0xFF1F2D27))
                             )
                             AssistChip(
                                 onClick = { showBroadcastDialog = true },
-                                label = { Text("📢 Phát thông báo (Say/Title)", fontSize = 11.sp, color = Color(0xFF89B4FA)) },
+                                label = { Text("Phát thông báo (Say/Title)", fontSize = 11.sp, color = Color(0xFF89B4FA)) },
                                 colors = AssistChipDefaults.assistChipColors(containerColor = Color(0xFF1F293B))
                             )
                             AssistChip(
                                 onClick = { showPlayerToolDialog = true },
-                                label = { Text("👑 Cấp OP / Chế độ / Kick", fontSize = 11.sp, color = Color(0xFFFFC857)) },
+                                label = { Text("Cấp OP / Chế độ / Kick", fontSize = 11.sp, color = Color(0xFFFFC857)) },
                                 colors = AssistChipDefaults.assistChipColors(containerColor = Color(0xFF2E291E))
                             )
                         }
@@ -728,7 +758,7 @@ fun TerminalScreen(vm: McViewModel) {
                                     onClick = { sendCommand(item.command) },
                                     label = {
                                         Text(
-                                            if (isLastSent) "✅ Đã gửi: ${item.label}" else "${item.emoji} ${item.label}",
+                                            if (isLastSent) "Đã gửi: ${item.label}" else item.label,
                                             fontSize = 11.sp,
                                             color = if (isLastSent) Color(0xFFA6E3A1) else Color(0xFFE8E8E8),
                                             fontWeight = if (isLastSent) FontWeight.Bold else FontWeight.Normal
@@ -1051,7 +1081,7 @@ private const val MAX_DISPLAY_LOG_CHARS = 400
 
 private data class TerminalLogStyle(val color: Color)
 
-private val terminalLogFontFamily = FontFamily.Monospace
+private val terminalLogFontFamily = JetBrainsMonoFamily
 private val terminalLogStyles = mapOf(
     TerminalLogTone.Command to TerminalLogStyle(Color(0xFF57E357)),
     TerminalLogTone.Error to TerminalLogStyle(Color(0xFFFF7B72)),

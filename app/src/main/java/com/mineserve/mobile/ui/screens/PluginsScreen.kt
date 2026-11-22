@@ -184,7 +184,12 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
     }
     val context = LocalContext.current
     val config by vm.config.collectAsStateWithLifecycle()
-    val isBootstrapped by vm.isBootstrapped.collectAsStateWithLifecycle()
+    val termuxBootstrapped by vm.isBootstrapped.collectAsStateWithLifecycle()
+    val rustStatus by vm.rustEngineStatus.collectAsStateWithLifecycle()
+    val activeCore = config.installedCores.find { it.name == config.activeCoreName }
+    val isBootstrapped = termuxBootstrapped ||
+        activeCore?.core == com.mineserve.mobile.data.ServerCore.Pumpkin ||
+        rustStatus.isNativeRustEnabled
     val installedPlugins by vm.installedPlugins.collectAsStateWithLifecycle()
     val mods by vm.mods.collectAsStateWithLifecycle()
     val modrinthResults by vm.modrinthResults.collectAsStateWithLifecycle()
@@ -292,8 +297,6 @@ fun PluginsScreen(vm: McViewModel, onAddonTools: () -> Unit = {}) {
         vm.messageFlow.collectLatest { snackbarHostState.showInstantSnackbar(it) }
     }
 
-    val rustStatus by vm.rustEngineStatus.collectAsState()
-    val activeCore = config.installedCores.find { it.name == config.activeCoreName }
     val coreType = activeCore?.core ?: config.selectedCore
     val isPowerNukkitX = coreType == com.mineserve.mobile.data.ServerCore.PowerNukkitX
     val availableTabs = buildList {

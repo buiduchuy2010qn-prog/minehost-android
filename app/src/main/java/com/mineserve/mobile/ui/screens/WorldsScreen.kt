@@ -39,15 +39,18 @@ fun WorldsScreen(vm: McViewModel, onBack: () -> Unit, onImport: () -> Unit = {},
     val localArchives by vm.localWorldArchives.collectAsState()
     val loading by vm.worldsLoading.collectAsState()
     val active by vm.activeWorldName.collectAsState()
-    val ready by vm.isBootstrapped.collectAsState()
+    val termuxBootstrapped by vm.isBootstrapped.collectAsState()
     val importing by vm.worldImportBusy.collectAsState()
     val importStatus by vm.worldImportStatus.collectAsState()
     val healthReport by vm.worldHealthReport.collectAsState()
     val config by vm.config.collectAsState()
     val rustStatus by vm.rustEngineStatus.collectAsState()
+    val activeCoreObj = config.installedCores.firstOrNull { it.name == config.activeCoreName }
+    val ready = termuxBootstrapped ||
+        activeCoreObj?.core == com.mineserve.mobile.data.ServerCore.Pumpkin ||
+        rustStatus.isNativeRustEnabled
     val installedPlugins by vm.installedPlugins.collectAsState()
     val mods by vm.mods.collectAsState()
-    val activeCoreObj = config.installedCores.firstOrNull { it.name == config.activeCoreName }
     val isNonJavaWorldEngine = vm.isPowerNukkitXActive() || activeCoreObj?.core?.isBedrock == true || rustStatus.isNativeRustEnabled
     val supportsJavaWorldCreation = activeCoreObj != null && !isNonJavaWorldEngine
     val hasGeyserInstalled = remember(activeCoreObj?.dirName, installedPlugins, mods) {

@@ -87,8 +87,13 @@ fun BackupScreen(vm: McViewModel, onBack: () -> Unit = {}) {
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    val isBootstrapped by vm.isBootstrapped.collectAsState()
+    val termuxBootstrapped by vm.isBootstrapped.collectAsState()
     val config by vm.config.collectAsState()
+    val rustEngineStatus by vm.rustEngineStatus.collectAsState()
+    val activeCore = config.installedCores.firstOrNull { it.name == config.activeCoreName }
+    val isBootstrapped = termuxBootstrapped ||
+        activeCore?.core == com.mineserve.mobile.data.ServerCore.Pumpkin ||
+        rustEngineStatus.isNativeRustEnabled
     val snapshots by vm.snapshots.collectAsState()
     val autoBackupOnStop by vm.autoBackupOnStop.collectAsState()
     val autoUploadDriveOnStop by vm.autoUploadDriveOnStop.collectAsState()

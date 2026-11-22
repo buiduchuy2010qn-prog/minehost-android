@@ -35,6 +35,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
+import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Extension
+import androidx.compose.material.icons.rounded.Smartphone
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -72,6 +76,7 @@ import com.mineserve.mobile.data.JavaRuntime
 import com.mineserve.mobile.data.JavaVendor
 import com.mineserve.mobile.data.JavaVersion
 import com.mineserve.mobile.ui.BackBar
+import com.mineserve.mobile.ui.CoreBrandLogo
 import com.mineserve.mobile.ui.HeaderBlock
 import com.mineserve.mobile.ui.McCard
 import com.mineserve.mobile.ui.McViewModel
@@ -82,6 +87,7 @@ import com.mineserve.mobile.ui.theme.IndigoSoft
 import com.mineserve.mobile.ui.theme.McShape
 import com.mineserve.mobile.ui.theme.Mint
 import com.mineserve.mobile.ui.theme.Muted
+import com.mineserve.mobile.ui.theme.mineHostColors
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
@@ -330,34 +336,35 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                 val isBedrockGroupSelected = config.selectedCore.isBedrock
                 val rustProfile = com.mineserve.mobile.server.ProHostFeatures.resolveRustProfile(selectedRustProfileId)
 
-                McCard(title = "🎯 Tạo Máy Chủ Mới Dễ Dàng — 3 Bước") {
+                val semanticColors = MaterialTheme.mineHostColors
+                McCard(title = "Tạo máy chủ mới — 3 bước") {
                     Text(
-                        "Bước 1 — Chọn loại máy chủ bạn muốn mở:",
+                        "Bước 1 — Chọn loại máy chủ:",
                         color = MaterialTheme.colorScheme.onSurface,
-                        fontSize = 12.5.sp,
-                        fontWeight = FontWeight.ExtraBold
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold
                     )
                     Spacer(Modifier.height(8.dp))
 
                     val primaryTypes = listOf(
                         Triple(
                             "rust",
-                            "🦀 Rust Thuần",
-                            "0% Java • ~50MB RAM\nMở 0.2s • PC + PE sẵn"
+                            "Rust thuần",
+                            "0% Java · ~50 MB RAM\nMở 0.2s · PC + PE sẵn"
                         ),
                         Triple(
                             "plugin",
-                            "⚡ Paper / Plugin",
+                            "Paper / Plugin",
                             "Chạy Plugin .jar\nGhép PC + PE mượt"
                         ),
                         Triple(
                             "mod",
-                            "🧩 Chơi Mod",
+                            "Chơi Mod",
                             "Fabric / Forge / NeoForge\nChạy gói Mod .jar"
                         ),
                         Triple(
                             "bedrock",
-                            "📱 Bedrock PE",
+                            "Bedrock PE",
                             "Thuần Điện thoại PE\nPowerNukkitX / Allay"
                         )
                     )
@@ -374,18 +381,18 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                                         "mod" -> isModGroupSelected
                                         else -> isBedrockGroupSelected
                                     }
-                                    val accent = if (kindKey == "rust") Color(0xFFEA580C) else Indigo
+                                    val accent = if (kindKey == "rust") semanticColors.rust else MaterialTheme.colorScheme.primary
                                     Column(
                                         modifier = Modifier
                                             .weight(1f)
                                             .clip(RoundedCornerShape(12.dp))
                                             .background(
-                                                if (isTypeSel) accent.copy(alpha = 0.18f)
-                                                else com.mineserve.mobile.ui.theme.FieldGray
+                                                if (isTypeSel) accent.copy(alpha = 0.14f)
+                                                else MaterialTheme.colorScheme.surfaceContainer
                                             )
                                             .border(
-                                                width = if (isTypeSel) 1.6.dp else 1.dp,
-                                                color = if (isTypeSel) accent else Color.Transparent,
+                                                width = if (isTypeSel) 1.5.dp else 1.dp,
+                                                color = if (isTypeSel) accent else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f),
                                                 shape = RoundedCornerShape(12.dp)
                                             )
                                             .clickable {
@@ -409,19 +416,49 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                                                 }
                                             }
                                             .padding(horizontal = 10.dp, vertical = 10.dp),
-                                        verticalArrangement = Arrangement.spacedBy(3.dp)
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
                                     ) {
-                                        Text(
-                                            (if (isTypeSel) "✅ " else "") + titleTxt,
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.ExtraBold,
-                                            color = if (isTypeSel) accent else MaterialTheme.colorScheme.onSurface
-                                        )
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            if (kindKey == "rust") {
+                                                CoreBrandLogo(core = ServerCore.Pumpkin, size = 20.dp)
+                                            } else {
+                                                val cardIcon = when (kindKey) {
+                                                    "plugin" -> Icons.Rounded.Bolt
+                                                    "mod" -> Icons.Rounded.Extension
+                                                    else -> Icons.Rounded.Smartphone
+                                                }
+                                                Icon(
+                                                    imageVector = cardIcon,
+                                                    contentDescription = null,
+                                                    tint = accent,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
+                                            Text(
+                                                titleTxt,
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = if (isTypeSel) accent else MaterialTheme.colorScheme.onSurface,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                            if (isTypeSel) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.CheckCircle,
+                                                    contentDescription = "Đã chọn",
+                                                    tint = accent,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
+                                        }
                                         Text(
                                             descTxt,
-                                            fontSize = 10.5.sp,
+                                            fontSize = 11.sp,
                                             lineHeight = 14.sp,
-                                            color = Muted
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
                                 }
@@ -433,9 +470,9 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                         Spacer(Modifier.height(8.dp))
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             listOf(
-                                ServerCore.Fabric to "🧩 Fabric (Nhẹ mượt)",
-                                ServerCore.Forge to "🛡️ Forge (Mod cổ điển)",
-                                ServerCore.NeoForge to "⚒️ NeoForge (Mod mới)"
+                                ServerCore.Fabric to "Fabric (Nhẹ mượt)",
+                                ServerCore.Forge to "Forge (Mod cổ điển)",
+                                ServerCore.NeoForge to "NeoForge (Mod mới)"
                             ).forEach { (c, lbl) ->
                                 SegPill(
                                     text = lbl,
@@ -449,9 +486,9 @@ fun DownloadScreen(vm: McViewModel, onShowDownloadHelp: () -> Unit = {}, onBack:
                         Spacer(Modifier.height(8.dp))
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             listOf(
-                                ServerCore.PowerNukkitX to "📱 PowerNukkitX",
-                                ServerCore.Allay to "⚡ Allay (PE 1.21+)",
-                                ServerCore.PocketMine to "🪶 PocketMine-MP"
+                                ServerCore.PowerNukkitX to "PowerNukkitX",
+                                ServerCore.Allay to "Allay (PE 1.21+)",
+                                ServerCore.PocketMine to "PocketMine-MP"
                             ).forEach { (c, lbl) ->
                                 SegPill(
                                     text = lbl,

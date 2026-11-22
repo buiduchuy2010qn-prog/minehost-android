@@ -1,9 +1,9 @@
 <div align="center">
 
 # 🇻🇳 MINEHOST PRO — ANDROID MINECRAFT SERVER ENGINE
-### **v3.1.3 (Build 72 • Official Community Edition)**
+### **v3.2.0 (Build 73 • Official Community Edition)**
 
-[![Release](https://img.shields.io/badge/RELEASE-v3.1.3%20(Build%2072)-10B981?style=for-the-badge&logo=android&logoColor=white)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
+[![Release](https://img.shields.io/badge/RELEASE-v3.2.0%20(Build%2073)-10B981?style=for-the-badge&logo=android&logoColor=white)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
 [![Engine](https://img.shields.io/badge/3--ENGINE-JAVA%20•%20RUST%20TURBO%20•%20NATIVE%20RUST-EA580C?style=for-the-badge&logo=rust&logoColor=white)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
 [![Platform](https://img.shields.io/badge/ANDROID-8.0%2B%20(ARM64)-0EA5E9?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases)
 [![Crossplay](https://img.shields.io/badge/CROSSPLAY-JAVA%20PC%20%2B%20BEDROCK%20PE-F59E0B?style=for-the-badge&logo=reverbnation&logoColor=white)](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/latest)
@@ -12,16 +12,17 @@
 
 **Biến điện thoại Android thành máy chủ Minecraft chuyên nghiệp (Pumpkin Rust thuần 0% Java hỗ trợ mọi phiên bản 1.7–26.3, Paper, Purpur, Fabric, Forge, NeoForge & Bedrock PE) — Hỗ trợ chơi chung PC & Điện thoại PE không cần thuê VPS hay mở Port Router.**
 
-### 👉 [**📥 TẢI NGAY APK v3.1.3 MỚI NHẤT (`minehost-3.1.3-arm64.apk`)**](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/download/v3.1.3/minehost-3.1.3-arm64.apk)
+### 👉 [**📥 TẢI NGAY APK v3.2.0 MỚI NHẤT (`minehost-3.2.0-arm64.apk`)**](https://github.com/buiduchuy2010qn-prog/minehost-android/releases/download/v3.2.0/minehost-3.2.0-arm64.apk)
 
 </div>
 
 ---
 
-## ✨ Đột Phá Mới Nhất Trên Bản `v3.1.3` (Build 72)
+## ✨ Đột Phá Mới Nhất Trên Bản `v3.2.0` (Build 73)
 
 | Hạng mục nâng cấp | Công nghệ & Cơ chế hoạt động |
 | :--- | :--- |
+| **🎨 Thiết Kế UI/UX Thế Hệ Mới & Font Tiếng Việt Chuẩn** | Đồng bộ bộ phông **Be Vietnam Pro** & **JetBrains Mono** (tabular numerals) cho số liệu/IP/Terminal; 3 bảng màu chuẩn WCAG AA (**Obsidian Slate**, **Đêm ấm**, **Giấy sáng**), logo **Pumpkin-MC** chính thức, lưới chỉ số **Bento 2×2** với biểu đồ Bezier mượt, thẻ kết nối **Copy-First**, Bottom Sheets chọn Server/Mạng & hiệu ứng chuyển cảnh mượt mà. Mở khóa **Pure Rust (0% Java)** hoàn toàn cho Thế giới, Người chơi, Plugin/Mod & Sao lưu. |
 | **🎨 Giao Diện Trung Tâm Thế Hệ Mới + Sóng Đồ Thị 60s** | Thiết kế lại bảng điều khiển gọn thoáng hiện đại: lưới **4 ô thông số trực quan** (`TPS`, `RAM`, `Người chơi`, `Nhiệt độ & Pin`) tích hợp **sóng đồ thị thời gian thực 60 giây**, viên thuốc trạng thái sống `🟢 20.0 TPS • 37°C` trên thanh đỉnh mọi màn hình và **Menu `☰` có ô tìm kiếm nhanh công cụ** + 4 phím tắt 1 chạm. |
 | **🦀 Bộ 3 Chế Độ Nhân Linh Hoạt (`Java Mod` • `Java + Rust Turbo` • `Rust Thuần`)** | Chuyển đổi tức thì trên 1 thanh gạt ngang: **① ☕ Java Nguyên Bản** (chơi Full Mod Forge/Fabric/NeoForge/Plugin), **② ⚡ Java + Rust Turbo** (chơi Mod nhẹ mượt, giảm khựng GC xuống `15ms`, khử trùng lặp chuỗi RAM), **③ 🦀 Nhân Rust Thuần** (Pumpkin ARM64 siêu nhẹ `~50MB RAM`, bật trong tích tắc cho máy yếu). |
 | **☁️ Sao Lưu Map Lên Đám Mây Telegram 1 Chạm (`0 MB RAM`)** | Tự chạy `save-all`, nén thư mục thế giới thành `.zip` sạch an toàn (bỏ qua `session.lock` & tệp tạm), tự động cắt chia phần thông minh nếu Map `> 45 MB` và truyền luồng trực tiếp lên cuộc trò chuyện Telegram cá nhân — hoặc gõ `/backup` từ xa ngay trong Telegram. |
@@ -55,7 +56,7 @@
 ## 📦 Thông Số Kỹ Thuật & Cập Nhật OTA
 
 - **Định danh gói (`applicationId`):** `vn.minehost.pro`
-- **Phiên bản mới nhất:** `v3.1.1` (`versionCode = 70`)
+- **Phiên bản mới nhất:** `v3.2.0` (`versionCode = 73`)
 - **Kiến trúc hỗ trợ:** `arm64-v8a` (Android 8.0 / API 26 trở lên)
 - **Môi trường Runtime siêu nhẹ:** Mặc định **FCL Native Android JRE (`35.5 MB` cho Java 17 • `43.0 MB` cho Java 21)** tự tải tức thì + Hỗ trợ OpenJDK `8/11/17/21/25` & **Nhân Rust ARM64 độc lập 1 chạm (không cần cài Java)**
 - **Cập nhật OTA Tự Động:** Tự phát hiện bản mới ngay khi mở ứng dụng, xác thực chữ ký số gốc (`CN=MineHost Android`), cài đè trực tiếp **giữ nguyên 100% Thế giới, Mod, Plugin & Cài đặt**, và tự động dọn sạch tệp `.apk` cũ sau khi nâng cấp.

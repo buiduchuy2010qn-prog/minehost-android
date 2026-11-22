@@ -1,5 +1,6 @@
 package com.mineserve.mobile.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.rememberScrollState
@@ -7,16 +8,24 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.FactCheck
+import androidx.compose.material.icons.automirrored.rounded.Send
+import androidx.compose.material.icons.automirrored.rounded.Undo
+import androidx.compose.material.icons.automirrored.rounded.VolumeOff
+import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.outlined.*
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -26,7 +35,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
@@ -40,13 +51,46 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mineserve.mobile.data.ServerCore
 import com.mineserve.mobile.data.StartupPhase
+import com.mineserve.mobile.ui.CoreBrandLogo
 import com.mineserve.mobile.ui.McViewModel
 import com.mineserve.mobile.ui.MinecraftArtKind
-import com.mineserve.mobile.ui.MinecraftPixelArtIcon
 import com.mineserve.mobile.ui.PlayConnectionMode
 import com.mineserve.mobile.ui.SubPage
+import com.mineserve.mobile.ui.components.MhBentoMetricCard
+import com.mineserve.mobile.ui.components.MhCard
+import com.mineserve.mobile.ui.components.MhCopyAddressRow
+import com.mineserve.mobile.ui.components.MhEngineOptionCard
+import com.mineserve.mobile.ui.components.MhSectionHeader
+import com.mineserve.mobile.ui.components.MhStatusBadge
+import com.mineserve.mobile.ui.theme.LiveStatusDot
+import com.mineserve.mobile.ui.theme.McCodeStyle
+import com.mineserve.mobile.ui.theme.McIcon
+import com.mineserve.mobile.ui.theme.McShape
+import com.mineserve.mobile.ui.theme.McSpacing
+import com.mineserve.mobile.ui.theme.mineHostColors
+import com.mineserve.mobile.ui.theme.pressScale
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+
+private data class OverviewStatusSpec(
+    val label: String,
+    val accent: Color,
+    val container: Color,
+    val contentColor: Color,
+    val pulsing: Boolean
+)
+
+private fun vectorIconForLegacyArt(kind: MinecraftArtKind?): ImageVector? = when (kind) {
+    MinecraftArtKind.GRASS -> Icons.Rounded.Public
+    MinecraftArtKind.CREEPER -> Icons.Rounded.Dns
+    MinecraftArtKind.COMMAND_BLOCK -> Icons.Rounded.Terminal
+    MinecraftArtKind.DIAMOND_SWORD -> Icons.Rounded.People
+    MinecraftArtKind.CHEST -> Icons.Rounded.Folder
+    MinecraftArtKind.ENDER_EYE -> Icons.Rounded.Router
+    MinecraftArtKind.GOLDEN_APPLE -> Icons.Rounded.VerifiedUser
+    MinecraftArtKind.REDSTONE -> Icons.Rounded.Memory
+    null -> null
+}
 
 @Composable
 internal fun HostPage(
@@ -61,14 +105,30 @@ internal fun HostPage(
         Modifier.fillMaxSize(),
         state = listState,
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        item(key = "heading") {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (!sharedChrome) Text(title, style = MaterialTheme.typography.headlineSmall)
-                Text(subtitle, style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                trailingHeader?.let { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { it() } }
+        if (!sharedChrome || subtitle.isNotBlank() || trailingHeader != null) {
+            item(key = "heading") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        if (!sharedChrome) Text(title, style = MaterialTheme.typography.headlineSmall)
+                        if (subtitle.isNotBlank()) {
+                            Text(
+                                subtitle,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    trailingHeader?.invoke()
+                }
             }
         }
         content()
@@ -80,51 +140,59 @@ internal fun HostCard(
     title: String,
     artKind: MinecraftArtKind? = null,
     badgeText: String? = null,
+    icon: ImageVector? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    Card(
-        Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-    ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                if (artKind != null) {
-                    MinecraftPixelArtIcon(kind = artKind, size = 26.dp)
-                }
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+    val resolvedIcon = icon ?: vectorIconForLegacyArt(artKind)
+    MhCard {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            if (resolvedIcon != null) {
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface
+                    Icon(
+                        imageVector = resolvedIcon,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp)
                     )
-                    if (!badgeText.isNullOrBlank()) {
-                        Surface(
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Text(
-                                badgeText,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.Medium,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                            )
-                        }
+                }
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp)
+            ) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                if (!badgeText.isNullOrBlank()) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceContainer,
+                        shape = CircleShape,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
+                    ) {
+                        Text(
+                            badgeText,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                        )
                     }
                 }
             }
-            content()
         }
+        content()
     }
 }
 
@@ -133,14 +201,17 @@ internal fun HostAction(
     title: String,
     detail: String,
     icon: ImageVector,
-    artKind: MinecraftArtKind? = null,
+    @Suppress("UNUSED_PARAMETER") artKind: MinecraftArtKind? = null,
     onClick: () -> Unit
 ) {
-    OutlinedCard(
+    val interaction = remember { MutableInteractionSource() }
+    Surface(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        interactionSource = interaction,
+        modifier = Modifier.fillMaxWidth().pressScale(interaction),
+        shape = McShape.Card,
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f))
     ) {
         Row(
             Modifier.padding(14.dp),
@@ -149,22 +220,23 @@ internal fun HostAction(
         ) {
             Box(
                 modifier = Modifier
-                    .size(42.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(11.dp))
+                    .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)),
                 contentAlignment = Alignment.Center
             ) {
-                if (artKind != null) {
-                    MinecraftPixelArtIcon(kind = artKind, size = 28.dp)
-                } else {
-                    Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                }
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(20.dp)
+                )
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Text(title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
                 Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -177,40 +249,48 @@ private fun QuickPixelTile(
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
+    val icon = vectorIconForLegacyArt(artKind) ?: Icons.Rounded.Tune
+    val interaction = remember { MutableInteractionSource() }
     Card(
         onClick = onClick,
-        modifier = modifier,
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.30f))
+        interactionSource = interaction,
+        modifier = modifier.pressScale(interaction),
+        shape = McShape.Card,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 10.dp),
+                .padding(horizontal = 12.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Box(
                 modifier = Modifier
                     .size(36.dp)
-                    .clip(RoundedCornerShape(9.dp))
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.primaryContainer),
                 contentAlignment = Alignment.Center
             ) {
-                MinecraftPixelArtIcon(kind = artKind, size = 24.dp)
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(18.dp)
+                )
             }
-            Column(modifier = Modifier.weight(1f)) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     title,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.titleSmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     subtitle,
-                    fontSize = 14.sp,
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -232,7 +312,7 @@ private data class OverviewState(
  * Main server page: session controls, connection summary and game chat.
  * Resource tuning and administration reuse the existing actions on a dedicated tool page.
  */
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun MineHostOverview(
     vm: McViewModel,
@@ -277,7 +357,9 @@ fun MineHostOverview(
 
     val clipboard = LocalClipboardManager.current
     val uriHandler = LocalUriHandler.current
+    val haptic = LocalHapticFeedback.current
     val context = androidx.compose.ui.platform.LocalContext.current
+    val semanticColors = MaterialTheme.mineHostColors
     val active = config.installedCores.firstOrNull { it.name == config.activeCoreName }
     val activeStorage = active?.let { serverStorageMap[it.name] }
     var lastCopiedTag by remember { mutableStateOf<String?>(null) }
@@ -288,6 +370,8 @@ fun MineHostOverview(
     val heapLimit = device?.maxManualHeapMb ?: 2048
     var heap by remember(config.maxHeapMb, heapLimit) { mutableFloatStateOf(config.maxHeapMb.toFloat().coerceIn(512f, heapLimit.toFloat())) }
     var showRamSlider by remember { mutableStateOf(false) }
+    var showServerSwitcherSheet by rememberSaveable { mutableStateOf(false) }
+    var showNetworkSheet by rememberSaveable { mutableStateOf(false) }
     var showRustQuickCreateDialog by rememberSaveable { mutableStateOf(false) }
     var showRustVersionSwitchDialog by rememberSaveable { mutableStateOf(false) }
     var quickRustProfileId by rememberSaveable { mutableStateOf("multi_all") }
@@ -295,22 +379,57 @@ fun MineHostOverview(
     var quickRustServerName by rememberSaveable { mutableStateOf("") }
     var quickRustMultiversion by rememberSaveable { mutableStateOf(true) }
 
+    val otaState by vm.updateState.collectAsStateWithLifecycle()
+    val rustEngineStatus by vm.rustEngineStatus.collectAsStateWithLifecycle()
+    val isActiveRust = active?.core == ServerCore.Pumpkin || rustEngineStatus.isNativeRustEnabled
+    val envReadyForActive = ready || isActiveRust
+
     val busy = downloading || installing || addonBusy.isNotEmpty() || javaOperation != null || importing || applying
-    val status = when {
-        stopping -> "⏳ ĐANG LƯU & DỪNG…"
-        state.startupPhase == StartupPhase.Failed -> "❌ KHỞI ĐỘNG THẤT BẠI"
-        state.isRunning && state.startupPhase != StartupPhase.Ready -> "⚡ ĐANG KHỞI ĐỘNG…"
-        state.isRunning -> "🟢 ĐANG HOẠT ĐỘNG"
-        else -> "⚪ ĐANG DỪNG (SẴN SÀNG)"
+    val statusSpec = when {
+        stopping -> OverviewStatusSpec(
+            label = "Đang dừng",
+            accent = semanticColors.warning,
+            container = semanticColors.warningContainer,
+            contentColor = semanticColors.onWarningContainer,
+            pulsing = true
+        )
+        state.startupPhase == StartupPhase.Failed -> OverviewStatusSpec(
+            label = "Lỗi mở",
+            accent = MaterialTheme.colorScheme.error,
+            container = MaterialTheme.colorScheme.errorContainer,
+            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+            pulsing = false
+        )
+        state.isRunning && state.startupPhase != StartupPhase.Ready -> OverviewStatusSpec(
+            label = "Đang mở",
+            accent = MaterialTheme.colorScheme.primary,
+            container = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            pulsing = true
+        )
+        state.isRunning -> OverviewStatusSpec(
+            label = "Đang chạy",
+            accent = semanticColors.success,
+            container = semanticColors.successContainer,
+            contentColor = semanticColors.onSuccessContainer,
+            pulsing = true
+        )
+        else -> OverviewStatusSpec(
+            label = "Đã dừng",
+            accent = MaterialTheme.colorScheme.onSurfaceVariant,
+            container = MaterialTheme.colorScheme.surfaceContainerHigh,
+            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            pulsing = false
+        )
     }
 
     LaunchedEffect(Unit) { vm.refreshLanIp() }
-    LaunchedEffect(ready, config.activeCoreName, config.installedCores.size) {
+    LaunchedEffect(ready, isActiveRust, config.activeCoreName, config.installedCores.size) {
         if (config.activeCoreName != null) {
             vm.refreshRustEngineStatus()
             vm.refreshServerStorage()
         }
-        if (ready && config.activeCoreName != null) {
+        if ((ready || isActiveRust) && config.activeCoreName != null) {
             vm.ensureProMonitorsStarted()
             vm.refreshMods()
             vm.refreshInstalledPlugins()
@@ -319,8 +438,6 @@ fun MineHostOverview(
         }
     }
 
-    val otaState by vm.updateState.collectAsStateWithLifecycle()
-    val rustEngineStatus by vm.rustEngineStatus.collectAsStateWithLifecycle()
     val tpsHistory by vm.tpsHistory.collectAsStateWithLifecycle()
     val ramHistory by vm.ramHistory.collectAsStateWithLifecycle()
     val heroThermal by vm.thermalInfo.collectAsStateWithLifecycle()
@@ -344,937 +461,1269 @@ fun MineHostOverview(
         }
     }
     val overviewTab = section
-    var showConnectionDetails by rememberSaveable(active?.dirName) { mutableStateOf(false) }
+
+    // Hoisted connection state so both the Copy-First card and Network Bottom Sheet stay in sync.
+    val localhostAddress = "127.0.0.1:$port"
+    val lanAddress = lanIp.takeIf {
+        it.matches(Regex("""\d{1,3}(\.\d{1,3}){3}""")) && it != "0.0.0.0" && !it.startsWith("127.")
+    }?.let { "$it:$port" }
+    val playitAddress = playitState.publicAddress.takeIf { it.isNotBlank() }
+    val playitAllocIpv4 = playitState.allocatedIpv4Address.takeIf { it.isNotBlank() }
+    val playitIpv4Host = remember(playitAllocIpv4, playitAddress, playitNumericAddress) {
+        vm.extractPlayitIpv4Host(playitAllocIpv4)
+            ?: vm.extractPlayitIpv4Host(playitAddress)
+            ?: vm.extractPlayitIpv4Host(playitNumericAddress)
+    }
+    val playitTcpPort = remember(playitAddress, playitAllocIpv4) {
+        playitAddress?.substringAfterLast(":", "")?.takeIf { it.isNotBlank() }
+            ?: playitAllocIpv4?.substringAfterLast(":", "")?.takeIf { it.isNotBlank() }
+    }
+    val playitPureIpv4Address = remember(playitAllocIpv4, playitIpv4Host, playitTcpPort, playitNumericAddress) {
+        when {
+            playitAllocIpv4 != null && playitAllocIpv4.substringBeforeLast(":").matches(Regex("""^\d{1,3}(\.\d{1,3}){3}$""")) ->
+                playitAllocIpv4
+            playitIpv4Host != null && playitTcpPort != null ->
+                "$playitIpv4Host:$playitTcpPort"
+            else ->
+                playitNumericAddress?.takeIf { !it.contains("::") }
+        }
+    }
+    val crossplayStatus = remember(
+        active?.dirName,
+        installedPlugins,
+        installedMods,
+        state.isRunning,
+        connectionCheckStatus
+    ) {
+        vm.inspectActiveCrossplayStatus()
+    }
+    val bedrockPort = crossplayStatus.configuredPort
+    val hasGeyserInstalled = (active?.core?.isBedrock == true) || crossplayStatus.isInstalledAndValid
+    val javaAddress = if (playConnectionMode == PlayConnectionMode.SameNetwork) {
+        lanAddress ?: localhostAddress
+    } else {
+        playitAddress ?: playitPureIpv4Address
+    }
+    val peAddress = if (playConnectionMode == PlayConnectionMode.SameNetwork) {
+        val host = lanIp.takeIf { it.isNotBlank() && it != "0.0.0.0" && it != "--" } ?: "127.0.0.1"
+        "$host:$bedrockPort"
+    } else {
+        playitState.bedrockAddress.takeIf { it.isNotBlank() }
+    }
 
     HostPage(
         title = when (section) { 0 -> "Máy chủ"; 2 -> "Luật chơi & tọa độ"; 4 -> "Tiện ích người chơi"; 5 -> "Gói mở rộng"; else -> "Tối ưu & chạy nền" },
-        subtitle = if (section == 0) "Điều khiển server, lấy IP và mời bạn bè."
-            else "Máy chủ: ${active?.name ?: "Chưa chọn"}. Mở một mục để xem các thao tác.",
-        trailingHeader = {
-            if (onBack != null) {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Quay lại")
+        subtitle = when {
+            section == 0 && active == null -> ""
+            section == 0 -> "Điều khiển, theo dõi chỉ số và chia sẻ địa chỉ."
+            else -> "Máy chủ: ${active?.name ?: "Chưa chọn"}."
+        },
+        trailingHeader = if (onBack != null) {
+            {
+                IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
+                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Quay lại")
                 }
-            } else {
-            Button(
-                onClick = { navigate(SubPage.Cores) },
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                shape = RoundedCornerShape(10.dp)
-            ) {
-                Text("Tạo mới", style = MaterialTheme.typography.labelLarge)
             }
-            }
-        }
+        } else null
     ) {
-        // ── BANNER TỰ ĐỘNG PHÁT HIỆN & CÀI ĐÈ BẢN CẬP NHẬT MỚI (OTA) ──
+        // ── BANNER PHÁT HIỆN & CÀI ĐÈ BẢN CẬP NHẬT MỚI (OTA) ──
         if (section == 0 && (otaState is McViewModel.UpdateUiState.Available ||
             otaState is McViewModel.UpdateUiState.Downloading ||
             otaState is McViewModel.UpdateUiState.Downloaded)
         ) {
             item(key = "ota_auto_update_banner") {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1B5E20).copy(alpha = 0.22f)),
-                    border = BorderStroke(1.5.dp, Color(0xFF4CAF50))
+                MhCard(
+                    containerColor = semanticColors.successContainer.copy(alpha = 0.72f),
+                    borderColor = semanticColors.success.copy(alpha = 0.55f)
                 ) {
-                    Column(
-                        Modifier.fillMaxWidth().padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        when (val cur = otaState) {
-                            is McViewModel.UpdateUiState.Available -> {
-                                Text(
-                                    "🚀 Đã phát hiện bản cập nhật mới v${cur.release.tag}!",
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 14.sp,
-                                    color = MaterialTheme.colorScheme.secondary
-                                )
-                                Text(
-                                    "Hỗ trợ cài đè trực tiếp 100% lên bản hiện tại (giữ nguyên toàn bộ Server, Thế giới & Mod).",
-                                    fontSize = 14.sp
-                                )
-                                AdaptiveActionRow {
-                                    OutlinedButton(
-                                        onClick = {
-                                            vm.skipCurrentUpdate()
-                                        },
-                                        shape = RoundedCornerShape(10.dp),
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        Text("Bỏ qua", fontWeight = FontWeight.Medium)
-                                    }
-                                    Button(
-                                        onClick = { vm.downloadUpdate(autoInstallWhenDone = true) },
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
-                                        shape = RoundedCornerShape(10.dp),
-                                        modifier = Modifier.weight(1.4f)
-                                    ) {
-                                        Text("🚀 Cập nhật v${cur.release.tag}", color = Color.White, fontWeight = FontWeight.SemiBold)
-                                    }
-                                }
-                            }
-                            is McViewModel.UpdateUiState.Downloading -> {
-                                Text(
-                                    "⬇️ Đang tự động tải bản cập nhật v${cur.release.tag} (${(cur.progress.coerceIn(0f, 1f) * 100).toInt()}%)...",
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 14.sp,
-                                    color = MaterialTheme.colorScheme.secondary
-                                )
-                                LinearProgressIndicator(
-                                    progress = { cur.progress.coerceIn(0f, 1f) },
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                                Text(
-                                    "Sẽ tự động mở bảng Cài đè ngay khi tải xong 100%!",
-                                    fontSize = 14.sp
-                                )
-                            }
-                            is McViewModel.UpdateUiState.Downloaded -> {
-                                Text(
-                                    "✅ Bản cập nhật v${cur.release.tag} đã tải sẵn sàng!",
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 14.sp,
-                                    color = MaterialTheme.colorScheme.secondary
-                                )
-                                Button(
-                                    onClick = { vm.installDownloadedUpdate(cur.apkPath) },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
-                                    shape = RoundedCornerShape(10.dp),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text("📲 Bấm Để Cài Đè Bản v${cur.release.tag} Ngay (Giữ 100% Map & Server)", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                }
-                            }
-                            else -> Unit
-                        }
-                    }
-                }
-            }
-        }
-
-        // ── NẾU CHƯA CÀI MÔI TRƯỜNG LẦN ĐẦU (Ẩn khi đang dùng Server Rust Thuần 0% Java) ──
-        if (!ready && active?.core != ServerCore.Pumpkin) {
-            item(key = "bootstrap") {
-                HostCard("Chuẩn bị môi trường chạy lần đầu", artKind = MinecraftArtKind.REDSTONE) {
-                    if (bootstrapRunning) {
-                        LinearProgressIndicator(Modifier.fillMaxWidth())
-                        Text("Đang cài môi trường chạy vào điện thoại. Giữ ứng dụng mở và kết nối mạng; bước này chỉ cần 1 lần.")
-                    } else {
-                        Text(bootstrapError ?: "Sẵn sàng cài môi trường chạy cho máy chủ Minecraft.")
-                        Button(onClick = vm::retryBootstrap) {
-                            Text(if (bootstrapError == null) "Cài môi trường chạy" else "Thử lại")
-                        }
-                    }
-                }
-            }
-        }
-
-        // ══════════════════════════════════════════════════════════════════════
-        // PHẦN 1: THẺ ĐIỀU KHIỂN SERVER CHÍNH + 3 THÔNG SỐ + CHUYỂN SERVER NHANH
-        // ══════════════════════════════════════════════════════════════════════
-        if (section == 0) {
-        item(key = "hero_server_card") {
-            val soundOnReady by vm.soundOnServerReady.collectAsStateWithLifecycle()
-            val liveTask by vm.liveTaskProgress.collectAsStateWithLifecycle()
-            val pulseTransition = androidx.compose.animation.core.rememberInfiniteTransition(label = "server_live_pulse")
-            val pulseAlpha by pulseTransition.animateFloat(
-                initialValue = 0.35f,
-                targetValue = 1.0f,
-                animationSpec = androidx.compose.animation.core.infiniteRepeatable(
-                    animation = androidx.compose.animation.core.tween(850),
-                    repeatMode = androidx.compose.animation.core.RepeatMode.Reverse
-                ),
-                label = "pulse_alpha"
-            )
-            val animatedStartupProgress by androidx.compose.animation.core.animateFloatAsState(
-                targetValue = if (state.isRunning && state.startupPhase != StartupPhase.Ready) {
-                    state.startupPhase.progress.coerceIn(0.05f, 0.98f)
-                } else if (state.isRunning) 1f else 0f,
-                animationSpec = androidx.compose.animation.core.tween(420),
-                label = "startup_progress_anim"
-            )
-
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-                border = BorderStroke(
-                    if (state.isRunning) 2.dp else 1.5.dp,
-                    if (state.isRunning && state.startupPhase == StartupPhase.Ready) {
-                        Color(0xFF10B981).copy(alpha = pulseAlpha)
-                    } else if (state.isRunning) {
-                        Color(0xFFF59E0B).copy(alpha = pulseAlpha)
-                    } else {
-                        MaterialTheme.colorScheme.primary
-                    }
-                )
-            ) {
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.22f),
-                                    Color.Transparent
-                                )
-                            )
-                        )
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(56.dp)
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f))
-                                .border(
-                                    1.5.dp,
-                                    if (state.isRunning) Color(0xFF10B981).copy(alpha = pulseAlpha) else MaterialTheme.colorScheme.primary,
-                                    RoundedCornerShape(14.dp)
-                                )
-                                .clickable(enabled = active != null) { navigate(SubPage.ServerIcon) },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (active != null) {
-                                com.mineserve.mobile.ui.CoreBrandLogo(
-                                    core = active.core,
-                                    size = 42.dp
-                                )
-                            } else {
-                                MinecraftPixelArtIcon(
-                                    kind = MinecraftArtKind.GRASS,
-                                    size = 38.dp
-                                )
-                            }
-                        }
-                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                            Surface(
-                                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.78f),
-                                shape = RoundedCornerShape(6.dp)
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                                ) {
-                                    if (state.isRunning || stopping || liveTask.active) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(8.dp)
-                                                .clip( androidx.compose.foundation.shape.CircleShape)
-                                                .background(
-                                                    when {
-                                                        stopping -> Color(0xFFF59E0B).copy(alpha = pulseAlpha)
-                                                        state.startupPhase == StartupPhase.Ready -> Color(0xFF10B981).copy(alpha = pulseAlpha)
-                                                        else -> Color(0xFF38BDF8).copy(alpha = pulseAlpha)
-                                                    }
-                                                )
-                                        )
-                                    }
-                                    Text(
-                                        status,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                }
-                            }
-                            Text(
-                                active?.name ?: "Chưa có máy chủ",
-                                style = MaterialTheme.typography.headlineSmall,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text(
-                                active?.let { srv ->
-                                    if (srv.core == ServerCore.Pumpkin) {
-                                        "🦀 Nhân Rust Thuần (0% Java) · ${srv.version} · Cổng $port"
-                                    } else {
-                                        "🧩 ${srv.core.displayName} · MC ${srv.version} · Cổng $port"
-                                    }
-                                } ?: "Chọn tạo Server Rust siêu nhẹ (0% Java) hoặc Server Java Mod/Plugin bên dưới!",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = if (active?.core == ServerCore.Pumpkin) Color(0xFFFB923C) else MaterialTheme.colorScheme.onSurface
-                            )
-                            if (activeStorage != null) {
-                                Text(
-                                    "💾 ${vm.formatStorageBytes(activeStorage.totalBytes)} • 🌍 Map ${vm.formatStorageBytes(activeStorage.worldBytes)}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.Medium
-                                )
-                            }
-                        }
-                        Surface(
-                            onClick = { vm.setSoundOnServerReady(!soundOnReady) },
-                            shape = RoundedCornerShape(12.dp),
-                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.80f),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.28f))
-                        ) {
-                            IconButton(
-                                onClick = { vm.setSoundOnServerReady(!soundOnReady) },
-                                modifier = Modifier.size(40.dp)
-                            ) {
-                                Icon(
-                                    if (soundOnReady) Icons.Outlined.VolumeUp else Icons.Outlined.VolumeOff,
-                                    contentDescription = if (soundOnReady) "Đang bật chuông mở SV" else "Đang tắt chuông mở SV",
-                                    tint = if (soundOnReady) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
-                    }
-
-                    if (state.isRunning && state.startupPhase != StartupPhase.Ready) {
-                        Surface(
-                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.86f),
-                            shape = RoundedCornerShape(10.dp),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(10.dp),
-                                verticalArrangement = Arrangement.spacedBy(5.dp)
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text(
-                                        "⚡ ${state.startupPhase.label}",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                    Text(
-                                        "${(animatedStartupProgress * 100).toInt()}%",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = MaterialTheme.colorScheme.secondary
-                                    )
-                                }
-                                LinearProgressIndicator(
-                                    progress = { animatedStartupProgress },
-                                    modifier = Modifier.fillMaxWidth().height(7.dp).clip(RoundedCornerShape(4.dp))
-                                )
-                                Text(
-                                    if (soundOnReady) "🔊 Sẽ phát chuông báo 'Minecraft Level Up' ngay khi Server mở xong 100%!"
-                                    else "⏳ Đang nạp nhanh bằng bộ đệm Turbo Boot...",
-                                    fontSize = 14.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-
-                    // ── THANH TIẾN TRÌNH TÁC VỤ / TẢI XUỐNG TOÀN CỤC (HIỆN NGAY KHI TẢI BẤT KỲ THỨ GÌ) ──
-                    val activePluginDl = addonBusy.entries.firstOrNull()?.value
-                    if (liveTask.active || activePluginDl != null || isTogglingOptPack || mrpackInstallBusy) {
-                        val rawProgress = when {
-                            liveTask.active -> liveTask.progress
-                            activePluginDl != null && activePluginDl.totalBytes > 0 ->
-                                (activePluginDl.downloadedBytes.toFloat() / activePluginDl.totalBytes.toFloat()).coerceIn(0f, 1f)
-                            else -> -1f
-                        }
-                        val taskTitle = when {
-                            liveTask.active -> liveTask.title
-                            activePluginDl != null -> "⬇️ Đang tải ${activePluginDl.pluginId} (${activePluginDl.speedBytesPerSec / 1024} KB/s)..."
-                            isTogglingOptPack -> optPackProgress ?: "🚀 Đang xử lý Gói Mod Tối Ưu Server..."
-                            mrpackInstallBusy -> mrpackInstallProgress ?: "📦 Đang cài đặt gói Modpack .mrpack..."
-                            else -> "⏳ Đang xử lý tác vụ..."
-                        }
-                        Surface(
-                            color = Color(0xFF0F172A).copy(alpha = 0.9f),
-                            shape = RoundedCornerShape(12.dp),
-                            border = BorderStroke(1.2.dp, Color(0xFF38BDF8)),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(10.dp),
-                                verticalArrangement = Arrangement.spacedBy(5.dp)
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text(
-                                        taskTitle,
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = Color(0xFF38BDF8),
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    if (rawProgress >= 0f) {
-                                        Text(
-                                            "${(rawProgress * 100).toInt()}%",
-                                            fontSize = 14.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = Color(0xFF4ADE80)
-                                        )
-                                    }
-                                }
-                                if (rawProgress >= 0f) {
-                                    LinearProgressIndicator(
-                                        progress = { rawProgress.coerceIn(0f, 1f) },
-                                        modifier = Modifier.fillMaxWidth().height(7.dp).clip(RoundedCornerShape(4.dp)),
-                                        color = Color(0xFF38BDF8)
-                                    )
-                                } else {
-                                    LinearProgressIndicator(
-                                        modifier = Modifier.fillMaxWidth().height(7.dp).clip(RoundedCornerShape(4.dp)),
-                                        color = Color(0xFF38BDF8)
-                                    )
-                                }
-                                if (liveTask.detail.isNotBlank()) {
-                                    Text(
-                                        liveTask.detail,
-                                        fontSize = 14.sp,
-                                        color = Color(0xFF94A3B8)
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    // Khung mở nhanh Báo Cáo Lỗi Sập, Tự động Sửa Lỗi Mod & Nhật Ký ngay trên thẻ chính khi khởi động thất bại
-                    if (state.startupPhase == StartupPhase.Failed && !state.isRunning) {
-                        val modDoctorBusy by vm.modDoctorBusy.collectAsState()
-                        val modDoctorProgress by vm.modDoctorProgress.collectAsState()
-                        Surface(
-                            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.92f),
-                            shape = RoundedCornerShape(12.dp),
-                            border = BorderStroke(1.2.dp, MaterialTheme.colorScheme.error),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(10.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Text(
-                                    "⚠️ Máy chủ vừa dừng hoặc khởi động thất bại — Bấm tự động sửa hoặc xem phân tích:",
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onErrorContainer
-                                )
-                                if (modDoctorBusy && !modDoctorProgress.isNullOrBlank()) {
-                                    Text(
-                                        modDoctorProgress.orEmpty(),
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = MaterialTheme.colorScheme.onErrorContainer
-                                    )
-                                }
-                                if (active?.core?.supportsMods == true) {
-                                    Button(
-                                        onClick = { vm.autoFixModCrashAndRestart(autoRestart = true) },
-                                        enabled = !modDoctorBusy,
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = Color(0xFF059669),
-                                            contentColor = Color.White
-                                        ),
-                                        shape = RoundedCornerShape(9.dp),
-                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 7.dp),
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Text(
-                                            if (modDoctorBusy) "⏳ Đang tự động sửa lỗi Mod..."
-                                            else "🛠️ Tự Động Sửa Lỗi Mod & Bật Lại Server Ngay (1 Chạm)",
-                                            fontSize = 14.sp,
-                                            fontWeight = FontWeight.SemiBold
-                                        )
-                                    }
-                                }
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Button(
-                                        onClick = { vm.openLatestCrashReport { navigate(SubPage.CrashReports) } },
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = MaterialTheme.colorScheme.error,
-                                            contentColor = MaterialTheme.colorScheme.onError
-                                        ),
-                                        shape = RoundedCornerShape(9.dp),
-                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                                        modifier = Modifier.weight(1.25f)
-                                    ) {
-                                        Text("🔍 Xem Phân Tích Lỗi Sập", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                                    }
-                                    OutlinedButton(
-                                        onClick = onConsole,
-                                        shape = RoundedCornerShape(9.dp),
-                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                                        modifier = Modifier.weight(0.95f)
-                                    ) {
-                                        Text("📜 Mở Nhật Ký", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Bảng 4 Ô Thông Số Kèm Biểu Đồ Sóng Sống (Live Sparkline 60s)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        Metric(
-                            label = "TPS Nhịp Game",
-                            value = if (state.isRunning && state.tps > 0) "%.1f".format(state.tps) else "—",
-                            artKind = MinecraftArtKind.REDSTONE,
-                            modifier = Modifier.weight(1f),
-                            sparklineSamples = tpsHistory,
-                            sparklineMax = 20f,
-                            sparklineColor = Color(0xFF10B981),
-                            onClick = onConsole
-                        )
-                        Metric(
-                            label = when {
-                                active?.core == ServerCore.Pumpkin -> "RAM Thực (Rust)"
-                                active == null -> "RAM Máy Chủ"
-                                else -> "RAM / ${config.maxHeapMb}MB"
-                            },
-                            value = when {
-                                state.isRunning && state.usedMemoryMb > 0 -> "${state.usedMemoryMb}MB"
-                                active?.core == ServerCore.Pumpkin -> "~50MB"
-                                else -> "—"
-                            },
-                            artKind = MinecraftArtKind.COMMAND_BLOCK,
-                            modifier = Modifier.weight(1f),
-                            sparklineSamples = ramHistory,
-                            sparklineMax = if (active?.core == ServerCore.Pumpkin) 512f else config.maxHeapMb.toFloat().coerceAtLeast(512f),
-                            sparklineColor = if (active?.core == ServerCore.Pumpkin) Color(0xFFFB923C) else Color(0xFF0EA5E9),
-                            onClick = {
-                                if (active?.core == ServerCore.Pumpkin) {
-                                    android.widget.Toast.makeText(
-                                        context,
-                                        "🦀 Server Rust chạy mã máy ARM64 tự quản lý RAM (~50–90MB), không dùng máy ảo Java!",
-                                        android.widget.Toast.LENGTH_SHORT
-                                    ).show()
-                                } else {
-                                    showRamSlider = !showRamSlider
-                                }
-                            }
-                        )
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        Metric(
-                            label = "Người chơi",
-                            value = if (state.isRunning && state.startupPhase == StartupPhase.Ready) "${state.onlinePlayers}" else "—",
-                            artKind = MinecraftArtKind.DIAMOND_SWORD,
-                            modifier = Modifier.weight(1f),
-                            onClick = { navigate(SubPage.PlayerList) }
-                        )
-                        Metric(
-                            label = "Nhiệt độ & Pin",
-                            value = "${heroThermal.tempCelsius.toInt()}°C · ${heroThermal.batteryPercent}%${if (heroThermal.isCharging) "⚡" else ""}",
-                            artKind = MinecraftArtKind.GRASS,
-                            modifier = Modifier.weight(1f),
-                            onClick = { navigate(SubPage.Performance) }
-                        )
-                    }
-
-                    // Hiển thị bảng Nhân Rust Thuần (cho ServerCore.Pumpkin) HOẶC Thanh Gạt 3 Ngăn (cho Server Java)
-                    if (active != null && active.core == ServerCore.Pumpkin) {
-                        Surface(
-                            color = Color(0xFF431407).copy(alpha = 0.55f),
-                            shape = RoundedCornerShape(12.dp),
-                            border = BorderStroke(1.2.dp, Color(0xFFFB923C)),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
+                    when (val cur = otaState) {
+                        is McViewModel.UpdateUiState.Available -> {
                             Row(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-                                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                    Text(
-                                        "🦀 Nhân Máy Rust ARM64 Thuần 100% (0% Java)",
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color(0xFFFDBA74)
-                                    )
-                                    Text(
-                                        if (rustEngineStatus.isMultiversionWasmEnabled) {
-                                            "🌐 Đa Phiên Bản WASM: BẬT (Mọi bản PC 1.7.2 → 26.3 + PE 19132)"
-                                        } else {
-                                            "🎮 Phiên bản: ${active.version} • Không dùng máy ảo JVM"
-                                        },
-                                        fontSize = 11.5.sp,
-                                        color = Color(0xFFFED7AA)
+                                Box(
+                                    modifier = Modifier
+                                        .size(34.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(semanticColors.success.copy(alpha = 0.16f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.SystemUpdate,
+                                        contentDescription = null,
+                                        tint = semanticColors.onSuccessContainer,
+                                        modifier = Modifier.size(18.dp)
                                     )
                                 }
+                                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(
+                                        "Đã có bản cập nhật v${cur.release.tag}",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = semanticColors.onSuccessContainer
+                                    )
+                                    Text(
+                                        "Cài đè trực tiếp, giữ nguyên toàn bộ Server, Map & Mod.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = semanticColors.onSuccessContainer.copy(alpha = 0.88f)
+                                    )
+                                }
+                            }
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
                                 OutlinedButton(
-                                    onClick = {
-                                        quickRustProfileId = rustEngineStatus.activeProfileId
-                                        quickRustMultiversion = rustEngineStatus.isMultiversionWasmEnabled
-                                        showRustVersionSwitchDialog = true
-                                    },
-                                    enabled = !state.isRunning && !liveTask.active,
-                                    border = BorderStroke(1.dp, Color(0xFFFB923C)),
-                                    shape = RoundedCornerShape(9.dp),
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                                    onClick = { vm.skipCurrentUpdate() },
+                                    shape = McShape.Control,
+                                    border = BorderStroke(1.dp, semanticColors.onSuccessContainer.copy(alpha = 0.35f)),
+                                    modifier = Modifier.weight(1f).heightIn(min = 44.dp)
                                 ) {
                                     Text(
-                                        "🔄 Đổi bản",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color(0xFFFDBA74)
+                                        "Bỏ qua",
+                                        color = semanticColors.onSuccessContainer,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1
+                                    )
+                                }
+                                Button(
+                                    onClick = { vm.downloadUpdate(autoInstallWhenDone = true) },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = semanticColors.success,
+                                        contentColor = semanticColors.onSuccess
+                                    ),
+                                    shape = McShape.Control,
+                                    modifier = Modifier.weight(1.4f).heightIn(min = 44.dp)
+                                ) {
+                                    Icon(Icons.Rounded.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        "Cập nhật v${cur.release.tag}",
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
                             }
                         }
-                    } else if (active != null && !active.core.isBedrock) {
-                        val isOriginalJava = !rustEngineStatus.isNativeRustEnabled && !rustEngineStatus.isRustJvmTurboEnabled
-                        val isJavaRustTurbo = !rustEngineStatus.isNativeRustEnabled && rustEngineStatus.isRustJvmTurboEnabled
-                        val isPureRust = rustEngineStatus.isNativeRustEnabled
-                        Surface(
-                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.82f),
-                            shape = RoundedCornerShape(12.dp),
-                            border = BorderStroke(
-                                1.dp,
-                                when {
-                                    isPureRust -> Color(0xFFF97316)
-                                    isJavaRustTurbo -> Color(0xFF10B981)
-                                    else -> MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
-                                }
-                            ),
-                            modifier = Modifier.fillMaxWidth()
+                        is McViewModel.UpdateUiState.Downloading -> {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    "Đang tải cập nhật v${cur.release.tag}",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = semanticColors.onSuccessContainer
+                                )
+                                Text(
+                                    "${(cur.progress.coerceIn(0f, 1f) * 100).toInt()}%",
+                                    style = McCodeStyle,
+                                    color = semanticColors.onSuccessContainer
+                                )
+                            }
+                            LinearProgressIndicator(
+                                progress = { cur.progress.coerceIn(0f, 1f) },
+                                color = semanticColors.success,
+                                trackColor = semanticColors.onSuccessContainer.copy(alpha = 0.16f),
+                                modifier = Modifier.fillMaxWidth().height(6.dp).clip(CircleShape)
+                            )
+                            Text(
+                                "Sẽ tự động mở trình cài đặt ngay khi tải xong.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = semanticColors.onSuccessContainer.copy(alpha = 0.85f)
+                            )
+                        }
+                        is McViewModel.UpdateUiState.Downloaded -> {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.CheckCircle,
+                                    contentDescription = null,
+                                    tint = semanticColors.onSuccessContainer,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Text(
+                                    "Bản v${cur.release.tag} đã tải xong và sẵn sàng",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = semanticColors.onSuccessContainer
+                                )
+                            }
+                            Button(
+                                onClick = { vm.installDownloadedUpdate(cur.apkPath) },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = semanticColors.success,
+                                    contentColor = semanticColors.onSuccess
+                                ),
+                                shape = McShape.Control,
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 46.dp)
+                            ) {
+                                Icon(Icons.Rounded.InstallMobile, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    "Cài đè v${cur.release.tag} ngay",
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                        else -> Unit
+                    }
+                }
+            }
+        }
+
+        // ── CHỈ HIỆN MÔI TRƯỜNG JAVA KHI ĐANG DÙNG SERVER JAVA HOẶC ĐANG CÀI / LỖI ──
+        if (section == 0 && ((active != null && !isActiveRust && !ready) || bootstrapRunning || bootstrapError != null)) {
+            item(key = "bootstrap") {
+                HostCard("Chuẩn bị môi trường Java", icon = Icons.Rounded.DownloadForOffline) {
+                    if (bootstrapRunning) {
+                        LinearProgressIndicator(
+                            modifier = Modifier.fillMaxWidth().height(6.dp).clip(CircleShape)
+                        )
+                        Text(
+                            "Đang cài môi trường chạy vào thiết bị. Giữ ứng dụng mở và kết nối mạng; chỉ cần thực hiện 1 lần.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        Text(
+                            bootstrapError ?: "Sẵn sàng cài đặt môi trường Java cho máy chủ Paper / Fabric / Forge.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (bootstrapError != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Button(
+                            onClick = vm::retryBootstrap,
+                            shape = McShape.Control,
+                            modifier = Modifier.heightIn(min = 44.dp)
                         ) {
-                            Column(
-                                modifier = Modifier.padding(8.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            Text(
+                                if (bootstrapError == null) "Cài môi trường Java" else "Thử lại",
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════════════════
+        // PHẦN 1: ONBOARDING GỌN (KHI CHƯA CÓ SERVER) HOẶC HERO + BENTO 2×2
+        // ══════════════════════════════════════════════════════════════════════
+        if (section == 0) {
+            item(key = "hero_server_card") {
+                val soundOnReady by vm.soundOnServerReady.collectAsStateWithLifecycle()
+                val liveTask by vm.liveTaskProgress.collectAsStateWithLifecycle()
+                val activePluginDl = addonBusy.entries.firstOrNull()?.value
+                val animatedStartupProgress by androidx.compose.animation.core.animateFloatAsState(
+                    targetValue = if (state.isRunning && state.startupPhase != StartupPhase.Ready) {
+                        state.startupPhase.progress.coerceIn(0.05f, 0.98f)
+                    } else if (state.isRunning) 1f else 0f,
+                    animationSpec = androidx.compose.animation.core.tween(420),
+                    label = "startup_progress_anim"
+                )
+
+                if (active == null) {
+                    val preflight = remember(device, ready, config.installedCores.size) {
+                        vm.inspectDevicePreFlight()
+                    }
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(McSpacing.CardGap),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        MhCard {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(MaterialTheme.colorScheme.primaryContainer),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Dns,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                                ) {
+                                    Text(
+                                        text = "Chào mừng đến MineHost",
+                                        style = MaterialTheme.typography.titleLarge,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "Chọn nhân máy chủ bên dưới để khởi tạo ngay.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            Surface(
+                                color = MaterialTheme.colorScheme.surfaceContainer,
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+                                modifier = Modifier.fillMaxWidth()
                             ) {
                                 Row(
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    modifier = Modifier.fillMaxWidth()
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp)
                                 ) {
-                                    listOf(
-                                        Triple("☕ Java Mod", isOriginalJava) { vm.selectOriginalJavaEngineOneTap() },
-                                        Triple("⚡ Java Turbo", isJavaRustTurbo) { vm.toggleRustJvmTurboMode(true) },
-                                        Triple("🦀 Rust", isPureRust) { if (!isPureRust) vm.enableNativeRustEngineOneTap() }
-                                    ).forEachIndexed { idx, (labelTxt, isSel, actionFn) ->
-                                        val segEnabled = !liveTask.active && (idx != 2 || !state.isRunning) && (!isPureRust || !state.isRunning || idx == 2)
-                                        val segBg = when {
-                                            isSel && idx == 2 -> Color(0xFFEA580C)
-                                            isSel && idx == 1 -> Color(0xFF059669)
-                                            isSel -> MaterialTheme.colorScheme.primary
-                                            else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
-                                        }
-                                        val segFg = if (isSel) Color.White else MaterialTheme.colorScheme.onSurface
-                                        Surface(
-                                            onClick = actionFn,
-                                            enabled = segEnabled,
-                                            shape = RoundedCornerShape(9.dp),
-                                            color = segBg,
+                                    Icon(
+                                        imageVector = Icons.Rounded.Memory,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        text = "${preflight.tierTitle} · Trống ${preflight.availRamMb} MB RAM · Còn ${preflight.freeStorageGb}",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+
+                        MhEngineOptionCard(
+                            title = "Server Rust thuần",
+                            badge = "0% Java",
+                            subtitle = "Nhẹ ~50–90 MB RAM · Chơi PC & PE đa phiên bản",
+                            accent = semanticColors.rust,
+                            accentContainer = semanticColors.rustContainer,
+                            onAccentContainer = semanticColors.onRustContainer,
+                            coreLogo = ServerCore.Pumpkin,
+                            enabled = !liveTask.active && !downloading,
+                            onClick = { showRustQuickCreateDialog = true }
+                        )
+
+                        MhEngineOptionCard(
+                            title = "Server Java / PE",
+                            badge = "Mod & Plugin",
+                            subtitle = "Paper, Fabric, Forge, NeoForge, Spigot & Bedrock",
+                            accent = MaterialTheme.colorScheme.primary,
+                            accentContainer = MaterialTheme.colorScheme.primaryContainer,
+                            onAccentContainer = MaterialTheme.colorScheme.onPrimaryContainer,
+                            icon = Icons.Rounded.Extension,
+                            onClick = { navigate(SubPage.Cores) }
+                        )
+
+                        if (liveTask.active || downloading) {
+                            val rawProgress = if (liveTask.active) liveTask.progress else -1f
+                            Surface(
+                                color = semanticColors.terminalSurface,
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, semanticColors.info.copy(alpha = 0.55f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Sync,
+                                            contentDescription = null,
+                                            tint = semanticColors.info,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Text(
+                                            text = if (liveTask.active) liveTask.title else "Đang chuẩn bị tài nguyên...",
+                                            style = MaterialTheme.typography.labelLarge,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
                                             modifier = Modifier.weight(1f)
-                                        ) {
-                                            Box(
-                                                contentAlignment = Alignment.Center,
-                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp)
-                                            ) {
-                                                Text(
-                                                    labelTxt,
-                                                    fontSize = 13.sp,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    color = segFg
-                                                )
-                                            }
+                                        )
+                                        if (rawProgress >= 0f) {
+                                            Text(
+                                                text = "${(rawProgress * 100).toInt()}%",
+                                                style = McCodeStyle,
+                                                color = semanticColors.info
+                                            )
                                         }
                                     }
+                                    if (rawProgress >= 0f) {
+                                        LinearProgressIndicator(
+                                            progress = { rawProgress.coerceIn(0f, 1f) },
+                                            color = semanticColors.info,
+                                            trackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                            modifier = Modifier.fillMaxWidth().height(6.dp).clip(CircleShape)
+                                        )
+                                    } else {
+                                        LinearProgressIndicator(
+                                            color = semanticColors.info,
+                                            trackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                            modifier = Modifier.fillMaxWidth().height(6.dp).clip(CircleShape)
+                                        )
+                                    }
                                 }
-                                Text(
-                                    when {
-                                        isOriginalJava -> "☕ Chế độ Java gốc (${active.core.displayName}): Chơi 100% Mod, Plugin & Geyser PE"
-                                        isJavaRustTurbo -> "⚡ Chơi 100% Mod & Plugin hiện tại + Bộ nhớ vùng Rust giảm ~35% RAM"
-                                        else -> "🦀 Đang chạy tạm Nhân Rust ARM64 trên thư mục này (~50MB RAM • 0% Java)"
-                                    },
-                                    fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(horizontal = 4.dp)
+                            }
+                        }
+
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            if (!preflight.ignoringBatteryOptimizations) {
+                                OutlinedButton(
+                                    onClick = { vm.requestIgnoreBatteryOptimization() },
+                                    shape = McShape.Control,
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                                    modifier = Modifier.weight(1f).heightIn(min = 44.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Rounded.BatteryChargingFull,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("Chống tắt ngầm", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                            }
+                            OutlinedButton(
+                                onClick = { vm.cleanRamNow() },
+                                enabled = !isCleaningRam,
+                                shape = McShape.Control,
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                                modifier = Modifier.weight(1f).heightIn(min = 44.dp)
+                            ) {
+                                Icon(
+                                    Icons.Rounded.CleaningServices,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
                                 )
+                                Spacer(Modifier.width(6.dp))
+                                Text(if (isCleaningRam) "Đang dọn..." else "Dọn RAM", maxLines = 1)
+                            }
+                            if (config.installedCores.isNotEmpty()) {
+                                OutlinedButton(
+                                    onClick = { navigate(SubPage.ServerList) },
+                                    shape = McShape.Control,
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                                    modifier = Modifier.heightIn(min = 44.dp)
+                                ) {
+                                    Text("Danh sách (${config.installedCores.size})", maxLines = 1)
+                                }
                             }
                         }
                     }
-
-                    if (active == null) {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                            Button(
-                                onClick = { showRustQuickCreateDialog = true },
-                                enabled = !liveTask.active && !downloading,
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEA580C)),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)
+                } else {
+                    val activeAccentBorder = when {
+                        state.startupPhase == StartupPhase.Failed -> MaterialTheme.colorScheme.error.copy(alpha = 0.65f)
+                        state.isRunning -> statusSpec.accent.copy(alpha = 0.60f)
+                        else -> MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)
+                    }
+                    MhCard(borderColor = activeAccentBorder) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            MhStatusBadge(
+                                label = statusSpec.label,
+                                accent = statusSpec.accent,
+                                container = statusSpec.container,
+                                contentColor = statusSpec.contentColor,
+                                pulsing = statusSpec.pulsing
+                            )
+                            IconButton(
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    vm.setSoundOnServerReady(!soundOnReady)
+                                },
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceContainer)
+                                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f), RoundedCornerShape(10.dp))
                             ) {
-                                Text(
-                                    "🦀 Tạo Server Rust (Chọn Phiên Bản • 0% Java)",
-                                    color = Color.White,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.5.sp
+                                Icon(
+                                    imageVector = if (soundOnReady) Icons.AutoMirrored.Rounded.VolumeUp else Icons.AutoMirrored.Rounded.VolumeOff,
+                                    contentDescription = if (soundOnReady) "Đang bật chuông báo" else "Đang tắt chuông báo",
+                                    tint = if (soundOnReady) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp)
                                 )
                             }
-                            AdaptiveActionRow {
-                                Button(
-                                    onClick = { navigate(SubPage.Cores) },
-                                    shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier.weight(1f).heightIn(min = 50.dp)
+                        }
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(RoundedCornerShape(13.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceContainer)
+                                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f), RoundedCornerShape(13.dp))
+                                    .clickable { navigate(SubPage.ServerIcon) },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CoreBrandLogo(core = active.core, size = 36.dp)
+                            }
+
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(3.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable { showServerSwitcherSheet = true }
+                                        .padding(vertical = 2.dp, horizontal = 2.dp)
                                 ) {
                                     Text(
-                                        "☕ Tạo Server Java / PE (Mod • Plugin)",
-                                        fontWeight = FontWeight.SemiBold,
-                                        fontSize = 14.sp
+                                        text = active.name,
+                                        style = MaterialTheme.typography.titleLarge,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f, fill = false)
+                                    )
+                                    Icon(
+                                        imageVector = Icons.Rounded.UnfoldMore,
+                                        contentDescription = "Chuyển máy chủ",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(18.dp)
                                     )
                                 }
-                                OutlinedButton(
-                                    onClick = { vm.cleanRamNow() },
-                                    enabled = !isCleaningRam,
-                                    shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier.heightIn(min = 50.dp)
-                                ) {
+                                Text(
+                                    text = if (active.core == ServerCore.Pumpkin) {
+                                        "Rust ARM64 · ${active.version} · :$port"
+                                    } else {
+                                        "${active.core.displayName} ${active.version} · :$port"
+                                    },
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = if (active.core == ServerCore.Pumpkin) semanticColors.rust else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                if (activeStorage != null) {
                                     Text(
-                                        if (isCleaningRam) "⏳..." else "🧹 Dọn RAM",
-                                        fontWeight = FontWeight.SemiBold,
-                                        fontSize = 13.5.sp
+                                        text = "${vm.formatStorageBytes(activeStorage.totalBytes)} · Map ${vm.formatStorageBytes(activeStorage.worldBytes)}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
                             }
                         }
-                    } else {
-                        // Nút Bật / Dừng Server + Khởi động lại / Dọn RAM
+
+                        if (state.isRunning && state.startupPhase != StartupPhase.Ready) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.surfaceContainer,
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Bolt,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Text(
+                                            text = state.startupPhase.label,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Text(
+                                            text = "${(animatedStartupProgress * 100).toInt()}%",
+                                            style = McCodeStyle,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
+                                    LinearProgressIndicator(
+                                        progress = { animatedStartupProgress },
+                                        modifier = Modifier.fillMaxWidth().height(6.dp).clip(CircleShape)
+                                    )
+                                    Text(
+                                        text = if (soundOnReady) "Sẽ phát chuông báo ngay khi Server sẵn sàng." else "Đang khởi động nhanh từ bộ đệm...",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+
+                        if (liveTask.active || activePluginDl != null || isTogglingOptPack || mrpackInstallBusy) {
+                            val rawProgress = when {
+                                liveTask.active -> liveTask.progress
+                                activePluginDl != null && activePluginDl.totalBytes > 0 ->
+                                    (activePluginDl.downloadedBytes.toFloat() / activePluginDl.totalBytes.toFloat()).coerceIn(0f, 1f)
+                                else -> -1f
+                            }
+                            val taskTitle = when {
+                                liveTask.active -> liveTask.title
+                                activePluginDl != null -> "Đang tải ${activePluginDl.pluginId} (${activePluginDl.speedBytesPerSec / 1024} KB/s)"
+                                isTogglingOptPack -> optPackProgress ?: "Đang cấu hình gói tối ưu Server..."
+                                mrpackInstallBusy -> mrpackInstallProgress ?: "Đang cài gói Modpack .mrpack..."
+                                else -> "Đang xử lý tác vụ..."
+                            }
+                            Surface(
+                                color = semanticColors.terminalSurface,
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, semanticColors.info.copy(alpha = 0.55f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalArrangement = Arrangement.spacedBy(5.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Sync,
+                                            contentDescription = null,
+                                            tint = semanticColors.info,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Text(
+                                            text = taskTitle,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = semanticColors.info,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        if (rawProgress >= 0f) {
+                                            Text(
+                                                text = "${(rawProgress * 100).toInt()}%",
+                                                style = McCodeStyle,
+                                                color = semanticColors.success
+                                            )
+                                        }
+                                    }
+                                    if (rawProgress >= 0f) {
+                                        LinearProgressIndicator(
+                                            progress = { rawProgress.coerceIn(0f, 1f) },
+                                            color = semanticColors.info,
+                                            trackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                            modifier = Modifier.fillMaxWidth().height(6.dp).clip(CircleShape)
+                                        )
+                                    } else {
+                                        LinearProgressIndicator(
+                                            color = semanticColors.info,
+                                            trackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                            modifier = Modifier.fillMaxWidth().height(6.dp).clip(CircleShape)
+                                        )
+                                    }
+                                    if (liveTask.detail.isNotBlank()) {
+                                        Text(
+                                            text = liveTask.detail,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        if (state.startupPhase == StartupPhase.Failed && !state.isRunning) {
+                            val modDoctorBusy by vm.modDoctorBusy.collectAsStateWithLifecycle()
+                            val modDoctorProgress by vm.modDoctorProgress.collectAsStateWithLifecycle()
+                            Surface(
+                                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.78f),
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.65f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.ErrorOutline,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onErrorContainer,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Text(
+                                            text = "Máy chủ dừng bất ngờ hoặc khởi động lỗi",
+                                            style = MaterialTheme.typography.labelLarge,
+                                            color = MaterialTheme.colorScheme.onErrorContainer
+                                        )
+                                    }
+                                    if (modDoctorBusy && !modDoctorProgress.isNullOrBlank()) {
+                                        Text(
+                                            text = modDoctorProgress.orEmpty(),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onErrorContainer
+                                        )
+                                    }
+                                    if (active.core.supportsMods) {
+                                        Button(
+                                            onClick = { vm.autoFixModCrashAndRestart(autoRestart = true) },
+                                            enabled = !modDoctorBusy,
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = semanticColors.success,
+                                                contentColor = semanticColors.onSuccess
+                                            ),
+                                            shape = McShape.Control,
+                                            modifier = Modifier.fillMaxWidth().heightIn(min = 42.dp)
+                                        ) {
+                                            Icon(Icons.Rounded.Build, contentDescription = null, modifier = Modifier.size(16.dp))
+                                            Spacer(Modifier.width(6.dp))
+                                            Text(
+                                                text = if (modDoctorBusy) "Đang sửa lỗi Mod..." else "Tự sửa lỗi Mod & bật lại",
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                    }
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Button(
+                                            onClick = { vm.openLatestCrashReport { navigate(SubPage.CrashReports) } },
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = MaterialTheme.colorScheme.error,
+                                                contentColor = MaterialTheme.colorScheme.onError
+                                            ),
+                                            shape = McShape.Control,
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                                            modifier = Modifier.weight(1.2f).heightIn(min = 42.dp)
+                                        ) {
+                                            Icon(Icons.Rounded.BugReport, contentDescription = null, modifier = Modifier.size(16.dp))
+                                            Spacer(Modifier.width(5.dp))
+                                            Text("Xem lỗi sập", maxLines = 1)
+                                        }
+                                        OutlinedButton(
+                                            onClick = onConsole,
+                                            shape = McShape.Control,
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                                            modifier = Modifier.weight(0.95f).heightIn(min = 42.dp)
+                                        ) {
+                                            Icon(Icons.Rounded.Terminal, contentDescription = null, modifier = Modifier.size(16.dp))
+                                            Spacer(Modifier.width(5.dp))
+                                            Text("Nhật ký", maxLines = 1)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if (active.core == ServerCore.Pumpkin) {
+                            Surface(
+                                color = semanticColors.rustContainer.copy(alpha = 0.65f),
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, semanticColors.rust.copy(alpha = 0.42f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(semanticColors.rust.copy(alpha = 0.18f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Memory,
+                                            contentDescription = null,
+                                            tint = semanticColors.onRustContainer,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                                    ) {
+                                        Text(
+                                            text = "Nhân Rust ARM64 (0% Java)",
+                                            style = MaterialTheme.typography.labelLarge,
+                                            color = semanticColors.onRustContainer,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = if (rustEngineStatus.isMultiversionWasmEnabled) {
+                                                "Đa phiên bản WASM · PC & PE"
+                                            } else {
+                                                "Phiên bản ${active.version} · Không dùng JVM"
+                                            },
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = semanticColors.onRustContainer.copy(alpha = 0.85f),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                    OutlinedButton(
+                                        onClick = {
+                                            quickRustProfileId = rustEngineStatus.activeProfileId
+                                            quickRustMultiversion = rustEngineStatus.isMultiversionWasmEnabled
+                                            showRustVersionSwitchDialog = true
+                                        },
+                                        enabled = !state.isRunning && !liveTask.active,
+                                        border = BorderStroke(1.dp, semanticColors.onRustContainer.copy(alpha = 0.45f)),
+                                        shape = McShape.Control,
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                        modifier = Modifier.heightIn(min = 38.dp)
+                                    ) {
+                                        Text(
+                                            text = "Đổi bản",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = semanticColors.onRustContainer,
+                                            maxLines = 1
+                                        )
+                                    }
+                                }
+                            }
+                        } else if (!active.core.isBedrock) {
+                            val isOriginalJava = !rustEngineStatus.isNativeRustEnabled && !rustEngineStatus.isRustJvmTurboEnabled
+                            val isJavaRustTurbo = !rustEngineStatus.isNativeRustEnabled && rustEngineStatus.isRustJvmTurboEnabled
+                            val isPureRust = rustEngineStatus.isNativeRustEnabled
+                            Surface(
+                                color = MaterialTheme.colorScheme.surfaceContainer,
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(
+                                    1.dp,
+                                    when {
+                                        isPureRust -> semanticColors.rust.copy(alpha = 0.45f)
+                                        isJavaRustTurbo -> semanticColors.success.copy(alpha = 0.45f)
+                                        else -> MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)
+                                    }
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        listOf(
+                                            Triple("Java Mod", isOriginalJava) { vm.selectOriginalJavaEngineOneTap() },
+                                            Triple("Turbo", isJavaRustTurbo) { vm.toggleRustJvmTurboMode(true) },
+                                            Triple("Rust", isPureRust) { if (!isPureRust) vm.enableNativeRustEngineOneTap() }
+                                        ).forEachIndexed { idx, (labelTxt, isSel, actionFn) ->
+                                            val segEnabled = !liveTask.active && (idx != 2 || !state.isRunning) && (!isPureRust || !state.isRunning || idx == 2)
+                                            val segBg = when {
+                                                isSel && idx == 2 -> semanticColors.rust
+                                                isSel && idx == 1 -> semanticColors.success
+                                                isSel -> MaterialTheme.colorScheme.primary
+                                                else -> MaterialTheme.colorScheme.surfaceContainerHigh
+                                            }
+                                            val segFg = when {
+                                                isSel && idx == 2 -> semanticColors.onRust
+                                                isSel && idx == 1 -> semanticColors.onSuccess
+                                                isSel -> MaterialTheme.colorScheme.onPrimary
+                                                else -> MaterialTheme.colorScheme.onSurface
+                                            }
+                                            Surface(
+                                                onClick = actionFn,
+                                                enabled = segEnabled,
+                                                shape = RoundedCornerShape(9.dp),
+                                                color = segBg,
+                                                modifier = Modifier.weight(1f)
+                                            ) {
+                                                Box(
+                                                    contentAlignment = Alignment.Center,
+                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp)
+                                                ) {
+                                                    Text(
+                                                        text = labelTxt,
+                                                        style = MaterialTheme.typography.labelLarge,
+                                                        color = segFg,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                    Text(
+                                        text = when {
+                                            isOriginalJava -> "Java gốc (${active.core.displayName}): Hỗ trợ 100% Mod, Plugin & Geyser PE."
+                                            isJavaRustTurbo -> "Java + bộ nhớ Rust: Giữ 100% Mod/Plugin và giảm ~35% RAM."
+                                            else -> "Nhân Rust tạm trên thư mục này (~50 MB RAM · 0% Java)."
+                                        },
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(horizontal = 4.dp)
+                                    )
+                                }
+                            }
+                        }
+
                         val canLaunchActive = ready || active.core == ServerCore.Pumpkin || rustEngineStatus.isNativeRustEnabled
-                        AdaptiveActionRow {
+                        val primaryInteraction = remember { MutableInteractionSource() }
+                        val primaryContainerColor = when {
+                            state.isRunning -> MaterialTheme.colorScheme.error
+                            active.core == ServerCore.Pumpkin -> semanticColors.rust
+                            else -> MaterialTheme.colorScheme.primary
+                        }
+                        val primaryContentColor = when {
+                            state.isRunning -> MaterialTheme.colorScheme.onError
+                            active.core == ServerCore.Pumpkin -> semanticColors.onRust
+                            else -> MaterialTheme.colorScheme.onPrimary
+                        }
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
                             Button(
                                 onClick = {
-                                    if (state.isRunning) confirm = "stop"
-                                    else vm.startServer()
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    if (state.isRunning) confirm = "stop" else vm.startServer()
                                 },
                                 enabled = canLaunchActive && !stopping && (state.isRunning || !busy),
-                                colors = if (!state.isRunning && active.core == ServerCore.Pumpkin) {
-                                    ButtonDefaults.buttonColors(containerColor = Color(0xFFEA580C), contentColor = Color.White)
-                                } else {
-                                    ButtonDefaults.buttonColors()
-                                },
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.weight(1f).heightIn(min = 52.dp)
+                                interactionSource = primaryInteraction,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = primaryContainerColor,
+                                    contentColor = primaryContentColor
+                                ),
+                                shape = McShape.Control,
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 50.dp)
+                                    .pressScale(primaryInteraction)
                             ) {
-                                Icon(if (state.isRunning) Icons.Outlined.Stop else Icons.Outlined.PlayArrow, null)
-                                Spacer(Modifier.width(8.dp))
+                                Icon(
+                                    imageVector = if (state.isRunning) Icons.Rounded.Stop else Icons.Rounded.PlayArrow,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(Modifier.width(6.dp))
                                 Text(
-                                    if (state.isRunning) "Dừng Server An Toàn"
-                                    else if (active.core == ServerCore.Pumpkin) "🦀 BẬT SERVER RUST NGAY"
-                                    else "BẬT SERVER NGAY",
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 15.sp
+                                    text = when {
+                                        state.isRunning -> "Dừng Server"
+                                        active.core == ServerCore.Pumpkin -> "Bật Server Rust"
+                                        else -> "Bật Server"
+                                    },
+                                    style = MaterialTheme.typography.labelLarge,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                             if (state.isRunning) {
                                 OutlinedButton(
                                     onClick = { confirm = "restart" },
                                     enabled = !stopping && !busy,
-                                    shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier.heightIn(min = 52.dp)
+                                    shape = McShape.Control,
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+                                    modifier = Modifier.heightIn(min = 50.dp)
                                 ) {
-                                    Text("🔄 Khởi động lại", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                    Icon(Icons.Rounded.RestartAlt, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(5.dp))
+                                    Text("Khởi động lại", maxLines = 1)
                                 }
                             } else {
                                 OutlinedButton(
                                     onClick = { vm.cleanRamNow() },
                                     enabled = !isCleaningRam,
-                                    shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier.heightIn(min = 52.dp)
+                                    shape = McShape.Control,
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+                                    modifier = Modifier.heightIn(min = 50.dp)
                                 ) {
-                                    Text(
-                                        if (isCleaningRam) "⏳ Đang dọn..." else "🧹 Dọn RAM",
-                                        fontWeight = FontWeight.SemiBold,
-                                        fontSize = 14.sp
-                                    )
+                                    Icon(Icons.Rounded.CleaningServices, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(5.dp))
+                                    Text(if (isCleaningRam) "Đang dọn..." else "Dọn RAM", maxLines = 1)
                                 }
                             }
                         }
                     }
+                }
+            }
 
-                    HorizontalDivider(color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.14f))
-
-                    // Danh sách chuyển đổi nhanh giữa các Server đã tạo + 2 nút Tạo mới / Quản lý
-                    if (config.installedCores.size > 1) {
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
+            if (active != null) {
+                item(key = "bento_metrics_grid") {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            config.installedCores.forEach { srv ->
-                                val isCurrent = srv.name == config.activeCoreName
-                                FilterChip(
-                                    selected = isCurrent,
-                                    onClick = {
-                                        if (!isCurrent && !state.isRunning) {
-                                            vm.setActiveCore(srv.name)
-                                        } else if (isCurrent) {
-                                            navigate(SubPage.ServerList)
-                                        }
-                                    },
-                                    label = {
-                                        Text(
-                                            if (isCurrent) "✅ ${srv.name} (${srv.version})"
-                                            else "🔄 ${srv.name} (${srv.version})",
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.SemiBold
-                                        )
+                            MhBentoMetricCard(
+                                label = "TPS nhịp game",
+                                value = if (state.isRunning && state.tps > 0) "%.1f".format(state.tps) else "—",
+                                icon = Icons.Rounded.Speed,
+                                accentColor = semanticColors.success,
+                                sparklineSamples = tpsHistory,
+                                sparklineMax = 20f,
+                                modifier = Modifier.weight(1f),
+                                onClick = onConsole
+                            )
+                            MhBentoMetricCard(
+                                label = if (active.core == ServerCore.Pumpkin) "RAM (Rust)" else "RAM / ${config.maxHeapMb}MB",
+                                value = when {
+                                    state.isRunning && state.usedMemoryMb > 0 -> "${state.usedMemoryMb} MB"
+                                    active.core == ServerCore.Pumpkin -> "~50 MB"
+                                    else -> "—"
+                                },
+                                icon = Icons.Rounded.Memory,
+                                accentColor = if (active.core == ServerCore.Pumpkin) semanticColors.rust else semanticColors.info,
+                                sparklineSamples = ramHistory,
+                                sparklineMax = if (active.core == ServerCore.Pumpkin) 512f else config.maxHeapMb.toFloat().coerceAtLeast(512f),
+                                modifier = Modifier.weight(1f),
+                                onClick = {
+                                    if (active.core == ServerCore.Pumpkin) {
+                                        vm.notifyActionDone("Rust tự quản lý RAM (~50–90 MB), không dùng Java Heap.")
+                                    } else {
+                                        showRamSlider = !showRamSlider
+                                    }
+                                }
+                            )
+                        }
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            MhBentoMetricCard(
+                                label = "Người chơi",
+                                value = if (state.isRunning && state.startupPhase == StartupPhase.Ready) "${state.onlinePlayers}" else "0",
+                                icon = Icons.Rounded.Group,
+                                accentColor = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.weight(1f),
+                                onClick = { navigate(SubPage.PlayerList) }
+                            )
+                            MhBentoMetricCard(
+                                label = "Nhiệt độ & Pin",
+                                value = "${heroThermal.tempCelsius.toInt()}°C · ${heroThermal.batteryPercent}%",
+                                icon = if (heroThermal.isCharging) Icons.Rounded.BatteryChargingFull else Icons.Rounded.Thermostat,
+                                accentColor = if (heroThermal.tempCelsius >= 43f) semanticColors.warning else semanticColors.success,
+                                modifier = Modifier.weight(1f),
+                                onClick = { navigate(SubPage.Performance) }
+                            )
+                        }
+                        AnimatedVisibility(visible = showRamSlider && active.core != ServerCore.Pumpkin) {
+                            MhCard(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                                contentPadding = PaddingValues(14.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        text = "Giới hạn RAM Java",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "${heap.toInt()} MB",
+                                        style = McCodeStyle,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                                Slider(
+                                    value = heap,
+                                    onValueChange = { heap = it },
+                                    valueRange = 512f..heapLimit.toFloat(),
+                                    steps = ((heapLimit - 512) / 256 - 1).coerceAtLeast(0),
+                                    enabled = !state.isRunning && !busy,
+                                    onValueChangeFinished = {
+                                        vm.setAutoHeap(false)
+                                        vm.setMaxHeap((heap.toInt() / 256) * 256)
                                     }
                                 )
                             }
                         }
                     }
-
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        OutlinedButton(
-                            onClick = { navigate(SubPage.Cores) },
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("➕ Tạo SV Mới", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                        }
-                        OutlinedButton(
-                            onClick = { navigate(SubPage.ServerList) },
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("🗂️ Danh Sách (${config.installedCores.size})", fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                        }
-                    }
                 }
             }
-        }
-
         }
 
         // ── CẢNH BÁO BẢO VỆ MAP TỰ ĐỘNG KHI PIN YẾU / QUÁ NHIỆT ──
         if (lastGuardEvent.isNotBlank()) {
             item(key = "last_guard_shutdown_banner") {
-                Surface(
-                    color = Color(0xFF065F46).copy(alpha = 0.25f),
-                    shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(1.2.dp, Color(0xFF10B981)),
-                    modifier = Modifier.fillMaxWidth()
+                MhCard(
+                    containerColor = semanticColors.successContainer.copy(alpha = 0.72f),
+                    borderColor = semanticColors.success.copy(alpha = 0.55f),
+                    contentPadding = PaddingValues(12.dp)
                 ) {
                     Row(
-                        modifier = Modifier.padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
+                        Icon(
+                            imageVector = Icons.Rounded.VerifiedUser,
+                            contentDescription = null,
+                            tint = semanticColors.onSuccessContainer,
+                            modifier = Modifier.size(20.dp)
+                        )
                         Text(
-                            lastGuardEvent,
-                            fontSize = 14.sp,
+                            text = lastGuardEvent,
+                            style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.SemiBold,
-                            color = Color(0xFF6EE7B7),
+                            color = semanticColors.onSuccessContainer,
                             modifier = Modifier.weight(1f)
                         )
                         TextButton(onClick = { vm.clearLastGuardShutdownEvent() }) {
-                            Text("Đã hiểu", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                        }
-                    }
-                }
-            }
-        }
-
-        // ── TỰ ĐỘNG PHÁT HIỆN MOD THIẾU THƯ VIỆN PHỤ TRỢ & CÀI BÙ 1 CHẠM ──
-        if (missingModDeps.isNotEmpty()) {
-            item(key = "missing_mod_deps_alert_card") {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.92f)),
-                    border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.error)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            "🧩 Phát hiện ${missingModDeps.size} thư viện Mod phụ trợ còn thiếu!",
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 14.sp,
-                            color = MaterialTheme.colorScheme.onErrorContainer
-                        )
-                        Text(
-                            missingModDeps.joinToString("\n") { dep ->
-                                "• Cần cài thêm: ${dep.displayName}" +
-                                    (if (dep.requiredBy.isNotBlank()) " (Do mod '${dep.requiredBy}' yêu cầu)" else "")
-                            },
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onErrorContainer
-                        )
-                        AdaptiveActionRow {
-                            Button(
-                                onClick = { vm.installAllMissingModDependencies(autoRestartAfter = true) },
-                                enabled = !installingMissingDeps,
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF16A34A), contentColor = Color.White),
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier.weight(1.4f)
-                            ) {
-                                Text(
-                                    if (installingMissingDeps) "⏳ Đang tự động tải & cài đặt..."
-                                    else "⬇️ Tải & Cài Bù Ngay + Bật Lại SV",
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 14.sp
-                                )
-                            }
-                            OutlinedButton(
-                                onClick = { vm.installAllMissingModDependencies(autoRestartAfter = false) },
-                                enabled = !installingMissingDeps,
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text("📥 Chỉ tải thư viện", fontWeight = FontWeight.Medium, fontSize = 14.sp)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // ── [v2.8.3] NÚT HOÀN TÁC / GỠ NHANH MOD VỪA CÀI GÂY LỖI KHI SERVER KHỞI ĐỘNG THẤT BẠI ──
-        if (state.startupPhase == StartupPhase.Failed && recentInstalledModNames.isNotEmpty()) {
-            item(key = "recent_mod_crash_rollback_banner") {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF78350F).copy(alpha = 0.25f)),
-                    border = BorderStroke(1.5.dp, Color(0xFFF59E0B))
-                ) {
-                    Column(
-                        modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            "⏪ Phát hiện Server báo lỗi sau khi cài Mod mới!",
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 14.sp,
-                            color = Color(0xFFFBBF24)
-                        )
-                        Text(
-                            "Mod vừa cài gần nhất: ${recentInstalledModNames.joinToString()}.\nBấm nút bên dưới để tạm tắt (.disabled) các Mod vừa thêm và bật lại Server an toàn:",
-                            fontSize = 14.sp
-                        )
-                        Button(
-                            onClick = { vm.rollbackRecentModsNow() },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD97706), contentColor = Color.White),
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
                             Text(
-                                "⏪ Hoàn Tác / Tạm Tắt Mod Vừa Cài Gây Lỗi Ngay (1 Chạm)",
+                                "Đã hiểu",
                                 fontWeight = FontWeight.SemiBold,
-                                fontSize = 14.sp
+                                color = semanticColors.onSuccessContainer
                             )
                         }
+                    }
+                }
+            }
+        }
+
+        // ── PHÁT HIỆN MOD THIẾU THƯ VIỆN PHỤ TRỢ & CÀI BÙ 1 CHẠM ──
+        if (missingModDeps.isNotEmpty()) {
+            item(key = "missing_mod_deps_alert_card") {
+                MhCard(
+                    containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.78f),
+                    borderColor = MaterialTheme.colorScheme.error.copy(alpha = 0.65f)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Extension,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Text(
+                            text = "Thiếu ${missingModDeps.size} thư viện Mod phụ trợ",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    }
+                    Text(
+                        text = missingModDeps.joinToString("\n") { dep ->
+                            "• Cần thêm: ${dep.displayName}" +
+                                (if (dep.requiredBy.isNotBlank()) " (cho '${dep.requiredBy}')" else "")
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Button(
+                            onClick = { vm.installAllMissingModDependencies(autoRestartAfter = true) },
+                            enabled = !installingMissingDeps,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = semanticColors.success,
+                                contentColor = semanticColors.onSuccess
+                            ),
+                            shape = McShape.Control,
+                            modifier = Modifier.weight(1.3f).heightIn(min = 44.dp)
+                        ) {
+                            Icon(Icons.Rounded.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = if (installingMissingDeps) "Đang cài..." else "Cài bù & bật SV",
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        OutlinedButton(
+                            onClick = { vm.installAllMissingModDependencies(autoRestartAfter = false) },
+                            enabled = !installingMissingDeps,
+                            shape = McShape.Control,
+                            modifier = Modifier.weight(0.95f).heightIn(min = 44.dp)
+                        ) {
+                            Text("Chỉ tải thư viện", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── HOÀN TÁC / TẠM TẮT MOD VỪA CÀI GÂY LỖI KHI KHỞI ĐỘNG THẤT BẠI ──
+        if (state.startupPhase == StartupPhase.Failed && recentInstalledModNames.isNotEmpty()) {
+            item(key = "recent_mod_crash_rollback_banner") {
+                MhCard(
+                    containerColor = semanticColors.warningContainer.copy(alpha = 0.78f),
+                    borderColor = semanticColors.warning.copy(alpha = 0.60f)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.History,
+                            contentDescription = null,
+                            tint = semanticColors.onWarningContainer,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Text(
+                            text = "Server lỗi sau khi thêm Mod mới",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = semanticColors.onWarningContainer
+                        )
+                    }
+                    Text(
+                        text = "Mod mới cài: ${recentInstalledModNames.joinToString()}. Bấm để tạm tắt (.disabled) các mod này và bật lại an toàn.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = semanticColors.onWarningContainer.copy(alpha = 0.9f)
+                    )
+                    Button(
+                        onClick = { vm.rollbackRecentModsNow() },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = semanticColors.warning,
+                            contentColor = semanticColors.onWarning
+                        ),
+                        shape = McShape.Control,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp)
+                    ) {
+                        Icon(Icons.AutoMirrored.Rounded.Undo, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Tạm tắt Mod vừa cài & bật lại", maxLines = 1)
                     }
                 }
             }
@@ -1285,824 +1734,189 @@ fun MineHostOverview(
         // ══════════════════════════════════════════════════════════════════════
         if (active != null && (overviewTab == 0 || overviewTab == 3)) {
             item(key = "unified_connection_crossplay_card") {
-                val localhostAddress = "127.0.0.1:$port"
-                val lanAddress = lanIp.takeIf {
-                    it.matches(Regex("""\d{1,3}(\.\d{1,3}){3}""")) && it != "0.0.0.0" && !it.startsWith("127.")
-                }?.let { "$it:$port" }
-                val playitAddress = playitState.publicAddress.takeIf { it.isNotBlank() }
-                val playitAllocIpv4 = playitState.allocatedIpv4Address.takeIf { it.isNotBlank() }
-                val playitIpv4Host = remember(playitAllocIpv4, playitAddress, playitNumericAddress) {
-                    vm.extractPlayitIpv4Host(playitAllocIpv4)
-                        ?: vm.extractPlayitIpv4Host(playitAddress)
-                        ?: vm.extractPlayitIpv4Host(playitNumericAddress)
+                val isLanMode = playConnectionMode == PlayConnectionMode.SameNetwork
+                val modeBadgeText = when {
+                    isLanMode -> "Cùng Wi-Fi"
+                    playitState.isRunning && playitState.publicAddress.isNotBlank() -> "Playit Online"
+                    playitState.isBusy -> "Đang nối..."
+                    else -> "Playit.gg"
                 }
-                val playitTcpPort = remember(playitAddress, playitAllocIpv4) {
-                    playitAddress?.substringAfterLast(":", "")?.takeIf { it.isNotBlank() }
-                        ?: playitAllocIpv4?.substringAfterLast(":", "")?.takeIf { it.isNotBlank() }
+                val modeAccent = when {
+                    isLanMode -> MaterialTheme.colorScheme.primary
+                    playitState.isRunning && playitState.publicAddress.isNotBlank() -> semanticColors.success
+                    playitState.stage == com.mineserve.mobile.ui.PlayitStage.Error -> MaterialTheme.colorScheme.error
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
                 }
-                val playitPureIpv4Address = remember(playitAllocIpv4, playitIpv4Host, playitTcpPort, playitNumericAddress) {
-                    when {
-                        playitAllocIpv4 != null && playitAllocIpv4.substringBeforeLast(":").matches(Regex("""^\d{1,3}(\.\d{1,3}){3}$""")) ->
-                            playitAllocIpv4
-                        playitIpv4Host != null && playitTcpPort != null ->
-                            "$playitIpv4Host:$playitTcpPort"
-                        else ->
-                            playitNumericAddress?.takeIf { !it.contains("::") }
-                    }
+                val modeContainer = when {
+                    isLanMode -> MaterialTheme.colorScheme.primaryContainer
+                    playitState.isRunning && playitState.publicAddress.isNotBlank() -> semanticColors.successContainer
+                    playitState.stage == com.mineserve.mobile.ui.PlayitStage.Error -> MaterialTheme.colorScheme.errorContainer
+                    else -> MaterialTheme.colorScheme.surfaceContainerHigh
                 }
-                val crossplayStatus = remember(
-                    active.dirName,
-                    installedPlugins,
-                    installedMods,
-                    state.isRunning,
-                    connectionCheckStatus
-                ) {
-                    vm.inspectActiveCrossplayStatus()
+                val modeContentColor = when {
+                    isLanMode -> MaterialTheme.colorScheme.onPrimaryContainer
+                    playitState.isRunning && playitState.publicAddress.isNotBlank() -> semanticColors.onSuccessContainer
+                    playitState.stage == com.mineserve.mobile.ui.PlayitStage.Error -> MaterialTheme.colorScheme.onErrorContainer
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
                 }
-                val bedrockPort = crossplayStatus.configuredPort
-                val hasGeyserInstalled = active.core.isBedrock || crossplayStatus.isInstalledAndValid
-                val connectionReport by vm.connectionCheckReport.collectAsState()
-                val activeReport = connectionReport?.takeIf { it.serverId == active.dirName }
 
-                var showSixDiagnostics by remember { mutableStateOf(false) }
-
-                HostCard(
-                    title = "IP kết nối của server",
-                    artKind = MinecraftArtKind.ENDER_EYE,
-                    badgeText = if (playConnectionMode == PlayConnectionMode.SameNetwork) "Cùng Wi-Fi" else playitState.phaseDetail
-                ) {
-                    val javaAddress = if (playConnectionMode == PlayConnectionMode.SameNetwork) {
-                        lanAddress
-                    } else {
-                        playitAddress ?: playitPureIpv4Address
-                    }
-                    val peAddress = if (playConnectionMode == PlayConnectionMode.SameNetwork) {
-                        lanAddress?.substringBeforeLast(":")?.let { "$it:$bedrockPort" }
-                    } else {
-                        playitState.bedrockAddress.takeIf { it.isNotBlank() }
-                    }
-                    if (!active.core.isBedrock) {
-                        Text("Java / máy tính", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(javaAddress ?: "Chưa có địa chỉ kết nối", style = MaterialTheme.typography.titleMedium)
-                        OutlinedButton(
-                            onClick = { javaAddress?.let { clipboard.setText(AnnotatedString(it)) } },
-                            enabled = javaAddress != null,
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                        ) { Text("Sao chép địa chỉ Java") }
-                    }
-                    if (hasGeyserInstalled) {
-                        Text("Bedrock / điện thoại", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(peAddress ?: "Chưa có địa chỉ Bedrock", style = MaterialTheme.typography.titleMedium)
-                        OutlinedButton(
-                            onClick = { peAddress?.let { clipboard.setText(AnnotatedString(it)) } },
-                            enabled = peAddress != null,
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                        ) { Text("Sao chép địa chỉ Bedrock") }
-                    }
-                    Button(
-                        onClick = {
-                            vm.shareServerInviteCardImage(
-                                context = context,
-                                javaIpOverride = javaAddress,
-                                peHostOverride = peAddress?.substringBeforeLast(":"),
-                                pePortOverride = peAddress?.substringAfterLast(":")
+                MhCard {
+                    MhSectionHeader(
+                        title = "Kết nối & Mời bạn",
+                        subtitle = if (isLanMode) "Chơi chung Wi-Fi / Hotspot" else "Chơi từ xa qua Playit.gg",
+                        trailing = {
+                            MhStatusBadge(
+                                label = modeBadgeText,
+                                accent = modeAccent,
+                                container = modeContainer,
+                                contentColor = modeContentColor,
+                                pulsing = !isLanMode && (playitState.isRunning && playitState.publicAddress.isNotBlank() || playitState.isBusy),
+                                onClick = { showNetworkSheet = true }
                             )
-                        },
-                        enabled = if (active.core.isBedrock) peAddress != null else javaAddress != null,
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                    ) { Text("Tạo thẻ mời") }
-                    OutlinedButton(
-                        onClick = { showConnectionDetails = !showConnectionDetails },
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                    ) { Text(if (showConnectionDetails) "Thu gọn kết nối" else "Thiết lập & kiểm tra kết nối") }
-                    if (showConnectionDetails) {
-                    HorizontalDivider()
-                    // Tách rõ 6 trạng thái kết nối độc lập (Thu gọn mặc định thành 1 dòng để nút Copy IP hiện ngay lập tức, bấm để bung chi tiết)
-                    val s1McRunning = state.isRunning && state.startupPhase == StartupPhase.Ready
-                    val s2AgentOnline = playitState.isAgentOnline
-                    val s3HasPublicAddr = playitState.hasPublicEndpoint
-                    val s4HasBridge = playitState.hasActiveForwardingBridge
-                    val s5McResponded = (activeReport?.localhostJava?.ok == true) ||
-                        (activeReport?.localhostBedrock?.ok == true) ||
-                        (activeReport?.lanJava?.ok == true) ||
-                        (activeReport?.lanBedrock?.ok == true)
-                    val s6ExternalVerified = (activeReport?.publicJava?.ok == true) ||
-                        (activeReport?.publicBedrock?.ok == true)
-                    Surface(
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { showSixDiagnostics = !showSixDiagnostics }
-                    ) {
-                        Column(Modifier.padding(horizontal = 10.dp, vertical = 7.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text(
-                                    "📊 Chẩn đoán: ${if (s1McRunning) "🟢 MC" else "⚪ MC"} • ${if (s2AgentOnline) "🟢 Playit" else "⚪ Playit"} • ${if (s3HasPublicAddr) "🟢 Có IP" else "⚪ Chưa IP"}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                Text(
-                                    if (showSixDiagnostics) "Ẩn chi tiết ▲" else "Chi tiết 6 bước ▼",
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                            if (showSixDiagnostics) {
-                                Text(
-                                    "1. Minecraft đang chạy: ${if (s1McRunning) "🟢 Sẵn sàng (Java:$port / PE:$bedrockPort)" else if (state.isRunning) "⏳ Đang khởi động (${state.startupPhase.label})" else "⚪ Đã dừng"}\n" +
-                                        "2. Agent online (Control): ${if (s2AgentOnline) "🟢 Online (${playitState.agentName.ifBlank { "Đã xác thực Pong" }})" else "⚪ Offline (${playitState.phaseDetail})"}\n" +
-                                        "3. Đã có địa chỉ public: ${if (s3HasPublicAddr) "🟢 Có (${listOfNotNull(playitState.publicAddress.takeIf { it.isNotBlank() }, playitState.bedrockAddress.takeIf { it.isNotBlank() }).joinToString(" | ")})" else "⚪ Chưa có cho server này"}\n" +
-                                        "4. Có bridge/traffic chuyển tiếp: ${if (s4HasBridge) "🟢 Đang chuyển tiếp (TCP:${playitState.forwardedTcpConnections} / UDP:${playitState.activeUdpSessions} phiên)" else "⚪ Chưa phát sinh cầu nối"}\n" +
-                                        "5. Đã nhận phản hồi Minecraft: ${if (s5McResponded) "🟢 Đã xác nhận gói Status/RakNet" else "⚪ Chưa kiểm tra / Chưa phản hồi"}\n" +
-                                        "6. Đã kiểm chứng từ mạng ngoài: ${if (s6ExternalVerified) "🟢 Đã kiểm chứng qua Playit" else "⚪ Chưa kiểm chứng (Bấm nút Kiểm tra bên dưới)"}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    fontSize = 14.sp,
-                                    lineHeight = 20.sp
-                                )
-                            }
                         }
+                    )
+
+                    if (!active.core.isBedrock) {
+                        MhCopyAddressRow(
+                            platformLabel = "Java / Máy tính",
+                            address = javaAddress,
+                            fallbackText = if (isLanMode) "Chưa có Wi-Fi (Dùng 127.0.0.1:$port)" else "Chưa bật Playit.gg",
+                            icon = Icons.Rounded.Computer,
+                            subtitle = if (isLanMode) {
+                                "Trên máy này: $localhostAddress · $lanInterfaceLabel"
+                            } else {
+                                "Tên miền chuẩn Playit (TCP $port)"
+                            },
+                            onCopy = { addr ->
+                                clipboard.setText(AnnotatedString(addr))
+                                vm.notifyActionDone("Đã chép địa chỉ Java: $addr")
+                            }
+                        )
                     }
 
-                    // Chuyển chế độ Cùng Wi-Fi / Kết nối mọi nơi (Playit.gg)
-                    AdaptiveActionRow {
-                        val isLanMode = playConnectionMode == PlayConnectionMode.SameNetwork
-                        if (isLanMode) {
-                            Button(
-                                onClick = { vm.setPlayConnectionMode(PlayConnectionMode.SameNetwork) },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(10.dp)
-                            ) { Text("🏠 Cùng mạng Wi-Fi", fontWeight = FontWeight.SemiBold, fontSize = 14.sp) }
-                            OutlinedButton(
-                                onClick = { vm.setPlayConnectionMode(PlayConnectionMode.Everywhere) },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(10.dp)
-                            ) { Text("🌍 Kết nối mọi nơi (Playit)", fontSize = 14.sp) }
-                        } else {
-                            OutlinedButton(
-                                onClick = { vm.setPlayConnectionMode(PlayConnectionMode.SameNetwork) },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(10.dp)
-                            ) { Text("🏠 Cùng mạng Wi-Fi", fontSize = 14.sp) }
-                            Button(
-                                onClick = { vm.setPlayConnectionMode(PlayConnectionMode.Everywhere) },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(10.dp)
-                            ) { Text("🌍 Kết nối mọi nơi (Playit)", fontWeight = FontWeight.SemiBold, fontSize = 14.sp) }
-                        }
-                    }
-
-                    // Thanh điều khiển Đường hầm Playit.gg (khi ở chế độ Kết nối mọi nơi)
-                    if (playConnectionMode == PlayConnectionMode.Everywhere) {
+                    if (hasGeyserInstalled || isActiveRust) {
+                        MhCopyAddressRow(
+                            platformLabel = "Bedrock / Điện thoại (PE)",
+                            address = peAddress,
+                            fallbackText = if (isLanMode) "Chưa có Wi-Fi (Port UDP $bedrockPort)" else "Mở Thiết lập mạng để lấy cổng PE",
+                            icon = Icons.Rounded.Smartphone,
+                            subtitle = "Cổng UDP: $bedrockPort (Nhập IP và Port vào 2 ô riêng)",
+                            onCopy = { addr ->
+                                clipboard.setText(AnnotatedString(addr))
+                                vm.notifyActionDone("Đã chép địa chỉ PE: $addr")
+                            }
+                        )
+                    } else if (!active.core.isBedrock) {
                         Surface(
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+                            onClick = { showNetworkSheet = true },
+                            color = MaterialTheme.colorScheme.surfaceContainer,
                             shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text(
-                                    when {
-                                        playitState.isRunning && playitAddress != null && !state.isRunning ->
-                                            "🟡 Đường hầm Playit.gg đã sẵn sàng (${playitState.agentName.ifBlank { "Agent Online" }}), NHƯNG Server '${active.name}' ĐANG DỪNG — Bấm [▶️ Bật Server] bên dưới để PC/PE vào được!"
-                                        playitState.isRunning && playitAddress != null && state.startupPhase != StartupPhase.Ready ->
-                                            "⏳ Đường hầm Playit.gg đã sẵn sàng • Đang chờ Server '${active.name}' khởi động xong..."
-                                        playitState.isRunning && playitAddress != null ->
-                                            "🟢 Đường hầm Playit.gg ĐANG CHUYỂN TIẾP (${playitState.agentName.ifBlank { "Agent Online" }}) • Nối cổng TCP $port" +
-                                                (if (playitState.bedrockAddress.isNotBlank()) " & UDP 19132 (PE)" else "")
-                                        playitState.stage == com.mineserve.mobile.ui.PlayitStage.WaitingForClaim && playitState.claimUrl.isNotBlank() ->
-                                            "🔑 Cần xác nhận liên kết (Claim) trên web Playit.gg (Mã: ${playitState.claimCode}) — Bấm 'Mở trang Claim' hoặc 'Dán Secret Key' bên dưới"
-                                        playitState.isBusy ->
-                                            "⏳ ${playitState.statusText}"
-                                        else ->
-                                            "⚪ Đường hầm Playit.gg đang tắt — Bấm Bật Đường Hầm hoặc Dán Secret Key từ web Playit.gg"
-                                    },
-                                    style = MaterialTheme.typography.bodySmall,
-                                    fontWeight = FontWeight.Medium,
-                                    color = when {
-                                        playitState.isRunning && playitAddress != null && !state.isRunning -> Color(0xFFF59E0B)
-                                        playitState.isRunning && playitAddress != null -> Color(0xFF10B981)
-                                        playitState.stage == com.mineserve.mobile.ui.PlayitStage.Error -> MaterialTheme.colorScheme.error
-                                        else -> MaterialTheme.colorScheme.primary
-                                    }
-                                )
-                                if (playitState.isRunning && !state.isRunning) {
-                                    Button(
-                                        onClick = { vm.startServer() },
-                                        enabled = !stopping,
-                                        shape = RoundedCornerShape(10.dp),
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Text(
-                                            "▶️ Bật Server '${active.name}' Ngay Để Vào Game",
-                                            fontWeight = FontWeight.SemiBold,
-                                            fontSize = 14.sp
-                                        )
-                                    }
-                                }
-                                if (playitState.errorMessage.isNotBlank()) {
-                                    Text(
-                                        "⚠️ ${playitState.errorMessage}",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.error,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                }
-                                AdaptiveActionRow {
-                                    if (!playitState.isActiveOrConnecting) {
-                                        Button(
-                                            onClick = { vm.startPlayitTunnel() },
-                                            shape = RoundedCornerShape(10.dp),
-                                            modifier = Modifier.weight(1.2f)
-                                        ) {
-                                            Text("🚀 Bật Playit.gg", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                        }
-                                        OutlinedButton(
-                                            onClick = { showPastePlayitKeyDialog = true },
-                                            shape = RoundedCornerShape(10.dp),
-                                            modifier = Modifier.weight(1f)
-                                        ) {
-                                            Text("🔑 Dán Secret Key", fontWeight = FontWeight.Medium, fontSize = 14.sp)
-                                        }
-                                    } else {
-                                        if (playitState.claimUrl.isNotBlank() && !playitState.isClaimed) {
-                                            Button(
-                                                onClick = { uriHandler.openUri(playitState.claimUrl) },
-                                                shape = RoundedCornerShape(10.dp),
-                                                modifier = Modifier.weight(1.2f)
-                                            ) { Text("🔑 Mở trang Claim", fontWeight = FontWeight.SemiBold, fontSize = 14.sp) }
-                                        } else {
-                                            Button(
-                                                onClick = { vm.refreshPlayitTunnel() },
-                                                shape = RoundedCornerShape(10.dp),
-                                                modifier = Modifier.weight(1f)
-                                            ) { Text("🔄 Làm mới", fontWeight = FontWeight.Medium, fontSize = 14.sp) }
-                                        }
-                                        OutlinedButton(
-                                            onClick = { showPastePlayitKeyDialog = true },
-                                            shape = RoundedCornerShape(10.dp),
-                                            modifier = Modifier.weight(1f)
-                                        ) { Text("🔑 Dán Key", fontSize = 14.sp, fontWeight = FontWeight.Medium) }
-                                        OutlinedButton(
-                                            onClick = { vm.stopPlayitTunnel() },
-                                            shape = RoundedCornerShape(10.dp),
-                                            modifier = Modifier.weight(0.85f)
-                                        ) { Text("⏹️ Tắt", fontSize = 14.sp) }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // ── KHUNG 1: ĐỊA CHỈ CHO MÁY TÍNH PC / JAVA (CỔNG TCP) ──
-                    Surface(
-                        color = MaterialTheme.colorScheme.secondaryContainer,
-                        shape = RoundedCornerShape(14.dp),
-                        border = BorderStroke(1.2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(
-                                "💻 1. ĐỊA CHỈ CHO MÁY TÍNH PC / JAVA (Pojav / FCL / TLauncher - Cổng TCP):",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            if (playConnectionMode == PlayConnectionMode.SameNetwork) {
-                                Text(
-                                    lanAddress ?: "Chưa có Wi-Fi/Hotspot (Dùng 127.0.0.1:$port nếu chơi ngay trên máy này)",
-                                    style = MaterialTheme.typography.headlineSmall,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                                Text(
-                                    "• Cùng máy điện thoại này: $localhostAddress  •  Giao diện mạng: $lanInterfaceLabel",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    fontSize = 14.sp
-                                )
-                                AdaptiveActionRow {
-                                    Button(
-                                        onClick = {
-                                            val target = lanAddress ?: localhostAddress
-                                            clipboard.setText(AnnotatedString(target))
-                                            lastCopiedTag = "lan"
-                                            vm.notifyActionDone("📋 Đã chép địa chỉ PC (LAN): $target")
-                                        },
-                                        shape = RoundedCornerShape(10.dp),
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        Text(
-                                            if (lastCopiedTag == "lan") "✅ Đã chép!" else "📋 Chép IP LAN",
-                                            fontWeight = FontWeight.SemiBold,
-                                            fontSize = 14.sp
-                                        )
-                                    }
-                                    OutlinedButton(
-                                        onClick = {
-                                            clipboard.setText(AnnotatedString(localhostAddress))
-                                            vm.notifyActionDone("📋 Đã chép Localhost: $localhostAddress")
-                                        },
-                                        shape = RoundedCornerShape(10.dp),
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        Text("📋 Chép 127.0.0.1:$port", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                                    }
-                                }
-                            } else {
-                                // Chế độ Playit.gg: BẮT BUỘC hiển thị và chép Tên miền Playit kèm :port (ví dụ *.tun.ply.gg:port)
-                                // vì Playit.gg bật bộ lọc NoRawIp trên các tunnel Java miễn phí (nếu nhập IP số 147.185.221.x:port
-                                // vào Minecraft Java/Pojav thì gói Handshake thiếu tên miền và bị máy chủ Playit ngắt ngay!).
-                                val primaryPcAddr = playitAddress ?: playitPureIpv4Address
-                                Text(
-                                    primaryPcAddr ?: "Chưa có địa chỉ (Hãy bấm Bật Đường Hầm Playit.gg)",
-                                    style = MaterialTheme.typography.headlineSmall,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                                if (playitAddress != null) {
-                                    Text(
-                                        "✅ Địa chỉ chuẩn cho PC & PojavLauncher (Có sẵn :cổng & vượt bộ lọc NoRawIp của Playit): $playitAddress" +
-                                            if (playitPureIpv4Address != null && playitPureIpv4Address != playitAddress) {
-                                                "\nℹ️ Lưu ý quan trọng: Hãy dán đúng tên miền $playitAddress vào Minecraft Java (không nhập IP số trần $playitPureIpv4Address vì Playit chặn kết nối Java bằng IP thô)."
-                                            } else "",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                }
-                                AdaptiveActionRow {
-                                    Button(
-                                        onClick = {
-                                            val toCopy = playitAddress ?: playitPureIpv4Address ?: return@Button
-                                            clipboard.setText(AnnotatedString(toCopy))
-                                            lastCopiedTag = "pc_domain"
-                                            vm.notifyActionDone("📋 Đã chép Địa chỉ Playit cho PC/Pojav: $toCopy (Dán thẳng vào Máy chủ Minecraft!)")
-                                        },
-                                        enabled = primaryPcAddr != null,
-                                        shape = RoundedCornerShape(10.dp),
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = Color(0xFF2E7D32),
-                                            contentColor = Color.White
-                                        ),
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        Text(
-                                            if (lastCopiedTag == "pc_domain") "✅ Đã chép Địa chỉ PC!" else "📋 Chép Địa Chỉ PC (Chuẩn Playit)",
-                                            fontWeight = FontWeight.SemiBold,
-                                            fontSize = 14.sp
-                                        )
-                                    }
-                                    if (playitState.secondaryAddress.isNotBlank() && playitState.secondaryAddress != playitAddress) {
-                                        OutlinedButton(
-                                            onClick = {
-                                                val sec = playitState.secondaryAddress
-                                                clipboard.setText(AnnotatedString(sec))
-                                                lastCopiedTag = "pc_secondary"
-                                                vm.notifyActionDone("📋 Đã chép tên miền phụ Playit: $sec")
-                                            },
-                                            shape = RoundedCornerShape(10.dp),
-                                            modifier = Modifier.weight(1f)
-                                        ) {
-                                            Text(
-                                                if (lastCopiedTag == "pc_secondary") "✅ Đã chép!" else "🌐 Chép Tên Miền Phụ",
-                                                fontWeight = FontWeight.Medium,
-                                                fontSize = 14.sp
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // ── KHUNG 2: ĐỊA CHỈ & BẬT CHƠI CHUNG ĐIỆN THOẠI MINECRAFT PE (BEDROCK - CỔNG UDP) ──
-                    Surface(
-                        color = Color(0xFF064E3B).copy(alpha = 0.25f),
-                        shape = RoundedCornerShape(14.dp),
-                        border = BorderStroke(1.5.dp, Color(0xFF2DD4BF)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                modifier = Modifier.fillMaxWidth()
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
                             ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Devices,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
                                 Text(
-                                    "📱 2. ĐIỆN THOẠI MINECRAFT PE (CHƠI CHUNG VỚI PC - CỔNG UDP):",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.secondary,
+                                    text = "Chưa bật chơi chung PE (GeyserMC) · Chạm để cài nhanh",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.weight(1f)
                                 )
-                                TextButton(
-                                    onClick = { navigate(SubPage.Crossplay) },
-                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
-                                ) {
-                                    Text("Tùy chỉnh PE/PC →", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.secondary)
-                                }
-                            }
-
-                            // Trạng thái cài đặt GeyserMC + Floodgate + ViaVersion ngay tại chỗ
-                            val homeMarker = remember(active.dirName, installing) { vm.crossplayMarker(active.dirName) }
-                            var homePe by remember(active.dirName) { mutableStateOf(vm.crossplayMarker(active.dirName)["targetPe"].orEmpty()) }
-                            var showHomePePicker by remember { mutableStateOf(false) }
-                            val homeCrossCheck = com.mineserve.mobile.ui.rememberCrossplayCheck(active.core, active.version, targetPe = homePe)
-                            if (!hasGeyserInstalled) {
-                                Surface(
-                                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.9f),
-                                    shape = RoundedCornerShape(10.dp),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        val diagReason = when {
-                                            crossplayStatus.hasDisabledGeyserJar ->
-                                                "⚠️ GeyserMC đang bị TẮT (.disabled) trong Server '${active.name}' nên điện thoại PE chưa vào được!"
-                                            crossplayStatus.missingDependencies.isNotEmpty() ->
-                                                "⚠️ GeyserMC thiếu thành phần bắt buộc (${crossplayStatus.missingDependencies.joinToString(", ")}) nên Crossplay chưa sẵn sàng!"
-                                            crossplayStatus.loadErrorDetail != null ->
-                                                "⚠️ GeyserMC gặp lỗi khi nạp: ${crossplayStatus.loadErrorDetail}"
-                                            else ->
-                                                "⚠️ Server '${active.name}' hiện chưa cài đủ cầu nối PE (GeyserMC) nên điện thoại Minecraft PE chưa vào được!"
-                                        }
-                                        Text(
-                                            diagReason,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            fontSize = 14.sp,
-                                            fontWeight = FontWeight.Medium,
-                                            color = MaterialTheme.colorScheme.onErrorContainer
-                                        )
-                                        Text(
-                                            when {
-                                                homeCrossCheck == null -> "🔎 Đang kiểm tra Java ${active.version} chơi chung được với PE bản nào..."
-                                                homeCrossCheck.supported -> "${homeCrossCheck.pcLine}\n${homeCrossCheck.peLine}"
-                                                else -> "${homeCrossCheck.headline}\n👉 ${homeCrossCheck.suggestion.orEmpty()}"
-                                            },
-                                            fontSize = 14.sp,
-                                            lineHeight = 20.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = MaterialTheme.colorScheme.onErrorContainer
-                                        )
-                                        com.mineserve.mobile.ui.PeVersionPicker(selected = homePe, onSelect = { homePe = it })
-                                        Button(
-                                            onClick = { vm.installCrossplayGeyserPack(homePe, startAfterInstall = true) },
-                                            enabled = !installing && !stopping && homeCrossCheck?.supported == true,
-                                            shape = RoundedCornerShape(8.dp),
-                                            modifier = Modifier.fillMaxWidth()
-                                        ) {
-                                            Text(
-                                                if (installing || stopping) "⏳ Đang tự động cài Geyser + Floodgate + ViaVersion..."
-                                                else "📲 Bật Chơi Chung PC + PE Ngay (Cài staging an toàn)",
-                                                fontSize = 14.sp,
-                                                fontWeight = FontWeight.SemiBold
-                                            )
-                                        }
-                                    }
-                                }
-                            } else {
-                                Surface(
-                                    color = Color(0xFF10B981).copy(alpha = 0.16f),
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                                        val installedComponents = buildList {
-                                            if (crossplayStatus.hasGeyserJar || active.core.isBedrock) add("GeyserMC")
-                                            if (crossplayStatus.hasFloodgateJar) add("Floodgate")
-                                            if (crossplayStatus.hasViaVersionJar) add("ViaVersion")
-                                            if (crossplayStatus.hasViaBackwardsJar) add("ViaBackwards")
-                                        }.joinToString(" + ").ifBlank { "Cầu nối PE" }
-                                        Text(
-                                            "🧩 Thành phần đã cài: $installedComponents (Transport: ${crossplayStatus.transportType.uppercase()} • Cổng UDP: $bedrockPort)",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            fontSize = 14.sp,
-                                            fontWeight = FontWeight.Medium,
-                                            color = MaterialTheme.colorScheme.secondary
-                                        )
-                                        Text(
-                                            "• Đã cài: ${if (crossplayStatus.isInstalledAndValid) "✅ Hợp lệ" else "❌ Thiếu"}  |  " +
-                                                "Cần restart: ${if (crossplayStatus.needsRestart) "⚠️ Có (Hãy khởi động lại Server)" else "🟢 Không"}\n" +
-                                                "• Đã load: ${if (crossplayStatus.isRuntimeLoaded) "🟢 Đã nạp" else "⚪ Chưa nạp"}  |  " +
-                                                "Đang nghe cổng $bedrockPort: ${if (crossplayStatus.isListeningOnPort) "🟢 Đang mở" else "⚪ Chưa mở"}  |  " +
-                                                "Đã kiểm tra: ${if (crossplayStatus.isVerifiedReachable) "✅ Phản hồi RakNet" else "⚪ Chưa kiểm tra"}",
-                                            fontSize = 14.sp,
-                                            lineHeight = 20.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = MaterialTheme.colorScheme.onSurface
-                                        )
-                                        if (crossplayStatus.loadErrorDetail != null) {
-                                            Text(
-                                                "⚠️ Lỗi runtime Geyser: ${crossplayStatus.loadErrorDetail}",
-                                                fontSize = 14.sp,
-                                                color = MaterialTheme.colorScheme.error,
-                                                fontWeight = FontWeight.Medium
-                                            )
-                                        }
-                                        val installedRange = homeMarker["peRange"]
-                                        Text(
-                                            buildString {
-                                                append("💻 PC: Minecraft Java ${active.version}")
-                                                if (!installedRange.isNullOrBlank()) {
-                                                    append("   •   📱 PE vào được (Geyser ${homeMarker["build"].orEmpty()} đang cài): $installedRange")
-                                                }
-                                                append("\nNếu PE báo \"Outdated Bedrock client\": PE của bạn cũ hơn → chọn đúng bản PE bên dưới rồi bấm Cài lại. Nếu báo \"Outdated server\": bấm Cài lại với \"Mới nhất\".")
-                                            },
-                                            fontSize = 14.sp,
-                                            lineHeight = 20.sp,
-                                            color = MaterialTheme.colorScheme.onSurface
-                                        )
-                                        TextButton(
-                                            onClick = { showHomePePicker = !showHomePePicker },
-                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
-                                        ) {
-                                            Text(
-                                                if (showHomePePicker) "▲ Ẩn chọn bản PE" else "📱 Chọn bản PE của điện thoại / Cài lại Geyser ▼",
-                                                fontSize = 14.sp,
-                                                fontWeight = FontWeight.Medium,
-                                                color = MaterialTheme.colorScheme.secondary
-                                            )
-                                        }
-                                        if (showHomePePicker) {
-                                            com.mineserve.mobile.ui.PeVersionPicker(selected = homePe, onSelect = { homePe = it })
-                                            com.mineserve.mobile.ui.CrossplayCompatCard(
-                                                core = active.core,
-                                                mcVersion = active.version,
-                                                result = homeCrossCheck
-                                            )
-                                            Button(
-                                                onClick = { vm.installCrossplayGeyserPack(homePe, startAfterInstall = false) },
-                                                enabled = !installing && !stopping && homeCrossCheck?.supported == true,
-                                                shape = RoundedCornerShape(8.dp),
-                                                modifier = Modifier.fillMaxWidth()
-                                            ) {
-                                                Text(
-                                                    if (installing || stopping) "⏳ Đang cài lại Geyser..."
-                                                    else "🔄 Cài lại Geyser cho PE ${com.mineserve.mobile.server.CrossplayCompat.normalizeTargetPe(homePe) ?: "mới nhất"}",
-                                                    fontSize = 14.sp,
-                                                    fontWeight = FontWeight.SemiBold
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            Text(
-                                "• Chơi PE ngay trên điện thoại mở Server này: IP 127.0.0.1  •  Port: $bedrockPort" +
-                                    (if (lanIp.isNotBlank() && lanIp != "0.0.0.0" && lanIp != "--") "\n• Chơi PE cùng mạng Wi-Fi: IP $lanIp  •  Port: $bedrockPort" else ""),
-                                style = MaterialTheme.typography.bodySmall,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-
-                            if (playitState.bedrockAddress.isNotBlank()) {
-                                val peDomainHost = playitState.bedrockAddress.substringBeforeLast(":")
-                                val pePort = playitState.bedrockAddress.substringAfterLast(":", bedrockPort.toString())
-                                // Tuyệt đối không dùng playitIpv4Host của Java làm fallback cho PE!
-                                val peIpv4Host = vm.extractPlayitBedrockIpv4Host(playitState.bedrockAddress)
-                                HorizontalDivider(color = Color(0xFF2DD4BF).copy(alpha = 0.35f))
-                                Text(
-                                    "🌍 Chơi PE từ xa (4G / Khác Wi-Fi qua Playit UDP — Nhập vào 2 ô riêng trong Minecraft PE):",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.secondary
+                                Icon(
+                                    imageVector = Icons.Rounded.ChevronRight,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp)
                                 )
-                                Text(
-                                    "• Ô Địa chỉ (Server Address): ${peIpv4Host ?: peDomainHost}" +
-                                        (if (peIpv4Host != null && peIpv4Host != peDomainHost) " (hoặc $peDomainHost)" else " (Hostname PE độc lập — chưa có IPv4 riêng)"),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                Text(
-                                    "• Ô Cổng (Port UDP của PE): $pePort  (⚠️ Không nhập cổng TCP ${playitTcpPort ?: ""}!)",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.secondary
-                                )
-                                AdaptiveActionRow {
-                                    Button(
-                                        onClick = {
-                                            val ipToCopy = peIpv4Host ?: peDomainHost
-                                            clipboard.setText(AnnotatedString(ipToCopy))
-                                            vm.notifyActionDone("📱 Đã chép Địa chỉ PE: $ipToCopy (Dán vào ô Server Address trong PE)")
-                                        },
-                                        shape = RoundedCornerShape(8.dp),
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D9488), contentColor = Color.White),
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        Text("📋 Chép Địa Chỉ PE (${peIpv4Host ?: peDomainHost})", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                                    }
-                                    OutlinedButton(
-                                        onClick = {
-                                            clipboard.setText(AnnotatedString(pePort))
-                                            vm.notifyActionDone("📱 Đã chép Cổng UDP PE: $pePort (Dán vào ô Port trong PE)")
-                                        },
-                                        shape = RoundedCornerShape(8.dp),
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        Text("📋 Chép Port PE ($pePort)", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                                    }
-                                }
-                            } else {
-                                if (playitState.bedrockStatusNote.isNotBlank()) {
-                                    Text(
-                                        "ℹ️ ${playitState.bedrockStatusNote}",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        fontSize = 14.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                                AdaptiveActionRow {
-                                    OutlinedButton(
-                                        onClick = {
-                                            clipboard.setText(AnnotatedString("127.0.0.1"))
-                                            vm.notifyActionDone("📱 Đã chép IP 127.0.0.1 (Cổng PE cấu hình: $bedrockPort)")
-                                        },
-                                        shape = RoundedCornerShape(8.dp),
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        Text("📋 Chép 127.0.0.1 (Cổng $bedrockPort)", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                                    }
-                                    Button(
-                                        onClick = {
-                                            if (!playitState.isRunning) vm.startPlayitTunnel()
-                                            else vm.createPlayitBedrockTunnel(bedrockPort)
-                                        },
-                                        shape = RoundedCornerShape(8.dp),
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        Text(
-                                            if (!playitState.isRunning) "🚀 Bật Hầm Playit" else "⚡ Lấy Cổng UDP PE ($bedrockPort)",
-                                            fontSize = 14.sp,
-                                            fontWeight = FontWeight.SemiBold
-                                        )
-                                    }
-                                }
                             }
                         }
                     }
 
-                    if (vpnActiveWarning && playConnectionMode == PlayConnectionMode.SameNetwork) {
-                        Text(
-                            "⚠️ Phát hiện VPN đang bật trên máy: có thể làm bạn bè cùng Wi-Fi không nhìn thấy server.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                    }
-
-                    // ── CHIA SẺ NHANH THẺ MỜI BẠN BÈ (ẢNH HD & TIN NHẮN GỌN ĐẸP) ──
-                    val buildInviteCardText: () -> String = {
-                        val pcInvite = if (playConnectionMode == PlayConnectionMode.SameNetwork) {
-                            lanAddress ?: localhostAddress
-                        } else {
-                            playitAddress ?: playitPureIpv4Address ?: lanAddress ?: localhostAddress
-                        }
-                        val peHostInvite = if (playConnectionMode == PlayConnectionMode.SameNetwork) {
-                            lanIp.takeIf { it.isNotBlank() && it != "0.0.0.0" && it != "--" } ?: "127.0.0.1"
-                        } else if (playitState.bedrockAddress.isNotBlank()) {
-                            vm.extractPlayitBedrockIpv4Host(playitState.bedrockAddress)
-                                ?: playitState.bedrockAddress.substringBeforeLast(":")
-                        } else {
-                            lanIp.takeIf { it.isNotBlank() && it != "0.0.0.0" && it != "--" } ?: "127.0.0.1"
-                        }
-                        val pePortInvite = if (playConnectionMode == PlayConnectionMode.Everywhere && playitState.bedrockAddress.isNotBlank()) {
-                            playitState.bedrockAddress.substringAfterLast(":", bedrockPort.toString())
-                        } else {
-                            bedrockPort.toString()
-                        }
-                        buildString {
-                            appendLine("🎮 MỜI VÀO SERVER MINECRAFT: ${active.name}")
-                            appendLine("• Phiên bản: ${active.core.displayName} ${active.version}")
-                            if (!active.core.isBedrock) {
-                                appendLine("💻 Máy tính PC / Pojav / Java: $pcInvite")
-                            }
-                            if (hasGeyserInstalled || active.core.isBedrock) {
-                                appendLine("📱 Điện thoại Minecraft PE (Bedrock):")
-                                appendLine("   - Địa chỉ (Server Address): $peHostInvite")
-                                appendLine("   - Cổng (Port UDP): $pePortInvite")
-                            }
-                        }.trim()
-                    }
-                    Button(
-                        onClick = {
-                            val pcInvite = if (playConnectionMode == PlayConnectionMode.SameNetwork) {
-                                lanAddress ?: localhostAddress
-                            } else {
-                                playitAddress ?: playitPureIpv4Address ?: lanAddress ?: localhostAddress
-                            }
-                            val peHostInvite = if (playConnectionMode == PlayConnectionMode.SameNetwork) {
-                                lanIp.takeIf { it.isNotBlank() && it != "0.0.0.0" && it != "--" } ?: "127.0.0.1"
-                            } else if (playitState.bedrockAddress.isNotBlank()) {
-                                vm.extractPlayitBedrockIpv4Host(playitState.bedrockAddress)
-                                    ?: playitState.bedrockAddress.substringBeforeLast(":")
-                            } else {
-                                lanIp.takeIf { it.isNotBlank() && it != "0.0.0.0" && it != "--" } ?: "127.0.0.1"
-                            }
-                            val pePortInvite = if (playConnectionMode == PlayConnectionMode.Everywhere && playitState.bedrockAddress.isNotBlank()) {
-                                playitState.bedrockAddress.substringAfterLast(":", bedrockPort.toString())
-                            } else {
-                                bedrockPort.toString()
-                            }
-                            vm.shareServerInviteCardImage(
-                                context = context,
-                                javaIpOverride = pcInvite,
-                                peHostOverride = peHostInvite,
-                                pePortOverride = pePortInvite
-                            )
-                        },
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            "🖼️ Chia Sẻ Ảnh Thẻ Mời HD (Zalo / Messenger / Discord)",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        OutlinedButton(
-                            onClick = {
-                                val inviteText = buildInviteCardText()
-                                clipboard.setText(AnnotatedString(inviteText))
-                                vm.notifyActionDone("📲 Đã sao chép Thẻ Mời Bạn Bè (PC + PE)!")
-                            },
+                    if (vpnActiveWarning && isLanMode) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.72f),
                             shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("📋 Chép Tin Mời", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.WarningAmber,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = "VPN đang bật: có thể chặn bạn bè cùng Wi-Fi thấy server.",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                            }
+                        }
+                    }
+
+                    AdaptiveActionRow {
+                        Button(
+                            onClick = {
+                                val pcInvite = if (isLanMode) {
+                                    lanAddress ?: localhostAddress
+                                } else {
+                                    playitAddress ?: playitPureIpv4Address ?: lanAddress ?: localhostAddress
+                                }
+                                val peHostInvite = if (isLanMode) {
+                                    lanIp.takeIf { it.isNotBlank() && it != "0.0.0.0" && it != "--" } ?: "127.0.0.1"
+                                } else if (playitState.bedrockAddress.isNotBlank()) {
+                                    vm.extractPlayitBedrockIpv4Host(playitState.bedrockAddress)
+                                        ?: playitState.bedrockAddress.substringBeforeLast(":")
+                                } else {
+                                    lanIp.takeIf { it.isNotBlank() && it != "0.0.0.0" && it != "--" } ?: "127.0.0.1"
+                                }
+                                val pePortInvite = if (!isLanMode && playitState.bedrockAddress.isNotBlank()) {
+                                    playitState.bedrockAddress.substringAfterLast(":", bedrockPort.toString())
+                                } else {
+                                    bedrockPort.toString()
+                                }
+                                vm.shareServerInviteCardImage(
+                                    context = context,
+                                    javaIpOverride = pcInvite,
+                                    peHostOverride = peHostInvite,
+                                    pePortOverride = pePortInvite
+                                )
+                            },
+                            enabled = if (active.core.isBedrock) peAddress != null else (javaAddress != null || lanAddress != null || localhostAddress.isNotBlank()),
+                            shape = McShape.Control,
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+                            modifier = Modifier.weight(1f).heightIn(min = 46.dp)
+                        ) {
+                            Icon(Icons.Rounded.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Chia sẻ thẻ mời", maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                         OutlinedButton(
-                            onClick = {
-                                val inviteText = buildInviteCardText()
-                                runCatching {
-                                    val sendIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                        type = "text/plain"
-                                        putExtra(android.content.Intent.EXTRA_TEXT, inviteText)
-                                    }
-                                    context.startActivity(
-                                        android.content.Intent.createChooser(sendIntent, "Mời bạn bè vào Server")
-                                            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                                    )
-                                }
-                            },
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.weight(1f)
+                            onClick = { showNetworkSheet = true },
+                            shape = McShape.Control,
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+                            modifier = Modifier.weight(1f).heightIn(min = 46.dp)
                         ) {
-                            Text("📤 Gửi Nhanh", fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                        }
-                    }
-
-                    HostDisclosure(
-                        "🔧 Kiểm tra cổng & Chẩn đoán mạng",
-                        "Kiểm tra kết nối thực tế (Local / LAN / Playit) và sao chép báo cáo."
-                    ) {
-                        AdaptiveActionRow {
-                            OutlinedButton(
-                                onClick = { vm.checkConnectionReachability() },
-                                enabled = !connectionCheckRunning,
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text(
-                                    if (connectionCheckRunning) "⏳ Đang kiểm tra..."
-                                    else "🩺 Kiểm tra cổng thực tế",
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Medium
-                                )
-                            }
-                            OutlinedButton(
-                                onClick = { vm.copyRedactedDiagnostics(context) },
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text("📋 Xuất chẩn đoán", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                            }
-                        }
-                        connectionCheckStatus?.let { checkReport ->
-                            Surface(
-                                color = MaterialTheme.colorScheme.surfaceVariant,
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text(
-                                    checkReport,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    modifier = Modifier.padding(10.dp)
-                                )
-                            }
+                            Icon(Icons.Rounded.Tune, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Thiết lập mạng", maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
                 }
             }
-        }
-
         }
 
         // ══════════════════════════════════════════════════════════════════════
@@ -2621,28 +2435,36 @@ fun MineHostOverview(
         if (active != null && overviewTab == 0) {
             item(key = "live_game_chat_messenger_card") {
                 var hostChatInput by rememberSaveable(active.dirName) { mutableStateOf("") }
-                HostCard(
-                    title = "Trò chuyện trong game",
-                    artKind = MinecraftArtKind.DIAMOND_SWORD,
-                    badgeText = if (liveChatMessages.isNotEmpty()) "${liveChatMessages.size} tin nhắn" else "Trực tiếp 2 chiều"
-                ) {
-                    // Khung hiển thị tin nhắn của người chơi (tự lọc sạch log kỹ thuật)
+                MhCard {
+                    MhSectionHeader(
+                        title = "Trò chuyện trong game",
+                        subtitle = "Đồng bộ hai chiều với người chơi",
+                        trailing = {
+                            MhStatusBadge(
+                                label = if (liveChatMessages.isNotEmpty()) "${liveChatMessages.size} tin" else "Trực tiếp",
+                                accent = MaterialTheme.colorScheme.primary,
+                                container = MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                pulsing = state.isRunning
+                            )
+                        }
+                    )
+
                     Surface(
-                        color = Color(0xFF0F172A),
+                        color = semanticColors.terminalBg,
                         shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, Color(0xFF334155)),
+                        border = BorderStroke(1.dp, semanticColors.terminalBorder),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(
-                            modifier = Modifier.fillMaxWidth().padding(10.dp),
-                            verticalArrangement = Arrangement.spacedBy(5.dp)
+                            modifier = Modifier.fillMaxWidth().padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             if (liveChatMessages.isEmpty()) {
                                 Text(
-                                    "💬 Chưa có tin nhắn nào trong phiên này.\n• Khi người chơi nhắn tin hoặc vào/ra Server, hội thoại sẽ hiện trực tiếp tại đây (đã lọc sạch chữ kỹ thuật).\n• Bạn có thể gõ tin nhắn bên dưới để gửi vào game với danh hiệu [👑 Chủ Server]!",
-                                    fontSize = 14.sp,
-                                    color = Color(0xFF94A3B8),
-                                    lineHeight = 20.sp
+                                    text = "Chưa có tin nhắn nào trong phiên này. Hội thoại người chơi (đã lọc log hệ thống) sẽ hiển thị tại đây.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             } else {
                                 liveChatMessages.takeLast(12).forEach { msg ->
@@ -2652,15 +2474,15 @@ fun MineHostOverview(
                                     ) {
                                         val isOwnerMsg = msg.kind == "host" || msg.sender.contains("Chủ Server")
                                         Text(
-                                            "[${msg.timeStr}] ${if (msg.kind == "join" || msg.kind == "leave") "Hoạt động" else msg.sender}",
-                                            fontSize = 14.sp,
-                                            color = if (isOwnerMsg) Color(0xFFFBBF24) else Color(0xFFA7B4C8),
+                                            text = "[${msg.timeStr}] ${if (msg.kind == "join" || msg.kind == "leave") "Hoạt động" else msg.sender}",
+                                            style = McCodeStyle,
+                                            color = if (isOwnerMsg) semanticColors.warning else MaterialTheme.colorScheme.onSurfaceVariant,
                                             fontWeight = FontWeight.SemiBold
                                         )
                                         Text(
-                                            msg.message,
-                                            fontSize = 14.sp,
-                                            color = if (msg.kind == "join" || msg.kind == "leave") Color(0xFF38BDF8) else Color(0xFFF8FAFC)
+                                            text = msg.message,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = if (msg.kind == "join" || msg.kind == "leave") semanticColors.info else MaterialTheme.colorScheme.onSurface
                                         )
                                     }
                                 }
@@ -2668,7 +2490,6 @@ fun MineHostOverview(
                         }
                     }
 
-                    // Ô nhập & gửi tin nhắn trực tiếp vào trong game
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -2677,8 +2498,9 @@ fun MineHostOverview(
                         OutlinedTextField(
                             value = hostChatInput,
                             onValueChange = { hostChatInput = it },
-                            label = { Text("Tin nhắn vào game", fontSize = 14.sp) },
+                            label = { Text("Tin nhắn vào game") },
                             singleLine = true,
+                            shape = McShape.Control,
                             modifier = Modifier.weight(1f)
                         )
                         Button(
@@ -2687,10 +2509,14 @@ fun MineHostOverview(
                                 hostChatInput = ""
                             },
                             enabled = state.isRunning && hostChatInput.isNotBlank(),
-                            shape = RoundedCornerShape(10.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D9488), contentColor = Color.White)
+                            shape = McShape.Control,
+                            modifier = Modifier.heightIn(min = 52.dp)
                         ) {
-                            Text("📨 Gửi", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Rounded.Send,
+                                contentDescription = "Gửi",
+                                modifier = Modifier.size(18.dp)
+                            )
                         }
                     }
                 }
@@ -3986,74 +3812,111 @@ fun MineHostOverview(
         }
 
         // ══════════════════════════════════════════════════════════════════════
-        // [v2.7.4] THẺ CHẨN ĐOÁN PHẦN CỨNG MÁY & CẨM NANG 3 BƯỚC CHO NGƯỜI MỚI
+        // THẺ CHẨN ĐOÁN PHẦN CỨNG MÁY & CẨM NANG 3 BƯỚC MỞ SERVER
         // ══════════════════════════════════════════════════════════════════════
-        if (active == null || overviewTab == 1 || overviewTab == 3) {
+        if (active != null && (overviewTab == 1 || overviewTab == 3)) {
             item(key = "device_preflight_and_onboarding") {
-            val preflight = remember(ready, state.isRunning, config.installedCores.size) { vm.inspectDevicePreFlight() }
-            HostCard(
-                title = "👋 Chẩn Đoán Máy & Cẩm Nang 3 Bước Mở Server",
-                artKind = MinecraftArtKind.DIAMOND_SWORD,
-                badgeText = preflight.tierTitle
-            ) {
-                Surface(
-                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f),
-                    shape = RoundedCornerShape(10.dp),
-                    modifier = Modifier.fillMaxWidth()
+                val preflight = remember(ready, isActiveRust, state.isRunning, config.installedCores.size) {
+                    vm.inspectDevicePreFlight()
+                }
+                val step1Ready = isActiveRust || ready
+                HostCard(
+                    title = "Chẩn đoán máy & quy trình mở Server",
+                    icon = Icons.AutoMirrored.Rounded.FactCheck,
+                    badgeText = preflight.tierTitle
                 ) {
-                    Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(
-                            "📊 Phần cứng: Tổng RAM ${preflight.totalRamMb} MB • Trống ~${preflight.availRamMb} MB • Bộ nhớ còn ${preflight.freeStorageGb}",
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 14.sp
-                        )
-                        Text(
-                            "💡 Gợi ý tự động: ${preflight.recommendationVi}",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontSize = 14.sp,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer
-                        )
-                    }
-                }
-
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
-                    Text("🚀 Quy trình 3 bước mở Server chuẩn:", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                    Text(
-                        "${if (ready) "🟢" else "⚪"} Bước 1: Cài môi trường chạy (${if (ready) "Đã hoàn tất" else "Bấm nút Cài đặt môi trường ở trên cùng"})",
-                        fontSize = 14.sp
-                    )
-                    Text(
-                        "${if (config.installedCores.isNotEmpty()) "🟢" else "⚪"} Bước 2: Tải Server Core Paper/Fabric (${if (config.installedCores.isNotEmpty()) "Đã có ${config.installedCores.size} server" else "Bấm Tạo Server Mới"})",
-                        fontSize = 14.sp
-                    )
-                    Text(
-                        "${if (state.isRunning) "🟢" else "⚪"} Bước 3: Bật Server & Mở đường hầm Playit.gg để bạn bè vào chơi (${if (state.isRunning) "Server đang mở!" else "Sẵn sàng bật"})",
-                        fontSize = 14.sp
-                    )
-                }
-
-                AdaptiveActionRow {
-                    if (!preflight.ignoringBatteryOptimizations) {
-                        Button(
-                            onClick = { vm.requestIgnoreBatteryOptimization() },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD97706), contentColor = Color.White),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("🔋 Cấp Quyền Chạy Nền (Chống Tắt Ngầm)", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceContainer,
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                text = "Phần cứng: Tổng RAM ${preflight.totalRamMb} MB · Trống ~${preflight.availRamMb} MB · Còn ${preflight.freeStorageGb}",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Gợi ý: ${preflight.recommendationVi}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
-                    if (preflight.isLowRamDevice && active != null) {
-                        OutlinedButton(
-                            onClick = { vm.applyUltraLiteLowRamMode() },
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("⚡ Bật Chế Độ Máy RAM Ít", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = "Quy trình 3 bước mở Server chuẩn",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        listOf(
+                            Triple(
+                                step1Ready,
+                                "Bước 1: Nhân máy chủ",
+                                if (isActiveRust) "Đã sẵn sàng (Pure Rust 0% Java)"
+                                else if (ready) "Đã sẵn sàng (Môi trường Java)"
+                                else "Cài môi trường Java cho Paper / Fabric"
+                            ),
+                            Triple(
+                                config.installedCores.isNotEmpty(),
+                                "Bước 2: Chọn & tạo Server",
+                                "Đã có ${config.installedCores.size} máy chủ"
+                            ),
+                            Triple(
+                                state.isRunning,
+                                "Bước 3: Bật Server & chia sẻ IP",
+                                if (state.isRunning) "Máy chủ đang chạy" else "Sẵn sàng khởi động"
+                            )
+                        ).forEach { (doneStep, stepTitle, stepDetail) ->
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (doneStep) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
+                                    contentDescription = null,
+                                    tint = if (doneStep) semanticColors.success else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = "$stepTitle · $stepDetail",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (doneStep) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        if (!preflight.ignoringBatteryOptimizations) {
+                            Button(
+                                onClick = { vm.requestIgnoreBatteryOptimization() },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = semanticColors.warning,
+                                    contentColor = semanticColors.onWarning
+                                ),
+                                shape = McShape.Control,
+                                modifier = Modifier.weight(1f).heightIn(min = 44.dp)
+                            ) {
+                                Text("Cấp quyền chạy nền", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                        if (preflight.isLowRamDevice) {
+                            OutlinedButton(
+                                onClick = { vm.applyUltraLiteLowRamMode() },
+                                shape = McShape.Control,
+                                modifier = Modifier.weight(1f).heightIn(min = 44.dp)
+                            ) {
+                                Text("Chế độ RAM ít", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
                         }
                     }
                 }
-            }
             }
         }
     }
@@ -4061,21 +3924,21 @@ fun MineHostOverview(
     if (showPastePlayitKeyDialog) {
         AlertDialog(
             onDismissRequest = { showPastePlayitKeyDialog = false },
-            title = { Text("🔑 Dán Secret Key hoặc Mã Claim Playit.gg", fontWeight = FontWeight.SemiBold) },
+            title = { Text("Dán Secret Key hoặc Mã Claim Playit.gg", fontWeight = FontWeight.SemiBold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        "Nếu bạn đã tạo Agent trên web playit.gg (ví dụ `from-key-...`), hãy sao chép mã Secret Key (64 ký tự hex) từ trang Agent của Playit.gg và dán vào bên dưới để kết nối trực tiếp:",
+                        "Nếu bạn đã tạo Agent trên web playit.gg (ví dụ from-key-...), hãy sao chép Secret Key (64 ký tự hex) và dán vào bên dưới để kết nối trực tiếp:",
                         style = MaterialTheme.typography.bodySmall
                     )
                     OutlinedTextField(
                         value = pastedPlayitKeyInput,
                         onValueChange = { pastedPlayitKeyInput = it },
-                        label = { Text("Secret Key (64 ký tự hex) từ web Playit.gg") },
+                        label = { Text("Secret Key (64 ký tự hex)") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    AdaptiveActionRow {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                         OutlinedButton(
                             onClick = {
                                 val clipText = clipboard.getText()?.text?.trim().orEmpty()
@@ -4085,7 +3948,7 @@ fun MineHostOverview(
                             },
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text("📋 Dán từ bộ nhớ tạm", fontSize = 14.sp)
+                            Text("Dán bộ nhớ tạm", maxLines = 1)
                         }
                         if (playitState.hasSavedSecret) {
                             OutlinedButton(
@@ -4096,7 +3959,7 @@ fun MineHostOverview(
                                 },
                                 modifier = Modifier.weight(1f)
                             ) {
-                                Text("♻️ Tạo mã Claim mới", fontSize = 14.sp)
+                                Text("Tạo Claim mới", maxLines = 1)
                             }
                         }
                     }
@@ -4114,7 +3977,7 @@ fun MineHostOverview(
                     },
                     enabled = pastedPlayitKeyInput.trim().isNotBlank()
                 ) {
-                    Text("Lưu & Kết nối Agent ngay", fontWeight = FontWeight.Medium)
+                    Text("Lưu & kết nối", fontWeight = FontWeight.SemiBold)
                 }
             },
             dismissButton = {
@@ -4123,126 +3986,681 @@ fun MineHostOverview(
         )
     }
 
-    if (showRustQuickCreateDialog) {
-        val selectedProfile = com.mineserve.mobile.server.ProHostFeatures.resolveRustProfile(quickRustProfileId)
-        AlertDialog(
-            onDismissRequest = { showRustQuickCreateDialog = false },
-            title = {
-                Text("🦀 Tạo Server Rust Thuần (0% Java)", fontWeight = FontWeight.Bold)
-            },
-            text = {
-                Column(
-                    modifier = Modifier.verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
+    if (showServerSwitcherSheet) {
+        val switcherSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
+            onDismissRequest = { showServerSwitcherSheet = false },
+            sheetState = switcherSheetState,
+            containerColor = MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp, vertical = 8.dp)
+                    .navigationBarsPadding(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                MhSectionHeader(
+                    title = "Chọn hoặc tạo máy chủ",
+                    subtitle = if (state.isRunning) "Dừng server hiện tại trước khi chuyển sang server khác." else "Chạm vào máy chủ để kích hoạt."
+                )
+
+                if (config.installedCores.isEmpty()) {
                     Surface(
-                        color = Color(0xFF065F46).copy(alpha = 0.28f),
-                        shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(1.dp, Color(0xFF10B981))
+                        color = MaterialTheme.colorScheme.surfaceContainer,
+                        shape = McShape.Card,
+                        modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
-                            "✅ Cam kết chạy trực tiếp 100% tệp máy ARM64 (Pumpkin Rust) — Tuyệt đối KHÔNG tải Java, KHÔNG chạy máy ảo JVM, chỉ tốn ~50MB RAM!",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color(0xFF6EE7B7),
-                            modifier = Modifier.padding(10.dp)
+                            text = "Chưa có máy chủ nào được cài đặt.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(16.dp)
                         )
                     }
-                    Text("1️⃣ Chọn phiên bản Minecraft muốn mở:", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        com.mineserve.mobile.server.ProHostFeatures.RUST_VERSION_PROFILES.forEach { prof ->
-                            val isSel = prof.id == quickRustProfileId
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        config.installedCores.forEach { srv ->
+                            val isCurrent = srv.name == config.activeCoreName
+                            val isRustSrv = srv.core == ServerCore.Pumpkin
                             Surface(
                                 onClick = {
-                                    quickRustProfileId = prof.id
-                                    quickRustMultiversion = prof.defaultMultiversionWasm
+                                    if (!isCurrent) {
+                                        if (state.isRunning) {
+                                            vm.notifyActionDone("Hãy dừng server hiện tại trước khi chuyển máy chủ.")
+                                        } else {
+                                            vm.setActiveCore(srv.name)
+                                            showServerSwitcherSheet = false
+                                        }
+                                    } else {
+                                        showServerSwitcherSheet = false
+                                    }
                                 },
-                                shape = RoundedCornerShape(10.dp),
-                                color = if (isSel) Color(0xFFEA580C).copy(alpha = 0.22f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                                border = BorderStroke(if (isSel) 1.5.dp else 1.dp, if (isSel) Color(0xFFFB923C) else Color.Transparent),
+                                shape = RoundedCornerShape(14.dp),
+                                color = if (isCurrent) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f) else MaterialTheme.colorScheme.surfaceContainer,
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (isCurrent) MaterialTheme.colorScheme.primary.copy(alpha = 0.65f)
+                                    else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)
+                                ),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
-                                    Text(
-                                        (if (isSel) "✅ " else "") + prof.shortLabel,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 13.sp,
-                                        color = if (isSel) Color(0xFFFB923C) else MaterialTheme.colorScheme.onSurface
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    CoreBrandLogo(core = srv.core, size = 34.dp)
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                                    ) {
+                                        Text(
+                                            text = srv.name,
+                                            style = MaterialTheme.typography.titleSmall,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = if (isRustSrv) "Rust ARM64 · ${srv.version}" else "${srv.core.displayName} ${srv.version}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = if (isRustSrv) semanticColors.rust else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                    if (isCurrent) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.CheckCircle,
+                                            contentDescription = "Đang chọn",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Rounded.ChevronRight,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+
+                Button(
+                    onClick = {
+                        showServerSwitcherSheet = false
+                        showRustQuickCreateDialog = true
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = semanticColors.rust,
+                        contentColor = semanticColors.onRust
+                    ),
+                    shape = McShape.Control,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                ) {
+                    Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Tạo Server Rust (0% Java)", maxLines = 1)
+                }
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            showServerSwitcherSheet = false
+                            navigate(SubPage.Cores)
+                        },
+                        shape = McShape.Control,
+                        modifier = Modifier.weight(1f).heightIn(min = 44.dp)
+                    ) {
+                        Text("Tạo Java / PE", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            showServerSwitcherSheet = false
+                            navigate(SubPage.ServerList)
+                        },
+                        shape = McShape.Control,
+                        modifier = Modifier.weight(1f).heightIn(min = 44.dp)
+                    ) {
+                        Text("Quản lý tất cả", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+            }
+        }
+    }
+
+    if (showNetworkSheet && active != null) {
+        val networkSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        val isLanMode = playConnectionMode == PlayConnectionMode.SameNetwork
+        val connectionReport by vm.connectionCheckReport.collectAsStateWithLifecycle()
+        val activeReport = connectionReport?.takeIf { it.serverId == active.dirName }
+        var showSixDiagnostics by remember { mutableStateOf(false) }
+        val homeMarker = remember(active.dirName, installing) { vm.crossplayMarker(active.dirName) }
+        var homePe by remember(active.dirName) { mutableStateOf(vm.crossplayMarker(active.dirName)["targetPe"].orEmpty()) }
+        var showHomePePicker by remember { mutableStateOf(false) }
+        val homeCrossCheck = com.mineserve.mobile.ui.rememberCrossplayCheck(active.core, active.version, targetPe = homePe)
+
+        ModalBottomSheet(
+            onDismissRequest = { showNetworkSheet = false },
+            sheetState = networkSheetState,
+            containerColor = MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp, vertical = 8.dp)
+                    .navigationBarsPadding(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                MhSectionHeader(
+                    title = "Thiết lập mạng & Playit.gg",
+                    subtitle = "Cấu hình chơi chung Wi-Fi, đường hầm Playit, Geyser PE & kiểm tra cổng."
+                )
+
+                // 1. Chế độ Cùng Wi-Fi / Playit.gg
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.padding(6.dp).fillMaxWidth()
+                    ) {
+                        listOf(
+                            Triple("Cùng Wi-Fi", PlayConnectionMode.SameNetwork, Icons.Rounded.Wifi),
+                            Triple("Từ xa (Playit.gg)", PlayConnectionMode.Everywhere, Icons.Rounded.Public)
+                        ).forEach { (modeLabel, modeVal, modeIcon) ->
+                            val selected = playConnectionMode == modeVal
+                            Surface(
+                                onClick = { vm.setPlayConnectionMode(modeVal) },
+                                shape = RoundedCornerShape(9.dp),
+                                color = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = modeIcon,
+                                        contentDescription = null,
+                                        tint = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(16.dp)
                                     )
+                                    Spacer(Modifier.width(6.dp))
                                     Text(
-                                        prof.descriptionVi,
-                                        fontSize = 11.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        text = modeLabel,
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
                             }
                         }
                     }
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                }
+
+                // 2. Đường hầm Playit.gg
+                if (!isLanMode) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceContainer,
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-                            Text("🌐 Bật WASM Đa Phiên Bản (1.7.2 → 26.3)", fontWeight = FontWeight.SemiBold, fontSize = 12.5.sp)
-                            Text("Plugin WebAssembly chạy ngay trong Rust (0% Java)", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = when {
+                                    playitState.isRunning && playitAddress != null && !state.isRunning ->
+                                        "Playit.gg đã sẵn sàng (${playitState.agentName.ifBlank { "Agent Online" }}), nhưng Server '${active.name}' đang dừng."
+                                    playitState.isRunning && playitAddress != null && state.startupPhase != StartupPhase.Ready ->
+                                        "Playit.gg đã sẵn sàng · Đang chờ Server '${active.name}' khởi động xong..."
+                                    playitState.isRunning && playitAddress != null ->
+                                        "Playit.gg đang chuyển tiếp (${playitState.agentName.ifBlank { "Agent Online" }}) · TCP $port" +
+                                            (if (playitState.bedrockAddress.isNotBlank()) " & UDP $bedrockPort" else "")
+                                    playitState.stage == com.mineserve.mobile.ui.PlayitStage.WaitingForClaim && playitState.claimUrl.isNotBlank() ->
+                                        "Cần xác nhận liên kết trên web Playit.gg (Mã: ${playitState.claimCode})."
+                                    playitState.isBusy -> playitState.statusText
+                                    else -> "Đường hầm Playit.gg đang tắt."
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = when {
+                                    playitState.isRunning && playitAddress != null && !state.isRunning -> semanticColors.warning
+                                    playitState.isRunning && playitAddress != null -> semanticColors.success
+                                    playitState.stage == com.mineserve.mobile.ui.PlayitStage.Error -> MaterialTheme.colorScheme.error
+                                    else -> MaterialTheme.colorScheme.onSurface
+                                }
+                            )
+                            if (playitState.errorMessage.isNotBlank()) {
+                                Text(
+                                    text = playitState.errorMessage,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                            if (playitState.isRunning && !state.isRunning) {
+                                Button(
+                                    onClick = { vm.startServer() },
+                                    enabled = !stopping,
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = semanticColors.success,
+                                        contentColor = semanticColors.onSuccess
+                                    ),
+                                    shape = McShape.Control,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("Bật Server '${active.name}' ngay", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                if (!playitState.isActiveOrConnecting) {
+                                    Button(
+                                        onClick = { vm.startPlayitTunnel() },
+                                        shape = McShape.Control,
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text("Bật Playit.gg", maxLines = 1)
+                                    }
+                                    OutlinedButton(
+                                        onClick = { showPastePlayitKeyDialog = true },
+                                        shape = McShape.Control,
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text("Dán Secret Key", maxLines = 1)
+                                    }
+                                } else {
+                                    if (playitState.claimUrl.isNotBlank() && !playitState.isClaimed) {
+                                        Button(
+                                            onClick = { uriHandler.openUri(playitState.claimUrl) },
+                                            shape = McShape.Control,
+                                            modifier = Modifier.weight(1.2f)
+                                        ) { Text("Mở trang Claim", maxLines = 1) }
+                                    } else {
+                                        Button(
+                                            onClick = { vm.refreshPlayitTunnel() },
+                                            shape = McShape.Control,
+                                            modifier = Modifier.weight(1f)
+                                        ) { Text("Làm mới", maxLines = 1) }
+                                    }
+                                    OutlinedButton(
+                                        onClick = { showPastePlayitKeyDialog = true },
+                                        shape = McShape.Control,
+                                        modifier = Modifier.weight(1f)
+                                    ) { Text("Dán Key", maxLines = 1) }
+                                    OutlinedButton(
+                                        onClick = { vm.stopPlayitTunnel() },
+                                        shape = McShape.Control,
+                                        modifier = Modifier.weight(0.8f)
+                                    ) { Text("Tắt", maxLines = 1) }
+                                }
+                            }
                         }
-                        Switch(checked = quickRustMultiversion, onCheckedChange = { quickRustMultiversion = it })
                     }
-                    Text("2️⃣ Chế độ chơi:", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf("survival" to "🌱 Sinh tồn", "creative" to "🎨 Sáng tạo", "hardcore" to "💀 Siêu khó").forEach { (gmKey, gmLbl) ->
-                            FilterChip(
-                                selected = quickRustGamemode == gmKey,
-                                onClick = { quickRustGamemode = gmKey },
-                                label = { Text(gmLbl, fontSize = 12.sp) }
+                }
+
+                // 3. Địa chỉ chi tiết & Crossplay Bedrock PE
+                if (!hasGeyserInstalled && !isActiveRust && !active.core.isBedrock) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceContainer,
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Chơi chung điện thoại (GeyserMC)", style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                text = when {
+                                    crossplayStatus.hasDisabledGeyserJar -> "GeyserMC đang bị tắt (.disabled)."
+                                    crossplayStatus.missingDependencies.isNotEmpty() ->
+                                        "Thiếu thành phần: ${crossplayStatus.missingDependencies.joinToString(", ")}."
+                                    crossplayStatus.loadErrorDetail != null -> crossplayStatus.loadErrorDetail.orEmpty()
+                                    else -> "Chưa cài cầu nối PE (GeyserMC + Floodgate) cho máy chủ này."
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            com.mineserve.mobile.ui.PeVersionPicker(selected = homePe, onSelect = { homePe = it })
+                            Button(
+                                onClick = { vm.installCrossplayGeyserPack(homePe, startAfterInstall = true) },
+                                enabled = !installing && !stopping && homeCrossCheck?.supported == true,
+                                shape = McShape.Control,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    if (installing || stopping) "Đang cài GeyserMC..." else "Cài Geyser & bật chơi chung PE",
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceContainer,
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Minecraft PE / Bedrock (UDP $bedrockPort)", style = MaterialTheme.typography.titleSmall)
+                                if (!isActiveRust) {
+                                    TextButton(
+                                        onClick = {
+                                            showNetworkSheet = false
+                                            navigate(SubPage.Crossplay)
+                                        },
+                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
+                                    ) {
+                                        Text("Chi tiết", style = MaterialTheme.typography.labelMedium)
+                                    }
+                                }
+                            }
+                            if (playitState.bedrockAddress.isNotBlank()) {
+                                val peDomainHost = playitState.bedrockAddress.substringBeforeLast(":")
+                                val pePort = playitState.bedrockAddress.substringAfterLast(":", bedrockPort.toString())
+                                val peIpv4Host = vm.extractPlayitBedrockIpv4Host(playitState.bedrockAddress)
+                                Text(
+                                    text = "Địa chỉ PE: ${peIpv4Host ?: peDomainHost} · Port UDP: $pePort",
+                                    style = McCodeStyle,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                    Button(
+                                        onClick = {
+                                            val ipToCopy = peIpv4Host ?: peDomainHost
+                                            clipboard.setText(AnnotatedString(ipToCopy))
+                                            vm.notifyActionDone("Đã chép IP PE: $ipToCopy")
+                                        },
+                                        shape = McShape.Control,
+                                        modifier = Modifier.weight(1f)
+                                    ) { Text("Chép IP PE", maxLines = 1) }
+                                    OutlinedButton(
+                                        onClick = {
+                                            clipboard.setText(AnnotatedString(pePort))
+                                            vm.notifyActionDone("Đã chép Port PE: $pePort")
+                                        },
+                                        shape = McShape.Control,
+                                        modifier = Modifier.weight(1f)
+                                    ) { Text("Chép Port $pePort", maxLines = 1) }
+                                }
+                            } else {
+                                if (playitState.bedrockStatusNote.isNotBlank()) {
+                                    Text(
+                                        text = playitState.bedrockStatusNote,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            clipboard.setText(AnnotatedString("127.0.0.1"))
+                                            vm.notifyActionDone("Đã chép IP cục bộ 127.0.0.1 (Port $bedrockPort)")
+                                        },
+                                        shape = McShape.Control,
+                                        modifier = Modifier.weight(1f)
+                                    ) { Text("Chép 127.0.0.1", maxLines = 1) }
+                                    Button(
+                                        onClick = {
+                                            if (!playitState.isRunning) vm.startPlayitTunnel()
+                                            else vm.createPlayitBedrockTunnel(bedrockPort)
+                                        },
+                                        shape = McShape.Control,
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text(
+                                            if (!playitState.isRunning) "Bật Playit" else "Lấy Port UDP",
+                                            maxLines = 1
+                                        )
+                                    }
+                                }
+                            }
+                            if (!isActiveRust && !active.core.isBedrock) {
+                                TextButton(
+                                    onClick = { showHomePePicker = !showHomePePicker },
+                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                                ) {
+                                    Text(if (showHomePePicker) "Ẩn chọn bản PE" else "Chọn phiên bản PE / Cài lại Geyser")
+                                }
+                                if (showHomePePicker) {
+                                    com.mineserve.mobile.ui.PeVersionPicker(selected = homePe, onSelect = { homePe = it })
+                                    com.mineserve.mobile.ui.CrossplayCompatCard(
+                                        core = active.core,
+                                        mcVersion = active.version,
+                                        result = homeCrossCheck
+                                    )
+                                    Button(
+                                        onClick = { vm.installCrossplayGeyserPack(homePe, startAfterInstall = false) },
+                                        enabled = !installing && !stopping && homeCrossCheck?.supported == true,
+                                        shape = McShape.Control,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(if (installing || stopping) "Đang cài lại Geyser..." else "Cài lại Geyser", maxLines = 1)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 4. Tin nhắn mời bạn bè nhanh
+                val buildInviteCardText: () -> String = {
+                    val pcInvite = if (isLanMode) (lanAddress ?: localhostAddress) else (playitAddress ?: playitPureIpv4Address ?: lanAddress ?: localhostAddress)
+                    val peHostInvite = if (isLanMode) {
+                        lanIp.takeIf { it.isNotBlank() && it != "0.0.0.0" && it != "--" } ?: "127.0.0.1"
+                    } else if (playitState.bedrockAddress.isNotBlank()) {
+                        vm.extractPlayitBedrockIpv4Host(playitState.bedrockAddress) ?: playitState.bedrockAddress.substringBeforeLast(":")
+                    } else {
+                        lanIp.takeIf { it.isNotBlank() && it != "0.0.0.0" && it != "--" } ?: "127.0.0.1"
+                    }
+                    val pePortInvite = if (!isLanMode && playitState.bedrockAddress.isNotBlank()) {
+                        playitState.bedrockAddress.substringAfterLast(":", bedrockPort.toString())
+                    } else {
+                        bedrockPort.toString()
+                    }
+                    buildString {
+                        appendLine("Mời vào Server Minecraft: ${active.name}")
+                        appendLine("• Phiên bản: ${active.core.displayName} ${active.version}")
+                        if (!active.core.isBedrock) {
+                            appendLine("• Java / PC: $pcInvite")
+                        }
+                        if (hasGeyserInstalled || isActiveRust || active.core.isBedrock) {
+                            appendLine("• PE / Bedrock: $peHostInvite · Port UDP: $pePortInvite")
+                        }
+                    }.trim()
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(
+                        onClick = {
+                            clipboard.setText(AnnotatedString(buildInviteCardText()))
+                            vm.notifyActionDone("Đã sao chép tin mời bạn bè.")
+                        },
+                        shape = McShape.Control,
+                        modifier = Modifier.weight(1f)
+                    ) { Text("Chép tin mời", maxLines = 1) }
+                    OutlinedButton(
+                        onClick = {
+                            runCatching {
+                                val sendIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(android.content.Intent.EXTRA_TEXT, buildInviteCardText())
+                                }
+                                context.startActivity(
+                                    android.content.Intent.createChooser(sendIntent, "Mời bạn bè vào Server")
+                                        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                )
+                            }
+                        },
+                        shape = McShape.Control,
+                        modifier = Modifier.weight(1f)
+                    ) { Text("Gửi tin mời", maxLines = 1) }
+                }
+
+                // 5. Chẩn đoán 6 bước & Kiểm tra cổng thực tế
+                val s1McRunning = state.isRunning && state.startupPhase == StartupPhase.Ready
+                val s2AgentOnline = playitState.isAgentOnline
+                val s3HasPublicAddr = playitState.hasPublicEndpoint
+                val s4HasBridge = playitState.hasActiveForwardingBridge
+                val s5McResponded = (activeReport?.localhostJava?.ok == true) ||
+                    (activeReport?.localhostBedrock?.ok == true) ||
+                    (activeReport?.lanJava?.ok == true) ||
+                    (activeReport?.lanBedrock?.ok == true)
+                val s6ExternalVerified = (activeReport?.publicJava?.ok == true) ||
+                    (activeReport?.publicBedrock?.ok == true)
+
+                Surface(
+                    onClick = { showSixDiagnostics = !showSixDiagnostics },
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "Chẩn đoán 6 bước",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = if (showSixDiagnostics) "Thu gọn" else "Mở rộng",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary
                             )
                         }
+                        if (showSixDiagnostics) {
+                            listOf(
+                                "1. Server chạy: ${if (s1McRunning) "Sẵn sàng ($port/$bedrockPort)" else if (state.isRunning) state.startupPhase.label else "Đã dừng"}",
+                                "2. Agent online: ${if (s2AgentOnline) "Online (${playitState.agentName.ifBlank { "OK" }})" else playitState.phaseDetail}",
+                                "3. Địa chỉ public: ${if (s3HasPublicAddr) "Đã cấp IP/Domain" else "Chưa có"}",
+                                "4. Cầu nối chuyển tiếp: ${if (s4HasBridge) "TCP:${playitState.forwardedTcpConnections} / UDP:${playitState.activeUdpSessions}" else "Chưa phát sinh"}",
+                                "5. Phản hồi Minecraft: ${if (s5McResponded) "OK" else "Chưa xác nhận"}",
+                                "6. Kiểm chứng ngoài: ${if (s6ExternalVerified) "OK" else "Chưa kiểm chứng"}"
+                            ).forEach { diagLine ->
+                                Text(
+                                    text = diagLine,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
                     }
-                    OutlinedTextField(
-                        value = quickRustServerName,
-                        onValueChange = { quickRustServerName = it },
-                        label = { Text("Tên Server (Bỏ trống tự đặt theo bản ${selectedProfile.mcVersionLabel})") },
-                        singleLine = true,
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    Button(
+                        onClick = { vm.checkConnectionReachability() },
+                        enabled = !connectionCheckRunning,
+                        shape = McShape.Control,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(if (connectionCheckRunning) "Đang kiểm tra..." else "Kiểm tra cổng", maxLines = 1)
+                    }
+                    OutlinedButton(
+                        onClick = { vm.copyRedactedDiagnostics(context) },
+                        shape = McShape.Control,
+                        modifier = Modifier.weight(1f)
+                    ) { Text("Xuất chẩn đoán", maxLines = 1) }
+                }
+                connectionCheckStatus?.let { checkReport ->
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceContainer,
+                        shape = RoundedCornerShape(10.dp),
                         modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showRustQuickCreateDialog = false
-                        vm.createStandaloneRustServerOneTap(
-                            customName = quickRustServerName,
-                            profileId = quickRustProfileId,
-                            gamemode = quickRustGamemode,
-                            installMultiversionOverride = quickRustMultiversion
+                    ) {
+                        Text(
+                            text = checkReport,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(10.dp)
                         )
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEA580C), contentColor = Color.White)
-                ) {
-                    Text("🦀 Tạo Server Rust Ngay", fontWeight = FontWeight.Bold)
+                    }
                 }
-            },
-            dismissButton = {
-                TextButton(onClick = { showRustQuickCreateDialog = false }) { Text("Đóng") }
+                Spacer(Modifier.height(6.dp))
             }
-        )
+        }
     }
 
-    if (showRustVersionSwitchDialog) {
-        AlertDialog(
-            onDismissRequest = { showRustVersionSwitchDialog = false },
-            title = { Text("🔄 Đổi Phiên Bản Server Rust (0% Java)", fontWeight = FontWeight.Bold) },
-            text = {
-                Column(
-                    modifier = Modifier.verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+    if (showRustQuickCreateDialog) {
+        val selectedProfile = com.mineserve.mobile.server.ProHostFeatures.resolveRustProfile(quickRustProfileId)
+        val rustSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
+            onDismissRequest = { showRustQuickCreateDialog = false },
+            sheetState = rustSheetState,
+            containerColor = MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp, vertical = 8.dp)
+                    .navigationBarsPadding(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                MhSectionHeader(
+                    title = "Tạo Server Rust thuần (0% Java)",
+                    subtitle = "Chạy mã máy ARM64 (Pumpkin Rust), tự quản lý ~50–90 MB RAM."
+                )
+
+                Surface(
+                    color = semanticColors.successContainer.copy(alpha = 0.72f),
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, semanticColors.success.copy(alpha = 0.45f)),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(
-                        "Chọn phiên bản Nhân Rust ARM64 hoặc bật/tắt WASM Đa Phiên Bản (Giữ nguyên 100% Map hiện tại):",
-                        fontSize = 12.sp
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(10.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.VerifiedUser,
+                            contentDescription = null,
+                            tint = semanticColors.onSuccessContainer,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            text = "Không tải Java, không chạy máy ảo JVM.",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = semanticColors.onSuccessContainer
+                        )
+                    }
+                }
+
+                Text("1. Chọn phiên bản Minecraft", style = MaterialTheme.typography.titleSmall)
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     com.mineserve.mobile.server.ProHostFeatures.RUST_VERSION_PROFILES.forEach { prof ->
                         val isSel = prof.id == quickRustProfileId
                         Surface(
@@ -4250,50 +4668,219 @@ fun MineHostOverview(
                                 quickRustProfileId = prof.id
                                 quickRustMultiversion = prof.defaultMultiversionWasm
                             },
-                            shape = RoundedCornerShape(10.dp),
-                            color = if (isSel) Color(0xFFEA580C).copy(alpha = 0.22f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                            border = BorderStroke(if (isSel) 1.5.dp else 1.dp, if (isSel) Color(0xFFFB923C) else Color.Transparent),
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isSel) semanticColors.rustContainer.copy(alpha = 0.72f) else MaterialTheme.colorScheme.surfaceContainer,
+                            border = BorderStroke(
+                                1.dp,
+                                if (isSel) semanticColors.rust else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)
+                            ),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
-                                Text(
-                                    (if (isSel) "✅ " else "") + prof.shortLabel,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp,
-                                    color = if (isSel) Color(0xFFFB923C) else MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(prof.descriptionVi, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(
+                                        text = prof.shortLabel,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = if (isSel) semanticColors.onRustContainer else MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = prof.descriptionVi,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (isSel) semanticColors.onRustContainer.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                if (isSel) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.CheckCircle,
+                                        contentDescription = "Đã chọn",
+                                        tint = semanticColors.rust,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
                             }
                         }
                     }
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("🌐 Bật WASM Đa Phiên Bản (1.7.2 → 26.3)", fontWeight = FontWeight.SemiBold, fontSize = 12.5.sp, modifier = Modifier.weight(1f))
-                        Switch(checked = quickRustMultiversion, onCheckedChange = { quickRustMultiversion = it })
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                        Text("WASM Đa phiên bản (1.7.2 – 26.3)", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "Plugin WebAssembly chạy trực tiếp trong Rust.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(checked = quickRustMultiversion, onCheckedChange = { quickRustMultiversion = it })
+                }
+
+                Text("2. Chế độ chơi", style = MaterialTheme.typography.titleSmall)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf("survival" to "Sinh tồn", "creative" to "Sáng tạo", "hardcore" to "Siêu khó").forEach { (gmKey, gmLbl) ->
+                        FilterChip(
+                            selected = quickRustGamemode == gmKey,
+                            onClick = { quickRustGamemode = gmKey },
+                            label = { Text(gmLbl) }
+                        )
                     }
                 }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showRustVersionSwitchDialog = false
-                        vm.switchRustServerVersionProfileOneTap(
-                            profileId = quickRustProfileId,
-                            installMultiversionOverride = quickRustMultiversion
-                        )
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEA580C), contentColor = Color.White)
-                ) {
-                    Text("✅ Áp Dụng Phiên Bản Này", fontWeight = FontWeight.Bold)
+
+                OutlinedTextField(
+                    value = quickRustServerName,
+                    onValueChange = { quickRustServerName = it },
+                    label = { Text("Tên Server (trống tự đặt theo ${selectedProfile.mcVersionLabel})") },
+                    singleLine = true,
+                    shape = McShape.Control,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(
+                        onClick = { showRustQuickCreateDialog = false },
+                        shape = McShape.Control,
+                        modifier = Modifier.weight(0.75f).heightIn(min = 48.dp)
+                    ) { Text("Đóng", maxLines = 1) }
+                    Button(
+                        onClick = {
+                            showRustQuickCreateDialog = false
+                            vm.createStandaloneRustServerOneTap(
+                                customName = quickRustServerName,
+                                profileId = quickRustProfileId,
+                                gamemode = quickRustGamemode,
+                                installMultiversionOverride = quickRustMultiversion
+                            )
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = semanticColors.rust,
+                            contentColor = semanticColors.onRust
+                        ),
+                        shape = McShape.Control,
+                        modifier = Modifier.weight(1.4f).heightIn(min = 48.dp)
+                    ) {
+                        Text("Tạo Server Rust ngay", fontWeight = FontWeight.SemiBold, maxLines = 1)
+                    }
                 }
-            },
-            dismissButton = {
-                TextButton(onClick = { showRustVersionSwitchDialog = false }) { Text("Hủy") }
+                Spacer(Modifier.height(6.dp))
             }
-        )
+        }
+    }
+
+    if (showRustVersionSwitchDialog) {
+        val switchSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
+            onDismissRequest = { showRustVersionSwitchDialog = false },
+            sheetState = switchSheetState,
+            containerColor = MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp, vertical = 8.dp)
+                    .navigationBarsPadding(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                MhSectionHeader(
+                    title = "Đổi phiên bản Server Rust",
+                    subtitle = "Giữ nguyên toàn bộ thế giới hiện tại (0% Java)."
+                )
+
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    com.mineserve.mobile.server.ProHostFeatures.RUST_VERSION_PROFILES.forEach { prof ->
+                        val isSel = prof.id == quickRustProfileId
+                        Surface(
+                            onClick = {
+                                quickRustProfileId = prof.id
+                                quickRustMultiversion = prof.defaultMultiversionWasm
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isSel) semanticColors.rustContainer.copy(alpha = 0.72f) else MaterialTheme.colorScheme.surfaceContainer,
+                            border = BorderStroke(
+                                1.dp,
+                                if (isSel) semanticColors.rust else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(
+                                        text = prof.shortLabel,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = if (isSel) semanticColors.onRustContainer else MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = prof.descriptionVi,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (isSel) semanticColors.onRustContainer.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                if (isSel) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.CheckCircle,
+                                        contentDescription = "Đã chọn",
+                                        tint = semanticColors.rust,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        "WASM Đa phiên bản (1.7.2 – 26.3)",
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Switch(checked = quickRustMultiversion, onCheckedChange = { quickRustMultiversion = it })
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(
+                        onClick = { showRustVersionSwitchDialog = false },
+                        shape = McShape.Control,
+                        modifier = Modifier.weight(0.75f).heightIn(min = 48.dp)
+                    ) { Text("Hủy", maxLines = 1) }
+                    Button(
+                        onClick = {
+                            showRustVersionSwitchDialog = false
+                            vm.switchRustServerVersionProfileOneTap(
+                                profileId = quickRustProfileId,
+                                installMultiversionOverride = quickRustMultiversion
+                            )
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = semanticColors.rust,
+                            contentColor = semanticColors.onRust
+                        ),
+                        shape = McShape.Control,
+                        modifier = Modifier.weight(1.4f).heightIn(min = 48.dp)
+                    ) {
+                        Text("Áp dụng phiên bản", fontWeight = FontWeight.SemiBold, maxLines = 1)
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+            }
+        }
     }
 
     confirm?.let { action ->
@@ -4309,87 +4896,6 @@ fun MineHostOverview(
             },
             dismissButton = { TextButton(onClick = { confirm = null }) { Text("Hủy") } }
         )
-    }
-}
-
-@Composable
-private fun Metric(
-    label: String,
-    value: String,
-    artKind: MinecraftArtKind,
-    modifier: Modifier,
-    sparklineSamples: List<Float> = emptyList(),
-    sparklineMax: Float = 20f,
-    sparklineColor: Color = Color(0xFF10B981),
-    onClick: () -> Unit = {}
-) {
-    Card(
-        onClick = onClick,
-        modifier = modifier,
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.26f))
-    ) {
-        Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                MinecraftPixelArtIcon(kind = artKind, size = 18.dp)
-            }
-            if (sparklineSamples.size >= 2) {
-                androidx.compose.foundation.Canvas(
-                    modifier = Modifier.fillMaxWidth().height(18.dp)
-                ) {
-                    val safeMax = sparklineMax.coerceAtLeast(1f)
-                    val w = size.width
-                    val h = size.height
-                    val stepX = w / (sparklineSamples.size - 1).coerceAtLeast(1).toFloat()
-                    val strokePath = androidx.compose.ui.graphics.Path()
-                    val fillPath = androidx.compose.ui.graphics.Path()
-                    sparklineSamples.forEachIndexed { i, v ->
-                        val ratio = (v / safeMax).coerceIn(0.04f, 1f)
-                        val x = i * stepX
-                        val y = h - (ratio * (h - 2f)) - 1f
-                        if (i == 0) {
-                            strokePath.moveTo(x, y)
-                            fillPath.moveTo(x, h)
-                            fillPath.lineTo(x, y)
-                        } else {
-                            strokePath.lineTo(x, y)
-                            fillPath.lineTo(x, y)
-                        }
-                        if (i == sparklineSamples.lastIndex) {
-                            fillPath.lineTo(x, h)
-                            fillPath.close()
-                        }
-                    }
-                    drawPath(
-                        path = fillPath,
-                        brush = Brush.verticalGradient(
-                            listOf(sparklineColor.copy(alpha = 0.28f), sparklineColor.copy(alpha = 0.02f))
-                        )
-                    )
-                    drawPath(
-                        path = strokePath,
-                        color = sparklineColor,
-                        style = androidx.compose.ui.graphics.drawscope.Stroke(
-                            width = 2.dp.toPx(),
-                            cap = androidx.compose.ui.graphics.StrokeCap.Round
-                        )
-                    )
-                }
-            }
-            Text(
-                label,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
     }
 }
 
@@ -4468,7 +4974,7 @@ fun MineHostRemote(vm: McViewModel, onBack: () -> Unit) {
         subtitle = "Kết nối bảo mật Telegram Pro, Discord và Web nội bộ.",
         trailingHeader = {
             IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Quay lại")
+                Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Quay lại")
             }
         }
     ) {
@@ -4782,6 +5288,7 @@ fun MineHostLibrary(navigate: (SubPage) -> Unit) {
 fun MineHostManage(vm: McViewModel, navigate: (SubPage) -> Unit) {
     val uri = LocalUriHandler.current
     val context = androidx.compose.ui.platform.LocalContext.current
+    val config by vm.config.collectAsStateWithLifecycle()
     val ready by vm.isBootstrapped.collectAsStateWithLifecycle()
     val autoBackupOnStop by vm.autoBackupOnStop.collectAsStateWithLifecycle()
     val autoUploadDriveOnStop by vm.autoUploadDriveOnStop.collectAsStateWithLifecycle()
@@ -4819,14 +5326,14 @@ fun MineHostManage(vm: McViewModel, navigate: (SubPage) -> Unit) {
                 initiallyExpanded = true
             ) {
                 Text(
-                    "Tùy chỉnh cỡ chữ và tông màu dịu mắt cho toàn bộ ứng dụng:",
+                    "Tùy chỉnh cỡ chữ và bảng màu dịu mắt cho toàn bộ ứng dụng:",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 val fontOptions = listOf(
-                    0.95f to "Gọn",
-                    1.04f to "Mặc định",
-                    1.10f to "Vừa",
+                    0.94f to "Gọn",
+                    1.00f to "Mặc định",
+                    1.08f to "Vừa",
                     1.16f to "Lớn"
                 )
                 fontOptions.chunked(2).forEach { pair ->
@@ -4837,30 +5344,30 @@ fun MineHostManage(vm: McViewModel, navigate: (SubPage) -> Unit) {
                                 Button(
                                     onClick = {
                                         com.mineserve.mobile.ui.theme.AppUiSettings.setFontScale(context, scaleVal)
-                                        vm.notifyActionDone("🔤 Đã đổi cỡ chữ ứng dụng sang: $label")
+                                        vm.notifyActionDone("Đã đổi cỡ chữ sang: $label")
                                     },
-                                    shape = RoundedCornerShape(10.dp),
+                                    shape = McShape.Control,
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text(label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                                    Text(label, fontWeight = FontWeight.SemiBold, maxLines = 1)
                                 }
                             } else {
                                 OutlinedButton(
                                     onClick = {
                                         com.mineserve.mobile.ui.theme.AppUiSettings.setFontScale(context, scaleVal)
-                                        vm.notifyActionDone("🔤 Đã đổi cỡ chữ ứng dụng sang: $label")
+                                        vm.notifyActionDone("Đã đổi cỡ chữ sang: $label")
                                     },
-                                    shape = RoundedCornerShape(10.dp),
+                                    shape = McShape.Control,
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text(label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                                    Text(label, fontWeight = FontWeight.SemiBold, maxLines = 1)
                                 }
                             }
                         }
                     }
                 }
                 val colorOptions = listOf(
-                    com.mineserve.mobile.ui.theme.EyeCareColorPreset.SoftSlate to "Xanh đá",
+                    com.mineserve.mobile.ui.theme.EyeCareColorPreset.SoftSlate to "Obsidian Tối",
                     com.mineserve.mobile.ui.theme.EyeCareColorPreset.WarmMocha to "Đêm ấm",
                     com.mineserve.mobile.ui.theme.EyeCareColorPreset.WarmPaperLight to "Giấy sáng"
                 )
@@ -4872,23 +5379,23 @@ fun MineHostManage(vm: McViewModel, navigate: (SubPage) -> Unit) {
                                 Button(
                                     onClick = {
                                         com.mineserve.mobile.ui.theme.AppUiSettings.setColorPreset(context, preset)
-                                        vm.notifyActionDone("🎨 Đã áp dụng bảng màu: $label")
+                                        vm.notifyActionDone("Đã áp dụng bảng màu: $label")
                                     },
-                                    shape = RoundedCornerShape(10.dp),
+                                    shape = McShape.Control,
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text(label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                                    Text(label, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
                             } else {
                                 OutlinedButton(
                                     onClick = {
                                         com.mineserve.mobile.ui.theme.AppUiSettings.setColorPreset(context, preset)
-                                        vm.notifyActionDone("🎨 Đã áp dụng bảng màu: $label")
+                                        vm.notifyActionDone("Đã áp dụng bảng màu: $label")
                                     },
-                                    shape = RoundedCornerShape(10.dp),
+                                    shape = McShape.Control,
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text(label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                                    Text(label, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
                             }
                         }
@@ -4899,15 +5406,16 @@ fun MineHostManage(vm: McViewModel, navigate: (SubPage) -> Unit) {
 
         // ── 2. SAO LƯU TỰ ĐỘNG MAP + MOD & GOOGLE DRIVE ──
         item(key = "cloud_backup_settings") {
+            val activeCoreIsRust = config.installedCores.firstOrNull { it.name == config.activeCoreName }?.core == ServerCore.Pumpkin
             HostDisclosure(
                 title = "Sao lưu tự động & Google Drive",
                 detail = if (autoBackupOnStop) "Đang bật sao lưu khi dừng server." else "Thiết lập sao lưu khi dừng và chia sẻ lên Drive."
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.weight(1f)) {
-                        Text("💾 Tự động sao lưu Map + Mod khi đóng Server", fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                        Text("Tự động sao lưu Map + Mod khi đóng Server", fontWeight = FontWeight.Medium, fontSize = 14.sp)
                         Text(
-                            "Tự nén thế giới hiện tại kèm thư mục mods/ & config/ ngay khi dừng SV",
+                            "Tự nén thế giới hiện tại kèm dữ liệu server ngay khi dừng.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -4919,9 +5427,9 @@ fun MineHostManage(vm: McViewModel, navigate: (SubPage) -> Unit) {
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.weight(1f)) {
-                        Text("☁️ Tự mở Google Drive để lưu ngay khi đóng Server", fontWeight = FontWeight.Medium, fontSize = 14.sp, color = MaterialTheme.colorScheme.primary)
+                        Text("Tự mở Google Drive để lưu ngay khi đóng Server", fontWeight = FontWeight.Medium, fontSize = 14.sp, color = MaterialTheme.colorScheme.primary)
                         Text(
-                            "Khi dừng Server xong sẽ tự bật bảng đẩy bản sao lưu lên Google Drive",
+                            "Khi dừng Server xong sẽ tự mở bảng đẩy bản sao lưu lên Google Drive.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -4934,26 +5442,28 @@ fun MineHostManage(vm: McViewModel, navigate: (SubPage) -> Unit) {
                 AdaptiveActionRow {
                     Button(
                         onClick = { navigate(SubPage.WorldManage) },
-                        shape = RoundedCornerShape(10.dp),
+                        shape = McShape.Control,
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("Quản lý map", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        Text("Quản lý map", fontWeight = FontWeight.SemiBold, maxLines = 1)
                     }
                     OutlinedButton(
                         onClick = { navigate(SubPage.Backup) },
-                        shape = RoundedCornerShape(10.dp),
+                        shape = McShape.Control,
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("Cài đặt sao lưu", fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                        Text("Cài đặt sao lưu", fontWeight = FontWeight.Medium, maxLines = 1)
                     }
                 }
                 OutlinedButton(
                     onClick = { vm.backupWorldToExternal(shareToDrive = true) },
-                    enabled = ready,
-                    shape = RoundedCornerShape(10.dp),
+                    enabled = ready || activeCoreIsRust,
+                    shape = McShape.Control,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("☁️ Sao lưu nhanh Map + Mod hiện tại lên Google Drive", fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                    Icon(Icons.Rounded.CloudUpload, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Sao lưu nhanh hiện tại lên Google Drive", fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         }
