@@ -2,7 +2,7 @@ name: MineHost UI upgrade APK
 
 on:
   push:
-    branches: [codex/minehost-ui-refresh]
+    branches: [main, codex/minehost-ui-refresh]
   workflow_dispatch:
 
 permissions:
@@ -99,17 +99,22 @@ jobs:
           "$TOOLS/apksigner" verify --print-certs "$RUNNER_TEMP/minehost-previous.apk" > "$RUNNER_TEMP/minehost-previous-signature.txt"
           PREVIOUS=$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/minehost-previous-signature.txt")
           test "$ACTUAL" = "$PREVIOUS"
+          VERSION_CODE=$(sed -n 's/.*versionCode = \([0-9][0-9]*\).*/\1/p' app/build.gradle.kts | head -n1)
+          VERSION_NAME=$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -n1)
+          test -n "$VERSION_CODE"
+          test -n "$VERSION_NAME"
           "$TOOLS/aapt" dump badging "$APK" > dist/APK-INFO.txt
-          grep -Eq "^package: name='vn.minehost.pro' versionCode='62' versionName='2.9.5'" dist/APK-INFO.txt
+          grep -Eq "^package: name='vn.minehost.pro' versionCode='${VERSION_CODE}' versionName='${VERSION_NAME}'" dist/APK-INFO.txt
           grep -Eq "^native-code: 'arm64-v8a'[[:space:]]*$" dist/APK-INFO.txt
           ! grep -q 'application-debuggable' dist/APK-INFO.txt
-          cp "$APK" dist/minehost-2.9.5-arm64.apk
+          cp "$APK" "dist/minehost-${VERSION_NAME}-arm64.apk"
+          cp "$APK" "dist/MineHost-arm64-v8a-release.apk"
           git rev-parse HEAD > dist/SOURCE-COMMIT.txt
-          (cd dist && sha256sum minehost-2.9.5-arm64.apk > SHA256SUMS.txt)
+          (cd dist && sha256sum "minehost-${VERSION_NAME}-arm64.apk" "MineHost-arm64-v8a-release.apk" > SHA256SUMS.txt)
 
       - uses: actions/upload-artifact@v4
         with:
-          name: MineHost-2.9.5-ARM64-update
+          name: MineHost-ARM64-update
           path: dist/
           if-no-files-found: error
           retention-days: 14
